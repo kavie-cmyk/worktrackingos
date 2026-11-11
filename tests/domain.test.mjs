@@ -410,30 +410,128 @@ test('AC29 computeRates: dữ liệu đầy đủ thì tính đúng công thức
 // AC35 — Tỷ lệ tổng hợp: tính từ tổng tử / tổng mẫu, không trung bình các tỷ lệ
 // ---------------------------------------------------------------------------
 
-test('AC35 aggregateRates: CTR tổng hợp = tổng clicks / tổng impressions = 100/4000 = 0.025', (t) => {
+test('AC35 aggregateRates: CTR tổng hợp = tổng clicks / tổng impressions = 100/4000 = 0.025 (R2-21: shape byCurrency)', (t) => {
   if (!requireFn(t, 'aggregateRates')) return;
   const rows = [
     { impressions: 1000, clicks: 50, spend: 100, results: 10, conversionValue: 300 },
     { impressions: 3000, clicks: 50, spend: 100, results: 10, conversionValue: 300 },
   ];
   const rates = domain.aggregateRates(rows);
-  assert.equal(rates.ctr, 100 / 4000);
-  assert.equal(rates.ctr, 0.025);
+  // R2-21: không còn rates/totals gộp ở top-level — dòng không có currency
+  // vào bucket '__unknown', mixed=false khi chỉ một bucket.
+  assert.equal(rates.mixed, false);
+  const bucket = rates.byCurrency.__unknown;
+  assert.ok(bucket, 'dòng không có currency phải vào bucket __unknown');
+  assert.equal(bucket.ctr, 100 / 4000);
+  assert.equal(bucket.ctr, 0.025);
   const naiveAverage = (50 / 1000 + 50 / 3000) / 2;
-  assert.notEqual(rates.ctr, naiveAverage, 'không được lấy trung bình cộng của các CTR từng dòng');
+  assert.notEqual(bucket.ctr, naiveAverage, 'không được lấy trung bình cộng của các CTR từng dòng');
 });
 
-test('AC35 aggregateRates: các tỷ lệ khác cũng tính từ tổng (cpc, cpm, roas)', (t) => {
+test('AC35 aggregateRates: các tỷ lệ khác cũng tính từ tổng trong bucket (cpc, cpm, roas) (R2-21)', (t) => {
   if (!requireFn(t, 'aggregateRates')) return;
   const rows = [
-    { impressions: 1000, clicks: 50, spend: 100, results: 10, conversionValue: 300 },
-    { impressions: 3000, clicks: 50, spend: 300, results: 30, conversionValue: 900 },
+    { currency: 'VND', impressions: 1000, clicks: 50, spend: 100, results: 10, conversionValue: 300 },
+    { currency: 'VND', impressions: 3000, clicks: 50, spend: 300, results: 30, conversionValue: 900 },
   ];
   const rates = domain.aggregateRates(rows);
-  assert.equal(rates.cpc, 400 / 100);
-  assert.equal(rates.cpm, (400 / 4000) * 1000);
-  assert.equal(rates.costPerResult, 400 / 40);
-  assert.equal(rates.roas, 1200 / 400);
+  assert.equal(rates.mixed, false);
+  const bucket = rates.byCurrency.VND;
+  assert.deepEqual(bucket.totals, { spend: 400, impressions: 4000, clicks: 100, results: 40, conversionValue: 1200 });
+  assert.equal(bucket.cpc, 400 / 100);
+  assert.equal(bucket.cpm, (400 / 4000) * 1000);
+  assert.equal(bucket.roas, 1200 / 400);
+});
+
+// ---------------------------------------------------------------------------
+// R2-01/R2-02 — Ngân sách một nguồn sự thật: đã trả CHỈ từ actuals liên kết
+// ---------------------------------------------------------------------------
+
+test('R2-01 commitmentPaidTotal/openCommitmentTotal: chỉ actuals liên kết, chỉ cam kết còn mở', (t) => {
+  if (!requireFn(t, 'commitmentPaidTotal')) return;
+  if (!requireFn(t, 'openCommitmentTotal')) return;
+  const actuals = [
+    { amount: 300, commitmentId: 'C1' },
+    { amount: 200, commitmentId: 'C1' },
+    { amount: 999, commitmentId: 'C2' },
+    { amount: 50, commitmentId: null },
+  ];
+  assert.equal(domain.commitmentPaidTotal({ id: 'C1', amount: 1000, status: 'committed' }, actuals), 500);
+  assert.equal(domain.commitmentPaidTotal({ id: 'CX', amount: 100 }, actuals), 0);
+  const commitments = [
+    { id: 'C1', amount: 1000, status: 'committed', settledAmount: 900 }, // settledAmount stale bị bỏ qua
+    { id: 'C2', amount: 500, status: 'planned' },
+    { id: 'C3', amount: 700, status: 'partially_actualised' },
+    { id: 'C4', amount: 400, status: 'settled' },
+    { id: 'C5', amount: 400, status: 'released' },
+    { id: 'C6', amount: 400, status: 'cancelled' },
+  ];
+  // open = (1000−500) + (500−999→0) + (700−0) = 1200; settled/released/cancelled không tính.
+  assert.equal(domain.openCommitmentTotal(commitments, actuals), 1200);
+});
+
+test('R2-01/R2-02 budgetRemaining một nguồn: settledAmount stale 400 bị bỏ qua, actuals liên kết 800 quyết định', (t) => {
+  if (!requireFn(t, 'budgetRemaining')) return;
+  const commitments = [{ id: 'C1', amount: 1000, status: 'partial', settledAmount: 400 }];
+  const actuals = [{ amount: 800, commitmentId: 'C1' }];
+  // open = 1000 − 800 (actuals) = 200 — KHÔNG phải 1000 − 400 (settledAmount stale).
+  assert.equal(domain.openCommitmentTotal(commitments, actuals), 200);
+  // remaining = approved 1000 − Σactuals 800 − open 200 = 0.
+  assert.equal(domain.budgetRemaining({ approved: 1000 }, commitments, actuals), 0);
+});
+
+test('R2-01/R2-02 budgetRemaining: settledAmount = 0 + actual 400 → open/remaining đúng theo actuals', (t) => {
+  if (!requireFn(t, 'budgetRemaining')) return;
+  const commitments = [{ id: 'C1', amount: 1000, status: 'partially_actualised', settledAmount: 0 }];
+  const actuals = [{ amount: 400, commitmentId: 'C1' }];
+  assert.equal(domain.openCommitmentTotal(commitments, actuals), 600);
+  assert.equal(domain.budgetRemaining({ approved: 1000 }, commitments, actuals), 0);
+  // settledAmount lớn mà KHÔNG có actual nào: vẫn coi như chưa trả đồng nào.
+  assert.equal(
+    domain.budgetRemaining({ approved: 1000 }, [{ id: 'C2', amount: 500, status: 'committed', settledAmount: 500 }], []),
+    500,
+    'settledAmount không có actual đi kèm không được làm giảm phần cam kết còn mở',
+  );
+});
+
+// ---------------------------------------------------------------------------
+// R2-21 — aggregateRates tách theo tiền tệ, không cộng trộn
+// ---------------------------------------------------------------------------
+
+test('R2-21 aggregateRates trộn USD/VND: CPC từng bucket đúng, không có số gộp trộn tiền tệ', (t) => {
+  if (!requireFn(t, 'aggregateRates')) return;
+  const rows = [
+    { currency: 'USD', spend: 100, impressions: 1000, clicks: 10, results: 5, conversionValue: 200 },
+    { currency: 'VND', spend: 100000, impressions: 10000, clicks: 10, results: 5, conversionValue: 200000 },
+  ];
+  const rates = domain.aggregateRates(rows);
+  assert.equal(rates.mixed, true);
+  assert.equal(rates.byCurrency.USD.cpc, 10, 'USD: 100 spend / 10 clicks');
+  assert.equal(rates.byCurrency.VND.cpc, 10000, 'VND: 100000 spend / 10 clicks');
+  assert.equal(rates.byCurrency.USD.totals.spend, 100);
+  assert.equal(rates.byCurrency.VND.totals.spend, 100000);
+  // Số trộn tiền tệ (tổng spend 100100, CPC gộp 5005) không được xuất hiện ở bất cứ đâu.
+  assert.equal(rates.totals, undefined, 'không có totals gộp xuyên currency ở top-level');
+  assert.equal(rates.cpc, undefined, 'không có cpc gộp xuyên currency ở top-level');
+  for (const bucket of Object.values(rates.byCurrency)) {
+    assert.notEqual(bucket.totals.spend, 100100);
+    assert.notEqual(bucket.cpc, 5005);
+  }
+});
+
+test('R2-21 aggregateRates: field thiếu ở một dòng trong bucket → tổng field đó của bucket = null, bucket khác không ảnh hưởng', (t) => {
+  if (!requireFn(t, 'aggregateRates')) return;
+  const rates = domain.aggregateRates([
+    { currency: 'USD', spend: 100, impressions: 1000, clicks: 50, results: 10, conversionValue: null },
+    { currency: 'VND', spend: 100000, impressions: 10000, clicks: 50, results: 10, conversionValue: 300000 },
+  ]);
+  assert.equal(rates.byCurrency.USD.totals.conversionValue, null);
+  assert.equal(rates.byCurrency.USD.roas, null, 'thiếu conversionValue → ROAS null, không 0 giả');
+  assert.equal(rates.byCurrency.USD.ctr, 50 / 1000, 'tỷ lệ không phụ thuộc field thiếu vẫn tính được');
+  assert.equal(rates.byCurrency.VND.roas, 3, 'bucket VND đủ dữ liệu không bị bucket USD làm hỏng');
+  const empty = domain.aggregateRates([]);
+  assert.deepEqual(empty.byCurrency, {});
+  assert.equal(empty.mixed, false);
 });
 
 // ---------------------------------------------------------------------------

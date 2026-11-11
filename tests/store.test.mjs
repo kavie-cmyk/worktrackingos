@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const core = require('../js/store-core.js');
+const Store = require('../js/store.js');
 
 // ---------------------------------------------------------------------------
 // Đổi tên trường 2 chiều
@@ -211,6 +212,32 @@ test('validateNewPassword: tối thiểu 8 ký tự và hai lần nhập phải 
   assert.equal(core.validateNewPassword('1234567', '1234567').ok, false);
   assert.equal(core.validateNewPassword('12345678', '12345679').ok, false);
   assert.equal(core.validateNewPassword('mat-khau-manh', 'mat-khau-manh').ok, true);
+});
+
+test('Store._toPayload reportSnapshots (R2-22): giữ scope.filter + period_start/period_end + data.rows; _rowToItem khôi phục filter/kỳ', () => {
+  Store.state = { budgetLines: [] };
+  const payload = Store._toPayload('reportSnapshots', {
+    title: 'Báo cáo tháng 1', metrics: { spend: 100 }, summary: 'Tóm tắt', rows: [{ id: 'r1', spend: 100 }],
+    filter: { from: '2027-01-01', to: '2027-01-31', accountId: 'acc-1', campaignId: 'camp-1', level: 'campaign' },
+    definitionVersions: { ads: 'v1' },
+  }, { workspaceId: 'ws-1', forInsert: true });
+  assert.deepEqual(payload.scope, {
+    filter: { from: '2027-01-01', to: '2027-01-31', accountId: 'acc-1', campaignId: 'camp-1', level: 'campaign' },
+    source: 'reportDataset', definitionVersions: { ads: 'v1' },
+  });
+  assert.equal(payload.period_start, '2027-01-01');
+  assert.equal(payload.period_end, '2027-01-31');
+  assert.equal(payload.data.metrics.spend, 100);
+  assert.deepEqual(payload.data.rows, [{ id: 'r1', spend: 100 }], 'rows phải đi vào data.rows');
+  const item = Store._rowToItem('reportSnapshots', {
+    id: 'snap-1', name: 'Báo cáo tháng 1', scope: payload.scope,
+    period_start: payload.period_start, period_end: payload.period_end,
+    data: payload.data, generated_at: '2027-02-01T00:00:00Z',
+  });
+  assert.deepEqual(item.filter, payload.scope.filter);
+  assert.equal(item.periodStart, '2027-01-01');
+  assert.equal(item.periodEnd, '2027-01-31');
+  assert.deepEqual(item.definitionVersions, { ads: 'v1' });
 });
 
 test('isLabelField: chỉ khớp trường kết thúc bằng Label', () => {

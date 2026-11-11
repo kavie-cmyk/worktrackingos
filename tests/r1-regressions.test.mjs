@@ -424,13 +424,17 @@ test('QA19 [unit]: lifetimeLatestByObject — A:100→150, B:200→250; tổng l
 // QA20 [unit] — thiếu dữ liệu → null; CSV giữ ô trống + cột trạng thái thiếu (R22)
 // ---------------------------------------------------------------------------
 test('QA20 [unit]: aggregateRates với conversionValue=null → ROAS null (không 0); spend/impressions thiếu → null', () => {
+  // R2-21: aggregateRates trả { byCurrency, mixed } — dòng không có currency vào bucket __unknown.
   const r = domain.aggregateRates([{ spend: 100, impressions: 1000, clicks: 50, results: 10, conversionValue: null }]);
-  assert.equal(r.roas, null);
-  assert.equal(r.totals.conversionValue, null);
-  assert.equal(r.ctr, 50 / 1000, 'tỷ lệ khác vẫn tính được từ tổng tử/mẫu');
+  const b = r.byCurrency.__unknown;
+  assert.ok(b, 'dòng thiếu currency phải vào bucket __unknown, không gán bừa VND');
+  assert.equal(b.roas, null);
+  assert.equal(b.totals.conversionValue, null);
+  assert.equal(b.ctr, 50 / 1000, 'tỷ lệ khác vẫn tính được từ tổng tử/mẫu');
+  assert.equal(r.mixed, false);
   const empty = domain.aggregateRates([]);
-  assert.equal(empty.roas, null);
-  assert.equal(empty.ctr, null);
+  assert.deepEqual(empty.byCurrency, {});
+  assert.equal(empty.mixed, false);
 });
 
 test('QA20 [unit]: buildCsv — null thành ô trống (không ||0) và có cột missing_status', () => {
