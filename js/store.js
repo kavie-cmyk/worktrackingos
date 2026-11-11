@@ -53,9 +53,9 @@
   var ROLE_LABELS = { owner: 'Owner', lead: 'Lead', member: 'Member', ceo: 'CEO' };
 
   var COLLECTIONS = ['members', 'businessUnits', 'campaigns', 'phases', 'activities', 'tasks', 'dependencies',
-    'blockers', 'contentItems', 'variants', 'publishJobs', 'brandPages', 'brandAssets', 'assetVersions', 'approvals',
+    'blockers', 'contentItems', 'variants', 'contentRevisions', 'publishJobs', 'brandPages', 'brandAssets', 'assetVersions', 'approvals',
     'channelAccounts', 'externalPosts', 'metricObservations', 'budgetLines', 'commitments', 'actuals',
-    'kpis', 'measurements', 'adAccounts', 'adCampaigns', 'adSets', 'ads', 'adChangeRequests', 'marketingRequests',
+    'kpis', 'measurements', 'adAccounts', 'adCampaigns', 'adSets', 'ads', 'adInsights', 'adChangeRequests', 'marketingRequests',
     'reportSnapshots', 'manualMetricEntries', 'comments'];
 
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -424,11 +424,13 @@
     _loadWorkspaceData: function () {
       var self = this;
       var jobs = COLLECTIONS.filter(function (c) {
-        return c !== 'members' && c !== 'businessUnits' && c !== 'approvals' && c !== 'manualMetricEntries';
+        return c !== 'members' && c !== 'businessUnits' && c !== 'approvals' && c !== 'manualMetricEntries'
+          && c !== 'contentRevisions' && c !== 'adInsights';
       }).map(function (c) { return self._loadCollection(c); });
       jobs.push(self._loadMembers());
       jobs.push(self._loadBusinessUnits());
       jobs.push(self._loadApprovals());
+      jobs.push(self._loadContentRevisions());
       return Promise.all(jobs).then(function () { return self._loadDerivedMerges(); });
     },
     _refreshCollections: function (names) {
@@ -437,11 +439,54 @@
         if (n === 'members') return self._loadMembers();
         if (n === 'businessUnits') return self._loadBusinessUnits();
         if (n === 'approvals') return self._loadApprovals();
+        if (n === 'contentRevisions') return self._loadContentRevisions();
+        if (n === 'adInsights') return Promise.resolve(); // nạp ở _loadDerivedMerges ngay sau đây
         return self._loadCollection(n);
       })).then(function () { return self._loadDerivedMerges(); }).then(function () { self.notify(); });
     },
+    /** R2-15c — map 1 dòng content_revisions → item cho UI duyệt (chế độ supabase). */
+    _mapRevisionRow: function (row) {
+      return {
+        id: row.id, workspaceId: row.workspace_id || null,
+        variantId: row.variant_id, revisionNo: row.revision_no, revision_no: row.revision_no,
+        caption: row.caption != null ? row.caption : null,
+        mediaAssetIds: row.media_asset_ids || [], media_asset_ids: row.media_asset_ids || [],
+        linkUrl: row.link_url || null, visibility: row.visibility || null,
+        snapshot: row.snapshot || {}, changeNote: row.change_note || null,
+        createdBy: row.created_by || null, createdAt: row.created_at, updatedAt: row.updated_at || row.created_at
+      };
+    },
+    /** R2-20 — map 1 dòng ads_insights → item camelCase ĐẦY ĐỦ grain (giữ nguyên mọi hàng). */
+    _mapAdInsightRow: function (row) {
+      function num(v) { return v != null ? Number(v) : null; }
+      return {
+        id: row.id, workspaceId: row.workspace_id || null,
+        objectType: row.object_type, objectId: row.object_id,
+        periodStart: row.period_start || null, periodEnd: row.period_end || null,
+        observedAt: row.observed_at || null, currency: row.currency || null,
+        dimensions: row.dimensions || {},
+        spend: num(row.spend), impressions: num(row.impressions), clicks: num(row.clicks),
+        reach: num(row.reach), results: num(row.results), resultType: row.result_type || null,
+        conversionValue: num(row.conversion_value),
+        syncRunId: row.sync_run_id || null, createdAt: row.created_at || null
+      };
+    },
+    _setContentRevisions: function (rows) {
+      this.state.contentRevisions = (rows || []).map(function (r) { return this._mapRevisionRow(r); }.bind(this));
+      return this.state.contentRevisions;
+    },
+    _loadContentRevisions: function () {
+      var self = this;
+      this._setLoadState('contentRevisions', 'loading', null);
+      return this._fetchWorkspaceTable('content_revisions').then(function (rows) {
+        self._setContentRevisions(rows);
+        self._setLoadState('contentRevisions', rows.length ? 'ready' : 'empty', null);
+      }).catch(function (err) { self._loadFailed('contentRevisions', err); });
+    },
     _loadCollection: function (collection) {
       var self = this;
+      if (collection === 'contentRevisions') return this._loadContentRevisions();
+      if (collection === 'adInsights') { if (!this.state.adInsights) this.state.adInsights = []; return Promise.resolve(); }
       var table = Core ? Core.COLLECTION_TO_TABLE[collection] : null;
       if (!table) { this.state[collection] = []; return Promise.resolve(); }
       this._setLoadState(collection, 'loading', null);
@@ -498,12 +543,14 @@
         this._fetchWorkspaceTable('content_revisions')
       ]).then(function (results) {
         var steps = results[0], decisions = results[1], revisions = results[2];
-        var revNoById = {}; var revNoByVariant = {}; var revIdByVariant = {};
+        var revNoById = {}; var revNoByVariant = {}; var revIdByVariant = {}; var revCreatedByVariant = {};
         revisions.forEach(function (r) {
           revNoById[r.id] = r.revision_no; revIdByVariant[r.variant_id] = (!revIdByVariant[r.variant_id] || r.revision_no > (revNoById[revIdByVariant[r.variant_id]] || 0)) ? r.id : revIdByVariant[r.variant_id];
-          if (!revNoByVariant[r.variant_id] || r.revision_no > revNoByVariant[r.variant_id]) revNoByVariant[r.variant_id] = r.revision_no;
+          if (!revNoByVariant[r.variant_id] || r.revision_no > revNoByVariant[r.variant_id]) { revNoByVariant[r.variant_id] = r.revision_no; revCreatedByVariant[r.variant_id] = r.created_by || null; }
         });
         self._revisionByVariant = revNoByVariant;
+        // R2-15c: phơi content_revisions thành collection để UI duyệt đọc snapshot ở chế độ supabase.
+        self._setContentRevisions(revisions);
         var stepIds = {};
         var items = steps.map(function (s) {
           stepIds[s.id] = true;
@@ -511,7 +558,10 @@
             id: s.id, _kind: 'step', variantId: s.variant_id, contentItemId: s.content_item_id, campaignId: s.campaign_id,
             revision: revNoByVariant[s.variant_id] || 1,
             status: s.status, statusLabel: s.status,
-            requestedBy: s.approver_id, requestedAt: s.created_at,
+            // R2-30.6: approver_id là NGƯỜI ĐƯỢC GIAO DUYỆT (approverId), KHÔNG phải người gửi.
+            // requestedBy = người tạo yêu cầu: created_by của step, fallback created_by của revision mới nhất của variant.
+            approverId: s.approver_id || null, approverRole: s.approver_role || null, stepOrder: s.step_order != null ? s.step_order : null,
+            requestedBy: s.created_by || revCreatedByVariant[s.variant_id] || null, requestedAt: s.created_at,
             decidedBy: null, note: s.name || '', createdAt: s.created_at, updatedAt: s.updated_at
           };
         });
@@ -530,7 +580,7 @@
             id: d.id, _kind: 'decision', variantId: d.variant_id, contentItemId: null,
             revision: revNoById[d.revision_id] || 1,
             status: d.decision, statusLabel: d.decision,
-            requestedBy: null, requestedAt: d.created_at,
+            approverId: null, requestedBy: null, requestedAt: d.created_at,
             decidedBy: d.decided_by, decidedAt: d.decided_at, note: d.comment || '',
             createdAt: d.created_at, updatedAt: d.created_at
           });
@@ -557,6 +607,7 @@
         var revMax = {};
         res[0].forEach(function (r) { if (!revMax[r.variant_id] || r.revision_no > revMax[r.variant_id]) revMax[r.variant_id] = r.revision_no; });
         self._revisionByVariant = revMax;
+        self._setContentRevisions(res[0]);
         var scripts = {};
         res[1].forEach(function (s) { scripts[s.variant_id] = s; });
         (self.state.variants || []).forEach(function (v) {
@@ -566,8 +617,12 @@
           var sc = scripts[v.id];
           if (sc) {
             v.hook = sc.hook || ''; v.cta = sc.cta || '';
+            // R2-14c: hashtags từ script row (mảng → chuỗi '#a #b' như form hiển thị).
+            if (Array.isArray(sc.hashtags)) v.hashtags = sc.hashtags.map(function (h) { return '#' + String(h).replace(/^#/, ''); }).join(' ');
+            else if (sc.hashtags != null) v.hashtags = String(sc.hashtags);
+            // R2-14c: scenes giữ hook/cta TỪNG CẢNH (trước đây bị rơi).
             v.scriptScenes = (sc.scenes || []).map(function (s) {
-              return { shot: s.shot, visual: s.visual, dialogue: s.dialogue, onScreenText: s.on_screen_text != null ? s.on_screen_text : s.onScreenText, durationSec: s.duration_sec != null ? s.duration_sec : s.durationSec };
+              return { shot: s.shot, hook: s.hook != null ? s.hook : null, visual: s.visual, dialogue: s.dialogue, onScreenText: s.on_screen_text != null ? s.on_screen_text : s.onScreenText, durationSec: s.duration_sec != null ? s.duration_sec : s.durationSec, cta: s.cta != null ? s.cta : null };
             });
             if (sc.external_url && !v.externalUrl) v.externalUrl = sc.external_url;
           } else if (v.platform === 'tiktok' && !v.scriptScenes) v.scriptScenes = [];
@@ -608,14 +663,31 @@
           if (m) { k.source = m.source || 'manual'; k.updatedAt = m.measured_at; }
         });
       }).catch(function (err) { self._loadFailed('kpis', err); }));
-      // Ads: số liệu từ ads_insights theo external_id của từng cấp
+      // Ads: số liệu từ ads_insights theo external_id của từng cấp.
+      // R2-20: state.adInsights giữ NGUYÊN MỌI hàng (đủ grain: kỳ/account/object/
+      // currency/dimensions/observedAt) cho báo cáo lọc theo kỳ — KHÔNG còn cơ chế
+      // byKey chỉ giữ 1 hàng mới nhất cho mục đích báo cáo. Phần merge vào cây ads
+      // bên dưới CHỈ phục vụ hiển thị cây: ưu tiên hàng lifetime mới nhất đúng
+      // object (đánh dấu lifetime trong dimensions hoặc không có kỳ), không có
+      // hàng lifetime thì lấy hàng observed_at mới nhất của đúng object đó.
       jobs.push(this._fetchWorkspaceTable('ads_insights').then(function (rows) {
-        var byKey = {};
-        rows.slice().sort(function (a, b) { return String(a.observed_at).localeCompare(String(b.observed_at)); })
-          .forEach(function (r) { byKey[r.object_type + ':' + r.object_id] = r; });
+        self.state.adInsights = rows.map(function (r) { return self._mapAdInsightRow(r); });
+        function isLifetime(r) {
+          var d = r.dimensions || {};
+          if (d.grain === 'lifetime' || d.period_grain === 'lifetime' || d.periodGrain === 'lifetime' || d.scope === 'lifetime') return true;
+          return r.period_start == null && r.period_end == null;
+        }
+        var sorted = rows.slice().sort(function (a, b) { return String(a.observed_at).localeCompare(String(b.observed_at)); });
+        var byKey = {}; var byKeyLifetime = {};
+        sorted.forEach(function (r) {
+          var k = r.object_type + ':' + r.object_id;
+          byKey[k] = r;
+          if (isLifetime(r)) byKeyLifetime[k] = r;
+        });
+        function pick(type, externalId) { var k = type + ':' + externalId; return byKeyLifetime[k] || byKey[k] || null; }
         function merge(list, type) {
           (list || []).forEach(function (x) {
-            var ins = byKey[type + ':' + x.externalId];
+            var ins = pick(type, x.externalId);
             if (!ins) return;
             x.spend = ins.spend != null ? Number(ins.spend) : null;
             x.impressions = ins.impressions != null ? Number(ins.impressions) : null;
@@ -741,13 +813,27 @@
           if (prMap[row.priority]) item.priority = prMap[row.priority];
           break;
         }
+        case 'contentRevisions': {
+          item.revisionNo = row.revision_no;
+          item.snapshot = row.snapshot || {};
+          break;
+        }
         case 'reportSnapshots': {
           var d = row.data || {};
+          var sc = row.scope || {};
           item.title = row.name;
           item.frozenAt = row.generated_at;
           item.status = d.status || 'Đã chốt';
           item.summary = d.summary || '';
           item.metrics = d.metrics || {};
+          if (d.rows !== undefined) item.rows = d.rows;
+          // R2-22: khôi phục scope đã lưu — filter + kỳ + phiên bản định nghĩa.
+          item.scope = sc;
+          item.filter = sc.filter || null;
+          item.periodStart = row.period_start || null;
+          item.periodEnd = row.period_end || null;
+          item.definitionVersions = sc.definitionVersions || row.definition_versions || {};
+          if (sc.source) item.source = sc.source;
           break;
         }
         case 'adAccounts': {
@@ -773,6 +859,101 @@
         }
       }
       return item;
+    },
+    // ======================================================================
+    // R2-14/R2-15 — TikTok script: builder DÙNG CHUNG create/update/revision.
+    // ======================================================================
+    /** Hashtag: chuỗi '#a #b' → ['a','b']; mảng → giữ nguyên (bản sao). */
+    _parseHashtags: function (value) {
+      if (Array.isArray(value)) return value.slice();
+      if (value == null || value === '') return [];
+      return String(value).split(/[\s,]+/).map(function (h) { return h.replace(/^#+/, '').trim(); }).filter(Boolean);
+    },
+    /** Hashtag chuẩn hoá để SO SÁNH (bỏ '#', bỏ trống) — chuỗi và mảng tương đương nhau. */
+    _hashtagList: function (value) {
+      if (Array.isArray(value)) return value.map(function (h) { return String(h).replace(/^#+/, '').trim(); }).filter(Boolean);
+      return this._parseHashtags(value);
+    },
+    /** Scenes → dạng snake ĐẦY ĐỦ {shot, hook, visual, dialogue, on_screen_text, duration_sec, cta}. */
+    _normalizeScriptScenes: function (scenes) {
+      return (Array.isArray(scenes) ? scenes : []).map(function (s) {
+        s = s || {};
+        return {
+          shot: s.shot != null ? s.shot : null,
+          hook: s.hook != null ? s.hook : null,
+          visual: s.visual != null ? s.visual : null,
+          dialogue: s.dialogue != null ? s.dialogue : null,
+          on_screen_text: s.on_screen_text != null ? s.on_screen_text : (s.onScreenText != null ? s.onScreenText : null),
+          duration_sec: s.duration_sec != null ? s.duration_sec : (s.durationSec != null ? s.durationSec : null),
+          cta: s.cta != null ? s.cta : null
+        };
+      });
+    },
+    /** Scenes cho snapshot: giữ cả khóa snake lẫn camel để mọi bề mặt đọc đều đủ hook/cta/onScreenText/durationSec. */
+    _snapshotScenes: function (scenes) {
+      return this._normalizeScriptScenes(scenes).map(function (s) {
+        return {
+          shot: s.shot, hook: s.hook, visual: s.visual, dialogue: s.dialogue,
+          on_screen_text: s.on_screen_text, onScreenText: s.on_screen_text,
+          duration_sec: s.duration_sec, durationSec: s.duration_sec, cta: s.cta
+        };
+      });
+    },
+    /**
+     * Builder payload tiktok_scripts dùng chung (create ở _createRemote,
+     * update ở _updateVariantRemote). source là object đã gộp variant+patch.
+     */
+    _tiktokScriptPayload: function (variantId, source) {
+      source = source || {};
+      var payload = {
+        variant_id: variantId,
+        hook: source.hook != null ? source.hook : null,
+        cta: source.cta != null ? source.cta : null,
+        caption: source.caption != null ? source.caption : null,
+        hashtags: this._parseHashtags(source.hashtags),
+        scenes: this._normalizeScriptScenes(source.scriptScenes != null ? source.scriptScenes : source.scenes),
+        external_url: source.externalUrl != null ? source.externalUrl : (source.external_url != null ? source.external_url : null)
+      };
+      if (this.workspaceId) payload.workspace_id = this.workspaceId;
+      return payload;
+    },
+    /**
+     * R2-15b — Snapshot ĐÓNG BĂNG của 1 revision: toàn bộ nội dung được duyệt.
+     * Hash tính trên toàn bộ snapshot (trước khi gắn field hash).
+     * Gồm cả khóa camel (scriptScenes/mediaUrl…) làm alias đọc cho UI hiện hành.
+     */
+    _buildRevisionSnapshot: function (v, patch) {
+      v = v || {}; patch = patch || {};
+      function pick(camel, snake, fallback) {
+        if (patch[camel] !== undefined) return patch[camel];
+        if (snake && patch[snake] !== undefined) return patch[snake];
+        if (v[camel] !== undefined && v[camel] !== null) return v[camel];
+        return fallback;
+      }
+      var media = pick('mediaAssetIds', 'media_asset_ids', []);
+      var scenesRaw = patch.scriptScenes !== undefined ? patch.scriptScenes
+        : (patch.scenes !== undefined ? patch.scenes : (v.scriptScenes !== undefined ? v.scriptScenes : (v.scenes || [])));
+      var scenes = this._snapshotScenes(scenesRaw);
+      var linkUrl = pick('linkUrl', 'link_url', null);
+      var mediaUrl = patch.mediaUrl !== undefined ? patch.mediaUrl : (v.mediaUrl != null ? v.mediaUrl : null);
+      var snapshot = {
+        caption: pick('caption', null, null),
+        media_asset_ids: Array.isArray(media) ? media.slice() : media,
+        link_url: linkUrl,
+        visibility: pick('visibility', null, 'public'),
+        hook: pick('hook', null, null),
+        cta: pick('cta', null, null),
+        script: pick('script', null, null),
+        hashtags: pick('hashtags', null, null),
+        script_scenes: scenes,
+        media_url: mediaUrl,
+        mediaAssetIds: Array.isArray(media) ? media.slice() : media,
+        linkUrl: linkUrl,
+        scriptScenes: scenes,
+        mediaUrl: mediaUrl
+      };
+      snapshot.hash = Core ? Core.stableHash(snapshot) : null;
+      return snapshot;
     },
     /** object frontend → payload snake_case (qua store-core + adapter riêng). */
     _toPayload: function (collection, obj, options) {
@@ -881,8 +1062,34 @@
           if (options.forInsert && !payload.source) payload.source = 'manual';
           break;
         }
+        case 'actuals':
+        case 'commitments': {
+          // R2-10: currency KẾ THỪA dòng ngân sách — resolve được dòng theo
+          // budgetLineId thì ép payload.currency = currency của dòng (chặn cuối
+          // phía client, kể cả khi form gửi currency khác). Không resolve được:
+          // commitment giữ currency object gửi; actual để DB default (bỏ currency).
+          var lineId = obj.budgetLineId || obj.budget_line_id
+            || (options.currentItem && (options.currentItem.budgetLineId || options.currentItem.budget_line_id)) || null;
+          var line = lineId ? ((this.state && this.state.budgetLines) || []).find(function (b) { return b.id === lineId; }) : null;
+          if (line && line.currency) payload.currency = line.currency;
+          else if (collection === 'actuals') delete payload.currency;
+          break;
+        }
         case 'reportSnapshots': {
+          // R2-22: snapshot lưu CẢ scope (filter + nguồn + phiên bản định nghĩa) và kỳ.
+          var f = obj.filter || {};
+          var snapFilter = {
+            from: f.from || obj.periodStart || null,
+            to: f.to || obj.periodEnd || null,
+            accountId: f.accountId || null,
+            campaignId: f.campaignId || null,
+            level: f.level || null
+          };
+          payload.scope = { filter: snapFilter, source: 'reportDataset', definitionVersions: obj.definitionVersions || {} };
+          payload.period_start = snapFilter.from;
+          payload.period_end = snapFilter.to;
           payload.data = { metrics: obj.metrics || {}, summary: obj.summary || '', status: obj.status || 'Đã chốt' };
+          if (obj.rows !== undefined) payload.data.rows = obj.rows;
           if (!payload.report_type) payload.report_type = 'custom';
           if (obj.frozenAt) payload.generated_at = obj.frozenAt;
           break;
@@ -1222,6 +1429,18 @@
               storage_bucket: payload.storage_bucket || null, storage_path: payload.storage_path || null,
               external_url: payload.external_url || null, change_note: 'Phiên bản đầu tiên', created_by: self.currentUserId
             })).then(function (r) { if (r.ok) item.version = 1; return r; });
+          } else if (collection === 'variants' && (String(obj.platform || item.platform || '').toLowerCase() === 'tiktok'
+              || obj.hook !== undefined || obj.scriptScenes !== undefined || obj.scenes !== undefined || obj.hashtags !== undefined)) {
+            // R2-14a: variant TikTok (hoặc có hook/scenes/hashtags) → tạo kèm
+            // tiktok_scripts bằng builder chung. Lỗi bước phụ → partial rõ ràng
+            // {ok:false, partial:true, failedStep:'tiktok_scripts.insert', item}
+            // qua cơ chế secondary chung bên dưới.
+            var scriptSource = Object.assign({}, obj, {
+              caption: obj.caption !== undefined ? obj.caption : (item.caption || null),
+              externalUrl: obj.externalUrl !== undefined ? obj.externalUrl : (item.externalUrl || null)
+            });
+            secondary = self._attempt('tiktok_scripts.insert', self.supabaseClient.from('tiktok_scripts')
+              .insert(self._tiktokScriptPayload(main.data.id, scriptSource)));
           }
           if (!secondary) { self.notify(); return { ok: true, item: item }; }
           return secondary.then(function (r) {
@@ -1282,10 +1501,15 @@
     },
     _createApprovalStep: function (obj) {
       var self = this;
+      // R2-30.6: approver_id lấy từ reviewer của variant (variant.reviewerId)
+      // khi có — trước đây luôn null nên "Chờ mình duyệt" không lọc đúng người.
+      var stepVariant = obj.variantId ? this.get('variants', obj.variantId) : null;
       var payload = {
         workspace_id: this.workspaceId,
         variant_id: obj.variantId || null, content_item_id: obj.contentItemId || null, campaign_id: obj.campaignId || null,
-        name: obj.note || 'Yêu cầu duyệt nội dung', approver_id: null, status: 'pending'
+        name: obj.note || 'Yêu cầu duyệt nội dung',
+        approver_id: obj.approverId || obj.reviewerId || (stepVariant && stepVariant.reviewerId) || null,
+        status: 'pending'
       };
       return this._attempt('approval_steps.insert', this.supabaseClient.from('approval_steps').insert(payload).select().single())
         .then(function (res) {
@@ -1383,16 +1607,23 @@
           });
         }
         if (collection === 'brandAssets') {
-          // R17: sửa NỘI DUNG asset (đường dẫn/url/tên…) → asset_versions mới.
-          var contentKeys = ['name', 'storagePath', 'storage_path', 'externalUrl', 'external_url', 'mimeType', 'sizeBytes'];
+          // R17 + R2-17: sửa NỘI DUNG asset (đường dẫn/url/tên…) → asset_versions mới.
+          // contentKeys có cả 'url'/'fileUrl' (tên form gửi); external_url của
+          // version lấy từ _toPayload của patch (gồm alias url→external_url do
+          // store-core cung cấp; patch.externalUrl cũng chấp nhận).
+          var contentKeys = ['name', 'storagePath', 'storage_path', 'externalUrl', 'external_url', 'url', 'fileUrl', 'mimeType', 'sizeBytes'];
           var touchesContent = contentKeys.some(function (k) { return patch[k] !== undefined; });
           if (touchesContent) {
             var nextVer = (item.version || 0) + 1;
+            var assetPayload = self._toPayload('brandAssets', patch, {});
+            var versionExternalUrl = assetPayload.external_url !== undefined && assetPayload.external_url !== null
+              ? assetPayload.external_url
+              : (patch.externalUrl || patch.url || patch.fileUrl || item.externalUrl || item.url || null);
             return self._attempt('asset_versions.insert', self.supabaseClient.from('asset_versions').insert({
               workspace_id: self.workspaceId, asset_id: id, version_no: nextVer,
-              storage_bucket: patch.storageBucket || item.storageBucket || null,
-              storage_path: patch.storagePath || item.storagePath || null,
-              external_url: patch.externalUrl || item.externalUrl || null,
+              storage_bucket: assetPayload.storage_bucket || patch.storageBucket || item.storageBucket || null,
+              storage_path: assetPayload.storage_path || patch.storagePath || item.storagePath || null,
+              external_url: versionExternalUrl,
               change_note: patch.changeNote || 'Cập nhật nội dung', created_by: self.currentUserId
             })).then(function (m) {
               if (!m.ok) return { ok: false, partial: true, failedStep: m.failedStep, error: m.error, item: fresh };
@@ -1641,10 +1872,12 @@
       if (contentChanged) {
         v.revision = (v.revision || 1) + 1;
         v.currentRevisionId = uid('revision');
+        // R2-15b (demo): snapshot đóng băng TOÀN BỘ nội dung sau sửa — dùng
+        // chung _buildRevisionSnapshot với đường remote, hash trên toàn bộ.
         v.currentRevision = {
           id: v.currentRevisionId, revisionNo: v.revision,
           caption: v.caption || null, mediaAssetIds: v.mediaAssetIds || [],
-          snapshot: { caption: v.caption || null, media_asset_ids: v.mediaAssetIds || [] }
+          snapshot: this._buildRevisionSnapshot(v, {})
         };
         if (!this.state.contentRevisions) this.state.contentRevisions = [];
         this.state.contentRevisions.push(Object.assign({ variantId: id }, v.currentRevision));
@@ -1674,10 +1907,22 @@
     },
     _variantContentChanged: function (v, patch) {
       if (!patch) return false;
-      if (patch.caption !== undefined && patch.caption !== v.caption) return true;
+      // R2-15a: tập field NỘI DUNG đầy đủ — caption, mediaAssetIds, linkUrl,
+      // visibility + hook, cta, script, hashtags, mediaUrl, scriptScenes.
+      // Chuỗi chuẩn hoá null/'' tương đương để patch "gửi kèm không đổi" của
+      // form không tạo revision giả; hashtags/scenes so sau chuẩn hoá.
+      function str(x) { return x == null ? '' : String(x); }
+      if (patch.caption !== undefined && str(patch.caption) !== str(v.caption)) return true;
       if (patch.mediaAssetIds !== undefined && JSON.stringify(patch.mediaAssetIds || []) !== JSON.stringify(v.mediaAssetIds || [])) return true;
-      if (patch.linkUrl !== undefined && patch.linkUrl !== v.linkUrl) return true;
-      if (patch.visibility !== undefined && patch.visibility !== v.visibility) return true;
+      if (patch.linkUrl !== undefined && str(patch.linkUrl) !== str(v.linkUrl)) return true;
+      if (patch.visibility !== undefined && patch.visibility !== (v.visibility || 'public')) return true;
+      if (patch.hook !== undefined && str(patch.hook) !== str(v.hook)) return true;
+      if (patch.cta !== undefined && str(patch.cta) !== str(v.cta)) return true;
+      if (patch.script !== undefined && str(patch.script) !== str(v.script)) return true;
+      if (patch.hashtags !== undefined && JSON.stringify(this._hashtagList(patch.hashtags)) !== JSON.stringify(this._hashtagList(v.hashtags))) return true;
+      if (patch.mediaUrl !== undefined && str(patch.mediaUrl) !== str(v.mediaUrl)) return true;
+      var scenesPatch = patch.scriptScenes !== undefined ? patch.scriptScenes : patch.scenes;
+      if (scenesPatch !== undefined && JSON.stringify(this._normalizeScriptScenes(scenesPatch)) !== JSON.stringify(this._normalizeScriptScenes(v.scriptScenes || v.scenes || []))) return true;
       return false;
     },
     _updateVariantRemote: function (id, patch) {
@@ -1688,19 +1933,18 @@
       if (guard) return Promise.resolve(guard);
       var contentChanged = this._variantContentChanged(v, patch);
       var wasApproved = v.approvalStatus === 'approved';
+      // R2-14b: dùng builder chung _tiktokScriptPayload — patch CHỈ đổi
+      // hashtags hoặc caption của variant TikTok cũng phải upsert script;
+      // source là variant hiện tại gộp patch (field không sửa giữ giá trị cũ,
+      // scenes giữ đủ hook/cta từng cảnh + hashtags không bị rơi).
       var tiktokPatch = null;
-      if (v.platform === 'tiktok' && (patch.hook !== undefined || patch.cta !== undefined || patch.scriptScenes !== undefined || patch.externalUrl !== undefined)) {
-        tiktokPatch = {
-          workspace_id: this.workspaceId, variant_id: id,
-          hook: patch.hook != null ? patch.hook : (v.hook || null),
-          cta: patch.cta != null ? patch.cta : (v.cta || null),
-          scenes: (patch.scriptScenes || v.scriptScenes || []).map(function (sc) {
-            return { shot: sc.shot, visual: sc.visual, dialogue: sc.dialogue, on_screen_text: sc.onScreenText, duration_sec: sc.durationSec };
-          }),
-          caption: patch.caption != null ? patch.caption : (v.caption || null),
-          external_url: patch.externalUrl != null ? patch.externalUrl : (v.externalUrl || null),
-          updated_at: new Date().toISOString()
-        };
+      var isTiktokVariant = String(v.platform || patch.platform || '').toLowerCase() === 'tiktok';
+      var hasScriptField = patch.hook !== undefined || patch.cta !== undefined || patch.scriptScenes !== undefined
+        || patch.scenes !== undefined || patch.hashtags !== undefined || patch.externalUrl !== undefined || patch.script !== undefined
+        || (isTiktokVariant && patch.caption !== undefined);
+      if ((isTiktokVariant || patch.hook !== undefined || patch.hashtags !== undefined || patch.scriptScenes !== undefined || patch.scenes !== undefined) && hasScriptField) {
+        tiktokPatch = this._tiktokScriptPayload(id, Object.assign({}, v, patch));
+        tiktokPatch.updated_at = new Date().toISOString();
       }
       // R27: nội dung đổi → tạo revision MỚI trước, rồi mới update variant +
       // current_revision_id. Revision insert lỗi → DỪNG, không update variant.
@@ -1739,12 +1983,9 @@
       if (!v.currentRevisionId && !v.approvedRevisionId) nextNo = v.revision || 1;
       var caption = patch.caption !== undefined ? patch.caption : (v.caption || null);
       var media = patch.mediaAssetIds !== undefined ? patch.mediaAssetIds : (v.mediaAssetIds || []);
-      var snapshot = {
-        caption: caption, media_asset_ids: media,
-        link_url: patch.linkUrl !== undefined ? patch.linkUrl : (v.linkUrl || null),
-        visibility: patch.visibility !== undefined ? patch.visibility : (v.visibility || 'public')
-      };
-      snapshot.hash = Core ? Core.stableHash(snapshot) : null;
+      // R2-15b: snapshot đóng băng toàn bộ nội dung (kể cả hook/cta/script/
+      // hashtags/script_scenes/media_url) — hash trên toàn bộ snapshot.
+      var snapshot = this._buildRevisionSnapshot(v, patch);
       return this._attempt('content_revisions.insert', this.supabaseClient.from('content_revisions').insert({
         workspace_id: this.workspaceId, variant_id: v.id, revision_no: nextNo,
         caption: caption, media_asset_ids: media,
