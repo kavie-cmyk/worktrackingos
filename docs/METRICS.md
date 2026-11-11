@@ -80,13 +80,33 @@ tính đang dùng** ngay cạnh con số:
   được tính trùng: task có con thì chính nó không tham gia tử/mẫu (tránh
   đếm 2 lần cùng một việc). Không có leaf task hợp lệ → "Chưa có dữ liệu",
   không hiển thị 0%.
-- **Ngân sách còn lại** của một dòng ngân sách:
-  `approved − Σ actual − Σ cam kết còn mở`, trong đó cam kết còn mở chỉ tính
-  phần **chưa** chuyển thành actual
-  (`amount − Σ actuals có commitment_id = cam kết đó`). Đây là đúng công
-  thức của hàm `budget_remaining(budget_line_id)` trong
-  `supabase/migrations/0003_functions.sql` — hiển thị phải dùng cùng công
-  thức, không tự tính lại kiểu khác. Kết quả âm = vượt ngân sách, giữ số âm.
+- **Ngân sách còn lại** của một dòng ngân sách (semantic CHỐT vòng R1,
+  khớp `budget_remaining()` ở `supabase/migrations/0005_data_contracts.sql`
+  và `budgetRemaining()` ở `js/domain.js` — JS/SQL/export dùng đúng 1 quy tắc):
+  `remaining = approved − Σ actuals − Σ (commitment.amount − commitment.settled_amount)`
+  với tổng cam kết chỉ gồm cam kết **còn mở** (status `planned` / `committed` /
+  `partially_actualised`; phía frontend alias `open` / `partial` tương ứng).
+  `settled_amount` là phần cam kết đã thanh toán/đối soát, ghi trực tiếp trên
+  commitment (nguồn sự thật — không suy từ actuals nữa; khi đọc dữ liệu cũ
+  chưa có `settled_amount`, JS mới fallback sang Σ actuals gắn commitment đó).
+  Cam kết `settled` / `released` / `cancelled` **không** trừ phần chưa settle
+  (coi như đã giải phóng ngân sách); phần đã trả của chúng nằm trong Σ actuals.
+  Kết quả âm = vượt ngân sách, giữ số âm.
+
+  **Fixture đối chiếu QA23 (JS + SQL + export phải ra cùng một số):**
+
+  | Hạng mục | Giá trị |
+  |---|---|
+  | approved | 1.000.000 |
+  | C-open (committed, amount 250.000, settled_amount 0) | trừ 250.000 |
+  | C-partial (partially_actualised, amount 300.000, settled_amount 200.000) | trừ 100.000 |
+  | C-settled (settled, amount 150.000, settled_amount 150.000) | trừ 0 |
+  | C-cancelled (cancelled, amount 80.000, settled_amount 0) | trừ 0 |
+  | Actuals: 200.000 (gắn C-partial) + 150.000 (gắn C-settled) + 100.000 (không gắn) | trừ 450.000 |
+  | **remaining** | **200.000** |
+
+  Regression: `QA23` trong `tests/r1-regressions.test.mjs` (tầng unit) dùng
+  đúng bộ số này.
 - Chi ads đồng bộ về (`budget_actuals.ad_spend_source_id`) phải đối chiếu
   với `ads_insights` theo nguồn đó để không cộng trùng chi quảng cáo hai lần
   trong cùng một báo cáo.
@@ -98,3 +118,24 @@ tính đang dùng** ngay cạnh con số:
   không làm đổi snapshot. Muốn số mới → tạo snapshot mới.
 - Khi một chỉ số ghi "Không tính được", phải ghi lý do thuộc loại nào:
   chưa kết nối kênh, nền tảng không trả, hay mẫu số bằng 0.
+
+## 7. Bổ sung vòng R1 (11/11/2026)
+
+- **Lifetime theo object (R23/QA19):** khi tổng hợp lifetime của nhiều bài,
+  lấy latest theo từng `object + metric + scope + definition_version` trước
+  (`lifetimeLatestByObject` ở `js/domain.js`), rồi mới cộng các latest đó —
+  và chỉ cộng khi cùng metric/scope/definition/currency
+  (`sumLifetimeLatest`; khác định nghĩa → `null`). Ví dụ kiểm chứng:
+  A: 100 → 150, B: 200 → 250 ⇒ latest A=150, B=250, tổng = 400 (không phải
+  700 nếu cộng mọi snapshot, không phải 250 nếu lấy 1 bài đại diện).
+- **Thiếu dữ liệu (R22/QA20):** `aggregateRates` — trường nào thiếu
+  (null) ở bất kỳ dòng nào thì tổng trường đó = `null` và tỷ lệ phụ thuộc
+  trả `null` (ví dụ `conversionValue = null` ⇒ ROAS `null`, không phải 0).
+  Export CSV (`buildCsv` ở `js/domain.js`): giá trị thiếu = **ô trống**,
+  kèm cột cuối `missing_status` liệt kê cột thiếu của dòng (`đầy đủ` nếu đủ);
+  số 0 thật vẫn xuất `0`.
+- **Workload (R25/QA22):** chỉ tính **leaf tasks**; effort phân bổ theo ngày
+  làm việc trên toàn khoảng task rồi chỉ cộng phần thuộc **tuần được chọn**
+  (`weeklyWorkload(tasks, { weekStart, capacityByMember, holidays })`).
+  Capacity và ngày nghỉ lấy từ cấu hình truyền vào — không hardcode
+  40h/tuần hay 8h/ngày; thiếu cấu hình thì capacity = `null`.

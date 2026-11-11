@@ -141,7 +141,7 @@
     ],
     externalPosts: [
       { id: 'post-1', platform: 'facebook', channelAccountId: 'chan-fb', externalPostId: 'fb-demo-1001', title: 'Bài giới thiệu sự kiện (bản đăng tay mẫu)', url: 'https://example.com/demo-post-1', publishedAt: '2026-11-05T09:00:00+07:00', campaignId: 'camp-1' },
-      { id: 'post-2', platform: 'tiktok', channelAccountId: 'chan-tiktok', externalPostId: 'tt-demo-2001', title: 'Video hậu trường (đăng ngoài app)', url: 'https://example.com/demo-tiktok-1', publishedAt: '2026-11-06T20:00:00+07:00', campaignId: 'camp-1' },
+      { id: 'post-2', platform: 'tiktok', channelAccountId: 'chan-tiktok', externalPostId: 'tt-demo-2001', title: 'Video hậu trường (đăng ngoài app)', url: 'https://example.com/demo-tiktok-1', publishedAt: '2026-11-06T20:00:00+07:00', campaignId: 'camp-1', variantId: 'variant-tiktok-1', contentItemId: 'content-1' },
       { id: 'post-3', platform: 'instagram', channelAccountId: 'chan-ig', externalPostId: 'ig-demo-3001', title: 'Ảnh teaser KV', url: 'https://example.com/demo-post-3', publishedAt: '2026-11-04T18:00:00+07:00', campaignId: null }
     ],
     metricObservations: [

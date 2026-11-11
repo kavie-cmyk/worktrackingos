@@ -63,38 +63,39 @@
     workspaces: ['id', 'name', 'slug', 'timezone', 'settings', 'created_at', 'updated_at', 'archived_at'],
     users: ['id', 'email', 'display_name', 'avatar_url', 'is_active', 'created_at', 'updated_at'],
     memberships: ['id', 'workspace_id', 'user_id', 'role', 'is_active', 'invited_by', 'created_at', 'updated_at'],
-    bu_products: ['id', 'workspace_id', 'bu_name', 'name', 'description', 'status', 'custom_fields', 'created_by', 'created_at', 'updated_at'],
-    brand_pages: ['id', 'workspace_id', 'product_id', 'name', 'brand_voice', 'guidelines', 'created_by', 'created_at', 'updated_at'],
-    channel_accounts: ['id', 'workspace_id', 'brand_page_id', 'platform', 'external_id', 'display_name', 'handle', 'profile_url', 'status', 'created_by', 'created_at', 'updated_at'],
-    assets: ['id', 'workspace_id', 'name', 'asset_type', 'storage_bucket', 'storage_path', 'external_url', 'mime_type', 'size_bytes', 'width', 'height', 'duration_sec', 'tags', 'rights_note', 'status', 'created_by', 'created_at', 'updated_at'],
-    campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'created_by', 'created_at', 'updated_at'],
-    phases: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'sort_order', 'start_date', 'end_date', 'status', 'created_by', 'created_at', 'updated_at'],
-    activities: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'phase_id', 'name', 'description', 'sort_order', 'start_date', 'end_date', 'status', 'created_by', 'created_at', 'updated_at'],
-    tasks: ['id', 'workspace_id', 'campaign_id', 'phase_id', 'activity_id', 'content_item_id', 'parent_id', 'title', 'description', 'owner_id', 'collaborators', 'approver_id', 'start_date', 'due_date', 'completed_at', 'priority', 'effort_hours', 'progress_percent', 'status', 'is_blocked', 'sort_order', 'custom_fields', 'created_by', 'created_at', 'updated_at'],
+    bu_products: ['id', 'workspace_id', 'bu_name', 'name', 'description', 'status', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    brand_pages: ['id', 'workspace_id', 'product_id', 'name', 'brand_voice', 'guidelines', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    channel_accounts: ['id', 'workspace_id', 'brand_page_id', 'platform', 'external_id', 'display_name', 'handle', 'profile_url', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    assets: ['id', 'workspace_id', 'name', 'asset_type', 'storage_bucket', 'storage_path', 'external_url', 'mime_type', 'size_bytes', 'width', 'height', 'duration_sec', 'tags', 'rights_note', 'status', 'approval_status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    asset_versions: ['id', 'workspace_id', 'asset_id', 'version_no', 'storage_bucket', 'storage_path', 'external_url', 'change_note', 'created_by', 'created_at'],
+    campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    phases: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'sort_order', 'start_date', 'end_date', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    activities: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'phase_id', 'name', 'description', 'sort_order', 'start_date', 'end_date', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    tasks: ['id', 'workspace_id', 'campaign_id', 'phase_id', 'activity_id', 'content_item_id', 'parent_id', 'title', 'description', 'owner_id', 'collaborators', 'approver_id', 'start_date', 'due_date', 'completed_at', 'priority', 'effort_hours', 'progress_percent', 'status', 'is_blocked', 'sort_order', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     task_dependencies: ['id', 'workspace_id', 'predecessor_id', 'successor_id', 'type', 'lag_days', 'created_by', 'created_at'],
     blockers: ['id', 'workspace_id', 'task_id', 'description', 'reported_by', 'reported_at', 'handler_id', 'resolve_by', 'status', 'external_party', 'resolution_note', 'resolved_at', 'created_at', 'updated_at'],
-    content_items: ['id', 'workspace_id', 'campaign_id', 'task_id', 'title', 'content_type', 'brief', 'owner_id', 'status', 'planned_at', 'custom_fields', 'created_by', 'created_at', 'updated_at'],
-    content_variants: ['id', 'workspace_id', 'content_item_id', 'channel_account_id', 'platform', 'format', 'caption', 'media_asset_ids', 'link_url', 'visibility', 'first_comment', 'editorial_status', 'approval_status', 'approved_revision_id', 'publishing_status', 'publish_mode', 'scheduled_at', 'published_at', 'external_url', 'created_by', 'created_at', 'updated_at'],
+    content_items: ['id', 'workspace_id', 'campaign_id', 'task_id', 'title', 'content_type', 'brief', 'owner_id', 'status', 'planned_at', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    content_variants: ['id', 'workspace_id', 'content_item_id', 'channel_account_id', 'platform', 'format', 'caption', 'media_asset_ids', 'link_url', 'visibility', 'first_comment', 'editorial_status', 'approval_status', 'approved_revision_id', 'current_revision_id', 'publishing_status', 'publish_mode', 'scheduled_at', 'published_at', 'external_url', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     content_revisions: ['id', 'workspace_id', 'variant_id', 'revision_no', 'caption', 'media_asset_ids', 'link_url', 'visibility', 'snapshot', 'change_note', 'created_by', 'created_at'],
     tiktok_scripts: ['id', 'workspace_id', 'variant_id', 'hook', 'scenes', 'cta', 'caption', 'hashtags', 'external_url', 'posted_at', 'created_by', 'created_at', 'updated_at'],
     approval_steps: ['id', 'workspace_id', 'content_item_id', 'variant_id', 'campaign_id', 'step_order', 'name', 'approver_id', 'approver_role', 'status', 'created_at', 'updated_at'],
     approval_decisions: ['id', 'workspace_id', 'step_id', 'variant_id', 'revision_id', 'decision', 'decided_by', 'comment', 'decided_at', 'created_at'],
-    external_posts: ['id', 'workspace_id', 'channel_account_id', 'platform', 'external_post_id', 'external_url', 'post_type', 'caption_snapshot', 'media_snapshot', 'published_at', 'author_external_id', 'raw', 'first_synced_at', 'last_synced_at', 'created_at', 'updated_at'],
+    external_posts: ['id', 'workspace_id', 'channel_account_id', 'platform', 'external_post_id', 'external_url', 'post_type', 'caption_snapshot', 'media_snapshot', 'published_at', 'author_external_id', 'raw', 'source', 'archived_at', 'first_synced_at', 'last_synced_at', 'created_at', 'updated_at'],
     post_content_mappings: ['id', 'workspace_id', 'external_post_id', 'variant_id', 'content_item_id', 'campaign_id', 'mapping_source', 'confidence', 'created_by', 'created_at'],
     metric_observations: ['id', 'workspace_id', 'source', 'object_type', 'object_id', 'metric_code', 'value', 'period_start', 'period_end', 'period_grain', 'scope', 'dimensions', 'definition_version', 'currency', 'observed_at', 'sync_run_id', 'created_at'],
-    kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'created_by', 'created_at', 'updated_at'],
+    kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     measurements: ['id', 'workspace_id', 'kpi_id', 'measured_at', 'period_start', 'period_end', 'value', 'source', 'note', 'created_by', 'created_at'],
-    budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'category', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'created_by', 'created_at', 'updated_at'],
-    budget_commitments: ['id', 'workspace_id', 'budget_line_id', 'description', 'amount', 'currency', 'vendor', 'status', 'committed_at', 'expected_at', 'created_by', 'created_at', 'updated_at'],
+    budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'category', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    budget_commitments: ['id', 'workspace_id', 'budget_line_id', 'description', 'amount', 'currency', 'vendor', 'status', 'settled_amount', 'committed_at', 'expected_at', 'created_by', 'created_at', 'updated_at', 'archived_at'],
     budget_actuals: ['id', 'workspace_id', 'budget_line_id', 'commitment_id', 'ad_spend_source_id', 'description', 'amount', 'currency', 'spent_at', 'source', 'created_by', 'created_at', 'updated_at'],
     ad_accounts: ['id', 'workspace_id', 'platform', 'external_id', 'name', 'currency', 'timezone', 'status', 'connection_id', 'created_by', 'created_at', 'updated_at'],
     ad_campaigns: ['id', 'workspace_id', 'ad_account_id', 'campaign_id', 'external_id', 'name', 'objective', 'status', 'external_created_at', 'last_synced_at', 'raw', 'created_at', 'updated_at'],
     ad_groups: ['id', 'workspace_id', 'ad_campaign_id', 'external_id', 'name', 'status', 'targeting', 'last_synced_at', 'raw', 'created_at', 'updated_at'],
     ads: ['id', 'workspace_id', 'ad_group_id', 'external_id', 'name', 'status', 'creative', 'external_post_id', 'last_synced_at', 'raw', 'created_at', 'updated_at'],
     ads_insights: ['id', 'workspace_id', 'object_type', 'object_id', 'period_start', 'period_end', 'impressions', 'clicks', 'spend', 'currency', 'reach', 'results', 'result_type', 'conversion_value', 'dimensions', 'sync_run_id', 'observed_at', 'created_at'],
-    ads_change_requests: ['id', 'workspace_id', 'ad_account_id', 'target_type', 'target_external_id', 'change_type', 'before_state', 'after_state', 'amount', 'currency', 'reason', 'status', 'submit_as_paused', 'requested_by', 'approved_by', 'approved_at', 'submitted_at', 'confirmed_at', 'external_reference', 'error_code', 'error_message', 'created_at', 'updated_at'],
-    publish_jobs: ['id', 'workspace_id', 'variant_id', 'revision_id', 'channel_account_id', 'platform', 'idempotency_key', 'snapshot', 'status', 'scheduled_at', 'is_late', 'cancel_reason', 'authorized_by', 'last_error_code', 'last_error_message', 'created_by', 'created_at', 'updated_at'],
-    marketing_requests: ['id', 'workspace_id', 'requester_id', 'requester_unit', 'title', 'description', 'request_type', 'product_id', 'campaign_id', 'priority', 'desired_due_date', 'status', 'assignee_id', 'rejection_reason', 'custom_fields', 'created_by', 'created_at', 'updated_at'],
+    ads_change_requests: ['id', 'workspace_id', 'ad_account_id', 'target_type', 'target_external_id', 'change_type', 'before_state', 'after_state', 'amount', 'currency', 'reason', 'status', 'submit_as_paused', 'requested_by', 'approved_by', 'approved_at', 'submitted_at', 'confirmed_at', 'external_reference', 'error_code', 'error_message', 'archived_at', 'created_at', 'updated_at'],
+    publish_jobs: ['id', 'workspace_id', 'variant_id', 'revision_id', 'decision_id', 'channel_account_id', 'platform', 'idempotency_key', 'snapshot', 'status', 'scheduled_at', 'is_late', 'cancel_reason', 'authorized_by', 'last_error_code', 'last_error_message', 'created_by', 'created_at', 'updated_at'],
+    marketing_requests: ['id', 'workspace_id', 'requester_id', 'requester_unit', 'title', 'description', 'request_type', 'product_id', 'campaign_id', 'priority', 'desired_due_date', 'status', 'assignee_id', 'rejection_reason', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     report_snapshots: ['id', 'workspace_id', 'name', 'report_type', 'scope', 'period_start', 'period_end', 'data', 'definition_versions', 'generated_by', 'generated_at', 'created_at']
   };
 
@@ -102,6 +103,8 @@
   var CUSTOM_FIELDS_TABLES = { bu_products: true, campaigns: true, tasks: true, content_items: true, marketing_requests: true };
   // Bảng có archived_at (xoá mềm); các bảng mapped còn lại không có nên xoá thật.
   var SOFT_DELETE_COLUMNS = { workspaces: 'archived_at' };
+  // R31: entity chính có archived_at — remove = archive (không hard-delete).
+  var ARCHIVABLE_TABLES = { bu_products: true, brand_pages: true, assets: true, campaigns: true, phases: true, activities: true, tasks: true, content_items: true, content_variants: true, channel_accounts: true, kpis: true, budget_lines: true, external_posts: true, ads_change_requests: true, marketing_requests: true };
 
   // ---------- Alias trường: tên ở frontend (camel) → cột thật (snake) ----------
   // Chỉ khai báo khi tên tự động camel→snake KHÔNG ra đúng cột, hoặc ngữ nghĩa khác.
@@ -151,6 +154,7 @@
     return null;
   }
 
+  var UNSET = '__UNSET__';
   var VALID_ASSET_TYPES = ['image', 'video', 'audio', 'document', 'design', 'other'];
   var VALID_VARIANT_PLATFORMS = ['facebook_page', 'instagram', 'linkedin_page', 'tiktok', 'youtube'];
 
@@ -181,8 +185,8 @@
       return VALID_ASSET_TYPES.indexOf(at) !== -1 ? { value: at } : { value: 'other', stash: value };
     }
     if (collection === 'brandAssets' && snakeKey === 'status' && value != null) {
-      var bs = { Approved: 'active', Draft: 'active', Archived: 'archived' }[value];
-      return { value: bs || (value === 'active' || value === 'archived' ? value : 'active'), stash: value };
+      var bs = { Approved: 'active', Draft: 'active', 'In review': 'active', Archived: 'archived' }[value];
+      return { value: bs || (value === 'active' || value === 'archived' ? value : 'active') };
     }
     if (collection === 'brandPages' && snakeKey === 'name') return { value: value };
     if (collection === 'contentItems' && snakeKey === 'status' && value != null) {
@@ -240,7 +244,9 @@
     if (CUSTOM_FIELDS_TABLES[table] && (Object.keys(stash).length || Object.keys(existingCustom).length)) {
       var merged = {};
       Object.keys(existingCustom).forEach(function (k) { merged[camelToSnake(k)] = existingCustom[k]; });
-      Object.keys(stash).forEach(function (k) { merged[camelToSnake(k)] = stash[k]; });
+      Object.keys(stash).forEach(function (k) {
+        if (stash[k] === UNSET) delete merged[camelToSnake(k)]; else merged[camelToSnake(k)] = stash[k];
+      });
       payload.custom_fields = merged;
     }
     if (options.workspaceId && hasColumn(table, 'workspace_id')) payload.workspace_id = options.workspaceId;
@@ -352,6 +358,172 @@
     return { ok: true };
   }
 
+
+  // ======================================================================
+  // R32/R30 — PERMISSIONS matrix + validation DÙNG CHUNG demo & real.
+  // Đây là nguồn sự thật phía client: demo adapter và Supabase adapter đều
+  // phải kiểm cùng matrix này (backend/RLS vẫn là lớp cuối). CEO = chỉ đọc.
+  // ======================================================================
+  var PERMISSION_ACTIONS = [
+    'data.read', 'data.edit', 'task.updateStatus', 'task.edit', 'campaign.edit',
+    'content.edit', 'asset.edit', 'kpi.edit', 'budget.edit', 'approval.decide',
+    'publish.create', 'settings.manage', 'member.manage', 'channel.connect',
+    'analytics.view', 'ads.read', 'ads.draft', 'ads.approve'
+  ];
+  function _perm(over) { var m = {}; PERMISSION_ACTIONS.forEach(function (a) { m[a] = false; }); Object.keys(over || {}).forEach(function (k) { m[k] = !!over[k]; }); return m; }
+  var PERMISSIONS = {
+    owner: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'campaign.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'budget.edit': true, 'approval.decide': true, 'publish.create': true, 'settings.manage': true, 'member.manage': true, 'channel.connect': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true, 'ads.approve': true }),
+    lead: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'campaign.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'budget.edit': true, 'approval.decide': true, 'publish.create': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true, 'ads.approve': true }),
+    member: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true }),
+    ceo: _perm({ 'data.read': true, 'analytics.view': true, 'ads.read': true })
+  };
+  // Tên quyền cũ (app.js đang dùng) → action mới. can()/canRole() nhận cả hai.
+  var LEGACY_PERMISSION_MAP = {
+    read: 'data.read', edit: 'data.edit', approve: 'approval.decide',
+    budget: 'budget.edit', budgetChange: 'budget.edit', publish: 'publish.create',
+    connect: 'channel.connect', analytics: 'analytics.view',
+    adsRead: 'ads.read', adsDraft: 'ads.draft', adsApprove: 'ads.approve'
+  };
+  function resolvePermission(perm) { return LEGACY_PERMISSION_MAP[perm] || perm; }
+  function canRole(role, perm) {
+    var m = PERMISSIONS[String(role || '').toLowerCase()];
+    if (!m) return false;
+    return !!m[resolvePermission(perm)];
+  }
+
+  // ---------- Ngày theo timezone workspace (R30) ----------
+  var DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
+  /** todayISO theo timezone (KHÔNG dùng UTC): 'yyyy-mm-dd' của "hôm nay" tại tz. */
+  function todayISO(timezone, now) {
+    var tz = timezone || DEFAULT_TIMEZONE;
+    var d = now ? new Date(now) : new Date();
+    try {
+      var parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+      var o = {}; parts.forEach(function (x) { o[x.type] = x.value; });
+      if (o.year && o.month && o.day) return o.year + '-' + o.month + '-' + o.day;
+    } catch (e) { /* Intl không có tz: rơi xuống giờ máy */ }
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  /** Tháng hiện tại theo timezone workspace — calendar mặc định dùng khoảng này. */
+  function currentMonthRange(timezone, now) {
+    var today = todayISO(timezone, now);
+    var y = Number(today.slice(0, 4)), m = Number(today.slice(5, 7));
+    var last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    var mm = String(m).padStart(2, '0');
+    return { year: y, month: m, start: y + '-' + mm + '-01', end: y + '-' + mm + '-' + String(last).padStart(2, '0'), today: today };
+  }
+  function _dateOnly(v) {
+    if (v == null || v === '') return null;
+    var str = String(v).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(str) ? str : null;
+  }
+  /** validateDateRange: start<=end theo ngày (yyyy-mm-dd). Trả {ok, error?}. */
+  function validateDateRange(start, end, labels) {
+    var s = _dateOnly(start), e = _dateOnly(end);
+    if (start != null && start !== '' && !s) return { ok: false, error: 'Ngày bắt đầu không hợp lệ.' };
+    if (end != null && end !== '' && !e) return { ok: false, error: 'Ngày kết thúc không hợp lệ.' };
+    if (s && e && s > e) return { ok: false, error: ((labels && labels.start) || 'Ngày bắt đầu') + ' phải nhỏ hơn hoặc bằng ' + ((labels && labels.end) || 'ngày kết thúc') + '.' };
+    return { ok: true };
+  }
+  function validateNumber(value, opts) {
+    opts = opts || {};
+    if (value == null || value === '') return { ok: true };
+    var n = Number(value);
+    if (!isFinite(n)) return { ok: false, error: 'Giá trị phải là số hợp lệ.' };
+    if (opts.min != null && n < opts.min) return { ok: false, error: 'Giá trị không được nhỏ hơn ' + opts.min + '.' };
+    return { ok: true, value: n };
+  }
+  var DATE_PAIRS = [['startDate', 'endDate'], ['startDate', 'dueDate'], ['periodStart', 'periodEnd'], ['start', 'end']];
+  var NON_NEGATIVE_FIELDS = ['effortHours', 'amount', 'approved', 'approvedAmount', 'target', 'targetValue', 'value', 'settledAmount'];
+  /** Validation dùng chung cho create/update (demo & real cùng gọi). */
+  function validateEntity(collection, obj, existing) {
+    var merged = Object.assign({}, existing || {}, obj || {});
+    var errors = [];
+    DATE_PAIRS.forEach(function (pair) {
+      if (merged[pair[0]] != null || merged[pair[1]] != null) {
+        var r = validateDateRange(merged[pair[0]], merged[pair[1]]);
+        if (!r.ok) errors.push(r.error);
+      }
+    });
+    NON_NEGATIVE_FIELDS.forEach(function (f) {
+      if (merged[f] !== undefined) { var r = validateNumber(merged[f], { min: 0 }); if (!r.ok) errors.push(f + ': ' + r.error); }
+    });
+    return { ok: errors.length === 0, errors: errors, error: errors[0] || null };
+  }
+  /** Parent cycle: gán parentId cho taskId có tạo vòng cha-con không (đi ngược chuỗi parent). */
+  function wouldCreateParentCycle(items, taskId, parentId) {
+    if (!parentId) return false;
+    if (taskId && String(parentId) === String(taskId)) return true;
+    var byId = {}; (items || []).forEach(function (t) { byId[t.id] = t; });
+    var cur = parentId, seen = {};
+    while (cur) {
+      if (taskId && String(cur) === String(taskId)) return true;
+      if (seen[cur]) return true; // vòng có sẵn trong dữ liệu
+      seen[cur] = true;
+      var node = byId[cur];
+      cur = node ? (node.parentId || node.parent_id || null) : null;
+    }
+    return false;
+  }
+  /** Merge custom_fields: patch '__UNSET__' = xoá field đó; field khác giữ nguyên (R18/QA05). */
+  function mergeCustomFields(oldFields, patchFields) {
+    var out = {};
+    Object.keys(oldFields || {}).forEach(function (k) { out[k] = oldFields[k]; });
+    Object.keys(patchFields || {}).forEach(function (k) {
+      if (patchFields[k] === UNSET) delete out[k]; else out[k] = patchFields[k];
+    });
+    return out;
+  }
+  // ---------- Hash ổn định + idempotency (R28) ----------
+  function stableStringify(x) {
+    if (x === null || typeof x !== 'object') return JSON.stringify(x);
+    if (Array.isArray(x)) return '[' + x.map(stableStringify).join(',') + ']';
+    return '{' + Object.keys(x).sort().map(function (k) { return JSON.stringify(k) + ':' + stableStringify(x[k]); }).join(',') + '}';
+  }
+  function stableHash(x) {
+    var str = typeof x === 'string' ? x : stableStringify(x);
+    var h = 0x811c9dc5;
+    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return ('0000000' + (h >>> 0).toString(16)).slice(-8);
+  }
+  /** Slot lịch khớp tới phút: cùng intent trong cùng phút → cùng slot. */
+  function scheduleSlot(iso) {
+    if (!iso) return 'now';
+    var d = new Date(iso); if (isNaN(d.getTime())) return String(iso).slice(0, 16);
+    return d.toISOString().slice(0, 16); // yyyy-mm-ddThh:mm
+  }
+  function publishIdempotencyKey(variantId, revisionId, accountId, scheduledAt) {
+    var slot = scheduleSlot(scheduledAt);
+    return 'job-' + stableHash([variantId, revisionId, accountId, slot].join('|')) + '-' + slot.replace(/[^0-9]/g, '').slice(0, 12);
+  }
+  /**
+   * R19/QA24 — payload partial cho ads_change_requests.
+   * Chỉ field có trong patch mới được gửi; after_state CHỈ khi explicitProposal
+   * (người dùng sửa proposal thật) hoặc khi insert (DB bắt buộc after_state).
+   */
+  function adChangePayload(patch, currentItem, options) {
+    options = options || {};
+    patch = patch || {};
+    var payload = {};
+    var passthrough = ['status', 'amount', 'currency', 'reason', 'changeType', 'change_type', 'targetType', 'target_type', 'adAccountId', 'ad_account_id', 'submitAsPaused', 'submit_as_paused'];
+    passthrough.forEach(function (k) { if (patch[k] !== undefined) payload[k] = patch[k]; });
+    if (patch.target !== undefined && options.explicitProposal) payload.target_external_id = patch.target;
+    if (patch.targetExternalId !== undefined) payload.target_external_id = patch.targetExternalId;
+    var existingAfter = (currentItem && (currentItem.afterState || currentItem.after_state)) || {};
+    if (patch.afterState !== undefined || patch.after_state !== undefined) {
+      payload.after_state = Object.assign({}, existingAfter, patch.afterState || patch.after_state || {});
+    } else if (options.explicitProposal && (patch.title !== undefined || patch.target !== undefined)) {
+      payload.after_state = Object.assign({}, existingAfter);
+      if (patch.title !== undefined) payload.after_state.title = patch.title;
+      if (patch.target !== undefined) payload.after_state.target = patch.target;
+    } else if (options.forInsert) {
+      payload.after_state = Object.assign({}, existingAfter, { title: patch.title || '', target: patch.target || '' });
+      if (!payload.target_external_id) payload.target_external_id = patch.target || patch.title || '';
+    }
+    // status-only patch: tuyệt đối không đụng before_state/after_state.
+    return payload;
+  }
+
   var api = {
     camelToSnake: camelToSnake,
     snakeToCamel: snakeToCamel,
@@ -369,7 +541,27 @@
     fromDbRow: fromDbRow,
     buildOptimisticUpdate: buildOptimisticUpdate,
     parseAuthHash: parseAuthHash,
-    validateNewPassword: validateNewPassword
+    validateNewPassword: validateNewPassword,
+    UNSET: UNSET,
+    ARCHIVABLE_TABLES: ARCHIVABLE_TABLES,
+    PERMISSIONS: PERMISSIONS,
+    PERMISSION_ACTIONS: PERMISSION_ACTIONS,
+    LEGACY_PERMISSION_MAP: LEGACY_PERMISSION_MAP,
+    resolvePermission: resolvePermission,
+    canRole: canRole,
+    DEFAULT_TIMEZONE: DEFAULT_TIMEZONE,
+    todayISO: todayISO,
+    currentMonthRange: currentMonthRange,
+    validateDateRange: validateDateRange,
+    validateNumber: validateNumber,
+    validateEntity: validateEntity,
+    wouldCreateParentCycle: wouldCreateParentCycle,
+    mergeCustomFields: mergeCustomFields,
+    stableStringify: stableStringify,
+    stableHash: stableHash,
+    scheduleSlot: scheduleSlot,
+    publishIdempotencyKey: publishIdempotencyKey,
+    adChangePayload: adChangePayload
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

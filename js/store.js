@@ -28,13 +28,23 @@
   var DEMO_FLAG_KEY = 'sava_demo_enabled';
   var PAGE_SIZE = 1000;
 
-  /** Ma trận quyền: 4 vai × các quyền tách riêng. */
-  var PERMISSIONS = {
-    owner:  { read: true,  edit: true,  approve: true,  budget: true,  connect: true,  analytics: true,  adsRead: true, adsDraft: true,  adsApprove: true,  budgetChange: true,  publish: true },
-    lead:   { read: true,  edit: true,  approve: true,  budget: true,  connect: false, analytics: true,  adsRead: true, adsDraft: true,  adsApprove: true,  budgetChange: true,  publish: true },
-    member: { read: true,  edit: true,  approve: false, budget: false, connect: false, analytics: true,  adsRead: true, adsDraft: true,  adsApprove: false, budgetChange: false, publish: false },
-    ceo:    { read: true,  edit: false, approve: false, budget: false, connect: false, analytics: true,  adsRead: true, adsDraft: false, adsApprove: false, budgetChange: false, publish: false }
-  };
+  /**
+   * Ma trận quyền DÙNG CHUNG (R32): nguồn sự thật là PERMISSIONS ở
+   * store-core (actions dạng 'task.updateStatus', 'approval.decide'…).
+   * PERMISSIONS ở đây chỉ là bản chiếu legacy (read/edit/approve…) suy ra
+   * từ matrix chung để app cũ + bảng quyền ở Thiết lập vẫn đọc được —
+   * KHÔNG định nghĩa riêng, tránh demo/real lệch nhau.
+   */
+  var PERMISSIONS = {};
+  ['owner', 'lead', 'member', 'ceo'].forEach(function (role) {
+    var legacy = {};
+    Object.keys(Core && Core.LEGACY_PERMISSION_MAP || {}).forEach(function (k) {
+      legacy[k] = Core ? Core.canRole(role, k) : false;
+    });
+    // publish là legacy không nằm trong LEGACY_PERMISSION_MAP (map sang publish.create ở can()).
+    legacy.publish = Core ? Core.canRole(role, 'publish.create') : false;
+    PERMISSIONS[role] = legacy;
+  });
   var PERMISSION_LABELS = {
     read: 'Đọc', edit: 'Sửa', approve: 'Duyệt', budget: 'Xem ngân sách', connect: 'Kết nối kênh',
     analytics: 'Xem phân tích', adsRead: 'Quảng cáo — đọc', adsDraft: 'Quảng cáo — tạo nháp',
@@ -96,6 +106,62 @@
     _loadedForUserId: null,
     _bootstrapping: false,
     _listeners: [],
+    /**
+     * R13 — Trạng thái tải theo collection:
+     * loadState[collection] = { status:'idle|loading|ready|error|denied|empty|stale',
+     *   error:(string|null), updatedAt:(ISO|null — lần tải THÀNH CÔNG gần nhất) }.
+     * App đọc qua Store.getLoadState(collection) / Store.loadState.
+     * Lỗi refresh khi đã có dữ liệu cũ → status 'stale' + giữ nguyên dữ liệu cũ.
+     */
+    loadState: {},
+    _postMappings: [],
+    getLoadState: function (collection) {
+      return this.loadState[collection] || { status: 'idle', error: null, updatedAt: null };
+    },
+    _setLoadState: function (collection, status, error) {
+      var prev = this.loadState[collection] || { status: 'idle', error: null, updatedAt: null };
+      this.loadState[collection] = {
+        status: status,
+        error: error ? friendlyError(error) : null,
+        updatedAt: (status === 'ready' || status === 'empty') ? new Date().toISOString() : prev.updatedAt
+      };
+    },
+    _isDeniedError: function (err) {
+      if (!err) return false;
+      var code = String(err.code || err.status || '');
+      return code === '403' || code === '42501' || /row-level security|permission denied|42501/i.test(String(err.message || err));
+    },
+    _loadFailed: function (collection, err) {
+      var hasOld = (this.state[collection] || []).length > 0;
+      this._setLoadState(collection, hasOld ? 'stale' : (this._isDeniedError(err) ? 'denied' : 'error'), err);
+    },
+    // ======================================================================
+    // R12 — Helper gọi Supabase DUY NHẤT: mọi đường ghi/đọc qua đây đều kiểm
+    // res.error; requireRows=true thì 0 dòng cũng là lỗi (phân biệt quyền/xoá).
+    // _attempt không throw: trả {ok:true,data} | {ok:false, failedStep, error}.
+    // ======================================================================
+    _attempt: function (step, query, opts) {
+      opts = opts || {};
+      return Promise.resolve(query).then(function (res) {
+        if (!res || res.error) {
+          var e = (res && res.error) || new Error('Không nhận được phản hồi từ server.');
+          return { ok: false, failedStep: step, error: friendlyError(e), code: e.code || null };
+        }
+        if (opts.requireRows && (!res.data || (Array.isArray(res.data) && !res.data.length))) {
+          return { ok: false, failedStep: step, code: 'no_rows', error: 'Thao tác không ảnh hưởng bản ghi nào — bản ghi có thể đã bị xoá, đã archive hoặc vai trò hiện tại không có quyền ghi.' };
+        }
+        return { ok: true, data: res.data };
+      }).catch(function (err) {
+        return { ok: false, failedStep: step, error: friendlyError(err), code: err && err.code || null };
+      });
+    },
+    /** RPC dùng chung: kiểm error, trả {ok, data} | {ok:false, failedStep, error, code}. */
+    _rpc: function (name, args) {
+      if (!this.supabaseClient || !this.supabaseClient.rpc) {
+        return Promise.resolve({ ok: false, failedStep: 'rpc.' + name, error: 'Chưa kết nối Supabase nên chưa gọi được RPC ' + name + '.' });
+      }
+      return this._attempt('rpc.' + name, this.supabaseClient.rpc(name, args || {}));
+    },
 
     /** Người dùng hiện tại (demo: chọn ở Thiết lập / Việc của tôi). */
     currentUser: function () {
@@ -107,12 +173,62 @@
       var u = this.currentUser();
       return u ? u.role : 'member';
     },
-    /** Kiểm tra quyền theo vai trò hiện tại. */
+    /** Kiểm tra quyền theo vai trò hiện tại — nhận cả action mới lẫn tên legacy. */
     can: function (perm) {
-      var matrix = PERMISSIONS[this.currentRole()] || {};
-      return !!matrix[perm];
+      if (Core && Core.canRole) return Core.canRole(this.currentRole(), perm);
+      return !!((PERMISSIONS[this.currentRole()] || {})[perm]);
     },
-    canRole: function (role, perm) { return !!((PERMISSIONS[role] || {})[perm]); },
+    canRole: function (role, perm) {
+      if (Core && Core.canRole) return Core.canRole(role, perm);
+      return !!((PERMISSIONS[role] || {})[perm]);
+    },
+    /** Action cần cho 1 thao tác ghi (dùng chung guard demo & remote). */
+    _actionFor: function (collection, patch, op) {
+      patch = patch || {};
+      var keys = Object.keys(patch);
+      switch (collection) {
+        case 'tasks': return (op === 'update' && keys.length && keys.every(function (k) { return k === 'status' || k === 'statusLabel'; })) ? 'task.updateStatus' : 'task.edit';
+        case 'dependencies': case 'blockers': return 'task.edit';
+        case 'campaigns': case 'phases': case 'activities': return 'campaign.edit';
+        case 'variants': case 'contentItems': return 'content.edit';
+        case 'brandPages': case 'brandAssets': return 'asset.edit';
+        case 'budgetLines': case 'commitments': case 'actuals': return 'budget.edit';
+        case 'kpis': return 'kpi.edit';
+        case 'approvals': return op === 'create' ? 'content.edit' : 'approval.decide';
+        case 'adChangeRequests': return (op === 'update' && patch.status !== undefined) ? 'ads.approve' : 'ads.draft';
+        case 'publishJobs': return 'publish.create';
+        case 'members': case 'businessUnits': return 'settings.manage';
+        default: return 'data.edit';
+      }
+    },
+    /** Guard quyền: trả {ok:false,error} khi vai hiện tại không có action, else null. */
+    _guard: function (collection, patch, op) {
+      var action = this._actionFor(collection, patch, op);
+      if (this.can(action)) return null;
+      return { ok: false, error: 'Vai trò hiện tại (' + this.currentRole() + ') không có quyền "' + action + '".', action: action };
+    },
+    /** Validation dùng chung (store-core.validateEntity + parent/dependency cycle). */
+    _validate: function (collection, obj, existing) {
+      if (Core && Core.validateEntity) {
+        var r = Core.validateEntity(collection, obj || {}, existing || null);
+        if (!r.ok) return { ok: false, error: r.error, errors: r.errors };
+      }
+      var merged = Object.assign({}, existing || {}, obj || {});
+      if (collection === 'tasks' && merged.parentId) {
+        var tasks = (this.state.tasks || []).map(function (t) { return t.id === merged.id ? merged : t; });
+        if (Core && Core.wouldCreateParentCycle(tasks, merged.id, merged.parentId)) {
+          return { ok: false, error: 'Không gán được: quan hệ cha–con này tạo vòng.' };
+        }
+      }
+      if (collection === 'dependencies' && merged.predecessorId && merged.successorId) {
+        var Domain = global.SAVA_DOMAIN;
+        var edges = (this.state.dependencies || []).filter(function (e) { return e.id !== merged.id; });
+        var cyclic = Domain && Domain.wouldCreateCycle ? Domain.wouldCreateCycle(edges, merged.predecessorId, merged.successorId)
+          : merged.predecessorId === merged.successorId;
+        if (cyclic) return { ok: false, error: 'Không thêm được: quan hệ phụ thuộc này tạo vòng.' };
+      }
+      return null;
+    },
 
     subscribe: function (fn) { this._listeners.push(fn); },
     notify: function () {
@@ -125,7 +241,7 @@
     // ======================================================================
     /** Nạp Store: chọn chế độ theo config và cờ demo. Luôn trả về Promise. */
     load: function () {
-      COLLECTIONS.forEach(function (k) { this.state[k] = []; }.bind(this));
+      COLLECTIONS.forEach(function (k) { this.state[k] = []; this.loadState[k] = { status: 'idle', error: null, updatedAt: null }; }.bind(this));
       this.state.authRequired = false;
       this.state.noMembership = false;
       if (demoRequested()) {
@@ -250,9 +366,10 @@
           var display = (user.email || 'Người dùng').split('@')[0];
           return self.supabaseClient.from('users')
             .insert({ id: user.id, email: user.email || '', display_name: display })
-            .then(function () { return null; }, function () { return null; });
+            .then(function (ins) { if (ins && ins.error) self.state.profileError = friendlyError(ins.error); return null; },
+                  function (err) { self.state.profileError = friendlyError(err); return null; });
         })
-        .catch(function () { return null; });
+        .catch(function (err) { self.state.profileError = friendlyError(err); return null; });
     },
 
     // ======================================================================
@@ -306,9 +423,11 @@
       var self = this;
       var table = Core ? Core.COLLECTION_TO_TABLE[collection] : null;
       if (!table) { this.state[collection] = []; return Promise.resolve(); }
+      this._setLoadState(collection, 'loading', null);
       return this._fetchWorkspaceTable(table).then(function (rows) {
         self.state[collection] = rows.map(function (r) { return self._rowToItem(collection, r); });
-      }).catch(function () { self.state[collection] = self.state[collection] || []; });
+        self._setLoadState(collection, self.state[collection].filter(function (x) { return !x.archivedAt; }).length ? 'ready' : 'empty', null);
+      }).catch(function (err) { self._loadFailed(collection, err); });
     },
     _loadMembers: function () {
       var self = this;
@@ -320,6 +439,7 @@
         return self._fetchAll('users', function (q) { return q.in('id', ids); }).then(function (users) {
           var byId = {};
           users.forEach(function (u) { byId[u.id] = u; });
+          self._setLoadState('members', memberships.length ? 'ready' : 'empty', null);
           self.state.members = memberships.map(function (m) {
             var u = byId[m.user_id] || {};
             return {
@@ -333,7 +453,7 @@
             };
           });
         });
-      }).catch(function () { self.state.members = []; });
+      }).catch(function (err) { self._loadFailed('members', err); });
     },
     _loadBusinessUnits: function () {
       var self = this;
@@ -346,7 +466,8 @@
           if (r.description && !bu.description) bu.description = r.description;
         });
         self.state.businessUnits = order;
-      }).catch(function () { self.state.businessUnits = []; });
+        self._setLoadState('businessUnits', order.length ? 'ready' : 'empty', null);
+      }).catch(function (err) { self._loadFailed('businessUnits', err); });
     },
     _loadApprovals: function () {
       var self = this;
@@ -356,9 +477,9 @@
         this._fetchWorkspaceTable('content_revisions')
       ]).then(function (results) {
         var steps = results[0], decisions = results[1], revisions = results[2];
-        var revNoById = {}; var revNoByVariant = {};
+        var revNoById = {}; var revNoByVariant = {}; var revIdByVariant = {};
         revisions.forEach(function (r) {
-          revNoById[r.id] = r.revision_no;
+          revNoById[r.id] = r.revision_no; revIdByVariant[r.variant_id] = (!revIdByVariant[r.variant_id] || r.revision_no > (revNoById[revIdByVariant[r.variant_id]] || 0)) ? r.id : revIdByVariant[r.variant_id];
           if (!revNoByVariant[r.variant_id] || r.revision_no > revNoByVariant[r.variant_id]) revNoByVariant[r.variant_id] = r.revision_no;
         });
         self._revisionByVariant = revNoByVariant;
@@ -394,7 +515,8 @@
           });
         });
         self.state.approvals = items;
-      }).catch(function () { self.state.approvals = []; });
+        self._setLoadState('approvals', items.length ? 'ready' : 'empty', null);
+      }).catch(function (err) { self._loadFailed('approvals', err); });
     },
     /**
      * Gộp dữ liệu phụ sau khi các collection chính đã nạp:
@@ -408,8 +530,8 @@
       var jobs = [];
       // Variants: revision + tiktok_scripts
       jobs.push(Promise.all([
-        this._fetchWorkspaceTable('content_revisions').catch(function () { return []; }),
-        this._fetchWorkspaceTable('tiktok_scripts').catch(function () { return []; })
+        this._fetchWorkspaceTable('content_revisions').catch(function (err) { self._loadFailed('variants', err); return []; }),
+        this._fetchWorkspaceTable('tiktok_scripts').catch(function (err) { self._loadFailed('variants', err); return []; })
       ]).then(function (res) {
         var revMax = {};
         res[0].forEach(function (r) { if (!revMax[r.variant_id] || r.revision_no > revMax[r.variant_id]) revMax[r.variant_id] = r.revision_no; });
@@ -418,6 +540,8 @@
         res[1].forEach(function (s) { scripts[s.variant_id] = s; });
         (self.state.variants || []).forEach(function (v) {
           v.revision = revMax[v.id] || 1;
+          var cur = res[0].find(function (r) { return r.id === v.currentRevisionId; });
+          if (cur) v.revision = cur.revision_no;
           var sc = scripts[v.id];
           if (sc) {
             v.hook = sc.hook || ''; v.cta = sc.cta || '';
@@ -431,10 +555,17 @@
       }));
       // External posts: campaign qua bảng nối
       jobs.push(this._fetchWorkspaceTable('post_content_mappings').then(function (maps) {
+        self._postMappings = maps.slice();
         var byPost = {};
-        maps.forEach(function (m) { if (m.campaign_id && !byPost[m.external_post_id]) byPost[m.external_post_id] = m.campaign_id; });
-        (self.state.externalPosts || []).forEach(function (p) { if (byPost[p.id]) p.campaignId = byPost[p.id]; });
-      }).catch(function () {}));
+        maps.forEach(function (m) { if (!byPost[m.external_post_id]) byPost[m.external_post_id] = m; });
+        (self.state.externalPosts || []).forEach(function (p) {
+          var m = byPost[p.id]; if (!m) return;
+          if (m.campaign_id) p.campaignId = m.campaign_id;
+          if (m.variant_id) p.variantId = m.variant_id;
+          if (m.content_item_id) p.contentItemId = m.content_item_id;
+          p.mappingId = m.id;
+        });
+      }).catch(function (err) { self._loadFailed('externalPosts', err); }));
       // KPI: actual mới nhất từ measurements
       jobs.push(this._fetchWorkspaceTable('measurements').then(function (rows) {
         var latest = {};
@@ -445,7 +576,7 @@
           k.actual = m ? (m.value === null ? null : Number(m.value)) : null;
           if (m) { k.source = m.source || 'manual'; k.updatedAt = m.measured_at; }
         });
-      }).catch(function () {}));
+      }).catch(function (err) { self._loadFailed('kpis', err); }));
       // Ads: số liệu từ ads_insights theo external_id của từng cấp
       jobs.push(this._fetchWorkspaceTable('ads_insights').then(function (rows) {
         var byKey = {};
@@ -455,18 +586,27 @@
           (list || []).forEach(function (x) {
             var ins = byKey[type + ':' + x.externalId];
             if (!ins) return;
-            x.spend = ins.spend != null ? Number(ins.spend) : 0;
-            x.impressions = ins.impressions != null ? Number(ins.impressions) : 0;
-            x.clicks = ins.clicks != null ? Number(ins.clicks) : 0;
-            x.results = ins.results != null ? Number(ins.results) : 0;
-            x.conversionValue = ins.conversion_value != null ? Number(ins.conversion_value) : 0;
+            x.spend = ins.spend != null ? Number(ins.spend) : null;
+            x.impressions = ins.impressions != null ? Number(ins.impressions) : null;
+            x.clicks = ins.clicks != null ? Number(ins.clicks) : null;
+            x.results = ins.results != null ? Number(ins.results) : null;
+            x.conversionValue = ins.conversion_value != null ? Number(ins.conversion_value) : null;
+            x.level = x.level || ({ ad_account: 'account', ad_campaign: 'campaign', ad_group: 'adset', ad: 'ad' })[type] || type;
+            x.adAccountId = x.adAccountId || (type === 'ad_account' ? x.id : null);
           });
         }
         merge(self.state.adAccounts, 'ad_account');
         merge(self.state.adCampaigns, 'ad_campaign');
         merge(self.state.adSets, 'ad_group');
         merge(self.state.ads, 'ad');
-      }).catch(function () {}));
+      }).catch(function (err) { self._loadFailed('ads', err); }));
+      // Assets: version = max(asset_versions.version_no) — nguồn version thật (R17)
+      jobs.push(this._fetchWorkspaceTable('asset_versions').then(function (rows) {
+        var maxByAsset = {};
+        rows.forEach(function (r) { if (!maxByAsset[r.asset_id] || r.version_no > maxByAsset[r.asset_id]) maxByAsset[r.asset_id] = r.version_no; });
+        self._assetVersionById = maxByAsset;
+        (self.state.brandAssets || []).forEach(function (a) { if (maxByAsset[a.id] != null) a.version = maxByAsset[a.id]; });
+      }).catch(function (err) { self._loadFailed('brandAssets', err); }));
       // Số liệu nhập tay = một phần của metric_observations
       jobs.push(Promise.resolve().then(function () {
         self.state.manualMetricEntries = (self.state.metricObservations || []).filter(function (o) {
@@ -498,8 +638,12 @@
         }
         case 'brandAssets': {
           item.type = (row.asset_type === 'other' && (row.tags || [])[0]) ? row.tags[0] : row.asset_type;
-          item.status = row.status === 'archived' ? 'Archived' : 'Approved';
-          item.version = 1;
+          // R17: status = trạng thái SỬ DỤNG (active/archived); approvalStatus tách riêng.
+          // active KHÔNG còn bị dịch thành 'Approved'. version lấy từ asset_versions
+          // ở _loadDerivedMerges (null cho tới khi merge xong — không hardcode 1).
+          item.status = row.status || 'active';
+          item.approvalStatus = row.approval_status || 'draft';
+          item.version = (this._assetVersionById && this._assetVersionById[row.id]) || null;
           break;
         }
         case 'channelAccounts': {
@@ -546,6 +690,8 @@
           var after = row.after_state || {};
           item.title = after.title || row.reason || '';
           item.target = after.target || row.target_external_id || '';
+          item.afterState = after;
+          item.beforeState = row.before_state || null;
           item.defaultState = 'Tạm dừng (paused)';
           break;
         }
@@ -577,6 +723,7 @@
       var payload = Core ? Core.toDbPayload(collection, obj, {
         workspaceId: options.workspaceId, forInsert: !!options.forInsert, userId: this.currentUserId
       }) : {};
+      // Giữ cờ explicit/currentItem cho các adapter riêng ở dưới đọc qua `options`.
       switch (collection) {
         case 'campaigns': {
           if (obj.why !== undefined && obj.objectives === undefined) payload.objectives = obj.why;
@@ -596,6 +743,15 @@
           if (obj.type !== undefined && ['image', 'video', 'audio', 'document', 'design', 'other'].indexOf(String(obj.type).toLowerCase()) === -1) {
             payload.tags = [String(obj.type)];
           }
+          // R17: approval_status là cột riêng. Giá trị duyệt kiểu cũ
+          // (Draft/In review/Approved) đi vào approval_status, KHÔNG vào status.
+          var appr = obj.approvalStatus || obj.approval_status;
+          if (appr !== undefined && appr !== null) payload.approval_status = String(appr).toLowerCase().replace(' ', '_');
+          else if (obj.status !== undefined && ['Draft', 'In review', 'Approved'].indexOf(obj.status) !== -1) {
+            payload.approval_status = { Draft: 'draft', 'In review': 'in_review', Approved: 'approved' }[obj.status];
+            delete payload.status;
+          }
+          if (obj.usageStatus !== undefined) payload.status = obj.usageStatus;
           break;
         }
         case 'variants': {
@@ -625,8 +781,11 @@
           payload.observed_at = observed;
           if (!payload.period_start) payload.period_start = observed;
           if (!payload.period_end) payload.period_end = observed;
-          if (!payload.object_type) payload.object_type = obj.variantId ? 'channel_account' : 'external_post';
-          if (!payload.object_id) payload.object_id = obj.externalPostId || obj.objectId || obj.variantId || '';
+          // R16: object_type PHẢI rõ đối tượng: có external post -> 'external_post';
+          // chưa có post -> 'content_variant' với object_id = variantId.
+          // (Không dùng 'channel_account' + variant id nữa.)
+          if (!payload.object_type) payload.object_type = obj.objectType || (obj.externalPostId ? 'external_post' : (obj.variantId ? 'content_variant' : 'external_post'));
+          if (!payload.object_id) payload.object_id = obj.objectId || obj.externalPostId || obj.variantId || '';
           if (!payload.source) payload.source = obj.source || 'manual';
           var dims = Object.assign({}, obj.dimensions || {});
           ['spend', 'clicks', 'impressions', 'results'].forEach(function (k) { if (obj[k] != null) dims[k] = obj[k]; });
@@ -643,13 +802,26 @@
           break;
         }
         case 'adChangeRequests': {
-          payload.after_state = Object.assign({}, obj.afterState || {}, {
-            title: obj.title || '', target: obj.target || ''
-          });
-          if (!payload.target_external_id) payload.target_external_id = obj.target || obj.title || '';
-          if (!payload.target_type) payload.target_type = 'ad_campaign';
-          if (!payload.change_type) payload.change_type = 'other';
-          if (obj.title && !payload.reason) payload.reason = obj.title;
+          // R19/QA24: partial update chỉ gửi field thực sửa; after_state chỉ khi
+          // explicitProposal (options.explicitProposal hoặc patch._explicitProposal)
+          // hoặc khi insert. Status-only patch không đụng after/before_state.
+          var explicit = !!(options.explicitProposal || obj._explicitProposal || obj._proposalEdited);
+          var partial = Core && Core.adChangePayload ? Core.adChangePayload(obj, options.currentItem || null, { forInsert: !!options.forInsert, explicitProposal: explicit }) : {};
+          if (partial.after_state !== undefined) payload.after_state = partial.after_state; else delete payload.after_state;
+          if (partial.target_external_id !== undefined) payload.target_external_id = partial.target_external_id;
+          else if (!options.forInsert) delete payload.target_external_id;
+          if (!options.forInsert) { delete payload.before_state; if (!explicit && obj.reason === undefined) delete payload.reason; }
+          if (options.forInsert) {
+            if (!payload.target_external_id) payload.target_external_id = obj.target || obj.title || '';
+            if (!payload.target_type) payload.target_type = 'ad_campaign';
+            if (!payload.change_type) payload.change_type = 'other';
+            if (obj.title && !payload.reason) payload.reason = obj.title;
+          }
+          delete payload._explicit_proposal; delete payload._proposal_edited;
+          break;
+        }
+        case 'externalPosts': {
+          if (options.forInsert && !payload.source) payload.source = 'manual';
           break;
         }
         case 'reportSnapshots': {
@@ -744,6 +916,9 @@
       if (raw) { try { source = JSON.parse(raw); } catch (e) { source = null; } }
       if (!source || !source.campaigns) source = clone(global.SAVA_DEMO_DATA || {});
       COLLECTIONS.forEach(function (k) { this.state[k] = clone(source[k] || []); }.bind(this));
+      this._postMappings = (source.postMappings || (this.state.externalPosts || []).filter(function (pp) { return pp.campaignId || pp.variantId; }).map(function (pp) {
+        return { id: 'demo-map-' + pp.id, external_post_id: pp.id, campaign_id: pp.campaignId || null, variant_id: pp.variantId || null, content_item_id: pp.contentItemId || null, mapping_source: 'manual' };
+      })).slice();
       this.holidays = clone(source.holidays || []);
       if (!this.currentUserId) {
         var prefs = this.getPrefs();
@@ -788,11 +963,20 @@
     // ======================================================================
     // CRUD dùng chung (cùng ID ở mọi view)
     // ======================================================================
-    list: function (collection) { return (this.state[collection] || []).slice(); },
+    list: function (collection, opts) {
+      var rows = (this.state[collection] || []).slice();
+      if (!(opts && opts.includeArchived)) rows = rows.filter(function (x) { return !x.archivedAt; });
+      return rows;
+    },
     get: function (collection, id) { return (this.state[collection] || []).find(function (x) { return x.id === id; }) || null; },
 
     create: function (collection, obj) {
       if (this.mode === 'supabase') return this._createRemote(collection, obj || {});
+      // Demo dùng CÙNG guard quyền + validation như real (R32/R30).
+      var guard = this._guard(collection, obj || {}, 'create');
+      if (guard) return guard;
+      var invalid = this._validate(collection, obj || {}, null);
+      if (invalid) return invalid;
       if (!this.state[collection]) this.state[collection] = [];
       var item = Object.assign({}, obj);
       if (!item.id) item.id = uid(collection.replace(/s$/, ''));
@@ -804,6 +988,10 @@
         if (dup) return { ok: false, error: 'Bài đã đăng này đã tồn tại (trùng platform + tài khoản + externalPostId): ' + dup.id, item: dup };
       }
       this.state[collection].push(item);
+      // Gắn campaign trong demo cũng qua mapping (R15): giữ mapping ở _postMappings.
+      if (collection === 'externalPosts' && item.campaignId) {
+        this._postMappings.push({ id: uid('mapping'), external_post_id: item.id, campaign_id: item.campaignId, variant_id: item.variantId || null, content_item_id: item.contentItemId || null, mapping_source: 'manual' });
+      }
       this.notify();
       return { ok: true, item: item };
     },
@@ -813,6 +1001,10 @@
       if (collection === 'members') {
         return Promise.resolve({ ok: false, error: 'Thành viên được thêm bằng lời mời của Owner (Supabase Auth + memberships), không tạo trực tiếp ở đây.' });
       }
+      var guard = this._guard(collection, obj, 'create');
+      if (guard) return Promise.resolve(guard);
+      var invalid = this._validate(collection, obj, null);
+      if (invalid) return Promise.resolve(invalid);
       if (collection === 'businessUnits') return this._createBusinessUnit(obj);
       if (collection === 'approvals') return this._createApprovalStep(obj);
       var table = Core ? Core.COLLECTION_TO_TABLE[collection] : null;
@@ -820,34 +1012,74 @@
       var payload = this._toPayload(collection, obj, { forInsert: true, workspaceId: this.workspaceId });
       // ID do frontend tự sinh (không phải uuid) không gửi lên — để server sinh.
       if (payload.id && !isUuid(payload.id)) delete payload.id;
-      var chain = this.supabaseClient.from(table).insert(payload).select().single()
-        .then(function (res) {
-          if (res.error) throw res.error;
-          var item = self._rowToItem(collection, res.data);
-          // KPI: actual nằm ở measurements, không nằm trên dòng kpis.
+      // R12: bước chính qua _attempt — lỗi {error} resolved KHÔNG còn thành ok giả.
+      return this._attempt(table + '.insert', this.supabaseClient.from(table).insert(payload).select().single())
+        .then(function (main) {
+          if (!main.ok) return main;
+          var item = self._rowToItem(collection, main.data);
+          if (!self.state[collection]) self.state[collection] = [];
+          self.state[collection].push(item);
+          if (collection === 'metricObservations' && item._manualEntry) self.state.manualMetricEntries.push(item);
+          if (collection === 'manualMetricEntries') self.state.metricObservations.push(item);
+          // Các bước phụ: lỗi → {ok:false, partial:true, failedStep} rõ ràng (R12).
+          var secondary = null;
           if (collection === 'kpis' && obj.actual != null) {
-            return self.supabaseClient.from('measurements').insert({
-              workspace_id: self.workspaceId, kpi_id: res.data.id, value: Number(obj.actual),
+            secondary = self._attempt('measurements.insert', self.supabaseClient.from('measurements').insert({
+              workspace_id: self.workspaceId, kpi_id: main.data.id, value: Number(obj.actual),
               source: 'manual', created_by: self.currentUserId
-            }).then(function () { item.actual = Number(obj.actual); return item; }, function () { return item; });
+            })).then(function (r) { if (r.ok) item.actual = Number(obj.actual); return r; });
+          } else if (collection === 'externalPosts' && obj.campaignId) {
+            secondary = self.setPostCampaign(main.data.id, obj.campaignId)
+              .then(function (r) { if (r.ok) item.campaignId = obj.campaignId; return r; });
+          } else if (collection === 'brandAssets') {
+            // R17: tạo asset → asset_versions v1 là nguồn version thật.
+            secondary = self._attempt('asset_versions.insert', self.supabaseClient.from('asset_versions').insert({
+              workspace_id: self.workspaceId, asset_id: main.data.id, version_no: 1,
+              storage_bucket: payload.storage_bucket || null, storage_path: payload.storage_path || null,
+              external_url: payload.external_url || null, change_note: 'Phiên bản đầu tiên', created_by: self.currentUserId
+            })).then(function (r) { if (r.ok) item.version = 1; return r; });
           }
-          // Bài đã đăng gắn campaign qua bảng nối post_content_mappings.
-          if (collection === 'externalPosts' && obj.campaignId) {
-            return self.supabaseClient.from('post_content_mappings').insert({
-              workspace_id: self.workspaceId, external_post_id: res.data.id,
-              campaign_id: obj.campaignId, mapping_source: 'manual', created_by: self.currentUserId
-            }).then(function () { item.campaignId = obj.campaignId; return item; }, function () { return item; });
-          }
-          return item;
+          if (!secondary) { self.notify(); return { ok: true, item: item }; }
+          return secondary.then(function (r) {
+            self.notify();
+            if (!r.ok) return { ok: false, partial: true, failedStep: r.failedStep, error: r.error, item: item };
+            return { ok: true, item: item };
+          });
         });
-      return chain.then(function (item) {
-        if (!self.state[collection]) self.state[collection] = [];
-        self.state[collection].push(item);
-        if (collection === 'metricObservations' && item._manualEntry) self.state.manualMetricEntries.push(item);
-        if (collection === 'manualMetricEntries') self.state.metricObservations.push(item);
-        self.notify();
-        return { ok: true, item: item };
-      }).catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+    },
+    /**
+     * R15 — Gắn/đổi/bỏ gắn campaign cho external post CHỈ qua
+     * post_content_mappings (insert/update/delete). KHÔNG update external_posts.
+     * campaignId=null → bỏ gắn (xoá mapping của post).
+     */
+    setPostCampaign: function (postId, campaignId) {
+      var self = this;
+      if (this.mode !== 'supabase') {
+        var post = this.get('externalPosts', postId);
+        if (!post) return { ok: false, error: 'Không tìm thấy bài đã đăng ' + postId };
+        this._postMappings = (this._postMappings || []).filter(function (m) { return m.external_post_id !== postId; });
+        post.campaignId = campaignId || null;
+        if (campaignId) this._postMappings.push({ id: uid('mapping'), external_post_id: postId, campaign_id: campaignId, variant_id: post.variantId || null, content_item_id: post.contentItemId || null, mapping_source: 'manual' });
+        this.notify();
+        return { ok: true, item: post };
+      }
+      var del = this._attempt('post_content_mappings.delete', this.supabaseClient.from('post_content_mappings').delete().eq('external_post_id', postId));
+      return del.then(function (r) {
+        if (!r.ok) return r;
+        self._postMappings = (self._postMappings || []).filter(function (m) { return m.external_post_id !== postId; });
+        var post = self.get('externalPosts', postId);
+        if (post) post.campaignId = campaignId || null;
+        if (!campaignId) { self.notify(); return { ok: true, item: post || null }; }
+        return self._attempt('post_content_mappings.insert', self.supabaseClient.from('post_content_mappings').insert({
+          workspace_id: self.workspaceId, external_post_id: postId, campaign_id: campaignId,
+          mapping_source: 'manual', created_by: self.currentUserId
+        }).select().single()).then(function (ins) {
+          if (!ins.ok) return ins;
+          self._postMappings.push(ins.data);
+          self.notify();
+          return { ok: true, item: post || null, mapping: ins.data };
+        });
+      });
     },
     _createBusinessUnit: function (obj) {
       var self = this;
@@ -855,15 +1087,14 @@
       var rows = products.map(function (p) {
         return { workspace_id: self.workspaceId, bu_name: obj.name, name: p, status: 'active', created_by: self.currentUserId };
       });
-      return this.supabaseClient.from('bu_products').insert(rows).select()
+      return this._attempt('bu_products.insert', this.supabaseClient.from('bu_products').insert(rows).select())
         .then(function (res) {
-          if (res.error) throw res.error;
+          if (!res.ok) return res;
           var item = { id: obj.name, name: obj.name, products: products.slice(), _rows: (res.data || []).map(function (r) { return r.id; }) };
           self.state.businessUnits.push(item);
           self.notify();
           return { ok: true, item: item };
-        })
-        .catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+        });
     },
     _createApprovalStep: function (obj) {
       var self = this;
@@ -872,23 +1103,46 @@
         variant_id: obj.variantId || null, content_item_id: obj.contentItemId || null, campaign_id: obj.campaignId || null,
         name: obj.note || 'Yêu cầu duyệt nội dung', approver_id: null, status: 'pending'
       };
-      return this.supabaseClient.from('approval_steps').insert(payload).select().single()
+      return this._attempt('approval_steps.insert', this.supabaseClient.from('approval_steps').insert(payload).select().single())
         .then(function (res) {
-          if (res.error) throw res.error;
+          if (!res.ok) return res;
           return self._refreshCollections(['approvals']).then(function () {
             var item = self.get('approvals', res.data.id);
             return { ok: true, item: item || res.data };
           });
-        })
-        .catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+        });
     },
 
     update: function (collection, id, patch) {
       if (collection === 'variants') return this.updateVariant(id, patch);
       if (this.mode === 'supabase') return this._updateRemote(collection, id, patch || {});
+      var guard = this._guard(collection, patch || {}, 'update');
+      if (guard) return guard;
       var item = this.get(collection, id);
       if (!item) return { ok: false, error: 'Không tìm thấy bản ghi ' + id };
-      Object.assign(item, patch);
+      var invalid = this._validate(collection, patch || {}, item);
+      if (invalid) return invalid;
+      // R18 demo: custom_fields merge như DB trigger — field vào custom_fields
+      // (deliverable…) hoặc patch.customFields đều merge, '__UNSET__' = xoá.
+      var effective = Object.assign({}, patch);
+      if (Core && Core.CUSTOM_FIELDS_TABLES[Core.COLLECTION_TO_TABLE[collection]]) {
+        var cfPatch = {};
+        Object.keys(effective).forEach(function (k) {
+          if (k === 'customFields' || k === 'custom_fields') return;
+          var snake = Core.camelToSnake(k);
+          var table = Core.COLLECTION_TO_TABLE[collection];
+          if (!Core.hasColumn(table, Core.FIELD_ALIASES[collection] && Core.FIELD_ALIASES[collection][k] || snake)) cfPatch[k] = effective[k];
+        });
+        if (effective.customFields) Object.assign(cfPatch, effective.customFields);
+        if (Object.keys(cfPatch).length) item.customFields = Core.mergeCustomFields(item.customFields || {}, cfPatch);
+      } else if (effective.customFields) {
+        item.customFields = Core ? Core.mergeCustomFields(item.customFields || {}, effective.customFields) : effective.customFields;
+      }
+      delete effective.customFields;
+      Object.assign(item, effective);
+      // Đồng bộ các field đã gói vào customFields lên top-level như fromDbRow.
+      if (item.customFields) Object.keys(item.customFields).forEach(function (k) { if (effective[k] !== undefined) item[k] = item.customFields[k]; });
+      if (item.customFields) Object.keys(cfPatch || {}).forEach(function (k) { if (cfPatch[k] === '__UNSET__') delete item[k]; });
       this.notify();
       return { ok: true, item: item };
     },
@@ -899,51 +1153,128 @@
       if (collection === 'businessUnits') return this._updateBusinessUnit(id, patch);
       var item = this.get(collection, id);
       if (!item) return Promise.resolve({ ok: false, error: 'Không tìm thấy bản ghi ' + id });
+      var guard = this._guard(collection, patch, 'update');
+      if (guard) return Promise.resolve(guard);
+      var invalid = this._validate(collection, patch, item);
+      if (invalid) return Promise.resolve(invalid);
       if (collection === 'approvals') return this._updateApproval(collection, item, patch);
       var table = Core ? Core.COLLECTION_TO_TABLE[collection] : null;
       if (!table) return Promise.resolve({ ok: false, error: 'Collection chưa được ánh xạ: ' + collection });
+      // R15: externalPosts — campaignId KHÔNG BAO GIỜ update lên external_posts;
+      // chỉ thao tác post_content_mappings. Field khác của post (chỉ khi
+      // source='manual') mới update bảng post, và là bước riêng/partial rõ ràng.
+      if (collection === 'externalPosts') {
+        var rest = Object.assign({}, patch); var hasCampaign = rest.campaignId !== undefined;
+        delete rest.campaignId;
+        var postStep = Object.keys(rest).length
+          ? this._updateTableRow(collection, table, item, rest)
+          : Promise.resolve({ ok: true, item: item });
+        return postStep.then(function (r) {
+          if (!r.ok) return r;
+          if (!hasCampaign) return r;
+          return self.setPostCampaign(id, patch.campaignId).then(function (m) {
+            if (!m.ok) return { ok: false, partial: true, failedStep: m.failedStep, error: m.error, item: r.item };
+            if (r.item) r.item.campaignId = patch.campaignId;
+            return r;
+          });
+        });
+      }
+      return this._updateTableRow(collection, table, item, patch).then(function (r) {
+        if (!r.ok) return r;
+        var fresh = r.item;
+        // Bước phụ (partial rõ ràng khi lỗi — R12):
+        if (collection === 'kpis' && patch.actual != null) {
+          return self._attempt('measurements.insert', self.supabaseClient.from('measurements').insert({
+            workspace_id: self.workspaceId, kpi_id: id, value: Number(patch.actual), source: 'manual', created_by: self.currentUserId
+          })).then(function (m) {
+            if (!m.ok) return { ok: false, partial: true, failedStep: m.failedStep, error: m.error, item: fresh };
+            fresh.actual = Number(patch.actual); self.notify();
+            return { ok: true, item: fresh };
+          });
+        }
+        if (collection === 'brandAssets') {
+          // R17: sửa NỘI DUNG asset (đường dẫn/url/tên…) → asset_versions mới.
+          var contentKeys = ['name', 'storagePath', 'storage_path', 'externalUrl', 'external_url', 'mimeType', 'sizeBytes'];
+          var touchesContent = contentKeys.some(function (k) { return patch[k] !== undefined; });
+          if (touchesContent) {
+            var nextVer = (item.version || 0) + 1;
+            return self._attempt('asset_versions.insert', self.supabaseClient.from('asset_versions').insert({
+              workspace_id: self.workspaceId, asset_id: id, version_no: nextVer,
+              storage_bucket: patch.storageBucket || item.storageBucket || null,
+              storage_path: patch.storagePath || item.storagePath || null,
+              external_url: patch.externalUrl || item.externalUrl || null,
+              change_note: patch.changeNote || 'Cập nhật nội dung', created_by: self.currentUserId
+            })).then(function (m) {
+              if (!m.ok) return { ok: false, partial: true, failedStep: m.failedStep, error: m.error, item: fresh };
+              fresh.version = nextVer; self.notify();
+              return { ok: true, item: fresh };
+            });
+          }
+        }
+        return r;
+      });
+    },
+    /**
+     * Ghi 1 dòng qua REST với: khóa lạc quan AC09, R18 read-before-write cho
+     * custom_fields (đọc bản hiện tại trên server, merge, '__UNSET__' = xoá),
+     * và _attempt kiểm lỗi + row count. Dùng cho _updateRemote và các đường
+     * update variant. Trả {ok,item} | {ok:false, failedStep|conflict, error}.
+     */
+    _updateTableRow: function (collection, table, item, patch, extraOptions) {
+      var self = this;
       var effectivePatch = patch;
       if (collection === 'tasks' && patch.status !== undefined && patch.completedAt === undefined) {
         effectivePatch = Object.assign({}, patch, { completedAt: patch.status === 'completed' ? (item.completedAt || new Date().toISOString()) : null });
       }
-      // Khóa lạc quan AC09 (buildOptimisticUpdate ở store-core): chỉ khóa khi
-      // bảng có updated_at và bản đang giữ có mốc đó; payload mang updated_at mới.
-      var useLock = !!(Core && item.updatedAt && Core.hasColumn(table, 'updated_at') &&
-        Core.buildOptimisticUpdate(collection, effectivePatch, item));
-      var payload = this._toPayload(collection, effectivePatch, {});
-      delete payload.id; delete payload.created_at; delete payload.created_by; delete payload.workspace_id;
-      if (Core.hasColumn(table, 'updated_at')) payload.updated_at = new Date().toISOString();
-      if (!Object.keys(payload).length) return Promise.resolve({ ok: true, item: item });
-      var q = this.supabaseClient.from(table).update(payload).eq('id', id);
-      if (useLock) q = q.eq('updated_at', item.updatedAt);
-      return q.select().then(function (res) {
-        if (res.error) throw res.error;
-        var rows = res.data || [];
-        if (!rows.length) {
-          // 0 dòng khớp với updated_at cũ → xung đột: nạp lại bản server, KHÔNG ghi đè.
-          return self._reloadOne(collection, id).then(function () {
-            return { ok: false, conflict: true, error: 'Bản ghi đã bị người khác sửa. Đã tải lại bản mới nhất từ server — hãy kiểm tra lại rồi thử lại.' };
-          });
+      var needsCustomMerge = !!(Core && Core.CUSTOM_FIELDS_TABLES[table] && (
+        patch.customFields || Object.keys(patch).some(function (k) {
+          return !Core.hasColumn(table, (Core.FIELD_ALIASES[collection] || {})[k] || Core.camelToSnake(k)) && !Core.isLabelField(k);
+        })));
+      var basePromise = needsCustomMerge
+        ? this._attempt(table + '.select.custom_fields', this.supabaseClient.from(table).select('custom_fields').eq('id', item.id).limit(1))
+            .then(function (r) {
+              // Đọc-trước-ghi thất bại thì DỪNG (không ghi đè mù custom_fields).
+              if (!r.ok) return r;
+              var serverCf = (r.data && r.data[0] && r.data[0].custom_fields) || {};
+              var mergedBase = Core.mergeCustomFields(serverCf, {});
+              return { ok: true, customBase: mergedBase };
+            })
+        : Promise.resolve({ ok: true, customBase: null });
+      return basePromise.then(function (base) {
+        if (!base.ok) return base;
+        var opts = Object.assign({}, extraOptions || {}, { currentItem: item });
+        var payloadPatch = effectivePatch;
+        if (base.customBase) {
+          // Base = custom_fields HIỆN TẠI trên server; patch.customFields merge
+          // lên base (kèm '__UNSET__'); field lẻ của patch đi qua stash ở _toPayload.
+          payloadPatch = Object.assign({}, effectivePatch, { customFields: Core.mergeCustomFields(base.customBase, effectivePatch.customFields || {}) });
         }
-        var fresh = self._rowToItem(collection, rows[0]);
-        self._replaceInState(collection, fresh);
-        // KPI: actual ghi thành measurement mới.
-        if (collection === 'kpis' && patch.actual != null) {
-          return self.supabaseClient.from('measurements').insert({
-            workspace_id: self.workspaceId, kpi_id: id, value: Number(patch.actual), source: 'manual', created_by: self.currentUserId
-          }).then(function () { fresh.actual = Number(patch.actual); self.notify(); return { ok: true, item: fresh }; },
-                  function () { self.notify(); return { ok: true, item: fresh }; });
-        }
-        if (collection === 'externalPosts' && patch.campaignId) {
-          return self.supabaseClient.from('post_content_mappings').insert({
-            workspace_id: self.workspaceId, external_post_id: id, campaign_id: patch.campaignId,
-            mapping_source: 'manual', created_by: self.currentUserId
-          }).then(function () { fresh.campaignId = patch.campaignId; self.notify(); return { ok: true, item: fresh }; },
-                  function () { self.notify(); return { ok: true, item: fresh }; });
-        }
-        self.notify();
-        return { ok: true, item: fresh };
-      }).catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+        var payload = self._toPayload(collection, payloadPatch, opts);
+        delete payload.id; delete payload.created_at; delete payload.created_by; delete payload.workspace_id;
+        if (Core.hasColumn(table, 'updated_at')) payload.updated_at = new Date().toISOString();
+        if (!Object.keys(payload).length) return { ok: true, item: item };
+        var useLock = !!(item.updatedAt && Core.hasColumn(table, 'updated_at') && Core.buildOptimisticUpdate(collection, effectivePatch, item));
+        var q = self.supabaseClient.from(table).update(payload).eq('id', item.id);
+        if (useLock) q = q.eq('updated_at', item.updatedAt);
+        return self._attempt(table + '.update', q.select(), { requireRows: true }).then(function (res) {
+          if (!res.ok) {
+            if (res.code === 'no_rows' && useLock) {
+              return self._reloadOne(collection, item.id).then(function () {
+                return { ok: false, conflict: true, failedStep: res.failedStep, error: 'Bản ghi đã bị người khác sửa. Đã tải lại bản mới nhất từ server — hãy kiểm tra lại rồi thử lại.' };
+              });
+            }
+            return res;
+          }
+          var fresh = self._rowToItem(collection, res.data[0]);
+          // Giữ các field phái sinh không nằm trên dòng (vd campaignId qua mapping, actual KPI).
+          if (item.campaignId !== undefined && fresh.campaignId === undefined) fresh.campaignId = item.campaignId;
+          if (item.actual !== undefined && fresh.actual === undefined) fresh.actual = item.actual;
+          if (item.version !== undefined && fresh.version == null) fresh.version = item.version;
+          self._replaceInState(collection, fresh);
+          self.notify();
+          return { ok: true, item: fresh };
+        });
+      });
     },
     _updateApproval: function (collection, item, patch) {
       // Sửa yêu cầu duyệt = sửa approval_steps (quyết định duyệt đi qua decideApproval).
@@ -952,29 +1283,27 @@
       if (patch.note !== undefined) payload.name = patch.note;
       if (patch.status !== undefined && ['pending', 'approved', 'rejected', 'skipped', 'cancelled'].indexOf(patch.status) !== -1) payload.status = patch.status;
       payload.updated_at = new Date().toISOString();
-      return this.supabaseClient.from('approval_steps').update(payload).eq('id', item.id).select()
+      return this._attempt('approval_steps.update', this.supabaseClient.from('approval_steps').update(payload).eq('id', item.id).select(), { requireRows: true })
         .then(function (res) {
-          if (res.error) throw res.error;
+          if (!res.ok) return res;
           return self._refreshCollections(['approvals']).then(function () {
             return { ok: true, item: self.get('approvals', item.id) };
           });
-        })
-        .catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+        });
     },
     _updateBusinessUnit: function (id, patch) {
       var self = this;
       var bu = this.get('businessUnits', id);
       if (!bu) return Promise.resolve({ ok: false, error: 'Không tìm thấy BU ' + id });
       var newName = patch.name || bu.name;
-      return this.supabaseClient.from('bu_products').update({ bu_name: newName }).eq('workspace_id', this.workspaceId).eq('bu_name', bu.name)
+      return this._attempt('bu_products.update', this.supabaseClient.from('bu_products').update({ bu_name: newName }).eq('workspace_id', this.workspaceId).eq('bu_name', bu.name))
         .then(function (res) {
-          if (res.error) throw res.error;
+          if (!res.ok) return res;
           bu.name = newName; bu.id = newName;
           if (patch.products) bu.products = patch.products;
           self.notify();
           return { ok: true, item: bu };
-        })
-        .catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+        });
     },
     _reloadOne: function (collection, id) {
       var self = this;
@@ -993,12 +1322,60 @@
       this.state[collection] = list;
     },
 
+    /**
+     * R31 — remove = ARCHIVE (set archived_at) cho entity chính, demo và
+     * remote cùng hành vi. list() mặc định lọc archived; restore() khôi phục.
+     * Archive variant còn huỷ các publish_jobs đang chờ của variant đó.
+     * Bảng không có archived_at (quan hệ/phụ) mới hard-delete qua _attempt.
+     */
     remove: function (collection, id) {
       if (this.mode === 'supabase') return this._removeRemote(collection, id);
-      if (!this.state[collection]) return { ok: false };
+      var guard = this._guard(collection, {}, 'remove');
+      if (guard) return guard;
+      var item = this.get(collection, id);
+      if (!item) return { ok: false, error: 'Không tìm thấy bản ghi ' + id };
+      var table = Core ? Core.COLLECTION_TO_TABLE[collection] : null;
+      if (Core && table && Core.ARCHIVABLE_TABLES[table]) {
+        item.archivedAt = new Date().toISOString();
+        if (collection === 'variants') this._cancelPendingJobsDemo(id);
+        this.notify();
+        return { ok: true, item: item, archived: true };
+      }
       this.state[collection] = this.state[collection].filter(function (x) { return x.id !== id; });
       this.notify();
       return { ok: true };
+    },
+    _cancelPendingJobsDemo: function (variantId) {
+      (this.state.publishJobs || []).forEach(function (job) {
+        if (job.variantId === variantId && ['queued', 'unscheduled', 'scheduled'].indexOf(job.status) !== -1) {
+          job.status = 'cancelled';
+          job.cancelReason = 'Variant đã archive.';
+        }
+      });
+    },
+    restore: function (collection, id) {
+      var item = this.get(collection, id);
+      if (!item) return this.mode === 'supabase'
+        ? Promise.resolve({ ok: false, error: 'Không tìm thấy bản ghi ' + id })
+        : { ok: false, error: 'Không tìm thấy bản ghi ' + id };
+      if (this.mode === 'supabase') {
+        var self = this;
+        var table = Core ? Core.COLLECTION_TO_TABLE[collection] : null;
+        if (!table || !(Core.ARCHIVABLE_TABLES || {})[table]) {
+          return Promise.resolve({ ok: false, error: 'Collection này không hỗ trợ khôi phục (không có archived_at): ' + collection });
+        }
+        return this._attempt(table + '.restore', this.supabaseClient.from(table).update({ archived_at: null }).eq('id', id).select(), { requireRows: true })
+          .then(function (res) {
+            if (!res.ok) return res;
+            var fresh = self._rowToItem(collection, res.data[0]);
+            self._replaceInState(collection, fresh);
+            self.notify();
+            return { ok: true, item: fresh };
+          });
+      }
+      delete item.archivedAt;
+      this.notify();
+      return { ok: true, item: item };
     },
     _removeRemote: function (collection, id) {
       var self = this;
@@ -1007,31 +1384,50 @@
       if (collection === 'businessUnits') {
         var bu = this.get('businessUnits', id);
         if (!bu) return Promise.resolve({ ok: false });
-        return this.supabaseClient.from('bu_products').delete().eq('workspace_id', this.workspaceId).eq('bu_name', bu.name)
+        // bu_products có archived_at (0005): archive các dòng của BU.
+        return this._attempt('bu_products.archive', this.supabaseClient.from('bu_products').update({ archived_at: new Date().toISOString() }).eq('workspace_id', this.workspaceId).eq('bu_name', bu.name))
           .then(function (res) {
-            if (res.error) throw res.error;
-            self.state.businessUnits = self.state.businessUnits.filter(function (x) { return x.id !== id; });
+            if (!res.ok) return res;
+            var item = self.get('businessUnits', id);
+            if (item) item.archivedAt = new Date().toISOString();
             self.notify();
-            return { ok: true };
-          }).catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+            return { ok: true, archived: true };
+          });
       }
       var table = Core ? Core.COLLECTION_TO_TABLE[collection] : null;
       if (!table) return Promise.resolve({ ok: false, error: 'Collection chưa được ánh xạ: ' + collection });
-      var softCol = Core ? Core.SOFT_DELETE_COLUMNS[table] : null;
-      var op;
-      if (softCol && Core.hasColumn(table, softCol)) {
-        var patch = {}; patch[softCol] = new Date().toISOString();
-        op = this.supabaseClient.from(table).update(patch).eq('id', id);
-      } else {
-        // Các bảng nghiệp vụ không có archived_at/deleted_at → xoá thật.
-        op = this.supabaseClient.from(table).delete().eq('id', id);
+      if (Core && Core.ARCHIVABLE_TABLES[table]) {
+        return this._attempt(table + '.archive', this.supabaseClient.from(table).update({ archived_at: new Date().toISOString() }).eq('id', id).select(), { requireRows: true })
+          .then(function (res) {
+            if (!res.ok) return res;
+            var item = self.get(collection, id);
+            if (item) item.archivedAt = new Date().toISOString();
+            if (collection === 'variants') {
+              // Huỷ publish_jobs đang chờ của variant (bước phụ — partial nếu lỗi).
+              return self._attempt('publish_jobs.cancel', self.supabaseClient.from('publish_jobs')
+                .update({ status: 'cancelled', cancel_reason: 'Variant đã archive.' })
+                .eq('variant_id', id).in('status', ['queued', 'unscheduled']))
+                .then(function (c) {
+                  (self.state.publishJobs || []).forEach(function (job) {
+                    if (job.variantId === id && ['queued', 'unscheduled', 'scheduled'].indexOf(job.status) !== -1) job.status = 'cancelled';
+                  });
+                  self.notify();
+                  if (!c.ok) return { ok: false, partial: true, failedStep: c.failedStep, error: c.error, item: item, archived: true };
+                  return { ok: true, item: item, archived: true };
+                });
+            }
+            self.notify();
+            return { ok: true, item: item, archived: true };
+          });
       }
-      return op.then(function (res) {
-        if (res.error) throw res.error;
-        self.state[collection] = (self.state[collection] || []).filter(function (x) { return x.id !== id; });
-        self.notify();
-        return { ok: true };
-      }).catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+      // Bảng quan hệ/phụ không có archived_at → hard-delete (vẫn qua _attempt).
+      return this._attempt(table + '.delete', this.supabaseClient.from(table).delete().eq('id', id))
+        .then(function (res) {
+          if (!res.ok) return res;
+          self.state[collection] = (self.state[collection] || []).filter(function (x) { return x.id !== id; });
+          self.notify();
+          return { ok: true };
+        });
     },
 
     /**
@@ -1043,20 +1439,34 @@
      */
     updateVariant: function (id, patch) {
       if (this.mode === 'supabase') return this._updateVariantRemote(id, patch || {});
+      var guard = this._guard('variants', patch || {}, 'update');
+      if (guard) return guard;
       var v = this.get('variants', id);
       if (!v) return { ok: false, error: 'Không tìm thấy variant ' + id };
-      var captionChanged = patch.caption !== undefined && patch.caption !== v.caption;
+      // R27 demo: sửa caption/media → revision MỚI (không ghi đè revision cũ).
+      var contentChanged = this._variantContentChanged(v, patch);
       var wasApproved = v.approvalStatus === 'approved';
       Object.assign(v, patch);
       var note = null;
-      if (captionChanged && wasApproved) {
+      if (contentChanged) {
+        v.revision = (v.revision || 1) + 1;
+        v.currentRevisionId = uid('revision');
+        v.currentRevision = {
+          id: v.currentRevisionId, revisionNo: v.revision,
+          caption: v.caption || null, mediaAssetIds: v.mediaAssetIds || [],
+          snapshot: { caption: v.caption || null, media_asset_ids: v.mediaAssetIds || [] }
+        };
+        if (!this.state.contentRevisions) this.state.contentRevisions = [];
+        this.state.contentRevisions.push(Object.assign({ variantId: id }, v.currentRevision));
+      }
+      if (contentChanged && wasApproved) {
         v.approvalStatus = 'needs_reapproval';
         v.editorialStatus = 'in_review';
-        note = 'Caption đã đổi sau khi duyệt: approval hạ về "Cần duyệt lại".';
+        note = 'Nội dung đã đổi sau khi duyệt: approval hạ về "Cần duyệt lại".';
         (this.state.publishJobs || []).forEach(function (job) {
-          if (job.variantId === id && job.status !== 'paused') {
+          if (job.variantId === id && job.status !== 'paused' && job.status !== 'cancelled') {
             job.status = 'paused';
-            job.note = (job.note ? job.note + ' ' : '') + 'Tạm dừng vì caption đổi sau khi duyệt — cần duyệt lại.';
+            job.note = (job.note ? job.note + ' ' : '') + 'Tạm dừng vì nội dung đổi sau khi duyệt — cần duyệt lại.';
           }
         });
         (this.state.approvals || []).forEach(function (a) {
@@ -1064,6 +1474,7 @@
         });
         this.state.approvals.push({
           id: uid('approval'), variantId: id, contentItemId: v.contentItemId, revision: v.revision || 1,
+          revisionId: v.currentRevisionId || null,
           status: 'pending', statusLabel: 'Chờ duyệt', requestedBy: this.currentUserId,
           requestedAt: new Date().toISOString(), note: note
         });
@@ -1071,198 +1482,373 @@
       this.notify();
       return { ok: true, item: v, note: note };
     },
+    _variantContentChanged: function (v, patch) {
+      if (!patch) return false;
+      if (patch.caption !== undefined && patch.caption !== v.caption) return true;
+      if (patch.mediaAssetIds !== undefined && JSON.stringify(patch.mediaAssetIds || []) !== JSON.stringify(v.mediaAssetIds || [])) return true;
+      if (patch.linkUrl !== undefined && patch.linkUrl !== v.linkUrl) return true;
+      if (patch.visibility !== undefined && patch.visibility !== v.visibility) return true;
+      return false;
+    },
     _updateVariantRemote: function (id, patch) {
       var self = this;
       var v = this.get('variants', id);
       if (!v) return Promise.resolve({ ok: false, error: 'Không tìm thấy variant ' + id });
-      var captionChanged = patch.caption !== undefined && patch.caption !== v.caption;
+      var guard = this._guard('variants', patch, 'update');
+      if (guard) return Promise.resolve(guard);
+      var contentChanged = this._variantContentChanged(v, patch);
       var wasApproved = v.approvalStatus === 'approved';
-      var mainPatch = Object.assign({}, patch);
       var tiktokPatch = null;
       if (v.platform === 'tiktok' && (patch.hook !== undefined || patch.cta !== undefined || patch.scriptScenes !== undefined || patch.externalUrl !== undefined)) {
         tiktokPatch = {
           workspace_id: this.workspaceId, variant_id: id,
           hook: patch.hook != null ? patch.hook : (v.hook || null),
           cta: patch.cta != null ? patch.cta : (v.cta || null),
-          scenes: (patch.scriptScenes || v.scriptScenes || []).map(function (s) {
-            return { shot: s.shot, visual: s.visual, dialogue: s.dialogue, on_screen_text: s.onScreenText, duration_sec: s.durationSec };
+          scenes: (patch.scriptScenes || v.scriptScenes || []).map(function (sc) {
+            return { shot: sc.shot, visual: sc.visual, dialogue: sc.dialogue, on_screen_text: sc.onScreenText, duration_sec: sc.durationSec };
           }),
           caption: patch.caption != null ? patch.caption : (v.caption || null),
           external_url: patch.externalUrl != null ? patch.externalUrl : (v.externalUrl || null),
           updated_at: new Date().toISOString()
         };
       }
-      var result = this._updateRemote('variants', id, mainPatch);
-      return result.then(function (res) {
-        if (!res.ok) return res;
-        var jobs = [];
-        if (tiktokPatch) {
-          jobs.push(self.supabaseClient.from('tiktok_scripts').upsert(tiktokPatch, { onConflict: 'variant_id' })
-            .then(function () { return null; }, function () { return null; }));
-        }
-        if (captionChanged && wasApproved) {
-          res.note = 'Caption đã đổi sau khi duyệt: approval hạ về "Cần duyệt lại".';
-          jobs.push(self._createApprovalStep({ variantId: id, contentItemId: v.contentItemId, note: res.note }));
-        }
-        return Promise.all(jobs).then(function () {
-          return self._refreshCollections(['publishJobs']).then(function () {
-            return self._refreshCollections(['approvals']).then(function () { return res; });
+      // R27: nội dung đổi → tạo revision MỚI trước, rồi mới update variant +
+      // current_revision_id. Revision insert lỗi → DỪNG, không update variant.
+      var revisionStep = contentChanged ? this._createRevisionForVariant(v, patch) : Promise.resolve({ ok: true, revision: null });
+      return revisionStep.then(function (revRes) {
+        if (!revRes.ok) return revRes;
+        var mainPatch = Object.assign({}, patch);
+        if (revRes.revision) mainPatch.currentRevisionId = revRes.revision.id;
+        return self._updateTableRow('variants', 'content_variants', v, mainPatch).then(function (res) {
+          if (!res.ok) {
+            if (revRes.revision) return { ok: false, partial: true, failedStep: 'content_variants.update', error: res.error, revision: revRes.revision };
+            return res;
+          }
+          if (revRes.revision) { res.item.revision = revRes.revision.revision_no; res.item.currentRevisionId = revRes.revision.id; }
+          var jobs = [];
+          if (tiktokPatch) {
+            jobs.push(self._attempt('tiktok_scripts.upsert', self.supabaseClient.from('tiktok_scripts').upsert(tiktokPatch, { onConflict: 'variant_id' })));
+          }
+          if (!jobs.length) return res;
+          return Promise.all(jobs).then(function (results) {
+            var failed = results.find(function (r) { return !r.ok; });
+            if (failed) return { ok: false, partial: true, failedStep: failed.failedStep, error: failed.error, item: res.item };
+            if (contentChanged && wasApproved) res.note = 'Nội dung đã đổi sau khi duyệt: approval hạ về "Cần duyệt lại" (trigger DB).';
+            return self._refreshCollections(['publishJobs', 'approvals']).then(function () { return res; });
           });
         });
       });
     },
+    /** Tạo content_revisions mới (revision_no+1, snapshot nội dung SAU sửa). */
+    _createRevisionForVariant: function (v, patch) {
+      var self = this;
+      var nextNo = (v.revision || 1) + 1;
+      // Nếu variant chưa từng có revision (revision=1 chỉ là nhãn hiển thị),
+      // revision mới vẫn là bản chốt đầu tiên theo số đang hiển thị + 1 khi
+      // đã có currentRevisionId; chưa có thì dùng số hiện tại làm revision 1.
+      if (!v.currentRevisionId && !v.approvedRevisionId) nextNo = v.revision || 1;
+      var caption = patch.caption !== undefined ? patch.caption : (v.caption || null);
+      var media = patch.mediaAssetIds !== undefined ? patch.mediaAssetIds : (v.mediaAssetIds || []);
+      var snapshot = {
+        caption: caption, media_asset_ids: media,
+        link_url: patch.linkUrl !== undefined ? patch.linkUrl : (v.linkUrl || null),
+        visibility: patch.visibility !== undefined ? patch.visibility : (v.visibility || 'public')
+      };
+      snapshot.hash = Core ? Core.stableHash(snapshot) : null;
+      return this._attempt('content_revisions.insert', this.supabaseClient.from('content_revisions').insert({
+        workspace_id: this.workspaceId, variant_id: v.id, revision_no: nextNo,
+        caption: caption, media_asset_ids: media,
+        link_url: snapshot.link_url, visibility: snapshot.visibility,
+        snapshot: snapshot, created_by: this.currentUserId
+      }).select().single()).then(function (r) {
+        if (!r.ok) return r;
+        return { ok: true, revision: r.data };
+      });
+    },
 
-    /** Quyết định duyệt nội dung, gắn với đúng revision của variant. */
-    decideApproval: function (approvalId, decision, note) {
-      if (this.mode === 'supabase') return this._decideApprovalRemote(approvalId, decision, note);
-      if (!this.can('approve')) return { ok: false, error: 'Vai trò hiện tại không có quyền duyệt nội dung.' };
-      var a = this.get('approvals', approvalId);
+    /**
+     * R27 — Gửi duyệt qua RPC submit_for_review(p_variant_id).
+     * Variant chưa có current_revision_id (remote) → chốt revision hiện tại
+     * trước (đây là chốt nội dung, không phải quyết định duyệt).
+     */
+    submitReview: function (variantId) {
+      var v = this.get('variants', variantId);
+      if (!v) {
+        var nf = { ok: false, error: 'Không tìm thấy variant ' + variantId };
+        return this.mode === 'supabase' ? Promise.resolve(nf) : nf;
+      }
+      if (this.mode !== 'supabase') {
+        var guard = this._guard('variants', {}, 'create');
+        if (guard) return guard;
+        if (!v.currentRevisionId) { v.currentRevisionId = uid('revision'); v.revision = v.revision || 1; }
+        var step = {
+          id: uid('approval'), variantId: variantId, contentItemId: v.contentItemId,
+          revision: v.revision || 1, revisionId: v.currentRevisionId,
+          status: 'pending', statusLabel: 'Chờ duyệt', requestedBy: this.currentUserId,
+          requestedAt: new Date().toISOString(), note: ''
+        };
+        this.state.approvals.push(step);
+        v.editorialStatus = 'in_review'; v.approvalStatus = 'pending';
+        this.notify();
+        return { ok: true, item: step };
+      }
+      var self = this;
+      var ensure = v.currentRevisionId ? Promise.resolve({ ok: true }) : this._createRevisionForVariant(v, {}).then(function (r) {
+        if (!r.ok) return r;
+        return self._updateTableRow('variants', 'content_variants', v, { currentRevisionId: r.revision.id });
+      });
+      return ensure.then(function (e) {
+        if (!e.ok) return e;
+        return self._rpc('submit_for_review', { p_variant_id: variantId }).then(function (r) {
+          if (!r.ok) return r;
+          return self._refreshCollections(['approvals', 'variants']).then(function () { return { ok: true, item: r.data }; });
+        });
+      });
+    },
+
+    /**
+     * R27 — Quyết định duyệt CHỈ qua RPC decide_approval.
+     * decide(stepId, revisionId, decision, comment): revisionId là tham số
+     * BẮT BUỘC lấy từ state đang hiển thị — store KHÔNG tự fetch latest.
+     * RPC trả REVISION_MISMATCH → lỗi rõ "nội dung đã thay đổi, cần tải lại".
+     */
+    decide: function (stepId, revisionId, decision, comment) {
+      if (!revisionId) {
+        var missing = { ok: false, code: 'revision_required', error: 'Thiếu revisionId: quyết định duyệt phải gắn đúng revision đang hiển thị.' };
+        return this.mode === 'supabase' ? Promise.resolve(missing) : missing;
+      }
+      if (this.mode === 'supabase') return this._decideRemote(stepId, revisionId, decision, comment);
+      // Demo: cùng contract — revisionId phải khớp revision hiện hành của variant.
+      var a = this.get('approvals', stepId);
       if (!a) return { ok: false, error: 'Không tìm thấy yêu cầu duyệt.' };
+      return this.decideApproval(stepId, decision, comment, revisionId);
+    },
+    _decideRemote: function (stepId, revisionId, decision, comment) {
+      var self = this;
+      if (!this.can('approval.decide')) return Promise.resolve({ ok: false, error: 'Vai trò hiện tại không có quyền duyệt nội dung.' });
+      return this._rpc('decide_approval', {
+        p_step_id: stepId, p_revision_id: revisionId, p_decision: decision, p_comment: comment || null
+      }).then(function (r) {
+        if (!r.ok) {
+          if (/REVISION_MISMATCH/i.test(r.error || '')) {
+            return { ok: false, code: 'revision_mismatch', failedStep: r.failedStep, error: 'Nội dung đã thay đổi, cần tải lại trước khi duyệt.' };
+          }
+          return r;
+        }
+        return self._refreshCollections(['approvals', 'variants']).then(function () {
+          return { ok: true, item: r.data, decision: r.data };
+        });
+      });
+    },
+    /**
+     * Wrapper tương thích app cũ: decideApproval(approvalId, decision, note[, revisionId]).
+     * revisionId không truyền → lấy từ approval item / variant TRONG STATE
+     * đang hiển thị (revisionId của step, hoặc currentRevisionId của variant),
+     * tuyệt đối không query latest từ server.
+     */
+    decideApproval: function (approvalId, decision, note, revisionId) {
+      var a = this.get('approvals', approvalId);
+      if (!a) {
+        var nf = { ok: false, error: 'Không tìm thấy yêu cầu duyệt.' };
+        return this.mode === 'supabase' ? Promise.resolve(nf) : nf;
+      }
       var v = this.get('variants', a.variantId);
+      var revId = revisionId || a.revisionId || (v && v.currentRevisionId) || null;
+      if (this.mode === 'supabase') {
+        if (a._kind === 'decision') return Promise.resolve({ ok: false, error: 'Yêu cầu này đã có quyết định rồi.' });
+        if (!revId) return Promise.resolve({ ok: false, code: 'revision_required', error: 'Không xác định được revision đang hiển thị — hãy tải lại trang duyệt.' });
+        return this.decide(a.id, revId, decision, note);
+      }
+      if (!this.can('approve')) return { ok: false, error: 'Vai trò hiện tại không có quyền duyệt nội dung.' };
+      if (revId && v && v.currentRevisionId && revId !== v.currentRevisionId) {
+        return { ok: false, code: 'revision_mismatch', error: 'Nội dung đã thay đổi, cần tải lại trước khi duyệt.' };
+      }
       a.decidedBy = this.currentUserId;
       a.decidedAt = new Date().toISOString();
       a.note = note || a.note || '';
+      a.decisionId = uid('decision');
       if (decision === 'approved') {
         a.status = 'approved'; a.statusLabel = 'Chấp thuận';
-        if (v) { v.approvalStatus = 'approved'; v.editorialStatus = 'approved'; }
+        if (v) { v.approvalStatus = 'approved'; v.editorialStatus = 'approved'; v.approvedRevisionId = revId; v.decisionId = a.decisionId; }
       } else if (decision === 'changes_requested') {
         a.status = 'changes_requested'; a.statusLabel = 'Yêu cầu chỉnh sửa';
-        if (v) { v.approvalStatus = 'changes_requested'; v.editorialStatus = 'draft'; v.revision = (v.revision || 1) + 1; }
+        if (v) { v.approvalStatus = 'changes_requested'; v.editorialStatus = 'draft'; }
       } else if (decision === 'rejected') {
         a.status = 'rejected'; a.statusLabel = 'Từ chối';
         if (v) { v.approvalStatus = 'rejected'; v.editorialStatus = 'draft'; }
       }
       this.notify();
-      return { ok: true, item: a };
-    },
-    _decideApprovalRemote: function (approvalId, decision, note) {
-      var self = this;
-      if (!this.can('approve')) return Promise.resolve({ ok: false, error: 'Vai trò hiện tại không có quyền duyệt nội dung.' });
-      var a = this.get('approvals', approvalId);
-      if (!a) return Promise.resolve({ ok: false, error: 'Không tìm thấy yêu cầu duyệt.' });
-      if (a._kind === 'decision') return Promise.resolve({ ok: false, error: 'Yêu cầu này đã có quyết định rồi.' });
-      var v = this.get('variants', a.variantId);
-      if (!v) return Promise.resolve({ ok: false, error: 'Không tìm thấy variant của yêu cầu duyệt.' });
-      // Quyết định phải gắn 1 revision cụ thể: lấy revision mới nhất, chưa có thì chốt revision hiện tại.
-      return this.supabaseClient.from('content_revisions').select('*')
-        .eq('variant_id', v.id).order('revision_no', { ascending: false }).limit(1)
-        .then(function (res) {
-          if (res.error) throw res.error;
-          if (res.data && res.data.length) return res.data[0];
-          var revNo = (self._revisionByVariant && self._revisionByVariant[v.id]) || v.revision || 1;
-          return self.supabaseClient.from('content_revisions').insert({
-            workspace_id: self.workspaceId, variant_id: v.id, revision_no: revNo,
-            caption: v.caption || null, media_asset_ids: v.mediaAssetIds || [],
-            link_url: v.linkUrl || null, visibility: v.visibility || 'public',
-            snapshot: { caption: v.caption || null }, created_by: self.currentUserId
-          }).select().single().then(function (ins) {
-            if (ins.error) throw ins.error;
-            return ins.data;
-          });
-        })
-        .then(function (revision) {
-          return self.supabaseClient.from('approval_decisions').insert({
-            workspace_id: self.workspaceId, step_id: a._kind === 'step' || a._kind === 'step+decision' ? a.id : null,
-            variant_id: v.id, revision_id: revision.id, decision: decision,
-            decided_by: self.currentUserId, comment: note || null
-          }).select().single().then(function (ins) { if (ins.error) throw ins.error; return revision; });
-        })
-        .then(function (revision) {
-          // Cập nhật bước duyệt (nếu có) + trạng thái variant.
-          var jobs = [];
-          if (a._kind === 'step' || a._kind === 'step+decision') {
-            var stepStatus = decision === 'approved' ? 'approved' : (decision === 'rejected' ? 'rejected' : 'pending');
-            jobs.push(self.supabaseClient.from('approval_steps').update({ status: stepStatus, updated_at: new Date().toISOString() }).eq('id', a.id)
-              .then(function () { return null; }, function () { return null; }));
-          }
-          var variantPatch = {};
-          if (decision === 'approved') {
-            variantPatch = { approvalStatus: 'approved', editorialStatus: 'approved' };
-            jobs.push(self.supabaseClient.from('content_variants')
-              .update({ approved_revision_id: revision.id }).eq('id', v.id)
-              .then(function () { return null; }, function () { return null; }));
-          } else if (decision === 'changes_requested') {
-            variantPatch = { approvalStatus: 'changes_requested', editorialStatus: 'draft' };
-          } else if (decision === 'rejected') {
-            variantPatch = { approvalStatus: 'rejected', editorialStatus: 'draft' };
-          }
-          jobs.push(self._updateRemote('variants', v.id, variantPatch));
-          return Promise.all(jobs);
-        })
-        .then(function () {
-          return self._refreshCollections(['approvals']).then(function () {
-            return { ok: true, item: self.get('approvals', approvalId) || a };
-          });
-        })
-        .catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+      return { ok: true, item: a, decisionId: a.decisionId };
     },
 
     /**
-     * Cổng tạo PublishJob — chặn cứng ở các trường hợp:
-     * chế độ demo, platform TikTok, đăng ngoài app, thiếu quyền publish.
-     * Không bao giờ giả vờ thành công.
+     * R16 — Lưu metric TikTok cho 1 variant:
+     * tìm external_post đã map với content_item của variant qua
+     * post_content_mappings (variant_id hoặc content_item_id khớp).
+     *  - Có post → observation object_type='external_post', object_id=post.id.
+     *  - Chưa có → object_type='content_variant', object_id=variantId.
+     * metrics: {views: n, likes: n, …} hoặc [{metric, value}] hoặc {metric, value}.
+     * source mặc định 'manual' (chỉ 'manual'/'import' được ghi — policy 0005).
      */
-    createPublishJob: function (variantOrId) {
+    saveTiktokMetrics: function (variantId, metrics, source) {
+      var v = this.get('variants', variantId);
+      if (!v) {
+        var nf = { ok: false, error: 'Không tìm thấy variant ' + variantId };
+        return this.mode === 'supabase' ? Promise.resolve(nf) : nf;
+      }
+      var entries = [];
+      if (Array.isArray(metrics)) entries = metrics.slice();
+      else if (metrics && metrics.metric) entries = [{ metric: metrics.metric, value: metrics.value }];
+      else if (metrics) Object.keys(metrics).forEach(function (k) { entries.push({ metric: k, value: metrics[k] }); });
+      entries = entries.filter(function (e) { return e && e.metric && e.value != null && !isNaN(Number(e.value)); });
+      if (!entries.length) {
+        var em = { ok: false, error: 'Chưa có metric hợp lệ để lưu.' };
+        return this.mode === 'supabase' ? Promise.resolve(em) : em;
+      }
+      var mapping = (this._postMappings || []).find(function (m) {
+        return m.variant_id === variantId || (v.contentItemId && m.content_item_id === v.contentItemId);
+      }.bind(this));
+      var post = null;
+      if (mapping) post = this.get('externalPosts', mapping.external_post_id);
+      if (!post) {
+        post = (this.state.externalPosts || []).find(function (pp) {
+          return pp.platform === 'tiktok' && (pp.variantId === variantId || (v.contentItemId && pp.contentItemId === v.contentItemId));
+        }) || null;
+      }
+      var target = post
+        ? { objectType: 'external_post', objectId: post.id, externalPostId: post.id }
+        : { objectType: 'content_variant', objectId: variantId, externalPostId: null };
+      var now = new Date().toISOString();
+      var self = this;
+      var rows = entries.map(function (e) {
+        return {
+          objectType: target.objectType, objectId: target.objectId, externalPostId: target.externalPostId,
+          metric: e.metric, value: Number(e.value), source: source || 'manual',
+          observedAt: now, periodStart: now, periodEnd: now, periodGrain: 'lifetime', scope: 'organic'
+        };
+      });
+      if (this.mode !== 'supabase') {
+        var items = rows.map(function (r) {
+          var item = Object.assign({ id: uid('obs') }, r);
+          this.state.metricObservations.push(item);
+          return item;
+        }.bind(this));
+        this.notify();
+        return { ok: true, items: items, target: target };
+      }
+      var payloads = rows.map(function (r) { return self._toPayload('metricObservations', r, { forInsert: true, workspaceId: self.workspaceId }); });
+      return this._attempt('metric_observations.insert', this.supabaseClient.from('metric_observations').insert(payloads).select())
+        .then(function (res) {
+          if (!res.ok) return res;
+          var items = (res.data || []).map(function (row) { return self._rowToItem('metricObservations', row); });
+          items.forEach(function (it) { self.state.metricObservations.push(it); });
+          self.notify();
+          return { ok: true, items: items, target: target };
+        });
+    },
+
+    /**
+     * R29 phía store — ghi nhận trạng thái sync từ server NGUYÊN TRẠNG:
+     * 'incomplete' giữ nguyên 'incomplete', store không tự nâng thành complete.
+     */
+    recordSyncStatus: function (run) {
+      if (!run) return null;
+      if (!this.state.syncRuns) this.state.syncRuns = [];
+      var entry = Object.assign({}, run, { status: run.status || 'incomplete', complete: run.status === 'complete' });
+      var idx = this.state.syncRuns.findIndex(function (r) { return r.id === entry.id; });
+      if (idx !== -1) this.state.syncRuns[idx] = entry; else this.state.syncRuns.push(entry);
+      return entry;
+    },
+
+    /**
+     * R28 — Cổng tạo PublishJob theo contract mới:
+     * createPublishJob(variantOrId, { accountId, scheduledAt|null, decisionId }).
+     *  - Thiếu decisionId → từ chối (không có quyết định duyệt = không đăng).
+     *  - scheduledAt null = đăng ngay → scheduled_at = now.
+     *  - idempotency_key ổn định từ variant+revision+account+slot (khớp phút):
+     *    double-click cùng intent → cùng key; server trả trùng key → trả job cũ.
+     *  - Snapshot chứa decision_id + revision_id + approved hash; cột
+     *    publish_jobs.decision_id được ghi cùng job.
+     */
+    createPublishJob: function (variantOrId, options) {
+      options = options || {};
       var v = typeof variantOrId === 'string' ? this.get('variants', variantOrId) : variantOrId;
       if (!v) return { ok: false, error: 'Không tìm thấy variant để đăng.' };
-      var Domain = global.SAVA_DOMAIN;
+      var Domain = global.SAVA_DOMAIN || (typeof require === 'function' ? (function () { try { return require('./domain.js'); } catch (e) { return null; } })() : null);
       if (this.mode === 'demo') {
         return { ok: false, error: 'Đang ở chế độ demo: tài khoản demo không có quyền đăng bài thật. Nút đăng bị khóa — hãy kết nối Supabase và kênh thật để đăng.' };
       }
       if (this.mode !== 'supabase') return { ok: false, error: 'Chưa kết nối Supabase nên chưa thể đăng bài.' };
-      if (!this.can('publish')) return { ok: false, error: 'Vai trò hiện tại không có quyền Đăng bài.' };
+      if (!this.can('publish.create')) return { ok: false, error: 'Vai trò hiện tại không có quyền Đăng bài.' };
       if (Domain && !Domain.shouldCreatePublishJob(v)) {
         if ((v.platform || '') === 'tiktok') return { ok: false, error: 'TikTok đăng ngoài app: app không tạo PublishJob cho TikTok.' };
         return { ok: false, error: 'Variant này ở chế độ đăng ngoài app nên không tạo PublishJob.' };
       }
       if (v.approvalStatus !== 'approved') return { ok: false, error: 'Variant chưa được duyệt nên chưa thể đăng.' };
-      return this._createPublishJobRemote(v);
-    },
-    _createPublishJobRemote: function (v) {
-      var self = this;
-      if (!v.channelAccountId) {
-        return Promise.resolve({ ok: false, error: 'Variant chưa gắn tài khoản kênh nên chưa thể tạo job đăng. Hãy gắn Channel Account cho variant trước.' });
+      var decisionId = options.decisionId || v.decisionId || null;
+      if (!decisionId) {
+        return { ok: false, code: 'decision_required', error: 'Thiếu decisionId: job đăng phải gắn quyết định duyệt cụ thể (approval_decisions.id).' };
       }
-      return this.supabaseClient.from('content_revisions').select('*')
-        .eq('variant_id', v.id).order('revision_no', { ascending: false }).limit(1)
+      var accountId = options.accountId || v.channelAccountId || null;
+      if (!accountId) {
+        return { ok: false, error: 'Variant chưa gắn tài khoản kênh nên chưa thể tạo job đăng. Hãy gắn Channel Account cho variant trước.' };
+      }
+      var revisionId = options.revisionId || v.approvedRevisionId || v.currentRevisionId || null;
+      if (!revisionId) {
+        return { ok: false, code: 'revision_required', error: 'Variant chưa có revision được duyệt nên chưa thể tạo job đăng.' };
+      }
+      return this._createPublishJobRemote(v, { accountId: accountId, decisionId: decisionId, revisionId: revisionId, scheduledAt: options.scheduledAt !== undefined ? options.scheduledAt : (v.scheduledAt || null) });
+    },
+    /** Dựng payload job (thuần — test được không cần client). */
+    buildPublishJobPayload: function (v, opts) {
+      var scheduledAt = opts.scheduledAt || new Date().toISOString(); // null = đăng ngay → now
+      var platformDb = Core && Core.PLATFORM_TO_DB[String(v.platform || '').toLowerCase()] || v.platform;
+      var approvedHash = Core ? Core.stableHash({ caption: v.caption || null, media_asset_ids: v.mediaAssetIds || [], revision_id: opts.revisionId }) : null;
+      var snapshot = {
+        caption: v.caption || null,
+        media_asset_ids: v.mediaAssetIds || [],
+        channel_account_id: opts.accountId,
+        platform: platformDb,
+        approval: { decision_id: opts.decisionId, revision_id: opts.revisionId, approved_hash: approvedHash },
+        destinations: [{ channel_account_id: opts.accountId, platform: platformDb }]
+      };
+      return {
+        workspace_id: this.workspaceId, variant_id: v.id, revision_id: opts.revisionId,
+        decision_id: opts.decisionId,
+        channel_account_id: opts.accountId, platform: platformDb,
+        idempotency_key: Core ? Core.publishIdempotencyKey(v.id, opts.revisionId, opts.accountId, scheduledAt) : ('job-' + v.id + '-' + opts.revisionId),
+        snapshot: snapshot, status: 'queued',
+        scheduled_at: scheduledAt,
+        authorized_by: this.currentUserId, created_by: this.currentUserId
+      };
+    },
+    _createPublishJobRemote: function (v, opts) {
+      var self = this;
+      var payload = this.buildPublishJobPayload(v, opts);
+      return this._attempt('publish_jobs.insert', this.supabaseClient.from('publish_jobs').insert(payload).select().single())
         .then(function (res) {
-          if (res.error) throw res.error;
-          if (res.data && res.data.length) return res.data[0];
-          var revNo = v.revision || 1;
-          return self.supabaseClient.from('content_revisions').insert({
-            workspace_id: self.workspaceId, variant_id: v.id, revision_no: revNo,
-            caption: v.caption || null, media_asset_ids: v.mediaAssetIds || [],
-            link_url: v.linkUrl || null, visibility: v.visibility || 'public',
-            snapshot: { caption: v.caption || null }, created_by: self.currentUserId
-          }).select().single().then(function (ins) { if (ins.error) throw ins.error; return ins.data; });
-        })
-        .then(function (revision) {
-          var platformDb = Core && Core.PLATFORM_TO_DB[String(v.platform || '').toLowerCase()] || v.platform;
-          var snapshot = {
-            caption: v.caption || null,
-            media_asset_ids: v.mediaAssetIds || [],
-            channel_account_id: v.channelAccountId,
-            platform: platformDb,
-            approval: { revision_id: revision.id },
-            destinations: [{ channel_account_id: v.channelAccountId, platform: platformDb }]
-          };
-          return self.supabaseClient.from('publish_jobs').insert({
-            workspace_id: self.workspaceId, variant_id: v.id, revision_id: revision.id,
-            channel_account_id: v.channelAccountId, platform: platformDb,
-            idempotency_key: 'job-' + v.id + '-' + revision.id + '-' + Date.now().toString(36),
-            snapshot: snapshot, status: 'queued',
-            scheduled_at: v.scheduledAt || null,
-            authorized_by: self.currentUserId, created_by: self.currentUserId
-          }).select().single();
-        })
-        .then(function (res) {
-          if (res.error) throw res.error;
+          if (!res.ok) {
+            // Trùng idempotency_key (double-click/retry) → lấy job đã có, không tạo trùng.
+            if (/duplicate|unique|idempotency/i.test(res.error || '')) {
+              return self._attempt('publish_jobs.select.by_key', self.supabaseClient.from('publish_jobs').select('*').eq('idempotency_key', payload.idempotency_key).limit(1))
+                .then(function (found) {
+                  if (found.ok && found.data && found.data.length) {
+                    var existing = self._rowToItem('publishJobs', found.data[0]);
+                    if (!self.get('publishJobs', existing.id)) self.state.publishJobs.push(existing);
+                    self.notify();
+                    return { ok: true, item: existing, deduped: true };
+                  }
+                  return res;
+                });
+            }
+            return res;
+          }
           var item = self._rowToItem('publishJobs', res.data);
+          item.decisionId = payload.decision_id;
           self.state.publishJobs.push(item);
           self.notify();
           return { ok: true, item: item };
-        })
-        .catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+        });
     }
   };
 

@@ -77,16 +77,70 @@ Ad campaign có thể **liên kết** tới một IMC campaign để quy hiệu 
   - **Reach là metric unique** (một người xem nhiều lần chỉ tính một): không cộng reach qua các kỳ/đối tượng — hàm `sumUniqueReachGuard` trả `summable: false` cho reach để mọi màn hình tổng hợp phải tôn trọng.
 - **Thiếu dữ liệu thì nói thiếu:** mẫu số bằng 0 hoặc chưa có số liệu thì tỷ lệ/KPI hiển thị trạng thái thiếu ("Chưa cập nhật", giá trị `null` ở tầng logic) — không suy diễn, không lấp bằng số 0 giả.
 
+## Hợp đồng Store vòng R1 (store/contract)
+
+- **Một helper gọi Supabase duy nhất (R12):** mọi đường ghi/đọc trong
+  `js/store.js` đi qua `Store._attempt(step, query, { requireRows })` (và
+  `Store._rpc(name, args)` cho RPC) — helper kiểm `res.error` trên promise
+  *resolved* (không chỉ catch rejection) và row count khi cần. Ghi nhiều
+  bước không atomic được trả `{ ok:false, partial:true, failedStep, item }`
+  rõ ràng; UI không bao giờ nhận `ok` giả cho bước đã lỗi.
+- **Trạng thái tải theo collection (R13):** `Store.loadState[collection] =
+  { status: 'idle|loading|ready|error|denied|empty|stale', error, updatedAt }`,
+  đọc qua `Store.getLoadState(collection)`. `403/42501` → `denied`; lỗi khác
+  → `error`; refresh lỗi khi đã có dữ liệu cũ → `stale` và **giữ dữ liệu
+  cũ**; tải thành công 0 dòng → `empty` (phân biệt với lỗi).
+- **Permissions + validation dùng chung (R32/R30):** matrix
+  `PERMISSIONS` (roles owner/lead/member/ceo × actions như
+  `task.updateStatus`, `campaign.edit`, `budget.edit`, `approval.decide`,
+  `publish.create`, `settings.manage`) và validation (date range theo
+  `Asia/Ho_Chi_Minh` — `todayISO` không dùng UTC, parent/dependency cycle,
+  số hợp lệ) nằm ở `js/store-core.js`; demo adapter và Supabase adapter
+  cùng kiểm một bộ này trước khi ghi. CEO chỉ đọc ở cả hai chế độ.
+- **Duyệt = RPC (R27):** quyết định duyệt chỉ qua
+  `decide_approval(p_step_id, p_revision_id, p_decision, p_comment)`;
+  gửi duyệt qua `submit_for_review(p_variant_id)`. Sửa caption/media của
+  variant tạo `content_revisions` **mới** rồi cập nhật
+  `content_variants.current_revision_id` (backend trigger tự invalidate
+  duyệt khi revision đổi). `revisionId` khi decide lấy từ state đang hiển
+  thị — store không tự fetch "latest"; RPC trả `REVISION_MISMATCH` thì
+  store dịch thành lỗi "Nội dung đã thay đổi, cần tải lại".
+- **PublishJob (R28):** `createPublishJob(variant, { accountId,
+  scheduledAt|null, decisionId })` — thiếu `decisionId` thì từ chối;
+  `scheduledAt = null` nghĩa là đăng ngay (`scheduled_at = now`);
+  `idempotency_key` = hash ổn định của
+  variant+revision+account+slot lịch (khớp phút) nên double-click cùng
+  intent tạo cùng một key; snapshot chứa `decision_id`, `revision_id` và
+  `approved_hash`; cột `publish_jobs.decision_id` ghi cùng job.
+- **Mapping & metric (R15/R16):** gắn campaign cho bài đã đăng chỉ qua
+  `post_content_mappings` (insert/delete), không update `external_posts`
+  để gắn. Metric TikTok qua `saveTiktokMetrics(variantId, metrics,
+  source)`: có external post đã map → observation
+  `object_type='external_post'`; chưa có → `object_type='content_variant'`,
+  `object_id=variantId`.
+- **Assets (R17):** `assets.approval_status` (draft/in_review/approved)
+  tách khỏi `assets.status` (active/archived); version thật =
+  `max(asset_versions.version_no)` — tạo asset sinh version 1, sửa nội
+  dung asset sinh version mới.
+- **Archive thay hard-delete (R31):** `Store.remove*` đặt `archived_at`
+  cho entity chính (danh sách `ARCHIVABLE_TABLES` ở store-core, khớp
+  migration 0005), `Store.restore*` gỡ archive; `list()` mặc định lọc
+  archived. Archive variant còn huỷ publish_jobs đang chờ của variant.
+- **Sync status (R29):** trạng thái sync từ server được giữ nguyên trạng
+  (`recordSyncStatus` không tự nâng `incomplete` thành `complete`).
+
 ## Ngân sách và cam kết chi
 
 Ngân sách theo dòng (line) có số **approved**; số còn lại được tính ở `js/domain.js` (`budgetRemaining`):
 
 ```
-remaining = approved − Σ actuals − Σ phần còn mở của các commitment đang open
-phần còn mở của một commitment = amount − Σ actuals gắn với commitment đó
+remaining = approved − Σ actuals − Σ (amount − settled_amount) của commitment còn mở
+commitment còn mở = status planned / committed / partially_actualised
 ```
 
-Commitment đã `settled` hoặc `cancelled` không bị trừ thêm ngoài actual đã ghi — tránh trừ trùng một khoản chi hai lần.
+Commitment đã `settled` / `released` / `cancelled` không trừ phần chưa
+settle (phần đã trả nằm trong Σ actuals) — semantic chốt ở migration 0005,
+fixture đối chiếu ở `docs/METRICS.md` mục 5 (QA23).
 
 ## Ranh giới tích hợp CRM trong tương lai
 

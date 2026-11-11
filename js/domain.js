@@ -263,7 +263,9 @@
    * @returns {number} Số tiền còn lại.
    */
   function budgetRemaining(line, commitments, actuals) {
-    var approved = pickNum(line, ['approved', 'approvedAmount', 'approved_amount', 'budgetApproved', 'amountApproved']) || 0;
+    // line: object có approved/approvedAmount, hoặc chính số approved (number).
+    var approved = (typeof line === 'number') ? line
+      : (pickNum(line, ['approved', 'approvedAmount', 'approved_amount', 'budgetApproved', 'amountApproved']) || 0);
     var acts = actuals || [];
     var actualTotal = 0;
     var paidByCommitment = {};
@@ -273,15 +275,17 @@
       var cid = a.commitmentId || a.commitment_id;
       if (cid) paidByCommitment[cid] = (paidByCommitment[cid] || 0) + amt;
     });
+    var OPEN = { open: 1, committed: 1, planned: 1, partial: 1, partially_actualised: 1, partially_paid: 1, in_progress: 1 };
     var openCommitmentTotal = 0;
     (commitments || []).forEach(function (c) {
       var st = normStatus(c.status);
-      if (st === 'cancelled' || st === 'canceled' || st === 'void' || st === 'rejected' || st === 'cancelled'.replace('l', 'l')) return;
-      if (st === 'hủy' || st === 'đã hủy') return;
+      // settled / cancelled / released / closed: KHÔNG trừ phần chưa settle ở đây;
+      // phần đã thanh toán của chúng nằm trong Σactuals (hoặc settled_amount đã khớp actuals).
+      if (!OPEN[st]) return;
       var amt = pickNum(c, ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value']) || 0;
-      var paid = paidByCommitment[c.id] || 0;
-      var remainingCommitment = Math.max(0, amt - paid);
-      openCommitmentTotal += remainingCommitment;
+      var settled = pickNum(c, ['settledAmount', 'settled_amount']);
+      if (settled === null) settled = paidByCommitment[c.id] || 0;
+      openCommitmentTotal += Math.max(0, amt - settled);
     });
     return approved - actualTotal - openCommitmentTotal;
   }
@@ -337,16 +341,24 @@
    * @returns {{ctr:(number|null), cpc:(number|null), cpm:(number|null), costPerResult:(number|null), roas:(number|null), totals:object}}
    */
   function aggregateRates(rows) {
-    var totals = { spend: 0, impressions: 0, clicks: 0, results: 0, conversionValue: 0 };
+    // R22/QA20: trường nào THIẾU ở bất kỳ dòng nào (null/undefined/'') thì
+    // tổng của trường đó = null → tỷ lệ phụ thuộc trả null, KHÔNG ép 0.
+    var fields = ['spend', 'impressions', 'clicks', 'results', 'conversionValue'];
+    var totals = {}; var complete = {};
+    fields.forEach(function (f) { totals[f] = 0; complete[f] = (rows || []).length > 0; });
     (rows || []).forEach(function (r) {
-      totals.spend += Number(r.spend || 0);
-      totals.impressions += Number(r.impressions || 0);
-      totals.clicks += Number(r.clicks || 0);
-      totals.results += Number(r.results !== undefined ? r.results : (r.conversions || 0));
-      totals.conversionValue += Number(r.conversionValue !== undefined ? r.conversionValue : (r.revenue || 0));
+      fields.forEach(function (f) {
+        var v = r[f];
+        if (f === 'results' && v === undefined) v = r.conversions;
+        if (f === 'conversionValue' && v === undefined) v = r.revenue;
+        if (v === null || v === undefined || v === '' || isNaN(Number(v))) complete[f] = false;
+        else totals[f] += Number(v);
+      });
     });
+    fields.forEach(function (f) { if (!complete[f]) totals[f] = null; });
     var rates = computeRates(totals);
     rates.totals = totals;
+    rates.complete = complete;
     return rates;
   }
 
@@ -544,6 +556,199 @@
     return out;
   }
 
+
+  // ======================================================================
+  // R23 — Lifetime theo object (QA19)
+  // ======================================================================
+  function _obsObjectId(o) { return o.objectId || o.object_id || o.externalPostId || o.external_post_id || o.postId || null; }
+  function _obsObjectType(o) { return o.objectType || o.object_type || (o.externalPostId ? 'external_post' : 'unknown'); }
+  function _obsMetric(o) { return o.metric || o.metricCode || o.metric_code || null; }
+  function _obsScope(o) { return o.scope || 'lifetime'; }
+  function _obsDefinition(o) { return o.definitionVersion != null ? o.definitionVersion : (o.definition_version != null ? o.definition_version : 1); }
+  /**
+   * Latest lifetime THEO object+metric+scope+definition: mỗi nhóm chỉ giữ
+   * observation có observedAt mới nhất. Trả mảng entry (không cộng snapshot).
+   */
+  function lifetimeLatestByObject(observations) {
+    var groups = {};
+    (observations || []).forEach(function (o, idx) {
+      if (!o) return;
+      var key = _obsObjectType(o) + ':' + _obsObjectId(o) + '|' + _obsMetric(o) + '|' + _obsScope(o) + '|v' + _obsDefinition(o);
+      var t = toDate(o.observedAt || o.observed_at || o.date || o.capturedAt);
+      var prev = groups[key];
+      if (!prev || (t && (!prev._t || t >= prev._t))) {
+        groups[key] = {
+          objectType: _obsObjectType(o), objectId: _obsObjectId(o), metric: _obsMetric(o),
+          scope: _obsScope(o), definitionVersion: _obsDefinition(o),
+          value: pickNum(o, ['value', 'metricValue', 'amount', 'count']),
+          observedAt: o.observedAt || o.observed_at || o.date || o.capturedAt || null,
+          currency: o.currency || null, _t: t, _idx: idx
+        };
+      }
+    });
+    return Object.keys(groups).sort().map(function (k) { var e = groups[k]; delete e._t; delete e._idx; return e; });
+  }
+  /**
+   * Tổng lifetime hợp lệ: cộng latest của từng object CHỈ khi cùng
+   * metric+scope+definition (+currency nếu có). Khác định nghĩa → null.
+   */
+  function sumLifetimeLatest(observations, filter) {
+    filter = filter || {};
+    var entries = lifetimeLatestByObject(observations).filter(function (e) {
+      if (filter.metric && e.metric !== filter.metric) return false;
+      if (filter.scope && e.scope !== filter.scope) return false;
+      return e.value !== null;
+    });
+    if (!entries.length) return null;
+    var defs = {}, curs = {};
+    entries.forEach(function (e) { defs[e.definitionVersion] = true; if (e.currency) curs[e.currency] = true; });
+    if (Object.keys(defs).length > 1 || Object.keys(curs).length > 1) return null;
+    return entries.reduce(function (sum, e) { return sum + e.value; }, 0);
+  }
+
+  // ======================================================================
+  // R21/R24 — Lọc ads insights theo đúng cấp + tài khoản
+  // ======================================================================
+  var ADS_LEVEL_TO_OBJECT_TYPE = { account: 'ad_account', ad_account: 'ad_account', campaign: 'ad_campaign', ad_campaign: 'ad_campaign', adset: 'ad_group', ad_group: 'ad_group', adgroup: 'ad_group', ad: 'ad' };
+  /**
+   * Dataset cho selector báo cáo: chỉ giữ insights thuộc đúng object level
+   * và (nếu có) đúng ad account. Row thiếu account linkage khi lọc theo
+   * account bị loại (không đoán). Trả mảng row đã lọc.
+   */
+  function filterInsightsByLevelAndAccount(rows, options) {
+    options = options || {};
+    var wantType = options.level ? ADS_LEVEL_TO_OBJECT_TYPE[normStatus(options.level)] : null;
+    var accountId = options.accountId || options.adAccountId || null;
+    return (rows || []).filter(function (r) {
+      var type = r.objectType || r.object_type || r.level || r.type;
+      var normType = ADS_LEVEL_TO_OBJECT_TYPE[normStatus(type)] || type;
+      if (wantType && normType !== wantType) return false;
+      if (accountId) {
+        var rowAccount = r.adAccountId || r.ad_account_id || r.accountId || (normType === 'ad_account' ? (r.objectId || r.object_id) : null);
+        if (!rowAccount || String(rowAccount) !== String(accountId)) return false;
+      }
+      return true;
+    });
+  }
+
+  // ======================================================================
+  // R22 — CSV export: null = ô trống + cột trạng thái thiếu (QA20/QA21)
+  // ======================================================================
+  function csvEscape(v) {
+    if (v === null || v === undefined) return '';
+    var str = String(v);
+    return /[",\n;]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+  }
+  /**
+   * buildCsv(rows, columns): columns = [{key, label}].
+   * Giá trị null/thiếu → ô trống (không ||0). Thêm cột cuối
+   * 'missing_status' liệt kê các cột thiếu của dòng ('đầy đủ' nếu đủ).
+   */
+  function buildCsv(rows, columns) {
+    var cols = columns || [];
+    var header = cols.map(function (c) { return csvEscape(c.label || c.key); }).concat(['missing_status']);
+    var lines = [header.join(',')];
+    (rows || []).forEach(function (r) {
+      var missing = [];
+      var cells = cols.map(function (c) {
+        var v = r ? r[c.key] : null;
+        if (v === null || v === undefined || v === '') { missing.push(c.label || c.key); return ''; }
+        return csvEscape(v);
+      });
+      cells.push(csvEscape(missing.length ? ('Thiếu: ' + missing.join('; ')) : 'đầy đủ'));
+      lines.push(cells.join(','));
+    });
+    return lines.join('\n');
+  }
+
+  // ======================================================================
+  // R25 — Workload theo TUẦN được chọn, chỉ leaf tasks (QA22)
+  // ======================================================================
+  /**
+   * weeklyWorkload(tasks, options):
+   *  options = { weekStart:'yyyy-mm-dd' (bắt buộc), weekEnd? (mặc định +6 ngày),
+   *              holidays?: string[], capacityByMember?: {memberId:{hoursPerWeek, daysOff:[]}},
+   *              defaultCapacityHoursPerWeek?: number|null }
+   * Chỉ tính leaf tasks (task có subtask trong tập bị bỏ). Effort phân bổ
+   * theo ngày làm việc trên TOÀN khoảng task rồi chỉ cộng phần thuộc tuần —
+   * task 3 tuần không dồn hết vào 1 tuần. Capacity/ngày nghỉ lấy từ tham số,
+   * KHÔNG hardcode 40h/8h: thiếu cấu hình → capacity = null.
+   * Trả [{memberId, hours, capacityHours, daysOff, taskIds, overCapacity}]
+   */
+  function weeklyWorkload(tasks, options) {
+    options = options || {};
+    var list = tasks || [];
+    var parentIds = {};
+    list.forEach(function (t) { var pid = t.parentId || t.parent_id; if (pid) parentIds[pid] = true; });
+    var weekStart = toDate(options.weekStart || options.startDate);
+    if (!weekStart) return [];
+    var weekEnd = toDate(options.weekEnd || options.endDate) || addDays(weekStart, 6);
+    var startIso = toISODate(weekStart), endIso = toISODate(weekEnd);
+    var byMember = {};
+    list.forEach(function (t) {
+      if (parentIds[t.id]) return; // không đếm cha khi đã có con
+      var st = normStatus(t.status);
+      if (st === 'cancelled' || st === 'canceled' || st === 'hủy') return;
+      var memberId = t.assigneeId || t.ownerId || t.owner_id || 'unassigned';
+      var capCfg = (options.capacityByMember || {})[memberId] || {};
+      var holidays = (options.holidays || []).concat(capCfg.daysOff || capCfg.days_off || []);
+      var dist = distributeEffort(t, { holidays: holidays });
+      if (!Array.isArray(dist)) return;
+      var sum = 0;
+      dist.forEach(function (d) { if (d.date >= startIso && d.date <= endIso) sum += d.hours; });
+      if (!byMember[memberId]) {
+        var cap = capCfg.hoursPerWeek != null ? capCfg.hoursPerWeek
+          : (capCfg.capacityHoursPerWeek != null ? capCfg.capacityHoursPerWeek
+          : (options.defaultCapacityHoursPerWeek != null ? options.defaultCapacityHoursPerWeek : null));
+        byMember[memberId] = { memberId: memberId, hours: 0, capacityHours: cap, daysOff: (capCfg.daysOff || []).slice(), taskIds: [], overCapacity: false };
+      }
+      byMember[memberId].hours = Math.round((byMember[memberId].hours + sum) * 100) / 100;
+      if (sum > 0) byMember[memberId].taskIds.push(t.id);
+    });
+    return Object.keys(byMember).sort().map(function (k) {
+      var r = byMember[k];
+      r.overCapacity = r.capacityHours !== null && r.hours > r.capacityHours;
+      return r;
+    });
+  }
+
+  // ======================================================================
+  // R30 — Đánh giá rủi ro trễ (chỉ khi có cơ sở thật)
+  // ======================================================================
+  /**
+   * assessTaskRisk(task, context): context = { today, tasks, dependencies, blockers }.
+   * atRisk CHỈ khi: (1) quá hạn & chưa xong; (2) có blocker đang mở gắn task;
+   * (3) slack âm — predecessor kết thúc SAU ngày task bắt đầu.
+   * Tiền nhiệm chưa xong nhưng còn slack (due <= start của task) KHÔNG phải rủi ro.
+   */
+  function assessTaskRisk(task, context) {
+    context = context || {};
+    if (!task) return { atRisk: false, reasons: [] };
+    var reasons = [];
+    var today = context.today || toISODate(new Date());
+    var done = isCompleted(task) || normStatus(task.status) === 'cancelled';
+    var due = pickDate(task, ['dueDate', 'due_date', 'due']);
+    if (!done && due && String(due).slice(0, 10) < today) reasons.push('overdue');
+    var blockers = context.blockers || [];
+    var hasOpenBlocker = task.isBlocked === true || blockers.some(function (b) {
+      return (b.taskId === task.id || b.task_id === task.id) && ['open', 'in_progress'].indexOf(normStatus(b.status || 'open')) !== -1;
+    });
+    if (hasOpenBlocker) reasons.push('blocker');
+    var start = pickDate(task, ['startDate', 'start_date', 'start']);
+    if (!done && start) {
+      var byId = {}; (context.tasks || []).forEach(function (t) { byId[t.id] = t; });
+      var slackNegative = (context.dependencies || []).some(function (e) {
+        if (e.successorId !== task.id) return false;
+        var pred = byId[e.predecessorId];
+        if (!pred || isCompleted(pred)) return false;
+        var predDue = pickDate(pred, ['dueDate', 'due_date', 'due']);
+        return predDue && String(predDue).slice(0, 10) > String(start).slice(0, 10);
+      });
+      if (slackNegative) reasons.push('negative_slack');
+    }
+    return { atRisk: reasons.length > 0, reasons: reasons };
+  }
+
   var api = {
     wouldCreateCycle: wouldCreateCycle,
     taskReadiness: taskReadiness,
@@ -562,7 +767,14 @@
     shouldCreatePublishJob: shouldCreatePublishJob,
     formatDateVN: formatDateVN,
     formatDateTimeVN: formatDateTimeVN,
-    weekStartMonday: weekStartMonday
+    weekStartMonday: weekStartMonday,
+    lifetimeLatestByObject: lifetimeLatestByObject,
+    sumLifetimeLatest: sumLifetimeLatest,
+    filterInsightsByLevelAndAccount: filterInsightsByLevelAndAccount,
+    buildCsv: buildCsv,
+    csvEscape: csvEscape,
+    weeklyWorkload: weeklyWorkload,
+    assessTaskRisk: assessTaskRisk
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
