@@ -43,6 +43,40 @@ export type OAuthImplementationStatus =
   | "not_implemented"
   | "implemented_needs_credentials";
 
+/**
+ * Mức triển khai code theo TỪNG khả năng API (R2-23) — trục thứ hai, tách
+ * khỏi connection_status (tài khoản thật) và implementation_status (OAuth):
+ *   not_implemented               — chưa có code cho khả năng này.
+ *   implemented_needs_credentials — đã có code, chờ app credentials/tài khoản.
+ *   verified                      — đã chạy kiểm chứng với tài khoản thật.
+ * Giá trị thật hiện tại (12/11/2026): oauth của mọi provider =
+ * 'implemented_needs_credentials'; publish / syncPosts / syncMetrics / ads
+ * của mọi provider = 'not_implemented' (kể cả TikTok — publish của TikTok
+ * còn bị loại theo thiết kế, xem publish_support).
+ */
+export type ApiImplementationStatus =
+  | "not_implemented"
+  | "implemented_needs_credentials"
+  | "verified";
+
+/** Mức triển khai code cho từng khả năng API của một provider. */
+export interface ApiImplementation {
+  oauth: ApiImplementationStatus;
+  publish: ApiImplementationStatus;
+  syncPosts: ApiImplementationStatus;
+  syncMetrics: ApiImplementationStatus;
+  ads: ApiImplementationStatus;
+}
+
+/** Giá trị hiện tại dùng chung: chỉ OAuth đã có code, còn lại chưa triển khai. */
+const API_IMPL_CURRENT: ApiImplementation = {
+  oauth: "implemented_needs_credentials",
+  publish: "not_implemented",
+  syncPosts: "not_implemented",
+  syncMetrics: "not_implemented",
+  ads: "not_implemented",
+};
+
 /** publish qua API được hỗ trợ theo thiết kế hay bị loại có chủ đích. */
 export type PublishSupport = "supported" | "not_supported_by_design";
 
@@ -135,6 +169,8 @@ export interface SocialProvider {
   connection_status: ConnectionStatus;
   /** Mức triển khai code OAuth (R20) — xem OAuthImplementationStatus. */
   implementation_status: OAuthImplementationStatus;
+  /** Mức triển khai code theo từng khả năng API (R2-23) — xem ApiImplementation. */
+  api_implementation: ApiImplementation;
   /** Cấu hình OAuth để buildAuthorizeUrl dùng. */
   oauth: OAuthConfig;
   /** TikTok = 'not_supported_by_design', các kênh còn lại 'supported'. */
@@ -207,6 +243,7 @@ export const facebookPageProvider: PublishCapableProvider = {
   display_name: "Facebook Page",
   connection_status: "not_connected",
   implementation_status: "implemented_needs_credentials",
+  api_implementation: API_IMPL_CURRENT,
   publish_support: "supported",
   oauth: {
     authorize_url: "https://www.facebook.com/v21.0/dialog/oauth",
@@ -234,6 +271,7 @@ export const instagramProvider: PublishCapableProvider = {
   display_name: "Instagram Professional",
   connection_status: "not_connected",
   implementation_status: "implemented_needs_credentials",
+  api_implementation: API_IMPL_CURRENT,
   publish_support: "supported",
   oauth: {
     // Instagram API with Instagram Login (không qua Facebook Login).
@@ -260,6 +298,7 @@ export const linkedinPageProvider: PublishCapableProvider = {
   display_name: "LinkedIn Page",
   connection_status: "pending_review", // chờ quyền Community Management / Marketing Developer Platform
   implementation_status: "implemented_needs_credentials",
+  api_implementation: API_IMPL_CURRENT,
   publish_support: "supported",
   oauth: {
     authorize_url: "https://www.linkedin.com/oauth/v2/authorization",
@@ -284,6 +323,7 @@ export const youtubeProvider: PublishCapableProvider = {
   display_name: "YouTube",
   connection_status: "not_connected",
   implementation_status: "implemented_needs_credentials",
+  api_implementation: API_IMPL_CURRENT,
   publish_support: "supported",
   oauth: {
     authorize_url: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -318,6 +358,7 @@ export const tiktokProvider: ReadOnlyProvider = {
   display_name: "TikTok",
   connection_status: "not_connected",
   implementation_status: "implemented_needs_credentials",
+  api_implementation: API_IMPL_CURRENT,
   publish_support: "not_supported_by_design", // chỉ đọc: Login Kit + Display/Research API
   oauth: {
     authorize_url: "https://www.tiktok.com/v2/auth/authorize/",

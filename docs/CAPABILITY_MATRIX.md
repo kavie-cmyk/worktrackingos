@@ -27,6 +27,27 @@ publish-worker/sync-worker KHỚP 100% file này — kiểm bằng script khi s�
 **Chưa kênh nào được kiểm chứng với tài khoản thật**; không mục nào ở bảng
 này được hiểu là "đã kết nối".
 
+### Trục `api_implementation` theo khả năng (vòng R2 — R2-23, 12/11/2026)
+
+Mỗi provider nay khai thêm `api_implementation` — mức triển khai **code**
+cho từng khả năng, tách khỏi `connection_status` (tài khoản thật):
+
+| Khả năng | Giá trị hiện tại (mọi provider) | Ghi chú |
+|---|---|---|
+| `oauth` | `implemented_needs_credentials` | Đã có authorize URL builder + callback contract; chờ app credentials của SAVA |
+| `publish` | `not_implemented` | `publish()` vẫn ném NOT_CONNECTED; TikTok còn bị loại theo thiết kế (`publish_support = not_supported_by_design`) |
+| `syncPosts` | `not_implemented` | `syncPosts()` vẫn ném NOT_CONNECTED |
+| `syncMetrics` | `not_implemented` | `syncMetrics()` vẫn ném NOT_CONNECTED |
+| `ads` | `not_implemented` | Chưa có connector ads qua API |
+
+Ba giá trị của trục: `not_implemented` · `implemented_needs_credentials` ·
+`verified` (chỉ khi đã chạy thật với tài khoản SAVA). Giao diện mục
+"Kênh & Bài đã đăng" hiển thị cả hai trục: mức code theo khả năng và trạng
+thái tài khoản. *Lưu ý đồng bộ: cả 3 file đã đồng bộ ở vòng R2 — file chuẩn
+`_shared/providers.ts` và bản inline trong publish-worker/sync-worker cùng
+mang khối `API_IMPL_CURRENT` giống hệt nhau; lần deploy worker tiếp theo sẽ
+mang nhãn mới lên môi trường chạy.*
+
 ### Chốt trạng thái provider (vòng sửa QA R1, 11/11/2026)
 
 - **OAuth:** authorize URL builder (`buildAuthorizeUrl`) + callback parser
