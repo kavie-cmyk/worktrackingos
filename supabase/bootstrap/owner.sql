@@ -111,6 +111,13 @@ $$;
 comment on function public.bootstrap_owner(text) is
   'Bootstrap Owner đầu tiên: upsert public.users + workspace mặc định (slug sava-marketing) + membership role owner. Idempotent. Auth user phải tồn tại trước trong auth.users.';
 
+-- R34 (vòng sửa QA R1, cũng có trong migration 0004): bootstrap_owner là
+-- SECURITY DEFINER có khả năng nâng quyền — khóa EXECUTE chỉ còn
+-- service_role (và owner postgres). anon/authenticated KHÔNG gọi được qua
+-- PostgREST. Idempotent: chạy lại file này không lỗi.
+revoke execute on function public.bootstrap_owner(text) from public, anon, authenticated;
+grant execute on function public.bootstrap_owner(text) to service_role;
+
 -- ============================================================================
 -- HƯỚNG DẪN DÙNG
 -- 1. Chạy toàn bộ file này một lần trong SQL Editor để tạo function.
