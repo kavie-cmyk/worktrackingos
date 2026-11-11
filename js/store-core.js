@@ -55,7 +55,10 @@
     adChangeRequests: 'ads_change_requests',
     marketingRequests: 'marketing_requests',
     reportSnapshots: 'report_snapshots',
-    manualMetricEntries: 'metric_observations'
+    manualMetricEntries: 'metric_observations',
+    comments: 'comments',
+    assetVersions: 'asset_versions',
+    measurements: 'measurements'
   };
 
   // ---------- Cột thật của từng bảng (trích từ 0001_schema.sql) ----------
@@ -96,7 +99,8 @@
     ads_change_requests: ['id', 'workspace_id', 'ad_account_id', 'target_type', 'target_external_id', 'change_type', 'before_state', 'after_state', 'amount', 'currency', 'reason', 'status', 'submit_as_paused', 'requested_by', 'approved_by', 'approved_at', 'submitted_at', 'confirmed_at', 'external_reference', 'error_code', 'error_message', 'archived_at', 'created_at', 'updated_at'],
     publish_jobs: ['id', 'workspace_id', 'variant_id', 'revision_id', 'decision_id', 'channel_account_id', 'platform', 'idempotency_key', 'snapshot', 'status', 'scheduled_at', 'is_late', 'cancel_reason', 'authorized_by', 'last_error_code', 'last_error_message', 'created_by', 'created_at', 'updated_at'],
     marketing_requests: ['id', 'workspace_id', 'requester_id', 'requester_unit', 'title', 'description', 'request_type', 'product_id', 'campaign_id', 'priority', 'desired_due_date', 'status', 'assignee_id', 'rejection_reason', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
-    report_snapshots: ['id', 'workspace_id', 'name', 'report_type', 'scope', 'period_start', 'period_end', 'data', 'definition_versions', 'generated_by', 'generated_at', 'created_at']
+    report_snapshots: ['id', 'workspace_id', 'name', 'report_type', 'scope', 'period_start', 'period_end', 'data', 'definition_versions', 'generated_by', 'generated_at', 'created_at'],
+    comments: ['id', 'workspace_id', 'entity_type', 'entity_id', 'parent_id', 'body', 'mentions', 'author_id', 'created_at', 'updated_at']
   };
 
   // Bảng có cột custom_fields → trường giao diện chưa có cột thật được gói vào đây.
@@ -126,6 +130,7 @@
     adChangeRequests: { requestedBy: 'requested_by' },
     marketingRequests: { requester: 'requester_unit', dueDate: 'desired_due_date', note: 'description' },
     reportSnapshots: { title: 'name' },
+    assetVersions: { version: 'version_no' },
     contentItems: { type: 'content_type' },
     variants: {},
     approvals: { requestedAt: 'created_at' }
@@ -446,6 +451,10 @@
       }
     });
     NON_NEGATIVE_FIELDS.forEach(function (f) {
+      // 'target'/'targetValue' chỉ là SỐ ở kpis (mục tiêu). Ở adChangeRequests
+      // 'target' là NHÃN đối tượng quảng cáo (chuỗi) — kiểm số ở đó làm submit
+      // draft→pending_approval (patch kèm target nhãn như app.js gửi) fail oan.
+      if ((f === 'target' || f === 'targetValue') && collection !== 'kpis') return;
       if (merged[f] !== undefined) { var r = validateNumber(merged[f], { min: 0 }); if (!r.ok) errors.push(f + ': ' + r.error); }
     });
     return { ok: errors.length === 0, errors: errors, error: errors[0] || null };

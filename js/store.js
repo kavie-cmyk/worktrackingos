@@ -53,10 +53,10 @@
   var ROLE_LABELS = { owner: 'Owner', lead: 'Lead', member: 'Member', ceo: 'CEO' };
 
   var COLLECTIONS = ['members', 'businessUnits', 'campaigns', 'phases', 'activities', 'tasks', 'dependencies',
-    'blockers', 'contentItems', 'variants', 'publishJobs', 'brandPages', 'brandAssets', 'approvals',
+    'blockers', 'contentItems', 'variants', 'publishJobs', 'brandPages', 'brandAssets', 'assetVersions', 'approvals',
     'channelAccounts', 'externalPosts', 'metricObservations', 'budgetLines', 'commitments', 'actuals',
-    'kpis', 'adAccounts', 'adCampaigns', 'adSets', 'ads', 'adChangeRequests', 'marketingRequests',
-    'reportSnapshots', 'manualMetricEntries'];
+    'kpis', 'measurements', 'adAccounts', 'adCampaigns', 'adSets', 'ads', 'adChangeRequests', 'marketingRequests',
+    'reportSnapshots', 'manualMetricEntries', 'comments'];
 
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
   function uid(prefix) { return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
@@ -182,8 +182,12 @@
       if (Core && Core.canRole) return Core.canRole(role, perm);
       return !!((PERMISSIONS[role] || {})[perm]);
     },
-    /** Action cần cho 1 thao tác ghi (dùng chung guard demo & remote). */
-    _actionFor: function (collection, patch, op) {
+    /**
+     * Action cần cho 1 thao tác ghi (dùng chung guard demo & remote).
+     * currentItem (tuỳ chọn) là bản ghi HIỆN TẠI — adChangeRequests cần nó để
+     * phân biệt submit (draft → pending_approval) với duyệt/từ chối (R19/QA24).
+     */
+    _actionFor: function (collection, patch, op, currentItem) {
       patch = patch || {};
       var keys = Object.keys(patch);
       switch (collection) {
@@ -191,19 +195,33 @@
         case 'dependencies': case 'blockers': return 'task.edit';
         case 'campaigns': case 'phases': case 'activities': return 'campaign.edit';
         case 'variants': case 'contentItems': return 'content.edit';
-        case 'brandPages': case 'brandAssets': return 'asset.edit';
+        case 'brandPages': case 'brandAssets': case 'assetVersions': return 'asset.edit';
         case 'budgetLines': case 'commitments': case 'actuals': return 'budget.edit';
-        case 'kpis': return 'kpi.edit';
+        case 'kpis': case 'measurements': return 'kpi.edit';
+        case 'comments': return 'data.edit';
         case 'approvals': return op === 'create' ? 'content.edit' : 'approval.decide';
-        case 'adChangeRequests': return (op === 'update' && patch.status !== undefined) ? 'ads.approve' : 'ads.draft';
+        case 'adChangeRequests': {
+          if (op === 'update' && patch.status !== undefined) {
+            // R19/QA24 (phía store): submit = chuyển DUY NHẤT draft →
+            // pending_approval (patch của app còn kèm title/target/afterState
+            // sao y bản hiện tại nên không xét số field). Mọi chuyển status
+            // khác (approved/rejected/executed…) là hành động duyệt.
+            // Chưa rõ trạng thái hiện tại (không có currentItem) thì
+            // pending_approval vẫn được coi là submit.
+            var fromStatus = currentItem ? (currentItem.status || null) : null;
+            if (patch.status === 'pending_approval' && (fromStatus === null || fromStatus === 'draft')) return 'ads.draft';
+            return 'ads.approve';
+          }
+          return 'ads.draft';
+        }
         case 'publishJobs': return 'publish.create';
         case 'members': case 'businessUnits': return 'settings.manage';
         default: return 'data.edit';
       }
     },
     /** Guard quyền: trả {ok:false,error} khi vai hiện tại không có action, else null. */
-    _guard: function (collection, patch, op) {
-      var action = this._actionFor(collection, patch, op);
+    _guard: function (collection, patch, op, currentItem) {
+      var action = this._actionFor(collection, patch, op, currentItem);
       if (this.can(action)) return null;
       return { ok: false, error: 'Vai trò hiện tại (' + this.currentRole() + ') không có quyền "' + action + '".', action: action };
     },
@@ -214,6 +232,9 @@
         if (!r.ok) return { ok: false, error: r.error, errors: r.errors };
       }
       var merged = Object.assign({}, existing || {}, obj || {});
+      if (collection === 'comments' && (!merged.entityType || !merged.entityId)) {
+        return { ok: false, error: 'Bình luận phải gắn với một đối tượng (entityType + entityId, hoặc taskId).' };
+      }
       if (collection === 'tasks' && merged.parentId) {
         var tasks = (this.state.tasks || []).map(function (t) { return t.id === merged.id ? merged : t; });
         if (Core && Core.wouldCreateParentCycle(tasks, merged.id, merged.parentId)) {
@@ -568,6 +589,16 @@
       }).catch(function (err) { self._loadFailed('externalPosts', err); }));
       // KPI: actual mới nhất từ measurements
       jobs.push(this._fetchWorkspaceTable('measurements').then(function (rows) {
+        // Đồng thời phơi measurements thành collection cho UI (lịch sử số đo):
+        // gộp dedup theo id với dữ liệu _loadCollection đã nạp.
+        if (!self.state.measurements) self.state.measurements = [];
+        var seenMeas = {};
+        self.state.measurements.forEach(function (m) { seenMeas[m.id] = true; });
+        rows.forEach(function (r) {
+          if (seenMeas[r.id]) return;
+          seenMeas[r.id] = true;
+          self.state.measurements.push(self._rowToItem('measurements', r));
+        });
         var latest = {};
         rows.slice().sort(function (a, b) { return String(a.measured_at).localeCompare(String(b.measured_at)); })
           .forEach(function (m) { latest[m.kpi_id] = m; });
@@ -602,6 +633,16 @@
       }).catch(function (err) { self._loadFailed('ads', err); }));
       // Assets: version = max(asset_versions.version_no) — nguồn version thật (R17)
       jobs.push(this._fetchWorkspaceTable('asset_versions').then(function (rows) {
+        // Đồng thời phơi assetVersions thành collection cho Brand Hub:
+        // gộp dedup theo id với dữ liệu _loadCollection đã nạp.
+        if (!self.state.assetVersions) self.state.assetVersions = [];
+        var seenVer = {};
+        self.state.assetVersions.forEach(function (v) { seenVer[v.id] = true; });
+        rows.forEach(function (r) {
+          if (seenVer[r.id]) return;
+          seenVer[r.id] = true;
+          self.state.assetVersions.push(self._rowToItem('assetVersions', r));
+        });
         var maxByAsset = {};
         rows.forEach(function (r) { if (!maxByAsset[r.asset_id] || r.version_no > maxByAsset[r.asset_id]) maxByAsset[r.asset_id] = r.version_no; });
         self._assetVersionById = maxByAsset;
@@ -712,6 +753,22 @@
         case 'adAccounts': {
           var apMap2 = { meta_ads: 'Meta Ads', google_ads: 'Google Ads', tiktok_ads: 'TikTok Ads', linkedin_ads: 'LinkedIn Ads' };
           item.platform = apMap2[row.platform] || row.platform;
+          break;
+        }
+        case 'comments': {
+          // UI panel việc lọc theo taskId và hiển thị authorId || createdBy.
+          if (row.entity_type === 'task') item.taskId = row.entity_id;
+          if (item.authorId && !item.createdBy) item.createdBy = item.authorId;
+          if (!Array.isArray(item.mentions)) item.mentions = item.mentions || [];
+          break;
+        }
+        case 'assetVersions': {
+          // UI Brand Hub đọc h.version + h.assetId + h.createdBy.
+          item.version = row.version_no;
+          break;
+        }
+        case 'measurements': {
+          if (item.value != null && item.value !== '') item.value = Number(item.value);
           break;
         }
       }
@@ -836,6 +893,14 @@
           }
           break;
         }
+        case 'comments': {
+          // author_id là cột not-null: UI gửi authorId; thiếu thì lấy người
+          // đang đăng nhập. taskId/createdBy không phải cột của comments và
+          // đã được lọc ở bước lọc cột cuối — entity_* do normalize dựng.
+          if (!payload.author_id && obj.authorId) payload.author_id = obj.authorId;
+          if (!payload.author_id && isUuid(this.currentUserId)) payload.author_id = this.currentUserId;
+          break;
+        }
       }
       // PostgREST từ chối cột lạ: lọc lần cuối theo danh sách cột thật.
       var table = Core ? Core.COLLECTION_TO_TABLE[collection] : null;
@@ -907,6 +972,67 @@
       }).catch(function (err) { return { ok: false, error: friendlyError(err) }; });
     },
 
+    /**
+     * Mời thành viên qua Edge Function invite-member (app.js gọi
+     * Store.inviteMember({email, role})).
+     * Gate như các action khác: cần 'member.manage' hoặc 'settings.manage'
+     * (theo PERMISSIONS chỉ Owner có). Chế độ demo KHÔNG giả vờ đã mời.
+     * Chế độ supabase: lấy access token của phiên hiện tại, POST
+     * {supabaseUrl}/functions/v1/invite-member với Authorization Bearer +
+     * apikey, body {email, role, workspace_id}. Lỗi đọc từ body thật của
+     * function ({error, message}) — không nuốt. Trả {ok:true, userId} |
+     * {ok:false, error}. Demo/setup trả đồng bộ; supabase trả Promise.
+     */
+    inviteMember: function (payload) {
+      payload = payload || {};
+      var email = String(payload.email || '').trim();
+      var role = String(payload.role || '').trim();
+      if (!this.can('member.manage') && !this.can('settings.manage')) {
+        return { ok: false, error: 'Vai trò hiện tại (' + this.currentRole() + ') không có quyền "member.manage"/"settings.manage" để mời thành viên.', action: 'member.manage' };
+      }
+      if (!email || email.indexOf('@') === -1) return { ok: false, error: 'Email người được mời không hợp lệ.' };
+      if (!role) return { ok: false, error: 'Chưa chọn vai trò cho người được mời.' };
+      if (this.mode === 'demo') {
+        return { ok: false, error: 'Chế độ demo không gửi được email mời thật' };
+      }
+      if (this.mode !== 'supabase' || !this.supabaseClient) {
+        return { ok: false, error: 'Chưa kết nối Supabase nên chưa gửi được lời mời.' };
+      }
+      if (!this.workspaceId) return { ok: false, error: 'Chưa xác định được workspace hiện hành.' };
+      var cfg = global.SAVA_CONFIG || {};
+      var baseUrl = String(cfg.supabaseUrl || this.supabaseClient.supabaseUrl || '').replace(/\/+$/, '');
+      var anonKey = cfg.supabaseAnonKey || this.supabaseClient.supabaseKey || '';
+      if (!baseUrl) return { ok: false, error: 'Chưa cấu hình supabaseUrl nên chưa gửi được lời mời.' };
+      if (typeof fetch !== 'function') return { ok: false, error: 'Môi trường hiện tại không có fetch nên chưa gọi được Edge Function invite-member.' };
+      var wsId = this.workspaceId;
+      return this.supabaseClient.auth.getSession().then(function (res) {
+        var session = res && res.data ? res.data.session : null;
+        var token = session && session.access_token;
+        if (!token) return { ok: false, error: 'Chưa có phiên đăng nhập hợp lệ — hãy đăng nhập lại rồi gửi lời mời.' };
+        return fetch(baseUrl + '/functions/v1/invite-member', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'apikey': anonKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ email: email, role: role, workspace_id: wsId })
+        }).then(function (resp) {
+          return Promise.resolve().then(function () { return resp.json(); }).catch(function () { return null; }).then(function (body) {
+            body = body || {};
+            var status = typeof resp.status === 'number' ? resp.status : (resp.ok ? 200 : 0);
+            if (resp.ok === false || status >= 400 || (body.error && status >= 400)) {
+              return { ok: false, error: body.message || body.error || ('Edge Function invite-member trả lỗi HTTP ' + (status || 'không rõ') + '.'), code: body.error || null, status: status || null };
+            }
+            if (body.error && !body.user_id && !body.userId) {
+              return { ok: false, error: body.message || body.error, code: body.error, status: status || null };
+            }
+            return { ok: true, userId: body.user_id || body.userId || null, email: body.email || email, role: body.role || role, workspaceId: body.workspace_id || wsId };
+          });
+        });
+      }).catch(function (err) { return { ok: false, error: friendlyError(err) }; });
+    },
+
     _loadDemo: function () {
       this.mode = 'demo';
       this.setupNeeded = false;
@@ -970,7 +1096,64 @@
     },
     get: function (collection, id) { return (this.state[collection] || []).find(function (x) { return x.id === id; }) || null; },
 
+    /**
+     * Lịch sử số đo của 1 KPI, sắp xếp measured_at GIẢM dần (mới nhất trước).
+     * Demo / đã có dữ liệu nạp sẵn trong state.measurements → trả mảng ngay
+     * (đồng bộ, await vẫn dùng được). Supabase mà chưa có dòng nào của KPI
+     * này trong state → truy vấn bổ sung bảng measurements, gộp vào state
+     * rồi trả Promise<mảng>.
+     */
+    listMeasurements: function (kpiId) {
+      var rows = (this.state.measurements || []).filter(function (m) {
+        return m.kpiId === kpiId || m.kpi_id === kpiId;
+      });
+      rows.sort(function (a, b) {
+        return String(b.measuredAt || b.measured_at || b.createdAt || '').localeCompare(String(a.measuredAt || a.measured_at || a.createdAt || ''));
+      });
+      if (this.mode !== 'supabase' || rows.length || !this.supabaseClient || !this.workspaceId) return rows;
+      var self = this;
+      var q = this.supabaseClient.from('measurements').select('*')
+        .eq('workspace_id', this.workspaceId).eq('kpi_id', kpiId)
+        .order('measured_at', { ascending: false });
+      return Promise.resolve(q).then(function (res) {
+        if (!res || res.error || !Array.isArray(res.data)) return rows;
+        var seen = {};
+        (self.state.measurements || []).forEach(function (m) { seen[m.id] = true; });
+        if (!self.state.measurements) self.state.measurements = [];
+        res.data.forEach(function (r) {
+          if (seen[r.id]) return;
+          seen[r.id] = true;
+          self.state.measurements.push(self._rowToItem('measurements', r));
+        });
+        self.notify();
+        return self.listMeasurements(kpiId);
+      }).catch(function () { return rows; });
+    },
+
+    /**
+     * Chuẩn hoá input bình luận về dạng entity chung của bảng comments:
+     * {entityType, entityId, body, mentions, authorId} hoặc dạng UI gửi
+     * {taskId, body, authorId/createdBy} → entity_type='task', entity_id=taskId.
+     * Bản frontend GIỮ taskId (khi entity là task) + createdBy để panel việc
+     * lọc/hiển thị được ngay ở chế độ demo.
+     */
+    _normalizeComment: function (obj) {
+      var item = Object.assign({}, obj || {});
+      if (!item.entityType && item.entity_type) item.entityType = item.entity_type;
+      if (!item.entityId && item.entity_id) item.entityId = item.entity_id;
+      if (!item.parentId && item.parent_id) item.parentId = item.parent_id;
+      if (!item.authorId && item.author_id) item.authorId = item.author_id;
+      if (item.taskId && !item.entityType) item.entityType = 'task';
+      if (item.taskId && !item.entityId) item.entityId = item.taskId;
+      if (item.entityType === 'task' && item.entityId && !item.taskId) item.taskId = item.entityId;
+      if (!item.authorId && item.createdBy) item.authorId = item.createdBy;
+      if (item.authorId && !item.createdBy) item.createdBy = item.authorId;
+      if (!item.createdAt) item.createdAt = new Date().toISOString();
+      return item;
+    },
+
     create: function (collection, obj) {
+      if (collection === 'comments') obj = this._normalizeComment(obj || {});
       if (this.mode === 'supabase') return this._createRemote(collection, obj || {});
       // Demo dùng CÙNG guard quyền + validation như real (R32/R30).
       var guard = this._guard(collection, obj || {}, 'create');
@@ -1001,6 +1184,7 @@
       if (collection === 'members') {
         return Promise.resolve({ ok: false, error: 'Thành viên được thêm bằng lời mời của Owner (Supabase Auth + memberships), không tạo trực tiếp ở đây.' });
       }
+      if (collection === 'comments') obj = this._normalizeComment(obj);
       var guard = this._guard(collection, obj, 'create');
       if (guard) return Promise.resolve(guard);
       var invalid = this._validate(collection, obj, null);
@@ -1115,10 +1299,16 @@
 
     update: function (collection, id, patch) {
       if (collection === 'variants') return this.updateVariant(id, patch);
+      if (collection === 'comments' && patch) {
+        patch = Object.assign({}, patch);
+        if (patch.taskId && patch.entityType === undefined) patch.entityType = 'task';
+        if (patch.taskId && patch.entityId === undefined) patch.entityId = patch.taskId;
+      }
       if (this.mode === 'supabase') return this._updateRemote(collection, id, patch || {});
-      var guard = this._guard(collection, patch || {}, 'update');
+      var existingItem = this.get(collection, id);
+      var guard = this._guard(collection, patch || {}, 'update', existingItem);
       if (guard) return guard;
-      var item = this.get(collection, id);
+      var item = existingItem;
       if (!item) return { ok: false, error: 'Không tìm thấy bản ghi ' + id };
       var invalid = this._validate(collection, patch || {}, item);
       if (invalid) return invalid;
@@ -1153,7 +1343,7 @@
       if (collection === 'businessUnits') return this._updateBusinessUnit(id, patch);
       var item = this.get(collection, id);
       if (!item) return Promise.resolve({ ok: false, error: 'Không tìm thấy bản ghi ' + id });
-      var guard = this._guard(collection, patch, 'update');
+      var guard = this._guard(collection, patch, 'update', item);
       if (guard) return Promise.resolve(guard);
       var invalid = this._validate(collection, patch, item);
       if (invalid) return Promise.resolve(invalid);
