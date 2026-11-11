@@ -1,6 +1,6 @@
 # Hướng dẫn thiết lập — SAVA Marketing Workspace
 
-> **Hiện trạng (cập nhật 11/11/2026): project ĐÃ được tạo và migrations ĐÃ được áp.** Project `sava-marketing-workspace` thuộc Organization **MKT OS**, **Project ref:** `nlbtjtubihxbkigdfpdg`, **Region:** `ap-south-1` (Mumbai), Plan Free, trạng thái ACTIVE_HEALTHY. Ngày 11/11/2026, migrations `0001_schema.sql`, `0002_rls.sql`, `0003_functions.sql` đã được áp lên project qua Supabase Management API (đều trả HTTP 201) và đã đọc lại xác nhận: **49 bảng, RLS bật 49/49, 155 policies**, các function/ràng buộc then chốt đều có. `config.js` trong repo đã điền Project URL + anon key (khóa công khai, an toàn kèm RLS). Các bước 1, 2 và 4 dưới đây giữ lại làm tài liệu tái triển khai; việc còn lại là **Bước 3 (deploy Edge Functions + đặt lịch chạy worker)** và **Bước 6 (tạo tài khoản Owner đầu tiên)**.
+> **Hiện trạng (cập nhật 11/11/2026): project ĐÃ được tạo và migrations ĐÃ được áp.** Project `sava-marketing-workspace` thuộc Organization **MKT OS**, **Project ref:** `nlbtjtubihxbkigdfpdg`, **Region:** `ap-south-1` (Mumbai), Plan Free, trạng thái ACTIVE_HEALTHY. Ngày 11/11/2026, migrations `0001_schema.sql`, `0002_rls.sql`, `0003_functions.sql` đã được áp lên project qua Supabase Management API (đều trả HTTP 201) và đã đọc lại xác nhận: **49 bảng, RLS bật 49/49, 155 policies**, các function/ràng buộc then chốt đều có. `config.js` trong repo đã điền Project URL + anon key (khóa công khai, an toàn kèm RLS). Các bước 1, 2 và 4 dưới đây giữ lại làm tài liệu tái triển khai. **Cập nhật vòng 2 (11/11/2026): Bước 3 ĐÃ XONG** — 2 Edge Functions đã deploy (ACTIVE, verify_jwt) và đã đặt lịch pg_cron mỗi 5 phút qua Vault (xem docs/WORKERS.md); **Bước 6 ĐÃ XONG** — Auth config đã trỏ site_url/uri_allow_list về https://kavie-cmyk.github.io/worktrackingos/ (GitHub Pages đã bật từ branch feat/marketing-workspace, HTTP 200), email mời Owner đã được API invite chấp nhận lúc 21:18 ICT 11/11/2026 cho anhthu.tang2004@gmail.com (user id 1d360d36-c504-41eb-9547-388f40860719, trạng thái chờ bấm link đặt mật khẩu) và bootstrap_owner đã gán sẵn membership role owner — bấm link trong email, đặt mật khẩu là vào app với quyền Owner.
 
 Thứ tự thực hiện: **1 → 7**. Các bước 2–5 do người triển khai kỹ thuật làm sau khi Zac hoàn thành bước 1 và cung cấp URL + keys của project.
 
@@ -86,17 +86,63 @@ Frontend tĩnh không có bước build và không đọc `.env`. Cấu hình ru
 3. Chọn branch **`main`** và thư mục **`/ (root)`**, rồi **Save**.
 4. Chờ Pages build xong và mở URL `https://<owner>.github.io/<repo>/` để kiểm tra app tải được, không còn báo "Chờ kết nối Supabase" khi đã điền `config.js`.
 
-## Bước 6 — Tạo tài khoản Owner đầu tiên
+## Bước 6 — Tạo tài khoản Owner đầu tiên (luồng mời + bootstrap)
 
-1. Trong Supabase Dashboard → **Authentication → Users → Add user**, tạo user bằng email của Zac (đặt mật khẩu qua luồng của Supabase — không gửi mật khẩu qua chat/repo).
-2. Gán membership với vai **owner** cho user vừa tạo bằng SQL trong SQL Editor. Mẫu dưới đây dùng placeholder — thay `<auth-user-id>` bằng ID của user ở mục Authentication và `<workspace-id>` bằng ID workspace thực tế (xem đúng tên bảng/cột trong migration membership nếu repo đã chốt khác):
+Thứ tự bắt buộc: **(a) cấu hình redirect → (b) mời auth user → (c) chạy bootstrap → (d) kiểm tra**. Bootstrap ở (c) **không tự tạo auth user** — nếu chưa có auth user với email đó, function sẽ báo lỗi rõ ràng và dừng.
+
+### (a) Cấu hình Auth redirect — ĐÃ CẤU HÌNH 11/11/2026 qua Management API
+
+Đã `PATCH /v1/projects/nlbtjtubihxbkigdfpdg/config/auth` (HTTP 200, đã GET đọc lại xác nhận; toàn bộ các khoá Auth khác giữ nguyên) với đúng 2 giá trị:
+
+| Trường | Giá trị |
+|---|---|
+| `site_url` | `https://kavie-cmyk.github.io/worktrackingos/` |
+| `uri_allow_list` | `https://kavie-cmyk.github.io/worktrackingos/` (chuỗi phân tách bằng dấu phẩy — hiện chỉ chứa URL Pages này) |
+
+Hai giá trị này quyết định link trong email mời / khôi phục mật khẩu redirect về đúng app trên GitHub Pages. Khi cần sửa lại bằng tay: Supabase Dashboard → **Authentication → URL Configuration** → **Site URL** và **Redirect URLs** điền cùng các giá trị trên.
+
+### (b) Mời Owner bằng Auth Admin invite
+
+1. Trong Supabase Dashboard → **Authentication → Users**, chọn **Invite user** (mời bằng email — không chọn tạo user kèm mật khẩu đặt tay) và nhập email của Zac.
+2. Zac nhận email mời, bấm link **Accept invitation** trong email — link redirect về `https://kavie-cmyk.github.io/worktrackingos/` kèm tham số `type=invite`.
+3. App nhận diện `type=invite` và hiện **form đặt mật khẩu**. Zac tự đặt mật khẩu trên form này (mật khẩu không đi qua chat/repo/SQL).
+4. Đặt mật khẩu xong, app đăng nhập luôn bằng tài khoản vừa kích hoạt và vào thẳng app. Lúc này đã có **auth user** trong `auth.users` — đủ điều kiện chạy bootstrap ở (c). (Owner có thể chưa thấy dữ liệu/mục quản trị cho tới khi (c) và (d) xong — đó là bình thường, vì quyền nằm ở `memberships`, không nằm ở auth user.)
+
+### (c) Chạy bootstrap gán quyền Owner
+
+File nguồn: `supabase/bootstrap/owner.sql` (idempotent — chạy lại nhiều lần an toàn).
+
+Cách 1 — SQL Editor trên Supabase Dashboard:
+
+1. Mở **SQL Editor** trong project `sava-marketing-workspace`, dán toàn bộ nội dung `supabase/bootstrap/owner.sql` và bấm **Run** một lần để định nghĩa function `public.bootstrap_owner(text)`.
+2. Chạy câu gọi với email thật của Owner (thay email mẫu):
 
 ```sql
-insert into public.memberships (workspace_id, user_id, role, status)
-values ('<workspace-id>', '<auth-user-id>', 'owner', 'active');
+select * from public.bootstrap_owner('<email-owner>');
 ```
 
-3. Đăng nhập app bằng tài khoản này, kiểm tra thấy đủ mục quản trị (thiết lập workspace, kết nối kênh, phân quyền thành viên). Từ đây Owner mời thêm Lead/Member ngay trong app — không cần tạo tay từng tài khoản bằng SQL nữa.
+Cách 2 — Management API: gửi cùng câu lệnh `select * from public.bootstrap_owner('<email-owner>');` qua `POST /v1/projects/nlbtjtubihxbkigdfpdg/database/query` (sau khi function đã được định nghĩa bằng Cách 1 ít nhất một lần).
+
+Function sẽ tự làm, theo đúng schema `0001_schema.sql`:
+
+- Tìm auth user theo email trong `auth.users` — không có thì `raise exception`: *"Chưa có auth user với email này — hãy gửi invite/tạo user trước"* (quay lại (b), không sửa SQL để lách).
+- Upsert `public.users` (`id` = auth user id, `email`, `display_name` = phần trước `@` nếu chưa có, `is_active = true`).
+- Tạo workspace mặc định nếu chưa có: `slug = 'sava-marketing'`, `name = 'SAVA Marketing Workspace'` (timezone mặc định `Asia/Ho_Chi_Minh` theo schema).
+- Upsert `public.memberships` cho workspace đó với `role = 'owner'`, `is_active = true` (bảng `memberships` **không có cột `status`** — trạng thái là cột `is_active`).
+
+### (d) Kiểm tra membership role owner
+
+Chạy trong SQL Editor — kết quả đúng phải là đúng 1 dòng với `role = 'owner'` và `is_active = true`:
+
+```sql
+select m.role, m.is_active, u.email, w.slug
+from public.memberships m
+join public.users u on u.id = m.user_id
+join public.workspaces w on w.id = m.workspace_id
+where w.slug = 'sava-marketing' and lower(u.email) = lower('<email-owner>');
+```
+
+Sau đó đăng nhập app bằng tài khoản Owner, kiểm tra thấy đủ mục quản trị (thiết lập workspace, kết nối kênh, phân quyền thành viên). Từ đây Owner mời thêm Lead/Member ngay trong app — không cần tạo tay từng tài khoản bằng SQL nữa.
 
 ## Bước 7 — Checklist nghiệm thu cần tài khoản thật
 
