@@ -93,6 +93,49 @@
       'hoặc bật chế độ dữ liệu minh họa để xem thử giao diện (mọi màn hình đều gắn nhãn dữ liệu minh họa).</p></div>';
   }
 
+  // ---------- Đăng nhập / nhận lời mời / đặt mật khẩu ----------
+  // Chạy một kết quả Store có thể là object đồng bộ (demo) hoặc Promise (supabase).
+  function settle(result, onOk) {
+    if (result && typeof result.then === 'function') {
+      result.then(function (r) {
+        if (r && r.ok) { if (onOk) onOk(r); }
+        else toast((r && r.error) || 'Thao tác thất bại.');
+      }).catch(function (e) { toast('Thao tác thất bại: ' + (e && e.message ? e.message : e)); });
+    } else if (result && result.ok) { if (onOk) onOk(result); }
+    else if (result) toast(result.error || 'Thao tác thất bại.');
+    return result;
+  }
+  function viewInviteExpired() {
+    return pageHead('Liên kết đã hết hạn', 'Liên kết mời / đặt lại mật khẩu không còn hiệu lực.') +
+      '<div class="state-box"><p><strong>Liên kết đã hết hạn hoặc đã được dùng</strong></p>' +
+      '<p>Liên kết trong email chỉ dùng được một lần và có thời hạn. Hãy nhờ Owner gửi lại lời mời mới, rồi mở liên kết mới nhất trong email.</p>' +
+      '<p><button class="btn secondary" data-action="dismiss-invite">Đến trang đăng nhập</button></p></div>';
+  }
+  function viewSetPassword() {
+    var inv = Store.pendingInvite || {};
+    return pageHead(inv.type === 'recovery' ? 'Đặt lại mật khẩu' : 'Nhận lời mời — đặt mật khẩu',
+      'Tạo mật khẩu cho tài khoản của bạn để bắt đầu dùng SAVA Marketing Workspace.') +
+      '<div class="panel"><form class="inline" id="invite-password-form">' +
+      '<label>Mật khẩu mới (tối thiểu 8 ký tự)<input type="password" name="password" required minlength="8" autocomplete="new-password"></label>' +
+      '<label>Nhập lại mật khẩu<input type="password" name="passwordConfirm" required minlength="8" autocomplete="new-password"></label>' +
+      '<button class="btn" type="submit">Đặt mật khẩu và vào app</button></form>' +
+      '<p class="sub">Sau khi đặt mật khẩu thành công, bạn sẽ được đưa vào app với phiên đăng nhập chính thức.</p></div>';
+  }
+  function viewLogin() {
+    return pageHead('Đăng nhập', 'Đăng nhập bằng email và mật khẩu để vào SAVA Marketing Workspace.') +
+      '<div class="panel"><form class="inline" id="login-form">' +
+      '<label>Email<input type="email" name="email" required autocomplete="username"></label>' +
+      '<label>Mật khẩu<input type="password" name="password" required autocomplete="current-password"></label>' +
+      '<button class="btn" type="submit">Đăng nhập</button></form>' +
+      '<p class="sub">Chưa có tài khoản? Tài khoản do Owner mời qua email — hãy mở liên kết trong email mời để đặt mật khẩu lần đầu.</p></div>';
+  }
+  function viewNoMembership() {
+    return pageHead('Tài khoản chưa được gán quyền', 'Bạn đã đăng nhập nhưng chưa thuộc workspace nào.') +
+      '<div class="state-box"><p><strong>Tài khoản chưa được gán quyền — liên hệ Owner</strong></p>' +
+      '<p>Chủ workspace (Owner) cần thêm tài khoản của bạn vào workspace và gán vai trò (Owner / Lead / Member / CEO) thì dữ liệu mới hiện ra.</p>' +
+      '<p><button class="btn secondary" data-action="sign-out">Đăng xuất</button></p></div>';
+  }
+
   // ---------- Tổng quan ----------
   function viewOverview() {
     var campaigns = Store.list('campaigns');
@@ -633,8 +676,13 @@
     var configured = Store.mode === 'supabase';
     var html = pageHead('Thiết lập', 'Kết nối dữ liệu, chế độ dữ liệu minh họa, thành viên & vai trò, cấu hình BU/sản phẩm và kết nối kênh.');
     html += '<h2>Trạng thái kết nối Supabase</h2><div class="panel">';
-    if (configured) html += '<p><span class="badge ok">Đã cấu hình</span> config.js có URL và anon key hợp lệ. Đăng nhập bằng email/mật khẩu qua Supabase Auth.</p>' +
-      '<form class="inline" id="signin-form"><label>Email<input type="email" name="email" required></label><label>Mật khẩu<input type="password" name="password" required></label><button class="btn" type="submit">Đăng nhập</button></form>';
+    if (configured) {
+      var me = Store.currentUser();
+      if (me && Store.supabaseUser) html += '<p><span class="badge ok">Đã đăng nhập</span> ' + esc(me.name) + ' (' + esc(me.email || '') + ') — vai trò: ' + esc(me.roleLabel || me.role) + '.</p>' +
+        '<p><button class="btn secondary" data-action="sign-out">Đăng xuất</button></p>';
+      else html += '<p><span class="badge ok">Đã cấu hình</span> config.js có URL và anon key hợp lệ. Đăng nhập bằng email/mật khẩu qua Supabase Auth.</p>' +
+        '<form class="inline" id="signin-form"><label>Email<input type="email" name="email" required></label><label>Mật khẩu<input type="password" name="password" required></label><button class="btn" type="submit">Đăng nhập</button></form>';
+    }
     else html += '<p><span class="badge warn">Chờ kết nối Supabase</span></p><p>Hướng dẫn 3 bước:</p><ol>' +
       '<li>Tạo một Supabase project riêng cho Marketing Workspace.</li>' +
       '<li>Chạy các migration trong thư mục <code>supabase/</code> theo tài liệu thiết lập đi kèm repo.</li>' +
@@ -677,6 +725,13 @@
     var h = (window.location.hash || '#/overview').replace(/^#\/?/, '');
     return VIEWS[h] ? h : 'overview';
   }
+  function authGateView() {
+    if (Store.pendingInvite && Store.pendingInvite.expired) return viewInviteExpired();
+    if (Store.pendingInvite) return viewSetPassword();
+    if (Store.state.noMembership) return viewNoMembership();
+    if (Store.state.authRequired) return viewLogin();
+    return null;
+  }
   function renderNav() {
     var route = currentRoute();
     document.getElementById('main-nav').innerHTML = NAV.map(function (n) {
@@ -687,6 +742,7 @@
     sel.innerHTML = members.length ? members.map(function (m) {
       return '<option value="' + esc(m.id) + '"' + (Store.currentUserId === m.id ? ' selected' : '') + '>' + esc(m.name) + ' (' + esc(m.roleLabel || m.role) + ')</option>';
     }).join('') : '<option>— Chưa có người dùng —</option>';
+    sel.disabled = Store.mode === 'supabase';
     document.getElementById('connection-status').textContent =
       Store.mode === 'demo' ? 'Chế độ: Dữ liệu minh họa (demo)' : (Store.mode === 'supabase' ? 'Chế độ: Supabase' : 'Chờ kết nối Supabase');
   }
@@ -695,6 +751,8 @@
     renderNav();
     var route = currentRoute();
     var app = document.getElementById('app');
+    var gate = authGateView();
+    if (gate) { app.innerHTML = gate; return; }
     if (Store.setupNeeded && route !== 'settings') { app.innerHTML = setupNotice(); return; }
     try { app.innerHTML = VIEWS[route](); }
     catch (e) { app.innerHTML = '<div class="notice bad">Đã xảy ra lỗi khi hiển thị: ' + esc(e.message) + '</div>'; }
@@ -724,26 +782,36 @@
     if (action === 'cancel-date-change') { UI.pendingDatePreview = null; render(); }
     if (action === 'apply-date-change' && UI.pendingDatePreview) {
       var p = UI.pendingDatePreview;
-      Store.update('tasks', p.taskId, { startDate: p.newStart, dueDate: p.newDue });
       UI.pendingDatePreview = null;
-      toast('Đã áp dụng đổi lịch cho việc gốc. Lịch của việc phụ thuộc không bị tự dịch — hãy kiểm tra danh sách ảnh hưởng vừa xem trước.');
+      settle(Store.update('tasks', p.taskId, { startDate: p.newStart, dueDate: p.newDue }), function () {
+        toast('Đã áp dụng đổi lịch cho việc gốc. Lịch của việc phụ thuộc không bị tự dịch — hãy kiểm tra danh sách ảnh hưởng vừa xem trước.');
+        render();
+      });
     }
     if (action === 'publish-variant') {
-      var res = Store.createPublishJob(id);
-      toast(res.ok ? 'Đã tạo job đăng bài.' : res.error);
+      settle(Store.createPublishJob(id), function () { toast('Đã tạo job đăng bài.'); render(); });
     }
     if (action === 'approve' || action === 'request-changes' || action === 'reject') {
       var decision = action === 'approve' ? 'approved' : (action === 'request-changes' ? 'changes_requested' : 'rejected');
       var note = window.prompt('Ghi chú cho quyết định (có thể để trống):', '') || '';
-      var r = Store.decideApproval(id, decision, note);
-      toast(r.ok ? 'Đã ghi quyết định duyệt gắn với revision hiện tại.' : r.error);
-      if (r.ok) render();
+      settle(Store.decideApproval(id, decision, note), function () {
+        toast('Đã ghi quyết định duyệt gắn với revision hiện tại.');
+        render();
+      });
     }
-    if (action === 'resolve-blocker') { Store.update('blockers', id, { status: 'resolved' }); render(); }
-    if (action === 'adcr-submit') { Store.update('adChangeRequests', id, { status: 'pending_approval', statusLabel: 'Chờ duyệt' }); render(); }
+    if (action === 'resolve-blocker') { settle(Store.update('blockers', id, { status: 'resolved' }), function () { render(); }); }
+    if (action === 'adcr-submit') { settle(Store.update('adChangeRequests', id, { status: 'pending_approval', statusLabel: 'Chờ duyệt' }), function () { render(); }); }
     if (action === 'adcr-approve') {
       if (!Store.can('adsApprove')) { toast('Vai trò hiện tại không có quyền duyệt quảng cáo.'); return; }
-      Store.update('adChangeRequests', id, { status: 'approved', statusLabel: 'Đã duyệt — đối tượng giữ trạng thái Tạm dừng (paused) cho tới khi áp dụng ngoài app' });
+      settle(Store.update('adChangeRequests', id, { status: 'approved', statusLabel: 'Đã duyệt — đối tượng giữ trạng thái Tạm dừng (paused) cho tới khi áp dụng ngoài app' }), function () { render(); });
+    }
+    if (action === 'sign-out') {
+      settle(Store.signOut(), function () { toast('Đã đăng xuất.'); render(); });
+    }
+    if (action === 'dismiss-invite') {
+      Store.pendingInvite = null;
+      Store.state.authRequired = true;
+      try { window.history.replaceState(null, '', window.location.pathname + window.location.search + '#/overview'); } catch (e) {}
       render();
     }
     if (action === 'export-csv') exportCsv();
@@ -757,8 +825,7 @@
     if (t.id === 'current-user-select') { Store.setCurrentUser(t.value); render(); return; }
     var kind = t.getAttribute && t.getAttribute('data-action-change');
     if (kind === 'task-status') {
-      Store.update('tasks', t.getAttribute('data-id'), { status: t.value });
-      render();
+      settle(Store.update('tasks', t.getAttribute('data-id'), { status: t.value }), function () { render(); });
     }
   });
 
@@ -782,84 +849,93 @@
     }
     if (f.id === 'task-add-form') {
       if (!Store.can('edit')) { toast('Vai trò hiện tại không có quyền sửa.'); return; }
-      var r = Store.create('tasks', {
+      settle(Store.create('tasks', {
         campaignId: val('campaignId'), parentId: val('parentId') || null, title: val('title'),
         assigneeId: val('assigneeId'), ownerId: val('assigneeId'), status: 'todo',
         startDate: val('startDate') || null, dueDate: val('dueDate') || null,
         effortHours: val('effortHours') ? Number(val('effortHours')) : null, deliverable: val('deliverable') || ''
-      });
-      toast(r.ok ? 'Đã thêm việc: ' + r.item.title : r.error);
-      if (r.ok) render();
+      }), function (r) { toast('Đã thêm việc: ' + r.item.title); render(); });
     }
     if (f.id === 'dep-add-form') {
       var from = val('predecessorId'), to = val('successorId');
       if (D.wouldCreateCycle(Store.list('dependencies'), from, to)) { toast('Không thêm được: quan hệ này tạo vòng phụ thuộc.'); return; }
-      var rd = Store.create('dependencies', { predecessorId: from, successorId: to });
-      toast(rd.ok ? 'Đã thêm quan hệ phụ thuộc.' : rd.error);
-      if (rd.ok) render();
+      settle(Store.create('dependencies', { predecessorId: from, successorId: to }), function () { toast('Đã thêm quan hệ phụ thuộc.'); render(); });
     }
     if (f.id === 'blocker-add-form') {
-      var rb = Store.create('blockers', { taskId: val('taskId'), title: val('title'), description: val('description') || '', status: 'open', createdBy: Store.currentUserId, createdAt: new Date().toISOString() });
-      toast(rb.ok ? 'Đã tạo blocker.' : rb.error);
-      if (rb.ok) render();
+      settle(Store.create('blockers', { taskId: val('taskId'), title: val('title'), description: val('description') || '', status: 'open', createdBy: Store.currentUserId, createdAt: new Date().toISOString() }),
+        function () { toast('Đã tạo blocker.'); render(); });
     }
     if (f.id === 'request-add-form') {
-      var rr = Store.create('marketingRequests', { title: val('title'), requester: val('requester'), campaignId: val('campaignId') || null, priority: val('priority'), dueDate: val('dueDate') || null, status: 'new', statusLabel: 'Mới ghi nhận', note: '' });
-      toast(rr.ok ? 'Đã ghi nhận yêu cầu Marketing.' : rr.error);
-      if (rr.ok) render();
+      settle(Store.create('marketingRequests', { title: val('title'), requester: val('requester'), campaignId: val('campaignId') || null, priority: val('priority'), dueDate: val('dueDate') || null, status: 'new', statusLabel: 'Mới ghi nhận', note: '' }),
+        function () { toast('Đã ghi nhận yêu cầu Marketing.'); render(); });
     }
     if (f.id === 'variant-caption-form') {
-      var rv = Store.updateVariant(String(val('variantId')), { caption: String(val('caption')) });
-      toast(rv.ok ? ('Đã lưu caption.' + (rv.note ? ' ' + rv.note : '')) : rv.error);
-      if (rv.ok) render();
+      settle(Store.updateVariant(String(val('variantId')), { caption: String(val('caption')) }), function (rv) {
+        toast('Đã lưu caption.' + (rv.note ? ' ' + rv.note : ''));
+        render();
+      });
     }
     if (f.id === 'channel-filter-form') { UI.channelFilter = document.getElementById('channel-filter').value; render(); }
     if (f.id === 'post-add-form') {
-      var rp = Store.create('externalPosts', { platform: val('platform'), channelAccountId: val('channelAccountId'), externalPostId: val('externalPostId'), title: val('title'), url: val('url') || '', publishedAt: new Date().toISOString(), campaignId: null });
-      toast(rp.ok ? 'Đã thêm bài đã đăng.' : rp.error);
-      if (rp.ok) render();
+      settle(Store.create('externalPosts', { platform: val('platform'), channelAccountId: val('channelAccountId'), externalPostId: val('externalPostId'), title: val('title'), url: val('url') || '', publishedAt: new Date().toISOString(), campaignId: null }),
+        function () { toast('Đã thêm bài đã đăng.'); render(); });
     }
     if (f.id === 'adcr-add-form') {
       if (!Store.can('adsDraft')) { toast('Vai trò hiện tại không có quyền tạo nháp quảng cáo.'); return; }
-      var ra = Store.create('adChangeRequests', { title: val('title'), target: val('target'), status: 'draft', statusLabel: 'Nháp', requestedBy: Store.currentUserId, defaultState: 'Tạm dừng (paused)', createdAt: new Date().toISOString() });
-      toast(ra.ok ? 'Đã tạo nháp yêu cầu thay đổi (mặc định Tạm dừng (paused)).' : ra.error);
-      if (ra.ok) render();
+      settle(Store.create('adChangeRequests', { title: val('title'), target: val('target'), status: 'draft', statusLabel: 'Nháp', requestedBy: Store.currentUserId, defaultState: 'Tạm dừng (paused)', createdAt: new Date().toISOString() }),
+        function () { toast('Đã tạo nháp yêu cầu thay đổi (mặc định Tạm dừng (paused)).'); render(); });
     }
     if (f.id === 'report-level-form') { UI.adsLevel = document.getElementById('report-level').value; render(); }
-    if (f.id === 'signin-form') {
+    if (f.id === 'signin-form' || f.id === 'login-form') {
       Store.signIn(String(val('email')), String(val('password')))
-        .then(function () { toast('Đăng nhập thành công.'); })
+        .then(function () { toast('Đăng nhập thành công.'); render(); })
         .catch(function (e) { toast('Đăng nhập thất bại: ' + e.message); });
+    }
+    if (f.id === 'invite-password-form') {
+      var pw = String(val('password') || '');
+      var pw2 = String(val('passwordConfirm') || '');
+      if (pw.length < 8) { toast('Mật khẩu phải có tối thiểu 8 ký tự.'); return; }
+      if (pw !== pw2) { toast('Hai lần nhập mật khẩu chưa khớp nhau.'); return; }
+      settle(Store.completeInvite(pw, pw2), function (r) {
+        if (r && r.noMembership) { render(); return; }
+        toast('Đã đặt mật khẩu thành công. Chào mừng bạn đến với SAVA Marketing Workspace.');
+        render();
+      });
     }
     var formKind = f.getAttribute && f.getAttribute('data-form');
     var fid = f.getAttribute && f.getAttribute('data-id');
     if (formKind === 'attach-campaign') {
-      Store.update('externalPosts', fid, { campaignId: val('campaignId') });
-      toast('Đã gắn campaign cho bài đã đăng.');
-      render();
+      settle(Store.update('externalPosts', fid, { campaignId: val('campaignId') }), function () { toast('Đã gắn campaign cho bài đã đăng.'); render(); });
     }
     if (formKind === 'tiktok-link') {
-      Store.update('variants', fid, { externalUrl: String(val('externalUrl')), externalStatus: 'Đã đăng ngoài app' });
-      toast('Đã lưu link bài TikTok đã đăng ngoài app.');
-      render();
+      settle(Store.update('variants', fid, { externalUrl: String(val('externalUrl')), externalStatus: 'Đã đăng ngoài app' }), function () { toast('Đã lưu link bài TikTok đã đăng ngoài app.'); render(); });
     }
     if (formKind === 'tiktok-metric') {
       var post = Store.list('externalPosts').find(function (p) { return p.platform === 'tiktok'; });
-      var rm = Store.create('metricObservations', {
+      var metricPayload = {
         externalPostId: post ? post.id : null, variantId: fid,
         metric: String(val('metric')), value: Number(val('value')),
         source: String(val('source')), observedAt: String(val('observedAt')),
         enteredBy: String(val('enteredBy')), enteredByName: String(val('enteredBy'))
-      });
+      };
       // Đồng thời ghi nhận bản ghi nhập tay có đủ nguồn/thời điểm/người nhập.
-      Store.create('manualMetricEntries', { variantId: fid, metric: String(val('metric')), value: Number(val('value')), source: String(val('source')), observedAt: String(val('observedAt')), enteredBy: String(val('enteredBy')) });
-      toast(rm.ok ? 'Đã ghi số liệu nhập tay kèm nguồn, thời điểm và người nhập.' : rm.error);
-      if (rm.ok) render();
+      var manualPayload = { variantId: fid, metric: String(val('metric')), value: Number(val('value')), source: String(val('source')), observedAt: String(val('observedAt')), enteredBy: String(val('enteredBy')) };
+      if (Store.mode === 'supabase') {
+        settle(Store.create('manualMetricEntries', manualPayload), function () { toast('Đã ghi số liệu nhập tay kèm nguồn, thời điểm và người nhập.'); render(); });
+      } else {
+        var rm = Store.create('metricObservations', metricPayload);
+        Store.create('manualMetricEntries', manualPayload);
+        toast(rm.ok ? 'Đã ghi số liệu nhập tay kèm nguồn, thời điểm và người nhập.' : rm.error);
+        if (rm.ok) render();
+      }
     }
   });
 
   window.addEventListener('hashchange', render);
-  Store.load();
-  Store.subscribe(function () { /* dữ liệu đổi: các view tự render lại khi có thao tác */ });
+  Store.subscribe(function () { render(); });
+  // Store.load() trả Promise ở chế độ supabase (khôi phục phiên + nạp dữ liệu);
+  // demo/setup thì dữ liệu sẵn sàng gần như ngay lập tức.
+  var boot = Store.load();
   render();
+  if (boot && typeof boot.then === 'function') boot.then(function () { render(); });
 })();
