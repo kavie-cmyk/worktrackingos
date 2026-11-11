@@ -152,6 +152,29 @@
   function canBudget() { return can('budget'); }
   function canBudgetChange() { return can('budgetChange') || can('budget'); }
   function canPublish() { return can('publish'); }
+  // Quyền sửa task theo đúng action mà Store dùng (store.js _actionFor:
+  // sửa trường thường = 'task.edit', đổi riêng trạng thái = 'task.updateStatus').
+  function canEditTask() { return can('task.edit'); }
+  function canUpdateTaskStatus() { return can('task.updateStatus'); }
+  // Chỉ-đọc hoàn toàn khi không có CẢ hai quyền trên (vd CEO).
+  function taskPanelReadonly() { return !canEditTask() && !canUpdateTaskStatus(); }
+  function taskReadonlyNote() {
+    if (!taskPanelReadonly()) return '';
+    return '<div class="notice info" role="note">Bạn đang xem ở chế độ chỉ đọc — vai trò hiện tại' +
+      (Store.currentRole ? ' (' + esc(labelStatus(Store.currentRole())) + ')' : '') +
+      ' không có quyền sửa công việc, nên mọi ô nhập, mục kiểm tra và quan hệ phụ thuộc đã bị khóa. Dữ liệu vẫn được tầng dữ liệu chặn khi lưu.</div>';
+  }
+  // Điểm vào chung cho modal sửa (formShell): kind nào là chỉ-đọc theo quyền.
+  function editorReadonly(kind) {
+    if (kind === 'campaign') return !can('campaign.edit');
+    if (kind === 'task') return !canEditTask() && !canUpdateTaskStatus();
+    return false;
+  }
+  function readonlyFormNote(kind) {
+    return '<div class="notice info" role="note">Bạn đang xem ở chế độ chỉ đọc — vai trò hiện tại' +
+      (Store.currentRole ? ' (' + esc(labelStatus(Store.currentRole())) + ')' : '') +
+      ' không có quyền sửa ' + (kind === 'campaign' ? 'campaign' : 'bản ghi này') + ', nên mọi ô nhập đã bị khóa.</div>';
+  }
   function readonlyNote() {
     if (canEdit()) return '';
     return '<div class="notice info">Vai trò hiện tại (' + esc(labelStatus(Store.currentRole ? Store.currentRole() : '')) + ') chỉ xem — các thao tác tạo/sửa đã bị khóa.</div>';
@@ -342,12 +365,22 @@
   }
   function formShell(kind, title, fieldsHtml, submitLabel) {
     var e = UI.editor;
+    // Áp nguyên tắc chỉ-đọc ở điểm vào chung: form campaign (và modal task)
+    // khi vai không có quyền sửa tương ứng thì khóa mọi input/select/textarea
+    // ngay trong HTML + ghi chú rõ, thay vì chỉ chặn lúc bấm Lưu.
+    var ro = editorReadonly(kind);
+    var body = fieldsHtml;
+    if (ro) {
+      body = body.replace(/<(input|select|textarea)(?=[\s>])/g, '<$1 disabled')
+        .replace(/<(button)(?=[\s>][^>]*data-action="(?:scene-add|scene-remove)")/g, '<$1 disabled');
+    }
     return '<div class="modal-backdrop" data-action="editor-backdrop"></div>' +
       '<div class="modal" role="dialog" aria-modal="true" aria-label="' + esc(title) + '">' +
       '<div class="modal-head"><h2>' + esc(title) + '</h2><button type="button" class="btn secondary small" data-action="editor-close">Đóng</button></div>' +
       (e && e.error ? '<div class="notice bad" role="alert"><strong>Chưa lưu được:</strong> ' + esc(e.error) + '</div>' : '') +
-      '<form data-editor-form="' + esc(kind) + '" class="editor-form" novalidate>' + fieldsHtml +
-      '<div class="form-actions"><button class="btn" type="submit">' + esc(submitLabel || 'Lưu') + '</button>' +
+      (ro ? readonlyFormNote(kind) : '') +
+      '<form data-editor-form="' + esc(kind) + '" class="editor-form" novalidate>' + body +
+      '<div class="form-actions"><button class="btn" type="submit"' + dis(ro) + (ro ? noEditTitle() : '') + '>' + esc(submitLabel || 'Lưu') + '</button>' +
       '<button class="btn secondary" type="button" data-action="editor-close">Hủy</button></div></form></div>';
   }
   function openEditor(kind, id, context) {
@@ -925,27 +958,35 @@
     var blockers = Store.list('blockers').filter(function (b) { return b.taskId === t.id; });
     var comments = [];
     try { comments = Store.list('comments').filter(function (c) { return c.taskId === t.id; }); } catch (e) { comments = []; }
-    var ed = canEdit();
+    // Quyền sửa panel theo action của task (không dùng legacy 'edit' chung):
+    // ed = sửa mọi trường (task.edit); statusEd = chỉ đổi trạng thái
+    // (task.updateStatus); ro = chỉ đọc hoàn toàn khi thiếu cả hai (vd CEO).
+    var ed = canEditTask();
+    var statusEd = canUpdateTaskStatus();
+    var commentEd = canEdit();
+    var ro = taskPanelReadonly();
     var html = '<div class="panel-backdrop" data-action="task-close"></div><aside class="detail-panel" aria-label="Chi tiết công việc">';
     html += '<div class="modal-head"><div><h2>' + esc(t.title) + '</h2><p class="sub">' + esc(campaignName(t.campaignId)) + ' · ' + statusBadge(t.status) + (isOverdue(t) ? ' <span class="badge bad">Quá hạn</span>' : '') + '</p></div>' +
       '<button class="btn secondary small" data-action="task-close">Đóng ✕</button></div>';
+    html += taskReadonlyNote();
+    if (!ro && !ed && statusEd) html += '<div class="notice info" role="note">Vai trò hiện tại chỉ đổi được trạng thái công việc — các ô khác đã bị khóa.</div>';
     html += '<div class="panel-meta">' + readinessBadge(t) +
       (preds.length ? ' <span class="sub">Đang chờ: ' + esc(preds.map(function (x) { var p = taskById(x.predecessorId); return p ? p.title : x.predecessorId; }).join(', ')) + '</span>' : '') +
       (succs.length ? '<br><span class="sub">Các việc đang chờ mình: ' + esc(succs.map(function (x) { var p = taskById(x.successorId); return p ? p.title : x.successorId; }).join(', ')) + '</span>' : '') + '</div>';
     html += '<form id="task-panel-form" data-task-id="' + esc(t.id) + '" class="editor-form">' +
-      F2('title', 'Tên việc *', 'text', t.title, {}) +
-      F2sel('assigneeId', 'Người phụ trách', t.assigneeId, memberPairs(), '— Chưa phân công —') +
-      F2sel('campaignId', 'Campaign (để trống = việc độc lập)', t.campaignId, campaignPairs(), '— Việc độc lập —') +
-      F2sel('parentId', 'Việc cha', t.parentId, tasks.filter(function (x) { return x.id !== t.id; }).map(function (x) { return [x.id, x.title]; }), '— Không có —') +
-      F2sel('status', 'Trạng thái', t.status, TASK_STATUSES, null) +
-      F2sel('priority', 'Ưu tiên', t.priority || 'Trung bình', PRIORITIES.map(function (x) { return [x, x]; }), null) +
-      F2('startDate', 'Ngày bắt đầu', 'date', t.startDate ? String(t.startDate).slice(0, 10) : '', {}) +
-      F2('dueDate', 'Mốc cần hoàn thành', 'date', t.dueDate ? String(t.dueDate).slice(0, 10) : '', {}) +
-      F2('effortHours', 'Thời gian dự kiến (giờ)', 'number', t.effortHours, { step: 0.5, min: 0 }) +
-      F2('deliverable', 'Đầu ra cần bàn giao', 'text', t.deliverable, { wide: true }) +
-      '<label class="fld wide">Mô tả<textarea name="description" rows="3">' + esc(t.description || '') + '</textarea></label>' +
-      F2('availabilityNote', 'Ghi chú thời gian có thể nhận việc', 'text', t.availabilityNote, { wide: true }) +
-      '<div class="form-actions"><button class="btn" type="submit"' + dis(!ed) + noEditTitle() + '>Lưu thay đổi</button></div></form>';
+      F2('title', 'Tên việc *', 'text', t.title, { disabled: !ed }) +
+      F2sel('assigneeId', 'Người phụ trách', t.assigneeId, memberPairs(), '— Chưa phân công —', { disabled: !ed }) +
+      F2sel('campaignId', 'Campaign (để trống = việc độc lập)', t.campaignId, campaignPairs(), '— Việc độc lập —', { disabled: !ed }) +
+      F2sel('parentId', 'Việc cha', t.parentId, tasks.filter(function (x) { return x.id !== t.id; }).map(function (x) { return [x.id, x.title]; }), '— Không có —', { disabled: !ed }) +
+      F2sel('status', 'Trạng thái', t.status, TASK_STATUSES, null, { disabled: !statusEd }) +
+      F2sel('priority', 'Ưu tiên', t.priority || 'Trung bình', PRIORITIES.map(function (x) { return [x, x]; }), null, { disabled: !ed }) +
+      F2('startDate', 'Ngày bắt đầu', 'date', t.startDate ? String(t.startDate).slice(0, 10) : '', { disabled: !ed }) +
+      F2('dueDate', 'Mốc cần hoàn thành', 'date', t.dueDate ? String(t.dueDate).slice(0, 10) : '', { disabled: !ed }) +
+      F2('effortHours', 'Thời gian dự kiến (giờ)', 'number', t.effortHours, { step: 0.5, min: 0, disabled: !ed }) +
+      F2('deliverable', 'Đầu ra cần bàn giao', 'text', t.deliverable, { wide: true, disabled: !ed }) +
+      '<label class="fld wide">Mô tả<textarea name="description" rows="3"' + dis(!ed) + '>' + esc(t.description || '') + '</textarea></label>' +
+      F2('availabilityNote', 'Ghi chú thời gian có thể nhận việc', 'text', t.availabilityNote, { wide: true, disabled: !ed }) +
+      '<div class="form-actions"><button class="btn" type="submit"' + dis(ro) + (ro ? noEditTitle() : '') + '>Lưu thay đổi</button></div></form>';
     // Checklist
     html += '<h3>Danh sách kiểm tra (' + checklist.filter(function (c) { return c.done; }).length + '/' + checklist.length + ')</h3>';
     if (!checklist.length) html += '<p class="sub">Chưa có mục kiểm tra nào.</p>';
@@ -953,28 +994,28 @@
       return '<li><label><input type="checkbox" data-action-change="checklist-toggle" data-id="' + esc(t.id) + '" data-idx="' + i + '"' + (c.done ? ' checked' : '') + dis(!ed) + '> <span class="' + (c.done ? 'done-text' : '') + '">' + esc(c.text || c.title || '') + '</span></label>' +
         '<button class="btn small secondary" data-action="checklist-remove" data-id="' + esc(t.id) + '" data-idx="' + i + '"' + dis(!ed) + '>Xóa</button></li>';
     }).join('') + '</ul>';
-    html += '<form class="inline" id="checklist-add-form" data-task-id="' + esc(t.id) + '"><label>Mục kiểm tra mới<input type="text" name="text" required></label><button class="btn small" type="submit"' + dis(!ed) + '>Thêm mục</button></form>';
+    html += '<form class="inline" id="checklist-add-form" data-task-id="' + esc(t.id) + '"><label>Mục kiểm tra mới<input type="text" name="text" required' + dis(!ed) + '></label><button class="btn small" type="submit"' + dis(!ed) + (ro ? noEditTitle() : '') + '>Thêm mục</button></form>';
     // Phụ thuộc
     html += '<h3>Quan hệ phụ thuộc</h3>';
     html += '<p class="sub"><strong>Đang chờ:</strong> ' + (preds.length ? preds.map(function (x) { var p = taskById(x.predecessorId); return esc(p ? p.title : x.predecessorId) + ' <button class="btn small secondary" data-action="dep-remove" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Bỏ</button>'; }).join(' · ') : 'Không chờ việc nào') + '</p>';
     html += '<p class="sub"><strong>Các việc đang chờ mình:</strong> ' + (succs.length ? succs.map(function (x) { var p = taskById(x.successorId); return esc(p ? p.title : x.successorId); }).join(' · ') : 'Chưa có việc nào chờ việc này') + '</p>';
-    html += '<form class="inline" id="dep-add-panel-form" data-task-id="' + esc(t.id) + '"><label>Việc phải xong trước việc này<select name="predecessorId">' +
+    html += '<form class="inline" id="dep-add-panel-form" data-task-id="' + esc(t.id) + '"><label>Việc phải xong trước việc này<select name="predecessorId"' + dis(!ed) + '>' +
       tasks.filter(function (x) { return x.id !== t.id; }).map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.title) + '</option>'; }).join('') +
-      '</select></label><button class="btn small secondary" type="submit"' + dis(!ed) + '>Thêm phụ thuộc</button></form>';
+      '</select></label><button class="btn small secondary" type="submit"' + dis(!ed) + (ro ? noEditTitle() : '') + '>Thêm phụ thuộc</button></form>';
     if (subtasks.length) {
       html += '<h3>Việc con</h3><ul class="clean">' + subtasks.map(function (s) { return '<li><button class="linklike" data-action="open-task" data-id="' + esc(s.id) + '">' + esc(s.title) + '</button> — ' + statusBadge(s.status) + '</li>'; }).join('') + '</ul>';
     }
     if (blockers.length) {
       html += '<h3>Trở ngại</h3>' + blockers.map(function (b) {
         return '<div class="notice ' + (b.status === 'open' ? 'warn' : 'ok') + '"><strong>' + esc(b.title) + '</strong> — ' + esc(b.description || '') + ' (' + esc(labelStatus(b.status)) + ')' +
-          (b.status === 'open' ? ' <button class="btn small secondary" data-action="resolve-blocker" data-id="' + esc(b.id) + '">Đánh dấu đã gỡ</button>' : '') + '</div>';
+          (b.status === 'open' ? ' <button class="btn small secondary" data-action="resolve-blocker" data-id="' + esc(b.id) + '"' + dis(!ed) + '>Đánh dấu đã gỡ</button>' : '') + '</div>';
       }).join('');
     }
     // Bình luận
     html += '<h3>Bình luận</h3>';
     if (!comments.length) html += '<p class="sub">Chưa có bình luận. (Nếu tầng dữ liệu chưa hỗ trợ bình luận, nội dung gửi sẽ báo lỗi rõ thay vì báo đã lưu.)</p>';
     else html += '<ul class="clean">' + comments.map(function (c) { return '<li><strong>' + esc(memberName(c.authorId || c.createdBy)) + '</strong> · ' + esc(D.formatDateTimeVN(c.createdAt)) + '<br>' + esc(c.body || c.text || '') + '</li>'; }).join('') + '</ul>';
-    html += '<form class="inline" id="comment-add-form" data-task-id="' + esc(t.id) + '"><label>Bình luận mới<input type="text" name="body" required placeholder="Gõ @ để nhắc tên trong nội dung"></label><button class="btn small" type="submit"' + dis(!ed) + '>Gửi</button></form>';
+    html += '<form class="inline" id="comment-add-form" data-task-id="' + esc(t.id) + '"><label>Bình luận mới<input type="text" name="body" required placeholder="Gõ @ để nhắc tên trong nội dung"' + dis(!commentEd) + '></label><button class="btn small" type="submit"' + dis(!commentEd) + '>Gửi</button></form>';
     // Lịch sử + lưu trữ
     html += '<h3>Lịch sử bản ghi</h3><p class="sub">Tạo: ' + esc(D.formatDateTimeVN(t.createdAt) || '—') + ' · Cập nhật: ' + esc(D.formatDateTimeVN(t.updatedAt) || '—') + (t.updatedBy ? ' · Người sửa gần nhất: ' + esc(memberName(t.updatedBy)) : '') + '</p>';
     html += '<p>' + (isArchived(t)
@@ -984,13 +1025,15 @@
     return html;
   }
   // Field builder không phụ thuộc UI.editor (dùng cho panel)
+  // opts.disabled=true → ô nhập bị khóa ngay trong HTML (chế độ chỉ đọc).
   function F2(name, label, type, value, opts) {
     opts = opts || {};
     return '<label class="fld' + (opts.wide ? ' wide' : '') + '">' + esc(label) + '<input type="' + type + '" name="' + esc(name) + '" value="' + esc(value === null || value === undefined ? '' : value) + '"' +
-      (opts.step !== undefined ? ' step="' + opts.step + '"' : '') + (opts.min !== undefined ? ' min="' + opts.min + '"' : '') + '></label>';
+      (opts.step !== undefined ? ' step="' + opts.step + '"' : '') + (opts.min !== undefined ? ' min="' + opts.min + '"' : '') + dis(!!opts.disabled) + '></label>';
   }
-  function F2sel(name, label, value, pairs, emptyLabel) {
-    return '<label class="fld">' + esc(label) + '<select name="' + esc(name) + '">' + optList(pairs, value, emptyLabel) + '</select></label>';
+  function F2sel(name, label, value, pairs, emptyLabel, opts) {
+    opts = opts || {};
+    return '<label class="fld">' + esc(label) + '<select name="' + esc(name) + '"' + dis(!!opts.disabled) + '>' + optList(pairs, value, emptyLabel) + '</select></label>';
   }
 
   // ---------- Gantt dùng chung (portfolio + trong campaign) ----------
@@ -2314,6 +2357,7 @@
       settle(sUpdate('tasks', t.getAttribute('data-id'), { status: t.value }), function () { render(); });
     }
     if (kind === 'checklist-toggle') {
+      if (!canEditTask()) { toast('Bạn đang xem ở chế độ chỉ đọc, không sửa được danh sách kiểm tra.'); render(); return; }
       var task = taskById(t.getAttribute('data-id'));
       var idx = Number(t.getAttribute('data-idx'));
       if (task) { var cl = (task.checklist || []).map(function (c, i) { return i === idx ? Object.assign({}, c, { done: t.checked }) : c; }); settle(sUpdate('tasks', task.id, { checklist: cl }), function () { render(); }); }
@@ -2359,6 +2403,14 @@
     }
     if (f.id === 'task-panel-form') {
       var tid = f.getAttribute('data-task-id');
+      // Phòng thủ theo cùng cơ chế quyền như lúc render: chỉ-đọc thì không
+      // lưu gì cả; chỉ có task.updateStatus thì chỉ ghi đúng trạng thái
+      // (các ô khác đang disabled nên FormData không mang chúng theo).
+      if (taskPanelReadonly()) { toast('Bạn đang xem ở chế độ chỉ đọc, không lưu được thay đổi.'); return; }
+      if (!canEditTask()) {
+        settle(sUpdate('tasks', tid, { status: val('status') }), function () { toast('Đã lưu trạng thái công việc.'); render(); });
+        return;
+      }
       var start = val('startDate'), due = val('dueDate');
       if (start && due && due < start) { toast('Mốc cần hoàn thành phải sau ngày bắt đầu.'); return; }
       if (val('parentId') === tid) { toast('Việc không thể là việc cha của chính nó.'); return; }
@@ -2372,12 +2424,14 @@
       return;
     }
     if (f.id === 'checklist-add-form') {
+      if (!canEditTask()) { toast('Bạn đang xem ở chế độ chỉ đọc, không thêm được mục kiểm tra.'); return; }
       var tid2 = f.getAttribute('data-task-id');
       var task2 = taskById(tid2);
       if (task2) settle(sUpdate('tasks', tid2, { checklist: (task2.checklist || []).concat([{ text: String(val('text')), done: false }]) }), function () { render(); });
       return;
     }
     if (f.id === 'dep-add-panel-form') {
+      if (!canEditTask()) { toast('Bạn đang xem ở chế độ chỉ đọc, không thêm được phụ thuộc.'); return; }
       var tid3 = f.getAttribute('data-task-id');
       var from = val('predecessorId');
       if (D.wouldCreateCycle(Store.list('dependencies'), from, tid3)) { toast('Không thêm được: quan hệ này tạo vòng phụ thuộc.'); return; }
@@ -2385,6 +2439,7 @@
       return;
     }
     if (f.id === 'comment-add-form') {
+      if (!canEdit()) { toast('Vai trò hiện tại chỉ xem, không gửi được bình luận.'); return; }
       var tid4 = f.getAttribute('data-task-id');
       settle(sCreate('comments', { taskId: tid4, body: String(val('body')), authorId: Store.currentUserId, createdBy: Store.currentUserId, createdAt: new Date().toISOString() }),
         function () { toast('Đã gửi bình luận.'); render(); });
