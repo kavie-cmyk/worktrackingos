@@ -27,6 +27,24 @@ publish-worker/sync-worker KHỚP 100% file này — kiểm bằng script khi s�
 **Chưa kênh nào được kiểm chứng với tài khoản thật**; không mục nào ở bảng
 này được hiểu là "đã kết nối".
 
+### Chốt trạng thái provider (vòng sửa QA R1, 11/11/2026)
+
+- **OAuth:** authorize URL builder (`buildAuthorizeUrl`) + callback parser
+  (`parseOAuthCallback`) **đã có code** cho Facebook, Instagram, LinkedIn,
+  YouTube và TikTok (chỉ-đọc) — trạng thái đều là
+  `implemented_needs_credentials`: đang **chờ app credentials của SAVA**,
+  chưa kênh nào có credentials production trong workspace.
+- **Publish:** contract ở Store (`createPublishJob` với `decision_id`,
+  idempotency ổn định) + `publish-worker` **đã sẵn**, nhưng **chưa kiểm
+  chứng với bất kỳ tài khoản thật nào** — không khai là đăng được thật.
+- **TikTok publish:** **không triển khai theo thiết kế** (chỉ soạn script,
+  đăng ngoài app, lưu link) — `not_supported_by_design`.
+- **Ads:** **chưa có connector riêng** cho nền tảng quảng cáo (chưa có
+  token exchange / đọc-ghi ads qua API). Phần đã có là **workflow nội bộ**
+  trong app: yêu cầu thay đổi quảng cáo (ad change requests) với luồng
+  tạo nháp → gửi duyệt → duyệt/từ chối, tách quyền `ads.draft` /
+  `ads.approve` — workflow này không tự áp dụng thay đổi lên nền tảng ads.
+
 ## Bảng theo kênh
 
 | Kênh | Đọc bài đã đăng | Đọc analytics | Đăng: post/text | Đăng: ảnh | Đăng: video | Đăng: reel/short | Đăng: story | Đăng: carousel | Ads read | Ads write | Trạng thái kiểm chứng |

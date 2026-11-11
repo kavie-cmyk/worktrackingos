@@ -92,6 +92,23 @@ phụ thuộc tab trình duyệt; chưa có publish job thật nào tới hạn 
 
 URL public: https://kavie-cmyk.github.io/worktrackingos/
 
+## 4. Gate fail-closed của worker (R35 — đã kiểm live ở vòng QA R1, 11/11/2026)
+
+Từ vòng sửa R1 (commit `66ae4ac`, publish-worker v2 / sync-worker v2 /
+invite-member v1 — ACTIVE), hai worker **fail-closed** trước khi tạo
+service client:
+
+- Chỉ chấp nhận một trong hai cách gọi: header **`x-cron-secret`** khớp
+  secret của worker, **hoặc** **Bearer <redacted> là service_role key** —
+  pg_cron job gọi worker bằng service_role key lấy từ **Vault**
+  (`vault.decrypted_secrets`, tên `service_role_key`), key không nằm
+  trong câu lệnh job hay trong repo.
+- Gọi bằng **anon key, JWT của member thường, hoặc không có header** đều
+  bị trả **401** — QA vòng R1 đã kiểm trực tiếp trên live cho cả ba
+  trường hợp này.
+- Lịch chạy giữ nguyên: 2 job pg_cron `*/5 * * * *` (mỗi 5 phút),
+  `publish-worker-5min` và `sync-worker-5min`, đều active (mục 2).
+
 ## Tóm tắt AC liên quan
 
 - Deploy 2 Edge Functions: **ĐẠT** (ACTIVE, verify_jwt=true, đã đọc lại).

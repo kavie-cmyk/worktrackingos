@@ -129,6 +129,36 @@ Ad campaign có thể **liên kết** tới một IMC campaign để quy hiệu 
 - **Sync status (R29):** trạng thái sync từ server được giữ nguyên trạng
   (`recordSyncStatus` không tự nâng `incomplete` thành `complete`).
 
+### Chốt contract R1 (11/11/2026, migrations 0004–0008 đã áp live)
+
+Tóm tắt các bất biến đã kiểm chứng ở vòng sửa QA R1 — chi tiết từng mục ở
+các gạch đầu dòng ngay trên:
+
+- **Duyệt chỉ qua RPC:** gửi duyệt chỉ qua `submit_for_review(p_variant_id)`
+  và quyết định chỉ qua `decide_approval(p_step_id, p_revision_id,
+  p_decision, p_comment)` (migration 0004). Client **không** được sửa trực
+  tiếp các cột duyệt nhạy cảm của `content_variants` (`approval_status`,
+  `approved_revision_id`, `publishing_status`, `editorial_status` sang
+  trạng thái duyệt) — trigger `guard_content_variant_sensitive` ở backend
+  chặn đường ghi trực tiếp; `content_revisions` là **bất biến** (chặn
+  UPDATE, DELETE chỉ dành cho service_role/postgres), muốn sửa nội dung
+  thì tạo revision mới và đổi `current_revision_id` (đổi revision tự
+  invalidate quyết định duyệt cũ; thứ tự trigger đã chốt ở migration 0008).
+- **Store:** mọi đọc/ghi qua `Store._attempt`/`Store._rpc`; trạng thái tải
+  theo collection qua `Store.loadState`/`loadStateOf` ở UI (loading /
+  error / denied / stale giữ dữ liệu cũ / empty phân biệt với lỗi).
+- **Publish job:** `createPublishJob(variant, { accountId, scheduledAt,
+  decisionId })` — bắt buộc có `decision_id` của quyết định duyệt,
+  `idempotency_key` ổn định theo variant+revision+account+slot lịch,
+  `scheduledAt = null` nghĩa là **đăng ngay** (`scheduled_at = now`).
+- **Archive thay hard-delete:** `remove` đặt `archived_at` cho entity
+  chính (migration 0005), `restore` gỡ archive; danh sách mặc định ẩn
+  mục đã archive.
+- **PERMISSIONS dùng chung:** một matrix duy nhất ở `js/store-core.js`
+  (owner/lead/member/ceo × action) áp cho **cả demo lẫn Supabase thật**;
+  Store và UI cùng kiểm matrix này, RLS/RPC ở backend là lớp chặn cuối.
+  CEO chỉ đọc ở cả hai chế độ.
+
 ## Ngân sách và cam kết chi
 
 Ngân sách theo dòng (line) có số **approved**; số còn lại được tính ở `js/domain.js` (`budgetRemaining`):

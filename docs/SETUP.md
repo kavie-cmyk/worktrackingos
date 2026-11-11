@@ -2,6 +2,15 @@
 
 > **Hiện trạng (cập nhật 11/11/2026): project ĐÃ được tạo và migrations ĐÃ được áp.** Project `sava-marketing-workspace` thuộc Organization **MKT OS**, **Project ref:** `nlbtjtubihxbkigdfpdg`, **Region:** `ap-south-1` (Mumbai), Plan Free, trạng thái ACTIVE_HEALTHY. Ngày 11/11/2026, migrations `0001_schema.sql`, `0002_rls.sql`, `0003_functions.sql` đã được áp lên project qua Supabase Management API (đều trả HTTP 201) và đã đọc lại xác nhận: **49 bảng, RLS bật 49/49, 155 policies**, các function/ràng buộc then chốt đều có. `config.js` trong repo đã điền Project URL + anon key (khóa công khai, an toàn kèm RLS). Các bước 1, 2 và 4 dưới đây giữ lại làm tài liệu tái triển khai. **Cập nhật vòng 2 (11/11/2026): Bước 3 ĐÃ XONG** — 2 Edge Functions đã deploy (ACTIVE, verify_jwt) và đã đặt lịch pg_cron mỗi 5 phút qua Vault (xem docs/WORKERS.md); **Bước 6 ĐÃ XONG** — Auth config đã trỏ site_url/uri_allow_list về https://kavie-cmyk.github.io/worktrackingos/ (GitHub Pages đã bật từ branch feat/marketing-workspace, HTTP 200), email mời Owner đã được API invite chấp nhận lúc 21:18 ICT 11/11/2026 cho anhthu.tang2004@gmail.com (user id 1d360d36-c504-41eb-9547-388f40860719, trạng thái chờ bấm link đặt mật khẩu) và bootstrap_owner đã gán sẵn membership role owner — bấm link trong email, đặt mật khẩu là vào app với quyền Owner.
 
+> **Cập nhật vòng sửa QA R1 (11/11/2026): migrations `0004`–`0008` ĐÃ ÁP LIVE** lên project `nlbtjtubihxbkigdfpdg` trong ngày 11/11/2026:
+> - `0004_security_approval.sql` — bảo mật & duyệt: khóa `bootstrap_owner`, RPC duyệt + trigger bảo vệ cột nhạy cảm, revisions bất biến.
+> - `0005_data_contracts.sql` — hợp đồng dữ liệu: đường nhập tay hẹp, merge `custom_fields`, `settled_amount`/`budget_remaining`, `publish_jobs.decision_id`, `archived_at` (archive thay hard-delete).
+> - `0006_sync_incomplete.sql` — trạng thái sync `incomplete` + resume theo cursor.
+> - `0007_metric_observations_content_variant.sql` — nới CHECK `metric_observations.object_type` thêm `content_variant`.
+> - `0008_invalidation_order_fix.sql` — sửa thứ tự trigger invalidate duyệt khi đổi revision.
+>
+> Lưu ý lịch sử commit: commit `d237163` ghi `0008` là "chưa áp" — đó là mô tả **tại thời điểm commit đó**; hiện cả 5 migration 0004–0008 **đã áp** và QA vòng R1 đã đối chiếu `pg_get_functiondef` trên live khớp với file trong repo.
+
 Thứ tự thực hiện: **1 → 7**. Các bước 2–5 do người triển khai kỹ thuật làm sau khi Zac hoàn thành bước 1 và cung cấp URL + keys của project.
 
 ---
