@@ -15,21 +15,37 @@
 <body>
 <div id="demo-banner" class="demo-banner" hidden>Dữ liệu minh họa — không phải dữ liệu thật</div>
 <div class="layout">
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="wordmark">SAVA Marketing Workspace</div>
     <nav id="main-nav" aria-label="Điều hướng chính"></nav>
     <div class="sidebar-foot">
       <div id="connection-status" class="conn-status">Đang kiểm tra kết nối…</div>
-      <label class="user-picker">Người dùng hiện tại
-        <select id="current-user-select"></select>
-      </label>
     </div>
   </aside>
-  <main id="app" class="main" tabindex="-1">
-    <div class="state-box">Đang tải…</div>
-  </main>
+  <div id="sidebar-backdrop" class="sidebar-backdrop" data-action="sidebar-close" hidden></div>
+  <div class="mainwrap">
+    <header class="topbar">
+      <button class="btn secondary small nav-toggle" data-action="nav-toggle" aria-label="Mở hoặc đóng menu điều hướng">☰ Menu</button>
+      <div class="topbar-title"><strong id="workspace-name">SAVA Marketing Workspace</strong></div>
+      <form id="global-search-form" class="global-search" role="search">
+        <input id="global-search" type="search" placeholder="Tìm campaign, việc, nội dung, tài nguyên…" aria-label="Tìm kiếm toàn cục">
+        <div id="search-results" class="search-results" hidden></div>
+      </form>
+      <div class="topbar-user">
+        <span id="topbar-user"></span>
+        <label class="user-picker" id="demo-user-picker" hidden>Chế độ demo — đổi người dùng xem thử
+          <select id="current-user-select" aria-label="Đổi người dùng (chỉ chế độ demo)"></select>
+        </label>
+        <button class="btn secondary small" data-action="sign-out" id="sign-out-btn" hidden>Đăng xuất</button>
+      </div>
+    </header>
+    <main id="app" class="main" tabindex="-1">
+      <div class="state-box">Đang tải…</div>
+    </main>
+  </div>
 </div>
-<div id="toast" class="toast" hidden></div>
+<div id="overlay-root"></div>
+<div id="toast" class="toast" hidden role="status"></div>
 <script src="js/app.js"></script>
 </body>
 </html>
