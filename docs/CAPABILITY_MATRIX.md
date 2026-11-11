@@ -10,6 +10,23 @@
 > Nguồn tài liệu chính thức chỉ là điểm bắt đầu tra cứu, không phải bằng chứng
 > quyền đã được cấp.
 
+## Trạng thái triển khai connector trong code (cập nhật vòng R1 — R20, 11/11/2026)
+
+Phân biệt rõ **code đã viết** với **quyền/tài khoản thật** — hai trục khác nhau:
+
+| Kênh | implementation_status (code OAuth) | Authorize URL builder | Callback contract | Token exchange + gọi API publish/sync | connection_status (tài khoản thật) | publish_support |
+|---|---|---|---|---|---|---|
+| Facebook Page | implemented_needs_credentials | Có — `buildAuthorizeUrl` (facebook.com/v21.0/dialog/oauth, scopes Pages + Instagram + ads) | Có — `parseOAuthCallback` (kiểm error/state/code) | **Chưa triển khai** — `publish()/sync*()` vẫn ném NOT_CONNECTED | not_connected | supported |
+| Instagram Professional | implemented_needs_credentials | Có — instagram.com/oauth/authorize (Instagram Login, scopes instagram_business_*) | Có | **Chưa triển khai** | not_connected | supported |
+| LinkedIn Page | implemented_needs_credentials | Có — linkedin.com/oauth/v2/authorization (scopes organization + ads) | Có | **Chưa triển khai** | pending_review (chờ duyệt Community Management) | supported |
+| YouTube | implemented_needs_credentials | Có — accounts.google.com/o/oauth2/v2/auth (scopes youtube.readonly/upload + yt-analytics.readonly, access_type=offline) | Có | **Chưa triển khai** | not_connected | supported |
+| TikTok | implemented_needs_credentials | Có — tiktok.com/v2/auth/authorize/ (client_key, scopes chỉ-đọc user.info.basic/video.list/video.query) | Có | **Chưa triển khai** (chỉ áp cho đọc khi có credentials) | not_connected | **not_supported_by_design** — không đăng qua app theo quyết định sản phẩm |
+
+Mã nguồn: `supabase/functions/_shared/providers.ts` (bản inline trong
+publish-worker/sync-worker KHỚP 100% file này — kiểm bằng script khi sửa).
+**Chưa kênh nào được kiểm chứng với tài khoản thật**; không mục nào ở bảng
+này được hiểu là "đã kết nối".
+
 ## Bảng theo kênh
 
 | Kênh | Đọc bài đã đăng | Đọc analytics | Đăng: post/text | Đăng: ảnh | Đăng: video | Đăng: reel/short | Đăng: story | Đăng: carousel | Ads read | Ads write | Trạng thái kiểm chứng |

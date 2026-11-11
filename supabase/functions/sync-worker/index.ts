@@ -25,6 +25,10 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 // Trạng thái thật tại 11/11/2026: CHƯA provider nào có credentials / connection
 // production. Mọi publish()/sync*() đều ném lỗi NOT_CONNECTED rõ ràng —
 // TUYỆT ĐỐI không giả lập thành công.
+// Vòng R1 (R20): registry ĐÃ có OAuth authorize URL builder + callback
+// contract cho cả 5 kênh (implementation_status =
+// 'implemented_needs_credentials'); token exchange và lời gọi API
+// publish/sync CHƯA triển khai — đó là bước tiếp theo khi có app credentials.
 //
 // TikTok: theo quyết định sản phẩm, provider TikTok CHỈ có khả năng đọc
 // (read_posts / read_analytics). Nó KHÔNG có method publish — sự vắng mặt này
@@ -43,6 +47,35 @@ export type ConnectionStatus =
   | "not_connected" // chưa có connection / credentials
   | "pending_review" // đã nộp duyệt app ở nền tảng, chưa được production access
   | "active"; // chỉ dùng khi đã kiểm chứng thật trên production
+
+/**
+ * Mức triển khai CODE của connector (R20) — tách khỏi ConnectionStatus
+ * (quyền/tài khoản thật):
+ *   not_implemented               — chưa có code OAuth/callback.
+ *   implemented_needs_credentials — ĐÃ có authorize URL builder +
+ *                                   callback contract (xem OAUTH bên dưới);
+ *                                   còn thiếu app credentials + tài khoản
+ *                                   thật để chạy. Token exchange và lời gọi
+ *                                   API publish/sync vẫn chưa triển khai —
+ *                                   publish()/sync*() vẫn ném NOT_CONNECTED.
+ */
+export type OAuthImplementationStatus =
+  | "not_implemented"
+  | "implemented_needs_credentials";
+
+/** publish qua API được hỗ trợ theo thiết kế hay bị loại có chủ đích. */
+export type PublishSupport = "supported" | "not_supported_by_design";
+
+/** Cấu hình OAuth 2.0 theo tài liệu chính thức của từng nền tảng. */
+export interface OAuthConfig {
+  authorize_url: string;
+  token_url: string;
+  scopes: string[];
+  /** URL tài liệu chính thức làm nguồn cho authorize_url/scopes. */
+  docs_url: string;
+  /** TikTok dùng tham số client_key thay cho client_id ở authorize URL. */
+  client_id_param: "client_id" | "client_key";
+}
 
 export type CapabilityName =
   | "read_posts"
@@ -120,6 +153,12 @@ export interface SocialProvider {
   display_name: string;
   /** Trạng thái kiểm chứng production của connector này. */
   connection_status: ConnectionStatus;
+  /** Mức triển khai code OAuth (R20) — xem OAuthImplementationStatus. */
+  implementation_status: OAuthImplementationStatus;
+  /** Cấu hình OAuth để buildAuthorizeUrl dùng. */
+  oauth: OAuthConfig;
+  /** TikTok = 'not_supported_by_design', các kênh còn lại 'supported'. */
+  publish_support: PublishSupport;
   /** Khả năng theo format, ví dụ { post: {...}, reel: {...} }. */
   capabilities: Record<string, FormatCapability>;
   syncPosts?(args: {
@@ -187,6 +226,19 @@ export const facebookPageProvider: PublishCapableProvider = {
   id: "facebook_page",
   display_name: "Facebook Page",
   connection_status: "not_connected",
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "supported",
+  oauth: {
+    authorize_url: "https://www.facebook.com/v21.0/dialog/oauth",
+    token_url: "https://graph.facebook.com/v21.0/oauth/access_token",
+    scopes: [
+      "pages_show_list", "pages_read_engagement", "pages_manage_posts",
+      "pages_read_user_content", "instagram_basic", "instagram_content_publish",
+      "instagram_manage_insights", "read_insights", "ads_read", "ads_management",
+    ],
+    docs_url: "https://developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow",
+    client_id_param: "client_id",
+  },
   capabilities: {
     post: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
     photo: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
@@ -201,6 +253,19 @@ export const instagramProvider: PublishCapableProvider = {
   id: "instagram",
   display_name: "Instagram Professional",
   connection_status: "not_connected",
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "supported",
+  oauth: {
+    // Instagram API with Instagram Login (không qua Facebook Login).
+    authorize_url: "https://www.instagram.com/oauth/authorize",
+    token_url: "https://api.instagram.com/oauth/access_token",
+    scopes: [
+      "instagram_business_basic", "instagram_business_content_publish",
+      "instagram_business_manage_comments", "instagram_business_manage_insights",
+    ],
+    docs_url: "https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login",
+    client_id_param: "client_id",
+  },
   capabilities: {
     post: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
     reel: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
@@ -214,6 +279,18 @@ export const linkedinPageProvider: PublishCapableProvider = {
   id: "linkedin_page",
   display_name: "LinkedIn Page",
   connection_status: "pending_review", // chờ quyền Community Management / Marketing Developer Platform
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "supported",
+  oauth: {
+    authorize_url: "https://www.linkedin.com/oauth/v2/authorization",
+    token_url: "https://www.linkedin.com/oauth/v2/accessToken",
+    scopes: [
+      "r_organization_social", "w_organization_social", "rw_organization_admin",
+      "r_ads", "rw_ads",
+    ],
+    docs_url: "https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow",
+    client_id_param: "client_id",
+  },
   capabilities: {
     post: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
     article: { ...NO_CAPS, read_posts: true, publish: true },
@@ -226,6 +303,19 @@ export const youtubeProvider: PublishCapableProvider = {
   id: "youtube",
   display_name: "YouTube",
   connection_status: "not_connected",
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "supported",
+  oauth: {
+    authorize_url: "https://accounts.google.com/o/oauth2/v2/auth",
+    token_url: "https://oauth2.googleapis.com/token",
+    scopes: [
+      "https://www.googleapis.com/auth/youtube.readonly",
+      "https://www.googleapis.com/auth/youtube.upload",
+      "https://www.googleapis.com/auth/yt-analytics.readonly",
+    ],
+    docs_url: "https://developers.google.com/identity/protocols/oauth2/web-server",
+    client_id_param: "client_id",
+  },
   capabilities: {
     video: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
     short: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
@@ -247,6 +337,15 @@ export const tiktokProvider: ReadOnlyProvider = {
   id: "tiktok",
   display_name: "TikTok",
   connection_status: "not_connected",
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "not_supported_by_design", // chỉ đọc: Login Kit + Display/Research API
+  oauth: {
+    authorize_url: "https://www.tiktok.com/v2/auth/authorize/",
+    token_url: "https://open.tiktokapis.com/v2/oauth/token/",
+    scopes: ["user.info.basic", "video.list", "video.query"],
+    docs_url: "https://developers.tiktok.com/doc/login-kit-web",
+    client_id_param: "client_key",
+  },
   capabilities: {
     video: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: false },
   },
@@ -295,9 +394,81 @@ export function assertPublishable(platform: PlatformId): PublishCapableProvider 
   return provider as PublishCapableProvider;
 }
 
+// ----------------------------------------------------------------------------
+// OAuth — authorize URL builder + callback contract (R20)
+// buildAuthorizeUrl dựng URL ủy quyền ĐÚNG domain/scope theo tài liệu chính
+// thức (oauth.docs_url của từng provider). Hàm chỉ dựng URL: việc mở URL,
+// nhận code ở redirect URI và đổi code lấy token (token_url) thuộc luồng
+// onboarding của app khi đã có client_id/client_secret thật.
+// ----------------------------------------------------------------------------
+
+export function buildAuthorizeUrl(
+  providerId: PlatformId,
+  clientId: string,
+  redirectUri: string,
+  state: string,
+): string {
+  const provider = getProvider(providerId);
+  const cfg = provider.oauth;
+  const params = new URLSearchParams();
+  params.set(cfg.client_id_param, clientId);
+  params.set("redirect_uri", redirectUri);
+  params.set("response_type", "code");
+  params.set("state", state);
+  // LinkedIn + Google tách scope bằng khoảng trắng; Meta/TikTok bằng dấu phẩy.
+  const scopeSep = providerId === "linkedin_page" || providerId === "youtube" ? " " : ",";
+  params.set("scope", cfg.scopes.join(scopeSep));
+  if (providerId === "youtube") {
+    params.set("access_type", "offline"); // để nhận refresh_token
+    params.set("include_granted_scopes", "true");
+  }
+  return `${cfg.authorize_url}?${params.toString()}`;
+}
+
+export interface OAuthCallbackResult {
+  provider: PlatformId;
+  code: string;
+  state: string | null;
+  /** Endpoint đổi code -> token (bước thực thi thuộc luồng onboarding). */
+  token_url: string;
+}
+
+/**
+ * Callback contract: kiểm tra query của redirect URI sau khi user ủy quyền.
+ * Ném ProviderError khi nền tảng trả error, thiếu code, hoặc state không
+ * khớp expectedState (chống CSRF). Trả { code, token_url } khi hợp lệ —
+ * KHÔNG tự đổi token ở đây (chưa có client_secret trong registry).
+ */
+export function parseOAuthCallback(
+  providerId: PlatformId,
+  params: URLSearchParams,
+  expectedState?: string,
+): OAuthCallbackResult {
+  const provider = getProvider(providerId);
+  const error = params.get("error");
+  if (error) {
+    throw new ProviderError(
+      "OAUTH_DENIED",
+      `Nền tảng ${providerId} trả lỗi ủy quyền: ${error} ${params.get("error_description") ?? ""}`.trim(),
+    );
+  }
+  const state = params.get("state");
+  if (expectedState !== undefined && state !== expectedState) {
+    throw new ProviderError("OAUTH_STATE_MISMATCH", "state ở callback không khớp state đã gửi — hủy luồng ủy quyền.");
+  }
+  const code = params.get("code");
+  if (!code) {
+    throw new ProviderError("OAUTH_CODE_MISSING", `Callback của ${providerId} thiếu code.`);
+  }
+  return { provider: providerId, code, state, token_url: provider.oauth.token_url };
+}
 // --- hết phần inlined từ _shared/providers.ts ---
 
-const PAGE_LIMIT = 50; // trần số trang mỗi lần chạy để không vượt timeout Edge Function
+// Trần số trang mỗi lần chạy để không vượt timeout Edge Function. Đây KHÔNG
+// phải mốc hoàn thành (R29): chạm trần mà provider còn next_cursor thì lần
+// chạy là 'incomplete', cursor được lưu để lần sau resume — chỉ khi hết
+// cursor mới chốt mốc hoàn thành (last_period_end).
+const PAGE_LIMIT = 50;
 const METRIC_CODES_BY_PLATFORM: Record<string, string[]> = {
   facebook_page: ["impressions", "reach", "engaged_users", "reactions", "comments", "shares", "video_views", "followers"],
   instagram: ["impressions", "reach", "likes", "comments", "shares", "saves", "video_views", "followers"],
@@ -354,7 +525,7 @@ async function syncPosts(
   supabase: SupabaseClient,
   account: ChannelAccountRow,
   runId: string,
-): Promise<{ upserted: number; fetchedUntil: string | null }> {
+): Promise<{ upserted: number; fetchedUntil: string | null; complete: boolean }> {
   const provider = getProvider(account.platform);
   if (!provider.syncPosts) {
     throw Object.assign(new Error(`Provider ${account.platform} không hỗ trợ syncPosts.`), { code: "NOT_SUPPORTED" });
@@ -363,6 +534,7 @@ async function syncPosts(
   let cursor = cursorState.token;
   let upserted = 0;
   let fetchedUntil: string | null = cursorState.last_period_end;
+  let complete = false;
 
   for (let page = 0; page < PAGE_LIMIT; page++) {
     const result = await provider.syncPosts({
@@ -382,6 +554,7 @@ async function syncPosts(
           caption_snapshot: post.caption_snapshot,
           media_snapshot: post.media_snapshot,
           published_at: post.published_at,
+          source: "api",
           raw: post as unknown as Record<string, unknown>,
           last_synced_at: new Date().toISOString(),
         },
@@ -394,11 +567,19 @@ async function syncPosts(
       }
     }
     cursor = result.next_cursor;
-    if (!cursor) break;
+    if (!cursor) {
+      complete = true;
+      // Lấy hết: chốt cursor=null + mốc hoàn thành mới.
+      await saveCursor(supabase, account, "posts", null, fetchedUntil);
+      break;
+    }
+    // R29: còn trang — lưu NGAY next cursor để lần chạy sau (kể cả khi lần
+    // này lỗi/timeout ở trang kế tiếp) resume đúng chỗ; mốc hoàn thành
+    // last_period_end GIỮ NGUYÊN, không cập nhật khi chưa lấy hết.
+    await saveCursor(supabase, account, "posts", cursor, cursorState.last_period_end);
   }
-  await saveCursor(supabase, account, "posts", cursor, fetchedUntil);
   void runId;
-  return { upserted, fetchedUntil };
+  return { upserted, fetchedUntil, complete };
 }
 
 async function syncMetrics(
@@ -406,16 +587,18 @@ async function syncMetrics(
   account: ChannelAccountRow,
   runId: string,
   range: { since: string; until: string },
-): Promise<{ upserted: number; succeeded: string[]; failed: Array<{ metric_code: string; error_code: string; message: string }> }> {
+): Promise<{ upserted: number; succeeded: string[]; failed: Array<{ metric_code: string; error_code: string; message: string }>; incomplete: string[] }> {
   const provider = getProvider(account.platform);
   const succeeded: string[] = [];
   const failed: Array<{ metric_code: string; error_code: string; message: string }> = [];
+  const incomplete: string[] = [];
   let upserted = 0;
 
   if (!provider.syncMetrics) {
     return {
       upserted: 0,
       succeeded,
+      incomplete,
       failed: [{ metric_code: "*", error_code: "NOT_SUPPORTED", message: `Provider ${account.platform} không hỗ trợ syncMetrics.` }],
     };
   }
@@ -425,6 +608,7 @@ async function syncMetrics(
     try {
       const cursorState = await getCursor(supabase, account, `metrics:${metricCode}`);
       let cursor = cursorState.token;
+      let metricComplete = false;
       for (let page = 0; page < PAGE_LIMIT; page++) {
         const result = await provider.syncMetrics({
           channel_account_id: account.id,
@@ -459,16 +643,25 @@ async function syncMetrics(
           upserted++;
         }
         cursor = result.next_cursor;
-        if (!cursor) break;
+        if (!cursor) {
+          metricComplete = true;
+          break;
+        }
+        // R29: còn trang — lưu cursor resume ngay, KHÔNG chốt mốc kỳ.
+        await saveCursor(supabase, account, `metrics:${metricCode}`, cursor, cursorState.last_period_end);
       }
-      await saveCursor(supabase, account, `metrics:${metricCode}`, cursor, range.until);
-      succeeded.push(metricCode);
+      if (metricComplete) {
+        await saveCursor(supabase, account, `metrics:${metricCode}`, null, range.until);
+        succeeded.push(metricCode);
+      } else {
+        incomplete.push(metricCode);
+      }
     } catch (e) {
       const err = e as { code?: string; message: string };
       failed.push({ metric_code: metricCode, error_code: err.code ?? "SYNC_ERROR", message: err.message });
     }
   }
-  return { upserted, succeeded, failed };
+  return { upserted, succeeded, failed, incomplete };
 }
 
 async function syncAccount(
@@ -517,12 +710,22 @@ async function syncAccount(
     const posts = await syncPosts(supabase, account, runId);
     const metrics = await syncMetrics(supabase, account, runId, range);
     const hasFailure = metrics.failed.length > 0;
+    // R29: còn trang (posts hoặc metric nào đó) -> 'incomplete', không báo đủ.
+    const incompleteReasons: Array<{ start: string; end: string; reason: string }> = [];
+    if (!posts.complete) {
+      incompleteReasons.push({ start: range.since, end: range.until, reason: "posts: còn trang chưa lấy — cursor đã lưu, lần chạy sau resume" });
+    }
+    for (const code of metrics.incomplete) {
+      incompleteReasons.push({ start: range.since, end: range.until, reason: `metric ${code}: còn trang chưa lấy — cursor đã lưu, lần chạy sau resume` });
+    }
+    const isIncomplete = incompleteReasons.length > 0;
     return finish({
-      status: hasFailure ? "partial" : "succeeded",
-      fetched_range: `[${range.since},${posts.fetchedUntil ?? range.until}]`,
-      missing_ranges: hasFailure
-        ? metrics.failed.map((f) => ({ start: range.since, end: range.until, reason: `metric ${f.metric_code}: ${f.error_code}` }))
-        : [],
+      status: hasFailure ? "partial" : isIncomplete ? "incomplete" : "succeeded",
+      fetched_range: posts.complete ? `[${range.since},${posts.fetchedUntil ?? range.until}]` : null,
+      missing_ranges: [
+        ...metrics.failed.map((f) => ({ start: range.since, end: range.until, reason: `metric ${f.metric_code}: ${f.error_code}` })),
+        ...incompleteReasons,
+      ],
       metrics_succeeded: metrics.succeeded,
       metrics_failed: metrics.failed,
       posts_upserted: posts.upserted,
@@ -538,12 +741,30 @@ async function syncAccount(
   }
 }
 
+// ----------------------------------------------------------------------------
+// R35 — Gate fail-closed: worker dùng service_role nên CHỈ chấp nhận người
+// gọi server/cron đã xác thực, kiểm tra TRƯỚC khi tạo service client:
+//   (a) header x-cron-secret khớp env SYNC_CRON_SECRET, hoặc
+//   (b) Authorization: Bearer == SUPABASE_SERVICE_ROLE_KEY (đường pg_cron
+//       đang dùng — key lấy từ Vault, xem docs/WORKERS.md).
+// Thiếu cả hai / không khớp -> 401. TUYỆT ĐỐI không dùng mẫu fail-open
+// `if (cronSecret && ...)` (env trống là lọt qua).
+// ----------------------------------------------------------------------------
+function isAuthorizedCaller(req: Request, cronSecretEnvName: string): boolean {
+  const cronSecret = Deno.env.get(cronSecretEnvName);
+  const provided = req.headers.get("x-cron-secret");
+  if (cronSecret && provided && provided === cronSecret) return true;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const auth = req.headers.get("authorization") ?? "";
+  if (serviceKey && auth === `Bearer ${serviceKey}`) return true;
+  return false;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
     return new Response("Method Not Allowed", { status: 405 });
   }
-  const cronSecret = Deno.env.get("SYNC_CRON_SECRET");
-  if (cronSecret && req.headers.get("x-cron-secret") !== cronSecret) {
+  if (!isAuthorizedCaller(req, "SYNC_CRON_SECRET")) {
     return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 

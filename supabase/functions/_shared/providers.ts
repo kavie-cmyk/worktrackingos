@@ -5,6 +5,10 @@
 // Trạng thái thật tại 11/11/2026: CHƯA provider nào có credentials / connection
 // production. Mọi publish()/sync*() đều ném lỗi NOT_CONNECTED rõ ràng —
 // TUYỆT ĐỐI không giả lập thành công.
+// Vòng R1 (R20): registry ĐÃ có OAuth authorize URL builder + callback
+// contract cho cả 5 kênh (implementation_status =
+// 'implemented_needs_credentials'); token exchange và lời gọi API
+// publish/sync CHƯA triển khai — đó là bước tiếp theo khi có app credentials.
 //
 // TikTok: theo quyết định sản phẩm, provider TikTok CHỈ có khả năng đọc
 // (read_posts / read_analytics). Nó KHÔNG có method publish — sự vắng mặt này
@@ -23,6 +27,35 @@ export type ConnectionStatus =
   | "not_connected" // chưa có connection / credentials
   | "pending_review" // đã nộp duyệt app ở nền tảng, chưa được production access
   | "active"; // chỉ dùng khi đã kiểm chứng thật trên production
+
+/**
+ * Mức triển khai CODE của connector (R20) — tách khỏi ConnectionStatus
+ * (quyền/tài khoản thật):
+ *   not_implemented               — chưa có code OAuth/callback.
+ *   implemented_needs_credentials — ĐÃ có authorize URL builder +
+ *                                   callback contract (xem OAUTH bên dưới);
+ *                                   còn thiếu app credentials + tài khoản
+ *                                   thật để chạy. Token exchange và lời gọi
+ *                                   API publish/sync vẫn chưa triển khai —
+ *                                   publish()/sync*() vẫn ném NOT_CONNECTED.
+ */
+export type OAuthImplementationStatus =
+  | "not_implemented"
+  | "implemented_needs_credentials";
+
+/** publish qua API được hỗ trợ theo thiết kế hay bị loại có chủ đích. */
+export type PublishSupport = "supported" | "not_supported_by_design";
+
+/** Cấu hình OAuth 2.0 theo tài liệu chính thức của từng nền tảng. */
+export interface OAuthConfig {
+  authorize_url: string;
+  token_url: string;
+  scopes: string[];
+  /** URL tài liệu chính thức làm nguồn cho authorize_url/scopes. */
+  docs_url: string;
+  /** TikTok dùng tham số client_key thay cho client_id ở authorize URL. */
+  client_id_param: "client_id" | "client_key";
+}
 
 export type CapabilityName =
   | "read_posts"
@@ -100,6 +133,12 @@ export interface SocialProvider {
   display_name: string;
   /** Trạng thái kiểm chứng production của connector này. */
   connection_status: ConnectionStatus;
+  /** Mức triển khai code OAuth (R20) — xem OAuthImplementationStatus. */
+  implementation_status: OAuthImplementationStatus;
+  /** Cấu hình OAuth để buildAuthorizeUrl dùng. */
+  oauth: OAuthConfig;
+  /** TikTok = 'not_supported_by_design', các kênh còn lại 'supported'. */
+  publish_support: PublishSupport;
   /** Khả năng theo format, ví dụ { post: {...}, reel: {...} }. */
   capabilities: Record<string, FormatCapability>;
   syncPosts?(args: {
@@ -167,6 +206,19 @@ export const facebookPageProvider: PublishCapableProvider = {
   id: "facebook_page",
   display_name: "Facebook Page",
   connection_status: "not_connected",
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "supported",
+  oauth: {
+    authorize_url: "https://www.facebook.com/v21.0/dialog/oauth",
+    token_url: "https://graph.facebook.com/v21.0/oauth/access_token",
+    scopes: [
+      "pages_show_list", "pages_read_engagement", "pages_manage_posts",
+      "pages_read_user_content", "instagram_basic", "instagram_content_publish",
+      "instagram_manage_insights", "read_insights", "ads_read", "ads_management",
+    ],
+    docs_url: "https://developers.facebook.com/docs/facebook-login/guides/advanced/manual-flow",
+    client_id_param: "client_id",
+  },
   capabilities: {
     post: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
     photo: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
@@ -181,6 +233,19 @@ export const instagramProvider: PublishCapableProvider = {
   id: "instagram",
   display_name: "Instagram Professional",
   connection_status: "not_connected",
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "supported",
+  oauth: {
+    // Instagram API with Instagram Login (không qua Facebook Login).
+    authorize_url: "https://www.instagram.com/oauth/authorize",
+    token_url: "https://api.instagram.com/oauth/access_token",
+    scopes: [
+      "instagram_business_basic", "instagram_business_content_publish",
+      "instagram_business_manage_comments", "instagram_business_manage_insights",
+    ],
+    docs_url: "https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login",
+    client_id_param: "client_id",
+  },
   capabilities: {
     post: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
     reel: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
@@ -194,6 +259,18 @@ export const linkedinPageProvider: PublishCapableProvider = {
   id: "linkedin_page",
   display_name: "LinkedIn Page",
   connection_status: "pending_review", // chờ quyền Community Management / Marketing Developer Platform
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "supported",
+  oauth: {
+    authorize_url: "https://www.linkedin.com/oauth/v2/authorization",
+    token_url: "https://www.linkedin.com/oauth/v2/accessToken",
+    scopes: [
+      "r_organization_social", "w_organization_social", "rw_organization_admin",
+      "r_ads", "rw_ads",
+    ],
+    docs_url: "https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow",
+    client_id_param: "client_id",
+  },
   capabilities: {
     post: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
     article: { ...NO_CAPS, read_posts: true, publish: true },
@@ -206,6 +283,19 @@ export const youtubeProvider: PublishCapableProvider = {
   id: "youtube",
   display_name: "YouTube",
   connection_status: "not_connected",
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "supported",
+  oauth: {
+    authorize_url: "https://accounts.google.com/o/oauth2/v2/auth",
+    token_url: "https://oauth2.googleapis.com/token",
+    scopes: [
+      "https://www.googleapis.com/auth/youtube.readonly",
+      "https://www.googleapis.com/auth/youtube.upload",
+      "https://www.googleapis.com/auth/yt-analytics.readonly",
+    ],
+    docs_url: "https://developers.google.com/identity/protocols/oauth2/web-server",
+    client_id_param: "client_id",
+  },
   capabilities: {
     video: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
     short: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: true, ads_read: true, ads_write: true },
@@ -227,6 +317,15 @@ export const tiktokProvider: ReadOnlyProvider = {
   id: "tiktok",
   display_name: "TikTok",
   connection_status: "not_connected",
+  implementation_status: "implemented_needs_credentials",
+  publish_support: "not_supported_by_design", // chỉ đọc: Login Kit + Display/Research API
+  oauth: {
+    authorize_url: "https://www.tiktok.com/v2/auth/authorize/",
+    token_url: "https://open.tiktokapis.com/v2/oauth/token/",
+    scopes: ["user.info.basic", "video.list", "video.query"],
+    docs_url: "https://developers.tiktok.com/doc/login-kit-web",
+    client_id_param: "client_key",
+  },
   capabilities: {
     video: { ...NO_CAPS, read_posts: true, read_analytics: true, publish: false },
   },
@@ -273,4 +372,73 @@ export function assertPublishable(platform: PlatformId): PublishCapableProvider 
     throw notConnected(platform);
   }
   return provider as PublishCapableProvider;
+}
+
+// ----------------------------------------------------------------------------
+// OAuth — authorize URL builder + callback contract (R20)
+// buildAuthorizeUrl dựng URL ủy quyền ĐÚNG domain/scope theo tài liệu chính
+// thức (oauth.docs_url của từng provider). Hàm chỉ dựng URL: việc mở URL,
+// nhận code ở redirect URI và đổi code lấy token (token_url) thuộc luồng
+// onboarding của app khi đã có client_id/client_secret thật.
+// ----------------------------------------------------------------------------
+
+export function buildAuthorizeUrl(
+  providerId: PlatformId,
+  clientId: string,
+  redirectUri: string,
+  state: string,
+): string {
+  const provider = getProvider(providerId);
+  const cfg = provider.oauth;
+  const params = new URLSearchParams();
+  params.set(cfg.client_id_param, clientId);
+  params.set("redirect_uri", redirectUri);
+  params.set("response_type", "code");
+  params.set("state", state);
+  // LinkedIn + Google tách scope bằng khoảng trắng; Meta/TikTok bằng dấu phẩy.
+  const scopeSep = providerId === "linkedin_page" || providerId === "youtube" ? " " : ",";
+  params.set("scope", cfg.scopes.join(scopeSep));
+  if (providerId === "youtube") {
+    params.set("access_type", "offline"); // để nhận refresh_token
+    params.set("include_granted_scopes", "true");
+  }
+  return `${cfg.authorize_url}?${params.toString()}`;
+}
+
+export interface OAuthCallbackResult {
+  provider: PlatformId;
+  code: string;
+  state: string | null;
+  /** Endpoint đổi code -> token (bước thực thi thuộc luồng onboarding). */
+  token_url: string;
+}
+
+/**
+ * Callback contract: kiểm tra query của redirect URI sau khi user ủy quyền.
+ * Ném ProviderError khi nền tảng trả error, thiếu code, hoặc state không
+ * khớp expectedState (chống CSRF). Trả { code, token_url } khi hợp lệ —
+ * KHÔNG tự đổi token ở đây (chưa có client_secret trong registry).
+ */
+export function parseOAuthCallback(
+  providerId: PlatformId,
+  params: URLSearchParams,
+  expectedState?: string,
+): OAuthCallbackResult {
+  const provider = getProvider(providerId);
+  const error = params.get("error");
+  if (error) {
+    throw new ProviderError(
+      "OAUTH_DENIED",
+      `Nền tảng ${providerId} trả lỗi ủy quyền: ${error} ${params.get("error_description") ?? ""}`.trim(),
+    );
+  }
+  const state = params.get("state");
+  if (expectedState !== undefined && state !== expectedState) {
+    throw new ProviderError("OAUTH_STATE_MISMATCH", "state ở callback không khớp state đã gửi — hủy luồng ủy quyền.");
+  }
+  const code = params.get("code");
+  if (!code) {
+    throw new ProviderError("OAUTH_CODE_MISSING", `Callback của ${providerId} thiếu code.`);
+  }
+  return { provider: providerId, code, state, token_url: provider.oauth.token_url };
 }
