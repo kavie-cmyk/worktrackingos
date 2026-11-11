@@ -1,0 +1,24 @@
+# Secrets & môi trường thật — KHÔNG commit
+.env
+.env.*
+!.env.example
+config.js.local
+
+# Dữ liệu nội bộ / backup thật
+*.sql.dump
+backups/
+data-real/
+
+# Node / tooling
+node_modules/
+npm-debug.log*
+
+# Hệ điều hành / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Build tạm
+dist/
+.tmp/
