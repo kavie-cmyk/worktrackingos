@@ -116,7 +116,7 @@
     tasks: { assigneeId: 'owner_id' },
     campaigns: { audienceInsights: 'insights', creativeDirection: 'kv_direction', risks: 'risk_note' },
     brandPages: { title: 'name', summary: 'brand_voice' },
-    brandAssets: { type: 'asset_type' },
+    brandAssets: { type: 'asset_type', url: 'external_url' },
     channelAccounts: { name: 'display_name' },
     externalPosts: { title: 'caption_snapshot', url: 'external_url' },
     metricObservations: { metric: 'metric_code' },
@@ -124,7 +124,7 @@
     budgetLines: { approved: 'approved_amount' },
     commitments: { title: 'description' },
     actuals: { title: 'description', date: 'spent_at' },
-    kpis: { target: 'target_value' },
+    kpis: { target: 'target_value', periodStart: 'period_start', periodEnd: 'period_end' },
     adSets: { adCampaignId: 'ad_campaign_id' },
     ads: { adSetId: 'ad_group_id' },
     adChangeRequests: { requestedBy: 'requested_by' },
@@ -199,8 +199,18 @@
       return { value: st || value, stash: st ? undefined : value };
     }
     if (collection === 'commitments' && snakeKey === 'status' && value != null) {
-      var cm = { open: 'committed', resolved: 'settled', closed: 'settled' }[value];
+      var cm = { open: 'committed', resolved: 'settled', closed: 'settled', partial: 'partially_actualised' }[value];
       return { value: cm || value };
+    }
+    if (collection === 'commitments' && snakeKey === 'settled_amount') {
+      // R2-08: settled_amount null/undefined → 0 (DB là số, không để null lọt).
+      return { value: value === null || value === undefined ? 0 : value };
+    }
+    if (collection === 'actuals' && snakeKey === 'source') {
+      // R2-09: source của actual chỉ thuộc enum DB; mọi giá trị khác
+      // ('', 'Ghi kèm cam kết chi', mã chứng từ…) → 'manual'.
+      var VALID_ACTUAL_SOURCES = ['manual', 'ads_sync', 'import', 'invoice'];
+      return { value: VALID_ACTUAL_SOURCES.indexOf(value) !== -1 ? value : 'manual' };
     }
     if (collection === 'marketingRequests' && snakeKey === 'priority' && value != null) {
       var pr = { 'Thấp': 'low', 'Trung bình': 'medium', 'Cao': 'high', 'Khẩn cấp': 'urgent', low: 'low', medium: 'medium', high: 'high', urgent: 'urgent' }[value];
@@ -234,7 +244,12 @@
       if (key === 'customFields' || key === 'custom_fields') return;
       if (isLabelField(key)) return;
       var value = obj[key];
-      if (value === undefined) return;
+      if (value === undefined) {
+        // R2-08: settledAmount truyền tường minh là undefined (khác với
+        // không truyền — patch một phần không đụng trường này) → 0.
+        if (collection === 'commitments' && (key === 'settledAmount' || key === 'settled_amount')) payload.settled_amount = 0;
+        return;
+      }
       var snake = aliasFor(collection, key) || camelToSnake(key);
       if (hasColumn(table, snake)) {
         var norm = normalizeWriteValue(collection, snake, value);
@@ -254,6 +269,8 @@
       });
       payload.custom_fields = merged;
     }
+    // R2-08 (lưới an toàn): settled_amount của commitments không bao giờ null trong payload.
+    if (collection === 'commitments' && 'settled_amount' in payload && payload.settled_amount == null) payload.settled_amount = 0;
     if (options.workspaceId && hasColumn(table, 'workspace_id')) payload.workspace_id = options.workspaceId;
     if (options.forInsert && hasColumn(table, 'created_by') && options.userId && payload.created_by === undefined) {
       payload.created_by = options.userId;
@@ -409,6 +426,76 @@
     } catch (e) { /* Intl không có tz: rơi xuống giờ máy */ }
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
+  /** Parts (year/month/day/hour/minute/second) của một instant tại tz qua Intl. */
+  function _tzParts(date, tz) {
+    var parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(date);
+    var o = {};
+    parts.forEach(function (x) { o[x.type] = x.value; });
+    if (o.hour === '24') o.hour = '00';
+    return o;
+  }
+  function _pad2(n) { return String(n).padStart(2, '0'); }
+  /** dateInTz(iso, tz): 'yyyy-mm-dd' của instant tại tz (mặc định ICT). */
+  function dateInTz(iso, tz) {
+    var zone = tz || DEFAULT_TIMEZONE;
+    if (iso === null || iso === undefined || iso === '') return '';
+    var d = iso instanceof Date ? iso : new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    try {
+      var o = _tzParts(d, zone);
+      if (o.year && o.month && o.day) return o.year + '-' + o.month + '-' + o.day;
+    } catch (e) { /* Intl không có tz: rơi xuống giờ máy */ }
+    return d.getFullYear() + '-' + _pad2(d.getMonth() + 1) + '-' + _pad2(d.getDate());
+  }
+  /**
+   * toDatetimeLocalValue(iso, tz): giá trị cho <input type="datetime-local">
+   * — 'yyyy-mm-ddTHH:mm' của instant tại tz (mặc định ICT).
+   */
+  function toDatetimeLocalValue(iso, tz) {
+    var zone = tz || DEFAULT_TIMEZONE;
+    if (iso === null || iso === undefined || iso === '') return '';
+    var d = iso instanceof Date ? iso : new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    try {
+      var o = _tzParts(d, zone);
+      if (o.year && o.month && o.day) {
+        return o.year + '-' + o.month + '-' + o.day + 'T' + _pad2(o.hour) + ':' + _pad2(o.minute);
+      }
+    } catch (e) { /* rơi xuống giờ máy bên dưới */ }
+    return d.getFullYear() + '-' + _pad2(d.getMonth() + 1) + '-' + _pad2(d.getDate()) + 'T' + _pad2(d.getHours()) + ':' + _pad2(d.getMinutes());
+  }
+  /** Độ lệch (ms) giữa giờ tường của tz và UTC tại một instant: wallAsUTC − instant. */
+  function _tzOffsetMs(instantMs, tz) {
+    var secMs = Math.floor(instantMs / 1000) * 1000;
+    var o = _tzParts(new Date(secMs), tz);
+    var wallAsUTC = Date.UTC(Number(o.year), Number(o.month) - 1, Number(o.day), Number(o.hour), Number(o.minute), Number(o.second));
+    return wallAsUTC - secMs;
+  }
+  /**
+   * fromDatetimeLocalValue(value, tz): diễn giải 'yyyy-mm-ddTHH:mm' (giá trị
+   * của datetime-local) là giờ tường tại tz (mặc định ICT) và trả instant
+   * dạng ISO UTC ('…Z'). Giữ nguyên instant khi round-trip với
+   * toDatetimeLocalValue.
+   */
+  function fromDatetimeLocalValue(value, tz) {
+    var zone = tz || DEFAULT_TIMEZONE;
+    if (value === null || value === undefined || value === '') return null;
+    var m = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (!m) return null;
+    var wallAsUTC = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] || 0));
+    try {
+      var offset = _tzOffsetMs(wallAsUTC, zone);
+      var instant = wallAsUTC - offset;
+      var offset2 = _tzOffsetMs(instant, zone);
+      if (offset2 !== offset) instant = wallAsUTC - offset2;
+      return new Date(instant).toISOString();
+    } catch (e) {
+      return new Date(wallAsUTC).toISOString();
+    }
+  }
   /** Tháng hiện tại theo timezone workspace — calendar mặc định dùng khoảng này. */
   function currentMonthRange(timezone, now) {
     var today = todayISO(timezone, now);
@@ -560,6 +647,9 @@
     canRole: canRole,
     DEFAULT_TIMEZONE: DEFAULT_TIMEZONE,
     todayISO: todayISO,
+    dateInTz: dateInTz,
+    toDatetimeLocalValue: toDatetimeLocalValue,
+    fromDatetimeLocalValue: fromDatetimeLocalValue,
     currentMonthRange: currentMonthRange,
     validateDateRange: validateDateRange,
     validateNumber: validateNumber,

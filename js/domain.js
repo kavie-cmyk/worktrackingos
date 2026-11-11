@@ -252,11 +252,59 @@
 
   // ---------- Ngân sách ----------
 
+  // Cam kết còn mở (R2-01/R2-02): chỉ các status canonical
+  // planned / committed / partially_actualised. 'open' và 'partial' là alias
+  // frontend tương ứng committed / partially_actualised (xem docs/METRICS.md).
+  // settled / released / cancelled (và mọi status khác) KHÔNG còn mở.
+  var OPEN_COMMITMENT_STATUSES = { planned: 1, committed: 1, partially_actualised: 1, open: 1, partial: 1 };
+  function isOpenCommitment(c) { return !!(c && OPEN_COMMITMENT_STATUSES[normStatus(c.status)]); }
+
+  /**
+   * Tổng đã trả của một cam kết — NGUỒN SỰ THẬT DUY NHẤT (R2-01/R2-02):
+   * chỉ Σ amount của actuals liên kết (commitmentId === commitment.id).
+   * settledAmount/settled_amount trên cam kết KHÔNG được dùng nữa (có thể stale).
+   * @param {object} commitment Cam kết có id.
+   * @param {Array<object>} actuals Các khoản chi thực tế.
+   * @returns {number} Tổng amount của actuals gắn với cam kết.
+   */
+  function commitmentPaidTotal(commitment, actuals) {
+    if (!commitment || commitment.id === null || commitment.id === undefined || commitment.id === '') return 0;
+    var total = 0;
+    (actuals || []).forEach(function (a) {
+      if (!a) return;
+      var cid = a.commitmentId !== undefined && a.commitmentId !== null ? a.commitmentId : a.commitment_id;
+      if (cid === null || cid === undefined || cid === '') return;
+      if (String(cid) === String(commitment.id)) {
+        total += pickNum(a, ['amount', 'actualAmount', 'actual_amount', 'value']) || 0;
+      }
+    });
+    return total;
+  }
+
+  /**
+   * Tổng cam kết còn mở (R2-01/R2-02): Σ trên cam kết còn mở của
+   * max(0, amount − commitmentPaidTotal). Cam kết settled/released/cancelled
+   * không tính; phần đã trả chỉ tính từ actuals liên kết.
+   * @param {Array<object>} commitments Các cam kết.
+   * @param {Array<object>} actuals Các khoản chi thực tế.
+   * @returns {number} Tổng phần cam kết còn mở chưa thành actual.
+   */
+  function openCommitmentTotal(commitments, actuals) {
+    var total = 0;
+    (commitments || []).forEach(function (c) {
+      if (!isOpenCommitment(c)) return;
+      var amt = pickNum(c, ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value']) || 0;
+      total += Math.max(0, amt - commitmentPaidTotal(c, actuals));
+    });
+    return total;
+  }
+
   /**
    * Tính số tiền ngân sách còn lại của một dòng ngân sách.
    * Remaining = Approved − tổng Actual − cam kết còn mở.
-   * Cam kết đã có actual liên kết (actual.commitmentId) thì phần đã thanh toán
-   * không bị trừ hai lần.
+   * "Đã trả" của mỗi cam kết CHỈ = Σ actuals liên kết (commitmentPaidTotal);
+   * settledAmount bị bỏ qua hoàn toàn (R2-01/R2-02, một nguồn sự thật).
+   * Cam kết đã có actual liên kết thì phần đã thanh toán không bị trừ hai lần.
    * @param {object} line Dòng ngân sách có approved/approvedAmount.
    * @param {Array<object>} commitments Các cam kết thuộc dòng.
    * @param {Array<object>} actuals Các khoản chi thực tế thuộc dòng.
@@ -268,26 +316,10 @@
       : (pickNum(line, ['approved', 'approvedAmount', 'approved_amount', 'budgetApproved', 'amountApproved']) || 0);
     var acts = actuals || [];
     var actualTotal = 0;
-    var paidByCommitment = {};
     acts.forEach(function (a) {
-      var amt = pickNum(a, ['amount', 'actualAmount', 'actual_amount', 'value']) || 0;
-      actualTotal += amt;
-      var cid = a.commitmentId || a.commitment_id;
-      if (cid) paidByCommitment[cid] = (paidByCommitment[cid] || 0) + amt;
+      actualTotal += pickNum(a, ['amount', 'actualAmount', 'actual_amount', 'value']) || 0;
     });
-    var OPEN = { open: 1, committed: 1, planned: 1, partial: 1, partially_actualised: 1, partially_paid: 1, in_progress: 1 };
-    var openCommitmentTotal = 0;
-    (commitments || []).forEach(function (c) {
-      var st = normStatus(c.status);
-      // settled / cancelled / released / closed: KHÔNG trừ phần chưa settle ở đây;
-      // phần đã thanh toán của chúng nằm trong Σactuals (hoặc settled_amount đã khớp actuals).
-      if (!OPEN[st]) return;
-      var amt = pickNum(c, ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value']) || 0;
-      var settled = pickNum(c, ['settledAmount', 'settled_amount']);
-      if (settled === null) settled = paidByCommitment[c.id] || 0;
-      openCommitmentTotal += Math.max(0, amt - settled);
-    });
-    return approved - actualTotal - openCommitmentTotal;
+    return approved - actualTotal - openCommitmentTotal(commitments, acts);
   }
 
   // ---------- KPI ----------
@@ -335,31 +367,48 @@
   }
 
   /**
-   * Gộp tỷ lệ từ nhiều dòng: tính lại từ TỔNG tử số / TỔNG mẫu số,
-   * không lấy trung bình của các tỷ lệ.
-   * @param {Array<object>} rows Các dòng số liệu gốc.
-   * @returns {{ctr:(number|null), cpc:(number|null), cpm:(number|null), costPerResult:(number|null), roas:(number|null), totals:object}}
+   * Gộp tỷ lệ từ nhiều dòng THEO TỪNG TIỀN TỆ (R2-21): tính lại từ TỔNG
+   * tử số / TỔNG mẫu số trong từng bucket currency, không lấy trung bình
+   * của các tỷ lệ và KHÔNG bao giờ cộng trộn tiền tệ (không có tổng/rates
+   * gộp xuyên currency ở top-level).
+   * @param {Array<object>} rows Các dòng số liệu gốc (mỗi dòng có currency?).
+   * @returns {{byCurrency:object, mixed:boolean}} byCurrency[CUR] =
+   *   { totals:{spend,impressions,clicks,results,conversionValue},
+   *     ctr, cpc, cpm, roas }; dòng không có currency vào bucket '__unknown';
+   *   mixed = true khi có hơn một bucket currency.
    */
   function aggregateRates(rows) {
-    // R22/QA20: trường nào THIẾU ở bất kỳ dòng nào (null/undefined/'') thì
-    // tổng của trường đó = null → tỷ lệ phụ thuộc trả null, KHÔNG ép 0.
+    // R22/QA20 (giữ nguyên tắc trong từng bucket): trường nào THIẾU ở bất kỳ
+    // dòng nào trong bucket (null/undefined/'') thì tổng của trường đó trong
+    // bucket = null → tỷ lệ phụ thuộc trả null, KHÔNG ép 0.
     var fields = ['spend', 'impressions', 'clicks', 'results', 'conversionValue'];
-    var totals = {}; var complete = {};
-    fields.forEach(function (f) { totals[f] = 0; complete[f] = (rows || []).length > 0; });
+    var buckets = {};
     (rows || []).forEach(function (r) {
+      if (!r) return;
+      var cur = (r.currency !== null && r.currency !== undefined && String(r.currency).trim() !== '')
+        ? String(r.currency).trim() : '__unknown';
+      if (!buckets[cur]) {
+        buckets[cur] = { totals: {}, complete: {} };
+        fields.forEach(function (f) { buckets[cur].totals[f] = 0; buckets[cur].complete[f] = true; });
+      }
+      var bucket = buckets[cur];
       fields.forEach(function (f) {
         var v = r[f];
         if (f === 'results' && v === undefined) v = r.conversions;
         if (f === 'conversionValue' && v === undefined) v = r.revenue;
-        if (v === null || v === undefined || v === '' || isNaN(Number(v))) complete[f] = false;
-        else totals[f] += Number(v);
+        if (v === null || v === undefined || v === '' || isNaN(Number(v))) bucket.complete[f] = false;
+        else bucket.totals[f] += Number(v);
       });
     });
-    fields.forEach(function (f) { if (!complete[f]) totals[f] = null; });
-    var rates = computeRates(totals);
-    rates.totals = totals;
-    rates.complete = complete;
-    return rates;
+    var byCurrency = {};
+    Object.keys(buckets).forEach(function (cur) {
+      var bucket = buckets[cur];
+      var totals = {};
+      fields.forEach(function (f) { totals[f] = bucket.complete[f] ? bucket.totals[f] : null; });
+      var rates = computeRates(totals);
+      byCurrency[cur] = { totals: totals, ctr: rates.ctr, cpc: rates.cpc, cpm: rates.cpm, roas: rates.roas };
+    });
+    return { byCurrency: byCurrency, mixed: Object.keys(byCurrency).length > 1 };
   }
 
   /**
@@ -754,6 +803,8 @@
     taskReadiness: taskReadiness,
     previewDependencyImpact: previewDependencyImpact,
     distributeEffort: distributeEffort,
+    commitmentPaidTotal: commitmentPaidTotal,
+    openCommitmentTotal: openCommitmentTotal,
     budgetRemaining: budgetRemaining,
     kpiDisplay: kpiDisplay,
     computeRates: computeRates,
