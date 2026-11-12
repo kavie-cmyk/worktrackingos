@@ -1566,7 +1566,7 @@
     }
     if (blockers.length) {
       html += '<h3>Trở ngại</h3>' + blockers.map(function (b) {
-        return '<div class="notice ' + (b.status === 'open' ? 'warn' : 'ok') + '"><strong>' + esc(b.title) + '</strong> — ' + esc(b.description || '') + ' (' + esc(labelStatus(b.status)) + ')' +
+        return '<div class="notice ' + (b.status === 'open' ? 'warn' : 'ok') + '"><strong>' + esc(b.title) + '</strong> — ' + esc(b.description || '') + ' ' + vizStatusPillHtml(b.status, { context: 'blocker', label: labelStatus(b.status) }) +
           (b.status === 'open' ? ' <button class="btn small secondary" data-action="resolve-blocker" data-id="' + esc(b.id) + '"' + dis(!ed) + '>Đánh dấu đã gỡ</button>' : '') + '</div>';
       }).join('');
     }
@@ -2101,7 +2101,7 @@
     if (UI.brandTab === 'pages') {
       if (!pages.length && !collLoadingOrError('brandPages')) html += emptyState('Chưa có trang thương hiệu nào', 'Tạo trang đầu tiên để ghi nhận câu chuyện thương hiệu, giọng điệu, quy chuẩn trình bày…', ed ? '<p><button class="btn" data-action="editor-open" data-kind="brandPage">+ Thêm trang thương hiệu</button></p>' : '');
       else html += tbl('<tr><th>Trang</th><th>Tóm tắt</th><th>Người phụ trách</th><th>Phiên bản</th><th>Trạng thái bản</th><th>Cập nhật</th><th>Thao tác</th></tr>' + pages.map(function (p) {
-        var row = '<tr><td><button class="linklike" data-action="brand-open" data-id="' + esc(p.id) + '"><strong>' + esc(p.title) + '</strong></button></td><td>' + esc(p.summary || '') + '</td><td>' + esc(memberName(p.ownerId)) + '</td><td>v' + esc(p.version || 1) + '</td><td>' + statusBadge(p.status === 'Approved' ? 'approved' : (p.status === 'Archived' ? 'archived' : 'draft'), p.status === 'Approved' ? 'Đã duyệt' : (p.status === 'Archived' ? 'Lưu trữ' : 'Bản nháp')) + '</td><td>' + esc(D.formatDateVN(p.updatedAt)) + '</td>' +
+        var row = '<tr><td><button class="linklike" data-action="brand-open" data-id="' + esc(p.id) + '"><strong>' + esc(p.title) + '</strong></button></td><td>' + esc(p.summary || '') + '</td><td>' + esc(memberName(p.ownerId)) + '</td><td>' + vizStatusPillHtml('', { tone: 'neutral', label: 'v' + (p.version || 1) }) + '</td><td>' + statusBadge(p.status === 'Approved' ? 'approved' : (p.status === 'Archived' ? 'archived' : 'draft'), p.status === 'Approved' ? 'Đã duyệt' : (p.status === 'Archived' ? 'Lưu trữ' : 'Bản nháp')) + '</td><td>' + esc(D.formatDateVN(p.updatedAt)) + '</td>' +
           '<td class="row-actions"><button class="btn small secondary" data-action="brand-open" data-id="' + esc(p.id) + '">Mở</button> <button class="btn small" data-action="editor-open" data-kind="brandPage" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="brandPages" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
         if (UI.brandOpenId === p.id) {
           row += '<tr class="detail-row"><td colspan="7"><h3>Nội dung trang</h3><div class="rich">' + esc(p.content || p.summary || 'Chưa có nội dung chi tiết — bấm Sửa để bổ sung.') + '</div>' +
@@ -2113,22 +2113,21 @@
     }
     if (UI.brandTab === 'assets') {
       if (!assets.length && !collLoadingOrError('brandAssets')) html += emptyState('Chưa có tài nguyên thương hiệu nào', 'Thêm logo, KV, hướng dẫn, file nguồn… kèm đường dẫn để cả đội dùng đúng bản đã duyệt.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="brandAsset">+ Thêm tài nguyên</button></p>' : '');
-      else html += tbl('<tr><th>Tài nguyên</th><th>Loại</th><th>Đường dẫn</th><th>Người phụ trách</th><th>Phiên bản</th><th>Trạng thái bản</th><th>Thao tác</th></tr>' + assets.map(function (a) {
+      else html += tbl('<tr><th>Xem trước</th><th>Tài nguyên</th><th>Loại</th><th>Đường dẫn</th><th>Người phụ trách</th><th>Phiên bản</th><th>Trạng thái bản</th><th>Thao tác</th></tr>' + assets.map(function (a) {
         var url = a.externalUrl || a.url || a.fileUrl || '';
         var bi = brandStatusInfo(a);
         var isImg = /hình ảnh|image|logo|kv/i.test(String(a.type || '')) || /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(url);
-        var thumb = isImg && url ? '<img class="asset-thumb" src="' + esc(url) + '" alt="" loading="lazy"> ' : '';
-        var row = '<tr><td>' + thumb + '<button class="linklike" data-action="brand-open" data-id="' + esc(a.id) + '"><strong>' + esc(a.name) + '</strong></button></td><td>' + esc(a.type) + '</td><td>' + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">Mở / tải</a>' : '—') + '</td><td>' + esc(memberName(a.ownerId)) + '</td><td>' + (a.version === null || a.version === undefined ? '—' : 'v' + esc(a.version)) + '</td><td>' + statusBadge(bi.status, bi.label) + '</td>' +
+        var row = '<tr><td>' + vizBrandThumbHtml({ name: a.name, type: a.type, url: url, isImg: isImg }) + '</td><td><button class="linklike" data-action="brand-open" data-id="' + esc(a.id) + '"><strong>' + esc(a.name) + '</strong></button></td><td>' + vizCatDotHtml(vizAssetCatIndex(a.type), a.type || '') + ' ' + esc(a.type) + '</td><td>' + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">Mở / tải</a>' : '—') + '</td><td>' + esc(memberName(a.ownerId)) + '</td><td>' + (a.version === null || a.version === undefined ? '—' : vizStatusPillHtml('', { tone: 'neutral', label: 'v' + a.version })) + '</td><td>' + statusBadge(bi.status, bi.label) + '</td>' +
           '<td class="row-actions"><button class="btn small secondary" data-action="brand-open" data-id="' + esc(a.id) + '">Chi tiết</button> <button class="btn small" data-action="editor-open" data-kind="brandAsset" data-id="' + esc(a.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="brandAssets" data-id="' + esc(a.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
-        if (UI.brandOpenId === a.id) row += '<tr class="detail-row"><td colspan="7"><h3>Lịch sử phiên bản</h3>' + versionHistoryHtml('brandAssets', a) + (Array.isArray(a.tags) && a.tags.length ? '<p class="sub">Thẻ: ' + esc(a.tags.join(', ')) + '</p>' : '') + '</td></tr>';
+        if (UI.brandOpenId === a.id) row += '<tr class="detail-row"><td colspan="8"><h3>Lịch sử phiên bản</h3>' + versionHistoryHtml('brandAssets', a) + (Array.isArray(a.tags) && a.tags.length ? '<p class="sub">Thẻ: ' + esc(a.tags.join(', ')) + '</p>' : '') + '</td></tr>';
         return row;
       }).join(''));
     }
     if (UI.brandTab === 'archived') {
       var all = archPages.map(function (x) { return { x: x, coll: 'brandPages', label: x.title }; }).concat(archAssets.map(function (x) { return { x: x, coll: 'brandAssets', label: x.name }; }));
       if (!all.length) html += '<div class="state-box">Chưa có mục nào bị lưu trữ.</div>';
-      else html += tbl('<tr><th>Mục đã lưu trữ</th><th>Loại</th><th>Thao tác</th></tr>' + all.map(function (r) {
-        return '<tr><td>' + esc(r.label) + '</td><td>' + (r.coll === 'brandPages' ? 'Trang thương hiệu' : 'Tài nguyên') + '</td><td><button class="btn small" data-action="restore-item" data-coll="' + r.coll + '" data-id="' + esc(r.x.id) + '"' + dis(!ed) + '>Khôi phục</button></td></tr>';
+      else html += tbl('<tr><th>Mục đã lưu trữ</th><th>Loại</th><th>Trạng thái</th><th>Thao tác</th></tr>' + all.map(function (r) {
+        return '<tr><td>' + esc(r.label) + '</td><td>' + (r.coll === 'brandPages' ? 'Trang thương hiệu' : 'Tài nguyên') + '</td><td>' + vizStatusPillHtml('cancelled', { label: 'Đã lưu trữ' }) + '</td><td><button class="btn small" data-action="restore-item" data-coll="' + r.coll + '" data-id="' + esc(r.x.id) + '"' + dis(!ed) + '>Khôi phục</button></td></tr>';
       }).join(''));
     }
     return html;
@@ -2538,6 +2537,127 @@
           vizStatusDotHtml(p.tone || 'running') +
           '<span class="viz-tl-label">' + esc(p.label) + '<strong>' + esc(p.dateText || '—') + '</strong></span></span>';
       }).join('') + '</div>';
+  // ---------- WAVE-B4-VIZ2: helper thuần bổ sung (chỉ toán trình bày) ----------
+  // Chênh lệch ngày giữa hai mốc ISO (chỉ phần ngày) — toán lịch thuần.
+  function vizDayDiff(fromISO, toISO) {
+    if (!fromISO || !toISO) return null;
+    var a = String(fromISO).slice(0, 10), b = String(toISO).slice(0, 10);
+    var ta = Date.UTC(Number(a.slice(0, 4)), Number(a.slice(5, 7)) - 1, Number(a.slice(8, 10)));
+    var tb = Date.UTC(Number(b.slice(0, 4)), Number(b.slice(5, 7)) - 1, Number(b.slice(8, 10)));
+    if (isNaN(ta) || isNaN(tb)) return null;
+    return Math.round((tb - ta) / 86400000);
+  }
+  // Mini timeline tương đối của 1 việc: đoạn start→due đặt trong cửa sổ
+  // [mốc sớm nhất, mốc muộn nhất] gồm cả hôm nay; phần đã trôi qua đậm hơn,
+  // vạch mảnh = hôm nay. Thiếu cả hai mốc -> chuỗi rỗng (view tự ghi chữ).
+  function vizTaskTimelineHtml(opts) {
+    opts = opts || {};
+    var start = opts.start ? String(opts.start).slice(0, 10) : null;
+    var due = opts.due ? String(opts.due).slice(0, 10) : null;
+    var today = opts.today ? String(opts.today).slice(0, 10) : null;
+    if ((!start && !due) || !today) return '';
+    var lo = [start, due, today].filter(Boolean).sort()[0];
+    var hi = [start, due, today].filter(Boolean).sort().slice(-1)[0];
+    var span = vizDayDiff(lo, hi);
+    if (span === null) return '';
+    if (span <= 0) span = 1;
+    function pos(iso) { var d = vizDayDiff(lo, iso); return d === null ? 0 : Math.max(0, Math.min(100, Math.round(d / span * 10000) / 100)); }
+    var barL = pos(start || due), barR = pos(due || start);
+    if (barR - barL < 4) barR = Math.min(100, barL + 4);
+    var todayPos = pos(today);
+    var elR = Math.max(barL, Math.min(barR, todayPos));
+    var tone = opts.tone || 'running';
+    var label = (opts.startLabel || '—') + ' → ' + (opts.dueLabel || 'Chưa xếp lịch');
+    return '<div class="viz-timeline" data-viz="task-timeline" data-viz-tone="' + esc(tone) + '">' +
+      '<span class="viz-timeline-track"><span class="viz-timeline-bar st-fill-' + esc(tone) + '" style="left:' + barL + '%;width:' + (barR - barL) + '%"></span>' +
+      '<span class="viz-timeline-elapsed st-fill-' + esc(tone) + '" style="left:' + barL + '%;width:' + (elR - barL) + '%"></span>' +
+      '<span class="viz-timeline-today" style="left:' + todayPos + '%" title="Hôm nay"></span></span>' +
+      '<span class="sub">' + esc(label) + '</span></div>';
+  }
+  // Badge đếm phụ thuộc: đang chờ việc khác (tông blocked) / việc khác đang
+  // chờ mình (tông pending); chi tiết tên việc nằm ở title.
+  function vizDepBadgesHtml(opts) {
+    opts = opts || {};
+    var w = Math.max(0, Math.floor(Number(opts.waitingCount) || 0));
+    var b = Math.max(0, Math.floor(Number(opts.blockingCount) || 0));
+    if (!w && !b) return '<span class="sub">Không phụ thuộc</span>';
+    var out = '';
+    if (w) out += '<span class="badge st-blocked" data-viz="dep-badge" data-viz-tone="blocked" title="Đang chờ: ' + esc((opts.waitingTitles || []).join(', ')) + '">Đang chờ: ' + w + '</span> ';
+    if (b) out += '<span class="badge st-pending" data-viz="dep-badge" data-viz-tone="pending" title="Việc đang chờ mình: ' + esc((opts.blockingTitles || []).join(', ')) + '">Chờ mình: ' + b + '</span>';
+    return out.trim();
+  }
+  // Số gọn kiểu Việt: 3,5 nghìn / 1,2 triệu; số nhỏ giữ nguyên fmtNum.
+  function vizCompactNum(n) {
+    if (n === null || n === undefined || n === '' || isNaN(Number(n))) return '—';
+    var v = Number(n), av = Math.abs(v);
+    function r1(x) { return (Math.round(x * 10) / 10).toLocaleString('vi-VN'); }
+    if (av >= 1000000) return r1(v / 1000000) + ' triệu';
+    if (av >= 10000) return r1(v / 1000) + ' nghìn';
+    return fmtNum(v);
+  }
+  // Phễu nhiều bước: bề rộng theo bước đầu; mỗi bước in số + % so với đầu.
+  function vizFunnelHtml(opts) {
+    opts = opts || {};
+    var steps = (opts.steps || []).filter(function (s) { return s && s.value !== null && s.value !== undefined && !isNaN(Number(s.value)); });
+    if (!steps.length || !(Number(steps[0].value) > 0)) return vizEmptyChartHtml(opts.emptyText || 'Chưa có dữ liệu để vẽ phễu.');
+    var first = Number(steps[0].value);
+    var rows = steps.map(function (s, i) {
+      var pct = vizPct(s.value, first);
+      return '<div class="viz-row" data-viz="funnel-step"><span class="viz-label"><strong>' + esc(s.label) + '</strong></span>' +
+        '<span class="viz-track"><span class="viz-fill cat-' + ((i % 8) + 1) + '" style="width:' + vizBarWidth(pct) + '%"></span></span>' +
+        '<span class="viz-value">' + esc(fmtNum(s.value)) + ' (' + esc(fmtPct(pct)) + ')</span></div>';
+    }).join('');
+    return '<div class="viz-chart" data-viz="ads-funnel">' + rows + '</div>';
+  }
+  // Thanh cột mini theo ngày (Team): cột > 8 giờ mang tông overdue theo đúng
+  // ngưỡng cảnh báo view đang dùng; nhãn + số nằm ngay dưới/trên cột.
+  function vizMiniDayBarsHtml(opts) {
+    opts = opts || {};
+    var days = (opts.days || []).filter(function (d) { return d && d.hours !== null && d.hours !== undefined && !isNaN(Number(d.hours)); });
+    if (!days.length) return '';
+    var max = Number(opts.max) || 0;
+    days.forEach(function (d) { if (Number(d.hours) > max) max = Number(d.hours); });
+    if (!(max > 0)) max = 8;
+    var cols = days.map(function (d) {
+      var h = Number(d.hours);
+      var tone = h > 8 ? 'overdue' : 'running';
+      var pct = Math.max(0, Math.min(100, Math.round(h / max * 10000) / 100));
+      return '<span class="viz-daybar" title="' + esc(d.title || (d.label + ': ' + fmtNum(h) + ' giờ')) + '"><span class="viz-daybar-val">' + esc(fmtNum(h)) + 'h</span>' +
+        '<span class="viz-daybar-track"><span class="viz-daybar-fill st-fill-' + tone + '" style="height:' + pct + '%"></span></span>' +
+        '<span class="viz-daybar-label">' + esc(d.label) + '</span></span>';
+    }).join('');
+    return '<div class="viz-daybars" data-viz="day-bars">' + cols + '</div>';
+  }
+  // Chấm phân loại (pillar/kênh/loại tài nguyên) theo --cat-*.
+  function vizCatDotHtml(cat, title) {
+    var c = Math.max(1, Math.min(8, Math.floor(Number(cat) || 1)));
+    return '<span class="viz-dot cat-' + c + '" data-viz="cat-dot" data-viz-cat="' + c + '"' + (title ? ' title="' + esc(title) + '"' : '') + '></span>';
+  }
+  // Chỉ số cat cho loại tài nguyên: từ khóa quen thuộc trước, còn lại băm
+  // thuần từ chính chuỗi loại (cùng loại -> cùng màu ở mọi nơi).
+  function vizAssetCatIndex(type) {
+    var t = String(type || '').toLowerCase();
+    if (/logo/.test(t)) return 1;
+    if (/hình ảnh|image|kv|ảnh/.test(t)) return 2;
+    if (/hướng dẫn|guide|guideline/.test(t)) return 3;
+    if (/video|clip/.test(t)) return 4;
+    if (/font|chữ/.test(t)) return 5;
+    if (/tài liệu|document|doc/.test(t)) return 6;
+    if (/âm thanh|audio|nhạc/.test(t)) return 7;
+    var sum = 0;
+    for (var i = 0; i < t.length; i++) sum += t.charCodeAt(i);
+    return (sum % 8) + 1;
+  }
+  // Ô xem trước tài nguyên Brand: có ảnh thì dùng ảnh; không thì ô giữ chỗ
+  // có chữ cái đầu + chấm phân loại theo loại tài nguyên.
+  function vizBrandThumbHtml(opts) {
+    opts = opts || {};
+    var cat = vizAssetCatIndex(opts.type);
+    if (opts.isImg && opts.url) {
+      return '<span class="brand-thumb-wrap" data-viz="brand-thumb"><img class="asset-thumb-lg" src="' + esc(opts.url) + '" alt="" loading="lazy">' + vizCatDotHtml(cat, opts.type || '') + '</span>';
+    }
+    var initial = String(opts.name || opts.type || '?').trim().charAt(0).toUpperCase() || '?';
+    return '<span class="brand-thumb-wrap" data-viz="brand-thumb"><span class="asset-thumb-ph cat-edge-' + cat + '">' + esc(initial) + '</span>' + vizCatDotHtml(cat, opts.type || '') + '</span>';
   }
   // R3.1-VIZ-PURE-END
   // --- Adapter: chuẩn bị dữ liệu chart TỪ các hàm domain/Store hiện có ---
@@ -3849,11 +3969,12 @@
         // gắn đúng tình trạng quyền (chỉ-đổi-trạng-thái / chỉ xem).
         var stDisabled = !canUpdateTaskStatus();
         var stTitle = stDisabled ? noEditTitle(true) : (!canEditTask() ? statusOnlyTitle(true) : '');
+        var tlTone = isCompletedTask(t) ? 'done' : (isOverdue(t) ? 'overdue' : (t.startDate || t.dueDate ? 'running' : 'todo'));
         return '<tr><td style="padding-left:' + (10 + depth * 22) + 'px">' + (depth ? '↳ ' : '') + '<button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + (myBlockers.length ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn: ' + myBlockers[0].title, derived: true }) : '') + '</td>' +
           '<td>' + esc(memberName(t.assigneeId)) + '</td><td>' + esc(campaignName(t.campaignId)) + '</td>' +
-          '<td>' + (t.startDate ? esc(D.formatDateVN(t.startDate)) : '—') + ' → ' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td>' +
+          '<td>' + ((t.startDate || t.dueDate) ? vizTaskTimelineHtml({ start: t.startDate, due: t.dueDate, today: todayISO(), tone: tlTone, startLabel: t.startDate ? D.formatDateVN(t.startDate) : '—', dueLabel: t.dueDate ? D.formatDateVN(t.dueDate) : 'Chưa xếp lịch' }) : '<span class="sub">Chưa xếp lịch</span>') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td>' +
           '<td>' + (t.effortHours ? esc(t.effortHours) + ' giờ' : '<span class="badge warn">Chưa ước tính</span>') + '</td>' +
-          '<td>Đang chờ: ' + (waitingFor.length ? esc(waitingFor.join(', ')) : '—') + '<br>Việc đang chờ mình: ' + (blockingOthers.length ? esc(blockingOthers.join(', ')) : '—') + '<br>' + readinessBadge(t) + '</td>' +
+          '<td>' + vizDepBadgesHtml({ waitingCount: waitingFor.length, blockingCount: blockingOthers.length, waitingTitles: waitingFor, blockingTitles: blockingOthers }) + (waitingFor.length ? '' : '<br>' + readinessBadge(t)) + '</td>' +
           '<td><select data-action-change="task-status" data-id="' + esc(t.id) + '"' + dis(stDisabled) + stTitle + '>' + opts + '</select></td></tr>' +
           tasks.filter(function (x) { return x.parentId === t.id; }).map(function (ch) { return row(ch, depth + 1); }).join('');
       }
@@ -3868,13 +3989,31 @@
     if (!blockers.length) html += '<p class="sub">Chưa có trở ngại nào.</p>';
     else html += tbl('<tr><th>Trở ngại</th><th>Việc</th><th>Mô tả</th><th>Trạng thái</th><th></th></tr>' + blockers.map(function (b) {
       var t = taskById(b.taskId);
-      return '<tr><td>' + esc(b.title) + '</td><td>' + esc(t ? t.title : '—') + '</td><td>' + esc(b.description || '') + '</td><td>' + statusBadge(b.status) + '</td><td>' + (b.status === 'open' ? '<button class="btn small secondary" data-action="resolve-blocker" data-id="' + esc(b.id) + '">Đánh dấu đã gỡ</button>' : '') + '</td></tr>';
+      return '<tr><td>' + esc(b.title) + (b.status === 'open' ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn', derived: true }) : '') + '</td><td>' + esc(t ? t.title : '—') + '</td><td>' + esc(b.description || '') + '</td><td>' + vizStatusPillHtml(b.status, { context: 'blocker', label: labelStatus(b.status) }) + '</td><td>' + (b.status === 'open' ? '<button class="btn small secondary" data-action="resolve-blocker" data-id="' + esc(b.id) + '">Đánh dấu đã gỡ</button>' : '') + '</td></tr>';
     }).join(''));
     html += '<form class="inline" id="blocker-add-form"><label>Việc<select name="taskId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
       '<label>Tên trở ngại<input type="text" name="title" required></label><label>Mô tả<input type="text" name="description"></label>' +
       '<button class="btn" type="submit"' + dis(!ed) + '>Tạo trở ngại</button></form>';
     var reqs = Store.list('marketingRequests');
     html += '<h2>Yêu cầu Marketing</h2>';
+    if (reqs.length) {
+      // WAVE-B4: dải KPI + tỉ trọng theo trạng thái/ưu tiên — số đếm tại view
+      // trên đúng tập reqs đang hiển thị (đếm hiển thị, không phải công thức).
+      var reqByStatus = {}, reqByPri = {};
+      reqs.forEach(function (r) {
+        var sk = String(r.status || 'new'); reqByStatus[sk] = (reqByStatus[sk] || 0) + 1;
+        var pk = String(r.priority || 'Trung bình'); reqByPri[pk] = (reqByPri[pk] || 0) + 1;
+      });
+      var reqStatusSegs = Object.keys(reqByStatus).map(function (k) { return { label: labelStatus(k), value: reqByStatus[k], tone: vizStatusTone(k) }; });
+      var priTone = { 'Cao': 'overdue', 'Trung bình': 'pending', 'Thấp': 'todo' };
+      var reqPriSegs = Object.keys(reqByPri).map(function (k) { return { label: 'Ưu tiên ' + k, value: reqByPri[k], tone: priTone[k] || 'neutral' }; });
+      html += '<div class="cards" data-viz="requests-kpi-strip">' +
+        vizKpiCardHtml({ label: 'Tổng yêu cầu', valueText: String(reqs.length), tone: 'running', toneLabel: 'Đang theo dõi' }) +
+        vizKpiCardHtml({ label: 'Mới ghi nhận', valueText: String(reqByStatus['new'] || 0), tone: 'neutral', toneLabel: 'Mới' }) +
+        vizKpiCardHtml({ label: 'Ưu tiên cao', valueText: String(reqByPri['Cao'] || 0), tone: 'overdue', toneLabel: 'Cao' }) + '</div>';
+      html += '<h3>Tỉ trọng yêu cầu theo trạng thái</h3><div data-viz="requests-status-chart">' + vizStackedBarHtml({ segments: reqStatusSegs, total: reqs.length, unitLabel: 'yêu cầu' }) + '</div>';
+      html += '<h3>Tỉ trọng yêu cầu theo ưu tiên</h3><div data-viz="requests-priority-chart">' + vizStackedBarHtml({ segments: reqPriSegs, total: reqs.length, unitLabel: 'yêu cầu' }) + '</div>';
+    }
     if (!reqs.length) html += '<div class="state-box">Chưa có yêu cầu nào được ghi nhận.</div>';
     else html += tbl('<tr><th>Yêu cầu</th><th>Người yêu cầu</th><th>Campaign liên quan</th><th>Ưu tiên</th><th>Hạn mong muốn</th><th>Trạng thái</th><th>Thao tác</th></tr>' + reqs.map(function (r) {
       var convertedTask = Store.list('tasks').find(function (t) { return cfVal(t, 'marketingRequestId') === r.id; });
@@ -3886,7 +4025,8 @@
           '<form class="inline compact" data-form="request-due" data-id="' + esc(r.id) + '"><input type="date" name="dueDate" value="' + esc(r.dueDate ? String(r.dueDate).slice(0, 10) : '') + '"><button class="btn small secondary" type="submit">Đổi hạn</button></form>';
       } else if (convertedTask) acts = '<span class="sub">Đã chuyển thành việc: ' + esc(convertedTask.title) + '</span>';
       if (r.status === 'rejected' && r.rejectionReason) acts += '<span class="sub">Lý do từ chối: ' + esc(r.rejectionReason) + '</span>';
-      return '<tr><td><strong>' + esc(r.title) + '</strong>' + (r.note ? '<br><span class="sub">' + esc(r.note) + '</span>' : '') + '</td><td>' + esc(r.requester) + '</td><td>' + (r.campaignId ? esc(campaignName(r.campaignId)) : '—') + '</td><td>' + esc(r.priority || '—') + '</td><td>' + (r.dueDate ? esc(D.formatDateVN(r.dueDate)) : '—') + '</td><td>' + statusBadge(r.status, r.statusLabel) + (r.assigneeId ? '<br><span class="sub">Người xử lý: ' + esc(memberName(r.assigneeId)) + '</span>' : '') + '</td><td class="row-actions">' + acts + '</td></tr>';
+      var reqPriTone = { 'Cao': 'overdue', 'Trung bình': 'pending', 'Thấp': 'todo' }[r.priority] || 'neutral';
+      return '<tr><td><strong>' + esc(r.title) + '</strong>' + (r.note ? '<br><span class="sub">' + esc(r.note) + '</span>' : '') + '</td><td>' + esc(r.requester) + '</td><td>' + (r.campaignId ? esc(campaignName(r.campaignId)) : '—') + '</td><td>' + (r.priority ? vizStatusPillHtml('', { tone: reqPriTone, label: r.priority }) : '—') + '</td><td>' + (r.dueDate ? esc(D.formatDateVN(r.dueDate)) : '—') + '</td><td>' + statusBadge(r.status, r.statusLabel) + (r.assigneeId ? '<br><span class="sub">Người xử lý: ' + esc(memberName(r.assigneeId)) + '</span>' : '') + '</td><td class="row-actions">' + acts + '</td></tr>';
     }).join(''));
     html += '<form class="inline" id="request-add-form"><label>Tiêu đề yêu cầu<input type="text" name="title" required></label>' +
       '<label>Người / đội yêu cầu<input type="text" name="requester" required></label>' +
@@ -3940,11 +4080,34 @@
     var html = pageHead('Duyệt nội dung', 'Hộp thư chờ mình duyệt: xem đúng bản nội dung được gửi, rồi duyệt / yêu cầu sửa / từ chối kèm nhận xét. Việc sửa nội dung làm ở mục Nội dung, không sửa tại màn duyệt.');
     if (!ok) html += '<div class="notice warn">Vai trò hiện tại (' + esc(labelStatus(Store.currentRole())) + ') không có quyền duyệt — các nút quyết định bị khóa.' + (Store.mode === 'demo' ? ' Đổi sang Owner/Lead ở thanh trên (Chế độ demo) để thử duyệt.' : '') + '</div>';
     html += collectionBanner('approvals');
+    // WAVE-B4: dải hàng đợi — số chờ theo tab + tuổi chờ lâu nhất (từ mốc
+    // gửi duyệt sẵn có requestedAt; thiếu thì lùi createdAt/created_at).
+    function approvalWaitDays(a) {
+      var raw = a.requestedAt || a.createdAt || a.created_at || '';
+      if (!raw) return null;
+      return vizDayDiff(String(raw).slice(0, 10), todayISO());
+    }
+    var oldestPending = null, oldestDays = null;
+    allPending.forEach(function (a) { var d = approvalWaitDays(a); if (d !== null && (oldestDays === null || d > oldestDays)) { oldestDays = d; oldestPending = a; } });
+    html += '<div class="cards" data-viz="approval-queue-strip">' +
+      vizKpiCardHtml({ label: 'Chờ mình duyệt', valueText: String(minePending.length), tone: 'pending', toneLabel: 'Chờ duyệt' }) +
+      vizKpiCardHtml({ label: 'Tất cả đang chờ', valueText: String(allPending.length), tone: 'pending', toneLabel: 'Đang chờ' }) +
+      vizKpiCardHtml({ label: 'Đã quyết định', valueText: String(done.length), tone: 'done', toneLabel: 'Đã xong' }) +
+      vizKpiCardHtml({ label: 'Chờ lâu nhất', valueText: oldestDays === null ? '—' : (oldestDays + ' ngày'), tone: (oldestDays !== null && oldestDays >= 3) ? 'overdue' : 'pending', toneLabel: oldestDays === null ? 'Không có' : 'Tuổi chờ', sub: oldestPending ? contentTitle(oldestPending.contentItemId) : '' }) + '</div>';
+    if (allPending.length || done.length) {
+      html += '<h3>Tỉ trọng hàng đợi duyệt</h3><div data-viz="approval-queue-chart">' + vizStackedBarHtml({ segments: [
+        { label: 'Chờ mình duyệt', value: minePending.length, tone: 'pending' },
+        { label: 'Chờ người khác', value: Math.max(0, allPending.length - minePending.length), tone: 'todo' },
+        { label: 'Đã quyết định', value: done.length, tone: 'done' }
+      ], total: approvals.length, unitLabel: 'yêu cầu duyệt' }) + '</div>';
+    }
     html += tabsHtml([['mine', 'Chờ mình duyệt (' + minePending.length + ')'], ['all', 'Tất cả đang chờ (' + allPending.length + ')']], UI.approvalsTab, 'approvals-tab');
     html += '<h2>' + (UI.approvalsTab === 'mine' ? 'Chờ mình duyệt' : 'Tất cả đang chờ') + ' (' + pending.length + ')</h2>';
     if (!pending.length && !collLoadingOrError('approvals')) html += '<div class="state-box">Không có nội dung nào chờ duyệt. Khi thành viên bấm "Gửi duyệt" ở mục Nội dung, bản nội dung sẽ xuất hiện tại đây.</div>';
     pending.forEach(function (a) {
+      var waitDays = approvalWaitDays(a);
       html += '<div class="panel"><strong>' + esc(contentTitle(a.contentItemId)) + '</strong> — yêu cầu bởi ' + esc(memberName(a.requestedBy)) + ' lúc ' + esc(D.formatDateTimeVN(a.requestedAt)) +
+        (waitDays !== null ? ' ' + vizStatusPillHtml('', { tone: waitDays >= 3 ? 'overdue' : 'pending', label: waitDays === 0 ? 'Chờ hôm nay' : 'Đã chờ ' + waitDays + ' ngày', derived: true }) : '') +
         approvalSnapshotHtml(a) +
         '<label class="fld wide">Nhận xét khi quyết định<textarea id="approve-note-' + esc(a.id) + '" rows="2" placeholder="Nhận xét (bắt buộc khi yêu cầu sửa / từ chối)">' + esc(UI.approveComment[a.id] || '') + '</textarea></label>' +
         '<p><button class="btn" data-action="decide" data-decision="approved" data-id="' + esc(a.id) + '"' + dis(!ok) + '>Duyệt</button> ' +
@@ -3953,8 +4116,9 @@
     });
     html += '<h2>Dòng thời gian quyết định (' + done.length + ')</h2>';
     if (!done.length) html += '<p class="sub">Chưa có quyết định nào.</p>';
-    else html += tbl('<tr><th>Nội dung</th><th>Phiên bản nội dung</th><th>Quyết định</th><th>Người duyệt</th><th>Thời điểm</th><th>Nhận xét</th></tr>' + done.map(function (a) {
-      return '<tr><td>' + esc(contentTitle(a.contentItemId)) + '</td><td>Số ' + esc(a.revision) + '</td><td>' + statusBadge(a.status, a.statusLabel) + '</td><td>' + esc(memberName(a.decidedBy)) + '</td><td>' + esc(D.formatDateTimeVN(a.decidedAt)) + '</td><td>' + esc(a.note || '') + '</td></tr>';
+    else html += tbl('<tr><th>Nội dung</th><th>Phiên bản nội dung</th><th>Quyết định</th><th>Người duyệt</th><th>Thời điểm</th><th>Thời gian chờ</th><th>Nhận xét</th></tr>' + done.map(function (a) {
+      var waited = (a.requestedAt && a.decidedAt) ? vizDayDiff(String(a.requestedAt).slice(0, 10), String(a.decidedAt).slice(0, 10)) : null;
+      return '<tr><td>' + esc(contentTitle(a.contentItemId)) + '</td><td>Số ' + esc(a.revision) + '</td><td>' + vizStatusPillHtml(a.status, { label: a.statusLabel }) + '</td><td>' + esc(memberName(a.decidedBy)) + '</td><td>' + esc(D.formatDateTimeVN(a.decidedAt)) + '</td><td>' + (waited === null ? '—' : (waited === 0 ? 'Trong ngày' : waited + ' ngày')) + '</td><td>' + esc(a.note || '') + '</td></tr>';
     }).join(''));
     return html;
   }
@@ -3994,10 +4158,10 @@
         var warn = [];
         if (cap !== null && cap !== undefined && total > cap) warn.push('Tổng ' + fmtNum(total) + ' giờ vượt năng lực ' + cap + ' giờ trong tuần này');
         Object.keys(perDay).forEach(function (date) { if (perDay[date] > 8) warn.push('Ngày ' + D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + ' giờ (quá 8 giờ/ngày)'); });
-        return '<tr><td><strong>' + esc(m.name) + '</strong>' + (m.isActive === false ? ' <span class="badge grey">Ngừng hoạt động</span>' : '') + '</td><td>' + esc(m.roleLabel || labelStatus(m.role)) + '</td><td>' + (cap !== null && cap !== undefined ? esc(cap) + ' giờ/tuần' : vizStatusPillHtml('pending', { label: 'Chưa cấu hình' })) + '</td>' +
+        return '<tr><td><strong>' + esc(m.name) + '</strong>' + (m.isActive === false ? ' ' + vizStatusPillHtml('', { tone: 'cancelled', label: 'Ngừng hoạt động' }) : '') + '</td><td>' + esc(m.roleLabel || labelStatus(m.role)) + '</td><td>' + (cap !== null && cap !== undefined ? esc(cap) + ' giờ/tuần' : vizStatusPillHtml('pending', { label: 'Chưa cấu hình' })) + '</td>' +
           '<td>' + ((mDaysOff || []).length ? mDaysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') : '—') + '</td>' +
-          '<td>' + fmtNum(total) + ' giờ' + vizWorkloadBarHtml({ hours: total, capacityHours: cap, overCapacity: (cap !== null && cap !== undefined && total > cap) }) + (unestimated.length ? '<br>' + unestimated.map(function (t) { return '<span class="badge warn">' + esc(t.title) + ': Chưa ước tính</span>'; }).join(' ') : '') + '</td>' +
-          '<td><span class="sub">' + (Object.keys(perDay).sort().map(function (date) { return D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + 'h'; }).join(' · ') || '—') + '</span></td>' +
+          '<td>' + fmtNum(total) + ' giờ' + vizWorkloadBarHtml({ hours: total, capacityHours: cap, overCapacity: (cap !== null && cap !== undefined && total > cap) }) + (unestimated.length ? '<br>' + unestimated.map(function (t) { return vizStatusPillHtml('', { tone: 'pending', label: t.title + ': Chưa ước tính' }); }).join(' ') : '') + '</td>' +
+          '<td>' + (Object.keys(perDay).length ? vizMiniDayBarsHtml({ days: Object.keys(perDay).sort().map(function (date) { return { label: String(D.formatDateVN(date)).slice(0, 5), hours: perDay[date], title: D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + ' giờ' }; }) }) + '<span class="sub">' + Object.keys(perDay).sort().map(function (date) { return D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + 'h'; }).join(' · ') + '</span>' : '<span class="sub">—</span>') + '</td>' +
           '<td>' + (warn.length ? warn.map(function (w) { return vizStatusPillHtml('overdue', { label: w, derived: true }); }).join(' ') : vizStatusPillHtml('done', { label: 'Ổn' })) + '</td>' +
           '<td><button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Đặt năng lực / ngày nghỉ</button></td></tr>';
       }).join(''));
@@ -4160,15 +4324,39 @@
     // R2-23: hiển thị HAI trục riêng — mức triển khai code (api_implementation)
     // và trạng thái tài khoản thật (connection_status), không gộp một nhãn.
     var API_IMPL_LABELS = { not_implemented: 'Chưa triển khai', implemented_needs_credentials: 'Đã có code — chờ thông tin kết nối', verified: 'Đã kiểm chứng' };
-    function implBadge(v) { return '<span class="badge ' + (v === 'verified' ? 'ok' : (v === 'implemented_needs_credentials' ? 'warn' : 'grey')) + '">' + esc(API_IMPL_LABELS[v] || 'Chưa triển khai') + '</span>'; }
-    html += accounts.length ? tbl('<tr><th>Kênh</th><th>Tài khoản</th><th>Mức code: OAuth</th><th>Mức code: Đăng bài</th><th>Mức code: Đồng bộ</th><th>Mức code: Quảng cáo</th><th>Trạng thái tài khoản</th><th>Đọc bài</th><th>Đọc số liệu</th><th>Đăng bài</th><th>Quảng cáo</th></tr>' +
+    // WAVE-B4: mức code/khả năng gộp thành nhóm chấm — tông là lớp trình bày,
+    // nhãn đầy đủ giữ ở title + dòng chữ phụ dưới nhóm chấm.
+    function implTone(v) { return v === 'verified' ? 'done' : (v === 'implemented_needs_credentials' ? 'pending' : 'todo'); }
+    function capTone(v) {
+      var s = String(v || '');
+      if (s === 'Đã kết nối') return 'done';
+      if (s.indexOf('Đăng ngoài app') !== -1) return 'running';
+      if (s.indexOf('Chưa có quyền') !== -1) return 'todo';
+      if (s.indexOf('Chờ') !== -1) return 'pending';
+      return s ? 'neutral' : 'todo';
+    }
+    function dotCell(tone, shortLabel, fullLabel) {
+      return '<span class="viz-dot-cell" title="' + esc(shortLabel + ': ' + fullLabel) + '">' + vizStatusDotHtml(tone, shortLabel + ': ' + fullLabel) + esc(shortLabel) + '</span>';
+    }
+    if (accounts.length) {
+      html += '<div data-viz="channel-legend">' + vizLegendHtml([
+        { label: 'Đã kiểm chứng / Đã kết nối', tone: 'done' },
+        { label: 'Đã có code — chờ thông tin / Chờ kết nối', tone: 'pending' },
+        { label: 'Đăng ngoài app', tone: 'running' },
+        { label: 'Chưa triển khai / Chưa có quyền', tone: 'todo' }
+      ], { chartId: 'channel-legend' }) + '<p class="sub">Mỗi chấm kèm tên mục; rê chuột (hoặc xem dòng chữ phụ) để thấy nhãn đầy đủ của từng mức code và khả năng.</p></div>';
+    }
+    html += accounts.length ? tbl('<tr><th>Kênh</th><th>Tài khoản</th><th>Trạng thái tài khoản</th><th>Mức code (OAuth · Đăng bài · Đồng bộ · Quảng cáo)</th><th>Khả năng (Đọc bài · Đọc số liệu · Đăng bài · Quảng cáo)</th></tr>' +
       accounts.map(function (a) {
         var cap = a.capabilities || {};
         var impl = a.apiImplementation || a.api_implementation || {};
-        function cb(v) { return v === 'Đã kết nối' ? '<span class="badge ok">' + esc(v) + '</span>' : '<span class="badge warn">' + esc(v || 'Chờ kết nối') + '</span>'; }
-        return '<tr><td>' + esc(labelStatus(a.platform)) + '</td><td>' + esc(a.name) + '</td>' +
-          '<td>' + implBadge(impl.oauth) + '</td><td>' + implBadge(impl.publish) + '</td><td>' + implBadge(impl.sync) + '</td><td>' + implBadge(impl.ads) + '</td>' +
-          '<td>' + cb(a.status) + '</td><td>' + cb(cap.readPosts) + '</td><td>' + cb(cap.readMetrics) + '</td><td>' + cb(cap.publish) + '</td><td>' + cb(cap.ads) + '</td></tr>';
+        var implParts = [['OAuth', impl.oauth], ['Đăng bài', impl.publish], ['Đồng bộ', impl.sync], ['Quảng cáo', impl.ads]];
+        var capParts = [['Đọc bài', cap.readPosts], ['Đọc số liệu', cap.readMetrics], ['Đăng bài', cap.publish], ['Quảng cáo', cap.ads]];
+        var accTone = a.status === 'Đã kết nối' ? 'done' : 'pending';
+        return '<tr><td>' + esc(labelStatus(a.platform)) + '</td><td><strong>' + esc(a.name) + '</strong></td>' +
+          '<td>' + vizStatusPillHtml('', { tone: accTone, label: a.status || 'Chờ kết nối' }) + '</td>' +
+          '<td><span class="viz-dot-group">' + implParts.map(function (p) { return dotCell(implTone(p[1]), p[0], API_IMPL_LABELS[p[1]] || 'Chưa triển khai'); }).join('') + '</span><br><span class="sub">' + implParts.map(function (p) { return esc(p[0] + ': ' + (API_IMPL_LABELS[p[1]] || 'Chưa triển khai')); }).join(' · ') + '</span></td>' +
+          '<td><span class="viz-dot-group">' + capParts.map(function (p) { return dotCell(capTone(p[1]), p[0], p[1] || 'Chờ kết nối'); }).join('') + '</span><br><span class="sub">' + capParts.map(function (p) { return esc(p[0] + ': ' + (p[1] || 'Chờ kết nối')); }).join(' · ') + '</span></td></tr>';
       }).join('')) : '<div class="state-box">Chưa có tài khoản kênh nào. Kết nối kênh cần cấp quyền ở nền tảng tương ứng; trong lúc chờ, vẫn ghi nhận bài bằng cách nhập tay.</div>';
     var posts = Store.list('externalPosts');
     var filtered = posts.filter(function (p) { return UI.channelFilter === 'all' || p.platform === UI.channelFilter; });
@@ -4177,13 +4365,27 @@
       PLATFORMS.map(function (p) { return '<option value="' + p[0] + '"' + (UI.channelFilter === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') +
       '</select></label><button class="btn secondary" type="submit">Lọc</button></form>';
     if (!filtered.length) html += emptyState('Chưa có bài đã đăng nào ở kênh đã lọc', 'Thêm bài bằng cách nhập tay (nguồn sẽ ghi rõ là nhập tay) hoặc chờ đồng bộ khi kênh được kết nối.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="post">+ Thêm bài đã đăng</button></p>' : '');
-    else html += tbl('<tr><th>Bài</th><th>Kênh</th><th>Mã bài trên nền tảng</th><th>Ngày đăng</th><th>Nguồn</th><th>Campaign đã gắn</th><th>Gắn / đổi campaign</th><th>Thao tác</th></tr>' + filtered.map(function (p) {
+    else html += tbl('<tr><th>Bài</th><th>Kênh</th><th>Mã bài trên nền tảng</th><th>Ngày đăng</th><th>Lượt xem</th><th>Tiếp cận</th><th>Nguồn</th><th>Campaign đã gắn</th><th>Gắn / đổi campaign</th><th>Thao tác</th></tr>' + filtered.map(function (p) {
       var obs = Store.list('metricObservations').filter(function (o) { return o.externalPostId === p.id; });
-      var main = '<tr><td><a href="' + esc(p.url || '#') + '" target="_blank" rel="noopener">' + esc(p.title) + '</a></td><td>' + esc(labelStatus(p.platform)) + '</td><td><code>' + esc(p.externalPostId) + '</code></td><td>' + esc(D.formatDateTimeVN(p.publishedAt)) + '</td><td>' + esc(p.source === 'manual' ? 'Nhập tay' : (p.source || 'Đồng bộ')) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : '<span class="badge warn">Chưa gắn</span>') + '</td>' +
+      // WAVE-B4: số mới nhất của từng chỉ số lấy qua đúng helper domain cho
+      // snapshot trọn đời (không cộng các lần quan sát, không tự chọn tay).
+      function latestMetric(metrics) {
+        var list = obs.filter(function (o) { return metrics.indexOf(String(o.metric || '')) !== -1; });
+        if (!list.length) return null;
+        if (typeof D.latestLifetimeSnapshot === 'function') { var v = D.latestLifetimeSnapshot(list); if (v !== null && v !== undefined) return v; }
+        var sorted = list.slice().sort(function (x, y) { return String(x.observedAt || '').localeCompare(String(y.observedAt || '')); });
+        return sorted.length ? sorted[sorted.length - 1].value : null;
+      }
+      var views = latestMetric(['views', 'lifetime_views']);
+      var reach = latestMetric(['reach']);
+      var main = '<tr><td><a href="' + esc(p.url || '#') + '" target="_blank" rel="noopener">' + esc(p.title) + '</a></td><td>' + esc(labelStatus(p.platform)) + '</td><td><code>' + esc(p.externalPostId) + '</code></td><td>' + esc(D.formatDateTimeVN(p.publishedAt)) + '</td>' +
+        '<td>' + (views === null || views === undefined ? '—' : '<strong title="' + esc(fmtNum(views)) + '">' + esc(vizCompactNum(views)) + '</strong>') + '</td>' +
+        '<td>' + (reach === null || reach === undefined ? '—' : '<strong title="' + esc(fmtNum(reach)) + '">' + esc(vizCompactNum(reach)) + '</strong>') + '</td>' +
+        '<td>' + esc(p.source === 'manual' ? 'Nhập tay' : (p.source || 'Đồng bộ')) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : '<span class="badge warn">Chưa gắn</span>') + '</td>' +
         '<td><form class="inline compact" data-form="attach-campaign" data-id="' + esc(p.id) + '"><select name="campaignId"><option value="">— Chưa gắn —</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (p.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select><button class="btn small" type="submit"' + dis(!ed) + '>Lưu gắn</button></form></td>' +
         '<td class="row-actions"><button class="btn small secondary" data-action="post-metrics" data-id="' + esc(p.id) + '">Số liệu (' + obs.length + ')</button> <button class="btn small secondary" data-action="editor-open" data-kind="post" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Sửa</button></td></tr>';
       if (UI.postOpenId === p.id) {
-        main += '<tr class="detail-row"><td colspan="8"><strong>Số liệu của bài:</strong> ' + (obs.length ? obs.map(function (o) { return esc(o.metric) + ' = ' + fmtNum(o.value) + ' (' + esc(o.source || '—') + ', ' + esc(D.formatDateTimeVN(o.observedAt)) + ')'; }).join(' · ') : 'Chưa có số liệu nào cho bài này.') + '</td></tr>';
+        main += '<tr class="detail-row"><td colspan="10"><strong>Số liệu của bài:</strong> ' + (obs.length ? obs.map(function (o) { return esc(o.metric) + ' = ' + fmtNum(o.value) + ' (' + esc(o.source || '—') + ', ' + esc(D.formatDateTimeVN(o.observedAt)) + ')'; }).join(' · ') : 'Chưa có số liệu nào cho bài này.') + '</td></tr>';
       }
       return main;
     }).join(''));
@@ -4192,9 +4394,13 @@
   }
 
   // ---------- Quảng cáo ----------
-  function ratesCells(r) {
+  function ratesCells(r, maxSpend) {
     var cur = r.currency || 'VND';
-    return '<td>' + fmtMoney(r.spend, cur) + '</td><td>' + fmtNum(r.impressions) + '</td><td>' + fmtNum(r.clicks) + '</td><td>' + fmtNum(r.results) + '</td>';
+    var spendCell = fmtMoney(r.spend, cur);
+    if (maxSpend && Number(maxSpend) > 0 && r.spend !== null && r.spend !== undefined && Number(r.spend) > 0) {
+      spendCell += vizCellBarHtml({ value: Number(r.spend), max: Number(maxSpend), tone: 'running', text: 'So với dòng chi cao nhất: ' + fmtPct(vizPct(r.spend, maxSpend)) });
+    }
+    return '<td>' + spendCell + '</td><td>' + fmtNum(r.impressions) + '</td><td>' + fmtNum(r.clicks) + '</td><td>' + fmtNum(r.results) + '</td>';
   }
   function viewAds() {
     var html = pageHead('Quảng cáo', 'Số liệu quảng cáo chỉ đọc. "Chiến dịch quảng cáo" ở đây khác với IMC Campaign ở mục IMC & Campaigns.',
@@ -4204,19 +4410,42 @@
     var canApproveAds = can('adsApprove');
     if (isCeo) html += '<div class="notice info">CEO chỉ xem: mọi thao tác tạo nháp/gửi duyệt/duyệt thay đổi quảng cáo đều bị ẩn và bị tầng dữ liệu chặn.</div>';
     html += collectionBanner('adAccounts');
+    // WAVE-B4: phễu Hiển thị -> Nhấp -> Kết quả ở cấp chiến dịch quảng cáo —
+    // tổng qua đúng hàm tổng hợp sẵn có D.aggregateRates (tử/mẫu cộng theo
+    // từng tiền tệ), KHÔNG cộng chéo cấp chiến dịch/nhóm/quảng cáo.
+    var allAdCampaigns = Store.list('adCampaigns');
+    if (allAdCampaigns.length && typeof D.aggregateRates === 'function') {
+      var aggAds = D.aggregateRates(allAdCampaigns);
+      var funnelHtml = '';
+      Object.keys(aggAds.byCurrency || {}).forEach(function (curKey) {
+        var t = aggAds.byCurrency[curKey].totals || {};
+        if (t.impressions === null || t.impressions === undefined) return;
+        funnelHtml += '<p class="sub">Tiền tệ: ' + esc(currencyLabel(curKey)) + ' — chỉ cộng ở cấp chiến dịch quảng cáo</p>' + vizFunnelHtml({ steps: [
+          { label: 'Hiển thị', value: t.impressions },
+          { label: 'Nhấp', value: t.clicks },
+          { label: 'Kết quả', value: t.results }
+        ], emptyText: 'Chưa có số hiển thị để vẽ phễu quảng cáo.' });
+      });
+      if (funnelHtml) html += '<h2>Phễu hiệu quả quảng cáo</h2>' + funnelHtml;
+    }
     if (!Store.list('adAccounts').length && !collLoadingOrError('adAccounts')) html += '<div class="state-box">Chưa kết nối tài khoản quảng cáo nào. Khi tài khoản được kết nối, cây chiến dịch/nhóm/quảng cáo và số liệu sẽ hiện tại đây.</div>';
     Store.list('adAccounts').forEach(function (acc) {
-      html += '<div class="panel"><h3>' + esc(acc.name) + ' — ' + esc(acc.platform) + ' <span class="badge warn">' + esc(acc.status) + '</span></h3>';
+      html += '<div class="panel"><h3>' + esc(acc.name) + ' — ' + esc(acc.platform) + ' ' + vizStatusPillHtml('', { tone: acc.status === 'Đã kết nối' ? 'done' : 'pending', label: acc.status }) + '</h3>';
       var acs = Store.list('adCampaigns').filter(function (x) { return x.adAccountId === acc.id; });
       if (!acs.length) html += '<p class="sub">Chưa có chiến dịch quảng cáo nào.</p>';
       acs.forEach(function (ac) {
         html += '<p><strong>Chiến dịch quảng cáo:</strong> ' + esc(ac.name) + ' — ' + statusBadge(ac.status, ac.statusLabel) + '</p>';
+        var acSets = Store.list('adSets').filter(function (x) { return x.adCampaignId === ac.id; });
+        var acAds = [];
+        acSets.forEach(function (s0) { Store.list('ads').filter(function (x) { return x.adSetId === s0.id; }).forEach(function (x) { acAds.push(x); }); });
+        var maxSpend = 0;
+        [ac].concat(acSets).concat(acAds).forEach(function (x) { var sv = Number(x.spend) || 0; if (sv > maxSpend) maxSpend = sv; });
         var rows = '<tr><th>Cấp</th><th>Tên</th><th>Trạng thái</th><th>Chi tiêu</th><th>Hiển thị</th><th>Nhấp</th><th>Kết quả</th></tr>';
-        rows += '<tr><td>Chiến dịch</td><td>' + esc(ac.name) + '</td><td>' + statusBadge(ac.status, ac.statusLabel) + '</td>' + ratesCells(ac) + '</tr>';
-        Store.list('adSets').filter(function (x) { return x.adCampaignId === ac.id; }).forEach(function (as) {
-          rows += '<tr><td>Nhóm</td><td>↳ ' + esc(as.name) + '</td><td>' + statusBadge(as.status, as.statusLabel) + '</td>' + ratesCells(as) + '</tr>';
+        rows += '<tr><td>Chiến dịch</td><td>' + esc(ac.name) + '</td><td>' + statusBadge(ac.status, ac.statusLabel) + '</td>' + ratesCells(ac, maxSpend) + '</tr>';
+        acSets.forEach(function (as) {
+          rows += '<tr><td>Nhóm</td><td>↳ ' + esc(as.name) + '</td><td>' + statusBadge(as.status, as.statusLabel) + '</td>' + ratesCells(as, maxSpend) + '</tr>';
           Store.list('ads').filter(function (x) { return x.adSetId === as.id; }).forEach(function (ad) {
-            rows += '<tr><td>Quảng cáo</td><td>↳↳ ' + esc(ad.name) + '</td><td>' + statusBadge(ad.status, ad.statusLabel) + '</td>' + ratesCells(ad) + '</tr>';
+            rows += '<tr><td>Quảng cáo</td><td>↳↳ ' + esc(ad.name) + '</td><td>' + statusBadge(ad.status, ad.statusLabel) + '</td>' + ratesCells(ad, maxSpend) + '</tr>';
           });
         });
         html += tbl(rows) + '<p class="sub">Tổng chỉ cộng ở một cấp duy nhất để không tính trùng giữa chiến dịch / nhóm / quảng cáo.</p>';
@@ -4513,8 +4742,12 @@
     html += '<h3>Ma trận quyền (4 vai)</h3>';
     var permKeys = Object.keys(Store.PERMISSION_LABELS || {});
     html += tbl('<tr><th>Quyền</th><th>Owner</th><th>Lead</th><th>Member</th><th>CEO</th></tr>' + permKeys.map(function (k) {
-      function cell(role) { return Store.canRole(role, k) ? '✓' : '—'; }
-      return '<tr><td>' + esc(Store.PERMISSION_LABELS[k]) + '</td><td>' + cell('owner') + '</td><td>' + cell('lead') + '</td><td>' + cell('member') + '</td><td>' + cell('ceo') + '</td></tr>';
+      function cell(role) {
+        return Store.canRole(role, k)
+          ? '<td class="perm-cell"><span class="perm-yes" title="Có quyền">✓</span></td>'
+          : '<td class="perm-cell"><span class="perm-no" title="Không có quyền">—</span></td>';
+      }
+      return '<tr><td>' + esc(Store.PERMISSION_LABELS[k]) + '</td>' + cell('owner') + cell('lead') + cell('member') + cell('ceo') + '</tr>';
     }).join(''));
     html += '<div class="toolbar"><h2 style="margin:0">BU / sản phẩm</h2>' + (canSettings() ? '<button class="btn small" data-action="editor-open" data-kind="bu">+ Thêm BU</button>' : '<span class="sub">Chỉ Owner quản lý BU/sản phẩm.</span>') + '</div>';
     html += Store.list('businessUnits').length
