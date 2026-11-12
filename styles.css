@@ -292,6 +292,24 @@ tr.group-row td{background:#f0f2f5;font-weight:700}
 .g2-today{background:var(--st-overdue)}
 .g2-legend{margin:6px 0}
 .g2-status-dot{flex:0 0 8px}
+/* WAVE-B1-VIZ2: timeline 7 ngày (Việc của tôi) + dải lịch theo ngày */
+.viz-week-row{display:grid;grid-template-columns:minmax(110px,220px) 1fr;gap:8px;align-items:center;margin:5px 0;min-width:0}
+.viz-week-name{overflow-wrap:anywhere}
+.viz-week-days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.viz-week-day{font-size:11px;color:var(--muted);text-align:center;overflow-wrap:anywhere}
+.viz-week-day.is-today{color:var(--st-running);font-weight:700}
+.viz-week-track{position:relative;display:block;height:18px;background:var(--track);border-radius:99px;overflow:hidden;min-width:60px}
+.viz-week-bar{position:absolute;top:3px;height:12px;border-radius:99px;min-width:10px;background:var(--st-running)}
+.viz-week-bar.st-fill-running{background:var(--st-running)} .viz-week-bar.st-fill-done{background:var(--st-done)} .viz-week-bar.st-fill-overdue{background:var(--st-overdue)} .viz-week-bar.st-fill-blocked{background:var(--st-blocked)} .viz-week-bar.st-fill-pending{background:var(--st-pending-fill)} .viz-week-bar.st-fill-todo{background:var(--st-todo)} .viz-week-bar.st-fill-cancelled{background:var(--st-cancelled)} .viz-week-bar.st-fill-neutral{background:var(--st-neutral)}
+.viz-cal-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px;margin:10px 0;max-width:100%}
+.viz-cal-day{border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);padding:8px;min-width:0;overflow-wrap:anywhere}
+.viz-cal-day.is-today{border-color:var(--st-running)}
+.viz-cal-day-head{margin-bottom:4px}
+.viz-cal-items{font-size:12px;margin-top:4px}
+@media(max-width:480px){
+  .viz-week-row{grid-template-columns:minmax(84px,120px) 1fr}
+  .viz-week-day{font-size:10px}
+}
 @media(max-width:480px){
   .viz-donut-wrap{flex-direction:column;align-items:center}
   .viz-donut-svg{width:96px;height:96px}

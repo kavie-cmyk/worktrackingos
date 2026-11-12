@@ -1950,10 +1950,10 @@
           '</td><td><span class="sub">' + esc(r.reason) + '</span></td></tr>';
       }).join('')) + '</div>';
     }
-    html += '<h2>Chờ duyệt & quá hạn</h2><div class="grid2"><div class="panel"><h3>Chờ duyệt (' + approvals.length + ')</h3>' +
-      (approvals.length ? '<ul class="clean">' + approvals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> · phiên bản nội dung số ' + esc(a.revision) + ' · từ ' + esc(memberName(a.requestedBy)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung chờ duyệt.</p>') + '</div>' +
-      '<div class="panel"><h3>Quá hạn (' + overdue.length + ')</h3>' +
-      (overdue.length ? '<ul class="clean">' + overdue.map(function (t) { return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '">' + esc(t.title) + '</button> — hạn ' + esc(D.formatDateVN(t.dueDate)) + ' · ' + esc(memberName(t.assigneeId)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có việc quá hạn.</p>') + '</div></div>';
+    html += '<h2>Chờ duyệt & quá hạn</h2><div class="grid2"><div class="panel"><h3>Chờ duyệt (' + approvals.length + ') ' + (approvals.length ? vizStatusPillHtml('pending', { label: 'Chờ duyệt' }) : '') + '</h3>' +
+      (approvals.length ? '<ul class="clean">' + approvals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> · phiên bản nội dung số ' + esc(a.revision) + ' · từ ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung chờ duyệt.</p>') + '</div>' +
+      '<div class="panel"><h3>Quá hạn (' + overdue.length + ') ' + (overdue.length ? vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) : '') + '</h3>' +
+      (overdue.length ? '<ul class="clean">' + overdue.map(function (t) { return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '">' + esc(t.title) + '</button> — hạn ' + esc(D.formatDateVN(t.dueDate)) + ' · ' + esc(memberName(t.assigneeId)) + ' ' + statusBadge(t.status) + ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có việc quá hạn.</p>') + '</div></div>';
     return html;
   }
 
@@ -1985,6 +1985,24 @@
     var html = pageHead('Việc của tôi', 'Việc của ' + (me ? me.name : '—') + (Store.mode === 'demo' ? ' (đổi người dùng ở thanh trên — chỉ trong Chế độ demo)' : '') + '. Bấm vào tên việc để mở chi tiết và sửa ngay tại chỗ.',
       canEdit() ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo việc</button>' : '');
     html += readonlyNote();
+    // WAVE-B1-VIZ2: dải KPI đầu trang — số đếm lấy NGUYÊN từ chính các nhóm
+    // mà view đã lọc ở trên (groups + myApprovals), không đếm lại ở đây.
+    var groupTones = ['running', 'running', 'overdue', 'todo', 'blocked', 'pending'];
+    var toneLabels = { running: 'Đang chạy', overdue: 'Quá hạn', blocked: 'Bị chặn', pending: 'Chờ duyệt', todo: 'Chưa bắt đầu', done: 'Hoàn thành', neutral: 'Thông tin' };
+    var kpiDefs = groups.map(function (g, i) { return { label: g[0], count: g[1].length, tone: groupTones[i] || 'neutral', mineSubset: i < 5 }; });
+    kpiDefs.push({ label: 'Chờ mình duyệt', count: myApprovals.length, tone: 'pending', mineSubset: false });
+    html += '<div data-viz="my-work-summary"><div class="cards">' + kpiDefs.map(function (k) {
+      return vizKpiCardHtml({
+        label: k.label, valueText: String(k.count), tone: k.tone, toneLabel: toneLabels[k.tone] || '',
+        sub: k.label === 'Việc đang chờ mình' ? 'Việc của người khác đang chờ việc của bạn hoàn thành trước' : (k.label === 'Chờ mình duyệt' ? 'Nội dung đang chờ bạn duyệt ở hộp duyệt' : null),
+        progress: (k.mineSubset && mine.length) ? { value: k.count, max: mine.length, pct: vizPct(k.count, mine.length), tone: k.tone, detail: k.count + '/' + mine.length + ' việc của tôi (' + fmtPct(vizPct(k.count, mine.length)) + ')' } : null
+      });
+    }).join('') + '</div>' +
+      vizStackedBarHtml({
+        segments: kpiDefs.map(function (k) { return { label: k.label, value: k.count, tone: k.tone }; }),
+        total: kpiDefs.reduce(function (s, k) { return s + k.count; }, 0),
+        unitLabel: 'lượt đếm theo nhóm (một việc có thể thuộc nhiều nhóm cùng lúc)', emptyText: 'Chưa có việc nào trong các nhóm để vẽ thanh phân bổ.'
+      }) + '</div>';
     function taskList(list, emptyText) {
       if (!list.length) return '<p class="sub">' + esc(emptyText) + '</p>';
       return tbl('<tr><th>Việc</th><th>Campaign</th><th>Mốc cần hoàn thành</th><th>Trạng thái</th><th>Phụ thuộc</th></tr>' +
@@ -1992,11 +2010,49 @@
           return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button></td><td>' + esc(campaignName(t.campaignId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td><td>' + statusBadge(t.status) + '</td><td>' + readinessBadge(t) + '</td></tr>';
         }).join(''));
     }
-    groups.forEach(function (g) { html += '<h2>' + esc(g[0]) + ' (' + g[1].length + ')</h2>' + taskList(g[1], 'Không có việc nào trong nhóm này.'); });
+    // WAVE-B1-VIZ2: mini timeline 7 ngày cho nhóm "Tuần này" — chỉ dùng
+    // startDate/dueDate ĐÃ CÓ của task (kẹp vào tuần hiện tại); việc không
+    // có ngày nào thì không xuất hiện ở đây (không bịa ngày).
+    function dayDiff(a, b) { return Math.round((new Date(String(a).slice(0, 10) + 'T00:00:00') - new Date(String(b).slice(0, 10) + 'T00:00:00')) / 86400000); }
+    var weekDayNames = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
+    function weekTimelineHtml(list) {
+      var dated = (list || []).filter(function (t) { return t.startDate || t.dueDate; });
+      if (!dated.length) return vizEmptyChartHtml('Các việc trong nhóm Tuần này chưa có ngày bắt đầu/hạn để vẽ timeline 7 ngày.');
+      var head = '<div class="viz-week-row viz-week-head"><span class="viz-week-name sub">Việc</span><span class="viz-week-days">' +
+        weekDayNames.map(function (nm, i) { var d = addDaysISO(weekStart, i); return '<span class="viz-week-day' + (d === today ? ' is-today' : '') + '">' + esc(nm) + '<br>' + esc(D.formatDateVN(d)) + '</span>'; }).join('') + '</span></div>';
+      var rows = dated.map(function (t) {
+        var s = String(t.startDate || t.dueDate).slice(0, 10), e = String(t.dueDate || t.startDate).slice(0, 10);
+        if (s > e) { var tmp = s; s = e; e = tmp; }
+        var cs = s < weekStart ? weekStart : s, ce = e > weekEnd ? weekEnd : e;
+        var off = Math.max(0, dayDiff(cs, weekStart)), span = Math.max(1, dayDiff(ce, cs) + 1);
+        var tone = vizTaskDerivedTone(t) || vizStatusTone(t.status);
+        return '<div class="viz-week-row"><span class="viz-week-name">' + vizStatusDotHtml(tone, labelStatus(t.status)) + ' <button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '">' + esc(t.title) + '</button></span>' +
+          '<span class="viz-week-track"><span class="viz-week-bar st-fill-' + esc(tone) + '" style="left:' + (Math.round(off / 7 * 10000) / 100) + '%;width:' + (Math.round(span / 7 * 10000) / 100) + '%" title="' + esc(t.title) + ': ' + esc(D.formatDateVN(s)) + ' — ' + esc(D.formatDateVN(e)) + '"></span></span></div>';
+      }).join('');
+      return '<div class="viz-chart" data-viz="my-work-week-timeline"><h4>Timeline 7 ngày — tuần ' + esc(D.formatDateVN(weekStart)) + ' đến ' + esc(D.formatDateVN(weekEnd)) + '</h4>' + head + rows + '</div>';
+    }
+    groups.forEach(function (g) {
+      html += '<h2>' + esc(g[0]) + ' (' + g[1].length + ')</h2>' + taskList(g[1], 'Không có việc nào trong nhóm này.');
+      if (g[0] === 'Tuần này') html += weekTimelineHtml(g[1]);
+    });
     html += '<h2>Chờ mình duyệt (' + myApprovals.length + ')</h2>';
-    html += myApprovals.length ? '<ul class="clean">' + myApprovals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> — phiên bản nội dung số ' + esc(a.revision) + ', gửi bởi ' + esc(memberName(a.requestedBy)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung nào chờ bạn duyệt.</p>';
+    html += myApprovals.length ? '<ul class="clean">' + myApprovals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> — phiên bản nội dung số ' + esc(a.revision) + ', gửi bởi ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung nào chờ bạn duyệt.</p>';
     html += '<h2>Lịch nội dung của tôi tuần này (' + myContent.length + ')</h2>';
-    html += myContent.length ? '<ul class="clean">' + myContent.map(function (v2) { return '<li>' + esc(D.formatDateTimeVN(v2.scheduledAt)) + ' — ' + esc(contentTitle(v2.contentItemId)) + ' (' + esc(v2.channelLabel || labelStatus(v2.platform)) + ')</li>'; }).join('') + '</ul>' : '<p class="sub">Tuần này bạn không có nội dung nào tới lịch đăng.</p>';
+    if (!myContent.length) html += '<p class="sub">Tuần này bạn không có nội dung nào tới lịch đăng.</p>';
+    else {
+      // WAVE-B1-VIZ2: dải lịch theo ngày — gom myContent theo ngày đăng đã
+      // có (dateInTz của scheduledAt), chấm màu theo tông trạng thái biến thể.
+      html += '<div class="viz-cal-strip" data-viz="my-work-cal-strip">' + weekDayNames.map(function (nm, i) {
+        var d = addDaysISO(weekStart, i);
+        var items = myContent.filter(function (v2) { return dateInTz(v2.scheduledAt) === d; });
+        var byTone = {};
+        items.forEach(function (v2) { var tn = vizStatusTone(v2.editorialStatus || v2.approvalStatus); byTone[tn] = (byTone[tn] || 0) + 1; });
+        var dots = vizCalDotsHtml(Object.keys(byTone).map(function (tn) { return { tone: tn, count: byTone[tn] }; }));
+        return '<div class="viz-cal-day' + (d === today ? ' is-today' : '') + '"><div class="viz-cal-day-head"><strong>' + esc(nm) + '</strong> <span class="sub">' + esc(D.formatDateVN(d)) + '</span></div>' +
+          '<div>' + (items.length ? dots + ' <span class="sub">' + items.length + ' nội dung</span>' : '<span class="sub">—</span>') + '</div>' +
+          (items.length ? '<ul class="clean viz-cal-items">' + items.map(function (v2) { return '<li>' + esc(D.formatDateTimeVN(v2.scheduledAt)) + ' — ' + esc(contentTitle(v2.contentItemId)) + ' (' + esc(v2.channelLabel || labelStatus(v2.platform)) + ')</li>'; }).join('') + '</ul>' : '') + '</div>';
+      }).join('') + '</div>';
+    }
     return html;
   }
 
@@ -4001,16 +4057,25 @@
       var tasks = visibleList('tasks');
       var overdue = tasks.filter(isOverdue);
       var pendingApprovals = Store.list('approvals').filter(function (a) { return a.status === 'pending' || a.status === 'needs_reapproval'; });
-      html += '<div class="cards">' +
-        '<div class="card"><div class="big">' + visibleList('campaigns').filter(function (c) { return c.status === 'active'; }).length + '</div>Campaign đang chạy</div>' +
-        '<div class="card"><div class="big">' + overdue.length + '</div>Việc quá hạn<br><a href="#/tasks">Xem công việc</a></div>' +
-        '<div class="card"><div class="big">' + pendingApprovals.length + '</div>Nội dung chờ duyệt<br><a href="#/approvals">Tới hộp duyệt</a></div>' +
-        '<div class="card"><div class="big">' + tasks.filter(function (t) { return isCompletedTask(t); }).length + '/' + tasks.length + '</div>Việc đã hoàn thành</div></div>';
-      html += '<h2>Tiến độ theo campaign</h2>' + tbl('<tr><th>Campaign</th><th>Tiến độ</th><th>Quá hạn</th></tr>' + visibleList('campaigns').map(function (c) {
+      var allCampaigns = visibleList('campaigns');
+      var runningCampaigns = allCampaigns.filter(function (c) { return c.status === 'active'; });
+      var completedTasks = tasks.filter(function (t) { return isCompletedTask(t); });
+      // WAVE-B1-VIZ2: 4 thẻ trần -> vizKpiCardHtml (số đếm giữ nguyên như trước).
+      html += '<div class="cards" data-viz="reports-ops-cards">' +
+        vizKpiCardHtml({ label: 'Campaign đang chạy', valueText: String(runningCampaigns.length), tone: 'running', toneLabel: 'Đang chạy', href: '#/campaigns', hrefLabel: 'Xem danh sách', progress: allCampaigns.length ? { value: runningCampaigns.length, max: allCampaigns.length, pct: vizPct(runningCampaigns.length, allCampaigns.length), tone: 'running', detail: runningCampaigns.length + '/' + allCampaigns.length + ' campaign (' + fmtPct(vizPct(runningCampaigns.length, allCampaigns.length)) + ')' } : null }) +
+        vizKpiCardHtml({ label: 'Việc quá hạn', valueText: String(overdue.length), tone: 'overdue', toneLabel: 'Quá hạn', href: '#/tasks', hrefLabel: 'Xem công việc', progress: tasks.length ? { value: overdue.length, max: tasks.length, pct: vizPct(overdue.length, tasks.length), tone: 'overdue', detail: overdue.length + '/' + tasks.length + ' việc (' + fmtPct(vizPct(overdue.length, tasks.length)) + ')' } : null }) +
+        vizKpiCardHtml({ label: 'Nội dung chờ duyệt', valueText: String(pendingApprovals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/approvals', hrefLabel: 'Tới hộp duyệt' }) +
+        vizKpiCardHtml({ label: 'Việc đã hoàn thành', valueText: completedTasks.length + '/' + tasks.length, tone: 'done', toneLabel: 'Hoàn thành', progress: tasks.length ? { value: completedTasks.length, max: tasks.length, pct: vizPct(completedTasks.length, tasks.length), tone: 'done', detail: completedTasks.length + '/' + tasks.length + ' việc (' + fmtPct(vizPct(completedTasks.length, tasks.length)) + ')' } : null }) +
+        '</div>';
+      html += '<h2>Tiến độ theo campaign</h2><div data-viz="reports-ops-progress">' + tbl('<tr><th>Campaign</th><th>Tiến độ</th><th>Quá hạn</th></tr>' + allCampaigns.map(function (c) {
         var ct = tasks.filter(function (t) { return t.campaignId === c.id; });
         var p = D.campaignProgress(ct);
-        return '<tr><td><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></td><td>' + p.completed + '/' + p.total + ' (' + p.percentage + '%)</td><td>' + ct.filter(isOverdue).length + '</td></tr>';
-      }).join(''));
+        var odCount = ct.filter(isOverdue).length;
+        var pTone = p.percentage >= 100 ? 'done' : (odCount ? 'overdue' : 'running');
+        return '<tr><td><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></td><td>' +
+          vizCellBarHtml({ value: p.completed, max: p.total, tone: pTone, text: p.completed + '/' + p.total + ' (' + p.percentage + '%)' }) +
+          '</td><td>' + (odCount > 0 ? vizStatusPillHtml('overdue', { label: odCount + ' quá hạn', derived: true }) : '0') + '</td></tr>';
+      }).join('')) + '</div>';
       return html;
     }
     // R2-06: không có insight trong scope → nói rõ không đủ dữ liệu, TUYỆT
@@ -4024,23 +4089,68 @@
         var t = b.totals || {};
         var curLabel = currencyLabel(cur);
         var curMoney = cur === '__unknown' ? '' : cur;
-        html += '<h3>Đơn vị tiền: ' + esc(curLabel) + ' — cấp ' + esc(levelLabel) + '</h3><div class="cards">' +
-          '<div class="card"><div class="big">' + (b.ctr === null || b.ctr === undefined ? '—' : (b.ctr * 100).toFixed(2) + '%') + '</div>CTR (' + esc(curLabel) + ')<br><span class="sub">Tổng nhấp / tổng hiển thị của cấp đã chọn</span></div>' +
-          '<div class="card"><div class="big">' + (b.cpc === null || b.cpc === undefined ? '—' : fmtMoney(Math.round(b.cpc), curMoney)) + '</div>CPC (' + esc(curLabel) + '/nhấp)<br><span class="sub">Tổng chi tiêu / tổng nhấp</span></div>' +
-          '<div class="card"><div class="big">' + (b.cpm === null || b.cpm === undefined ? '—' : fmtMoney(Math.round(b.cpm), curMoney)) + '</div>CPM (' + esc(curLabel) + '/1.000 hiển thị)</div>' +
-          '<div class="card"><div class="big">' + (b.roas === null || b.roas === undefined ? '—' : Number(b.roas).toFixed(2)) + '</div>ROAS (' + esc(curLabel) + ')<br><span class="sub">Giá trị chuyển đổi / chi tiêu</span></div>' +
-          '<div class="card"><div class="big">' + fmtMoney(t.spend, curMoney) + '</div>Tổng chi tiêu (' + esc(curLabel) + ')</div></div>';
+        // WAVE-B1-VIZ2: 5 thẻ số trần -> vizKpiCardHtml (số giữ NGUYÊN từ
+        // b = D.aggregateRates(levelInsights).byCurrency[cur] ở trên).
+        html += '<h3>Đơn vị tiền: ' + esc(curLabel) + ' — cấp ' + esc(levelLabel) + '</h3><div class="cards" data-viz="reports-perf-cards">' +
+          vizKpiCardHtml({ label: 'CTR (' + curLabel + ')', valueText: (b.ctr === null || b.ctr === undefined ? '—' : (b.ctr * 100).toFixed(2) + '%'), tone: 'running', sub: 'Tổng nhấp / tổng hiển thị của cấp đã chọn' }) +
+          vizKpiCardHtml({ label: 'CPC (' + curLabel + '/nhấp)', valueText: (b.cpc === null || b.cpc === undefined ? '—' : fmtMoney(Math.round(b.cpc), curMoney)), tone: 'running', sub: 'Tổng chi tiêu / tổng nhấp' }) +
+          vizKpiCardHtml({ label: 'CPM (' + curLabel + '/1.000 hiển thị)', valueText: (b.cpm === null || b.cpm === undefined ? '—' : fmtMoney(Math.round(b.cpm), curMoney)), tone: 'running' }) +
+          vizKpiCardHtml({ label: 'ROAS (' + curLabel + ')', valueText: (b.roas === null || b.roas === undefined ? '—' : Number(b.roas).toFixed(2)), tone: 'running', sub: 'Giá trị chuyển đổi / chi tiêu' }) +
+          vizKpiCardHtml({ label: 'Tổng chi tiêu (' + curLabel + ')', valueText: fmtMoney(t.spend, curMoney), tone: 'running' }) +
+          '</div>';
       });
+      // WAVE-B1-VIZ2: biểu đồ theo kỳ — gom levelInsights theo đúng cặp
+      // [periodStart, periodEnd] đã có trên từng insight, rồi gọi LẠI
+      // D.aggregateRates cho riêng kỳ đó để lấy totals (cấm cộng tay).
+      var periodKeys = [];
+      var periodSeen = {};
+      levelInsights.forEach(function (ins) {
+        var ps = dateInTz(ins.periodStart), pe = dateInTz(ins.periodEnd);
+        var key = (ps || '') + '|' + (pe || '');
+        if (!periodSeen[key]) { periodSeen[key] = true; periodKeys.push({ key: key, ps: ps, pe: pe }); }
+      });
+      periodKeys.sort(function (a, b) { return String(a.ps || '').localeCompare(String(b.ps || '')); });
+      if (periodKeys.length) {
+        html += '<h2>Theo kỳ (cấp ' + esc(levelLabel) + ')</h2>';
+        bucketCurs.forEach(function (cur) {
+          var curLabel2 = currencyLabel(cur);
+          var curMoney2 = cur === '__unknown' ? '' : cur;
+          var perPeriod = periodKeys.map(function (pk) {
+            var rowsInPeriod = levelInsights.filter(function (ins) { return (dateInTz(ins.periodStart) || '') + '|' + (dateInTz(ins.periodEnd) || '') === pk.key; });
+            var aggP = (typeof D.aggregateRates === 'function') ? D.aggregateRates(rowsInPeriod) : { byCurrency: {} };
+            var bp = (aggP.byCurrency || {})[cur] || null;
+            return { pk: pk, totals: bp ? (bp.totals || {}) : {} };
+          });
+          var periodLabel = function (pk) { return (pk.ps ? D.formatDateVN(pk.ps) : '…') + ' – ' + (pk.pe ? D.formatDateVN(pk.pe) : '…'); };
+          var periodLabelShort = function (pk) {
+            function dm(d) { return d ? String(d).slice(8, 10) + '/' + String(d).slice(5, 7) : '…'; }
+            return dm(pk.ps) + '–' + dm(pk.pe);
+          };
+          var maxClicks = 0, maxResults = 0;
+          perPeriod.forEach(function (pp) {
+            if (pp.totals.clicks !== null && pp.totals.clicks !== undefined) maxClicks = Math.max(maxClicks, Number(pp.totals.clicks) || 0);
+            if (pp.totals.results !== null && pp.totals.results !== undefined) maxResults = Math.max(maxResults, Number(pp.totals.results) || 0);
+          });
+          html += '<div data-viz="reports-perf-period"><h3>Đơn vị tiền: ' + esc(curLabel2) + '</h3>' +
+            '<h4>Chi tiêu theo kỳ</h4>' + vizLineAreaSvgHtml({ points: perPeriod.map(function (pp) { return { x: periodLabelShort(pp.pk), y: (pp.totals.spend === null || pp.totals.spend === undefined) ? null : Number(pp.totals.spend) }; }), yLabel: 'Chi tiêu (' + curLabel2 + ')', emptyText: 'Chưa có chi tiêu theo kỳ để vẽ biểu đồ.' }) +
+            '<h4>Nhấp &amp; kết quả theo kỳ</h4><div class="viz-chart" data-viz="reports-perf-period-bars">' +
+            perPeriod.map(function (pp) {
+              return vizHBarHtml({ label: 'Nhấp — ' + periodLabel(pp.pk), value: pp.totals.clicks, max: maxClicks, series: 'actual', valueText: (pp.totals.clicks === null || pp.totals.clicks === undefined) ? '—' : fmtNum(pp.totals.clicks) }) +
+                vizHBarHtml({ label: 'Kết quả — ' + periodLabel(pp.pk), value: pp.totals.results, max: maxResults, series: 'alloc', valueText: (pp.totals.results === null || pp.totals.results === undefined) ? '—' : fmtNum(pp.totals.results) });
+            }).join('') + '</div></div>';
+        });
+      }
       html += '<h2>Chi tiết cấp ' + esc(levelLabel) + '</h2>' + tbl('<tr><th>Tên</th><th>Tiền tệ</th><th>Chi tiêu</th><th>Hiển thị</th><th>Nhấp</th><th>Kết quả</th><th>Giá trị chuyển đổi</th></tr>' + groupedRows.map(function (r) {
         return '<tr><td>' + esc(r.name) + '</td><td>' + esc(currencyLabel(r.currency)) + '</td><td>' + fmtMoney(r.spend, r.currency || '') + '</td><td>' + fmtNum(r.impressions) + '</td><td>' + fmtNum(r.clicks) + '</td><td>' + fmtNum(r.results) + '</td><td>' + fmtNum(r.conversionValue) + '</td></tr>';
       }).join(''));
     }
     html += '<div class="cards">' +
-      '<div class="card"><div class="big">' + (lifetimeTotal === null ? '—' : fmtNum(lifetimeTotal)) + '</div>Lượt xem trọn đời — tổng của bản mới nhất từng bài<br><span class="sub">Đơn vị: lượt · Mỗi bài chỉ lấy lần quan sát mới nhất, không cộng dồn các lần quan sát</span></div></div>';
-    if (lifetimeRows.length) html += '<h3>Lượt xem trọn đời theo bài</h3>' + tbl('<tr><th>Bài</th><th>Giá trị mới nhất</th></tr>' + lifetimeRows.map(function (r) {
+      vizKpiCardHtml({ label: 'Lượt xem trọn đời — tổng của bản mới nhất từng bài', valueText: (lifetimeTotal === null ? '—' : fmtNum(lifetimeTotal)), tone: 'neutral', sub: 'Đơn vị: lượt · Mỗi bài chỉ lấy lần quan sát mới nhất, không cộng dồn các lần quan sát' }) + '</div>';
+    if (lifetimeRows.length) html += '<h3>Lượt xem trọn đời theo bài</h3><div data-viz="reports-lifetime-bars">' + tbl('<tr><th>Bài</th><th>Giá trị mới nhất</th><th>Tỉ trọng</th></tr>' + lifetimeRows.map(function (r) {
       var post = Store.get('externalPosts', r.postId);
-      return '<tr><td>' + esc(post ? post.title : r.postId) + '</td><td>' + fmtNum(r.value) + '</td></tr>';
-    }).join(''));
+      return '<tr><td>' + esc(post ? post.title : r.postId) + '</td><td>' + fmtNum(r.value) + '</td><td>' +
+        ((lifetimeTotal && r.value !== null && r.value !== undefined) ? vizCellBarHtml({ value: r.value, max: lifetimeTotal, tone: 'running', text: fmtNum(r.value) + ' (' + fmtPct(vizPct(r.value, lifetimeTotal)) + ')' }) : '—') + '</td></tr>';
+    }).join('')) + '</div>';
     if (!reachGuard.summable && ds.obs.length) html += '<div class="notice warn"><strong>Reach không cộng dồn:</strong> ' + esc(reachGuard.reason) + '</div>';
     if (missing) html += '<div class="notice warn">Có KPI chưa có giá trị thực đạt — hiển thị "Chưa cập nhật", không thay bằng 0.</div>';
     html += '<h2>Báo cáo đã chốt</h2>';
