@@ -1,4 +1,4 @@
-:root{--bg:#f6f7f9;--panel:#fff;--line:#dde1e7;--text:#1c2430;--muted:#66707e;--accent:#2456a6;--accent-soft:#e8eefb;--warn:#b45309;--warn-bg:#fef3c7;--bad:#b42318;--bad-bg:#fef2f2;--ok:#067647;--ok-bg:#ecfdf3;--radius:10px}
+:root{--bg:#f6f7f9;--panel:#fff;--line:#dde1e7;--text:#1c2430;--muted:#66707e;--accent:#2456a6;--accent-soft:#e8eefb;--warn:#b45309;--warn-bg:#fef3c7;--bad:#b42318;--bad-bg:#fef2f2;--ok:#067647;--ok-bg:#ecfdf3;--radius:10px;--st-running:#2456a6;--st-running-bg:#e8eefb;--st-done:#067647;--st-done-bg:#ecfdf3;--st-overdue:#b42318;--st-overdue-bg:#fef2f2;--st-blocked:#7c5cd6;--st-blocked-bg:#f0ebfd;--st-pending:#b45309;--st-pending-bg:#fef3c7;--st-pending-fill:#f79009;--st-todo:#66707e;--st-todo-bg:#eef0f3;--st-cancelled:#98a2b3;--st-cancelled-bg:#eef0f3;--st-neutral:#66707e;--st-neutral-bg:#eef0f3;--series-alloc:#2456a6;--series-actual:#0e9384;--series-commit:#f79009;--series-in:#067647;--series-out:#b54708;--cat-1:#2456a6;--cat-2:#0e9384;--cat-3:#7c5cd6;--cat-4:#b54708;--cat-5:#b45309;--cat-6:#067647;--cat-7:#98a2b3;--cat-8:#66707e;--track:#eaedf1}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45}
 .demo-banner{position:sticky;top:0;z-index:50;background:#7c2d12;color:#fff;text-align:center;padding:8px 12px;font-weight:700}
@@ -227,6 +227,78 @@ tr.group-row td{background:#f0f2f5;font-weight:700}
 .activity-backdrop{z-index:58}
 .activity-panel{z-index:62}
 .drawer-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+/* ===== Vòng WAVE-A-VIZ2: hệ màu trạng thái duy nhất + helper mới ===== */
+/* Pill trạng thái chuẩn st-* (nguồn màu duy nhất, xem DESIGN_SYSTEM_SPEC §2) */
+.badge.st-running{background:var(--st-running-bg);color:var(--st-running)}
+.badge.st-done{background:var(--st-done-bg);color:var(--st-done)}
+.badge.st-overdue{background:var(--st-overdue-bg);color:var(--st-overdue)}
+.badge.st-blocked{background:var(--st-blocked-bg);color:var(--st-blocked)}
+.badge.st-pending{background:var(--st-pending-bg);color:var(--st-pending)}
+.badge.st-todo{background:var(--st-todo-bg);color:var(--st-todo)}
+.badge.st-cancelled{background:var(--st-cancelled-bg);color:var(--st-cancelled);text-decoration:line-through}
+.badge.st-neutral{background:var(--st-neutral-bg);color:var(--st-neutral)}
+.badge.viz-cancelled{text-decoration:line-through}
+/* Map class cũ về cùng tông (không phá layout): ok→done, warn→pending, bad→overdue, grey→todo */
+.badge.ok{background:var(--st-done-bg);color:var(--st-done)}
+.badge.warn{background:var(--st-pending-bg);color:var(--st-pending)}
+.badge.bad{background:var(--st-overdue-bg);color:var(--st-overdue)}
+.badge.grey{background:var(--st-todo-bg);color:var(--st-todo)}
+/* Pill series (không phải trạng thái): Thu/Chi */
+.badge.pill-series-in{background:var(--st-done-bg);color:var(--series-in)}
+.badge.pill-series-out{background:#fdf0e7;color:var(--series-out)}
+/* Chấm trạng thái / legend */
+.viz-dot.st-bg-running{background:var(--st-running)} .viz-dot.st-bg-done{background:var(--st-done)} .viz-dot.st-bg-overdue{background:var(--st-overdue)} .viz-dot.st-bg-blocked{background:var(--st-blocked)} .viz-dot.st-bg-pending{background:var(--st-pending)} .viz-dot.st-bg-todo{background:var(--st-todo)} .viz-dot.st-bg-cancelled{background:var(--st-cancelled)} .viz-dot.st-bg-neutral{background:var(--st-neutral)}
+.viz-dot.series-alloc{background:var(--series-alloc)} .viz-dot.series-actual{background:var(--series-actual)} .viz-dot.series-commit{background:var(--series-commit)} .viz-dot.series-in{background:var(--series-in)} .viz-dot.series-out{background:var(--series-out)}
+.viz-dot.cat-1{background:var(--cat-1)} .viz-dot.cat-2{background:var(--cat-2)} .viz-dot.cat-3{background:var(--cat-3)} .viz-dot.cat-4{background:var(--cat-4)} .viz-dot.cat-5{background:var(--cat-5)} .viz-dot.cat-6{background:var(--cat-6)} .viz-dot.cat-7{background:var(--cat-7)} .viz-dot.cat-8{background:var(--cat-8)}
+.viz-dot{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;flex:0 0 10px}
+.viz-dot.st-dot-inline{width:8px;height:8px;border-radius:99px;flex:0 0 8px}
+.g2-mile.is-overdue{outline:2px solid var(--st-overdue)} .g2-mile.is-blocked{outline:2px solid var(--st-blocked)}
+/* Fill theo tông trạng thái + series (thay hex cứng ở lớp viz cũ) */
+.viz-fill.st-fill-running{background:var(--st-running)} .viz-fill.st-fill-done{background:var(--st-done)} .viz-fill.st-fill-overdue{background:var(--st-overdue)} .viz-fill.st-fill-blocked{background:var(--st-blocked)} .viz-fill.st-fill-pending{background:var(--st-pending-fill)} .viz-fill.st-fill-todo{background:var(--st-todo)} .viz-fill.st-fill-cancelled{background:var(--st-cancelled)} .viz-fill.st-fill-neutral{background:var(--st-neutral)}
+.viz-fill.series-alloc{background:var(--series-alloc)} .viz-fill.series-actual{background:var(--series-actual)} .viz-fill.series-commit{background:var(--series-commit)} .viz-fill.series-in{background:var(--series-in)} .viz-fill.series-out{background:var(--series-out)}
+.viz-fill.is-alloc{background:var(--series-alloc)} .viz-fill.is-actual{background:var(--series-actual)} .viz-fill.is-commit{background:var(--series-commit)} .viz-fill.is-in{background:var(--series-in)} .viz-fill.is-out{background:var(--series-out)} .viz-fill.is-warn{background:var(--st-pending-fill)} .viz-fill.is-over{background:var(--st-overdue)}
+.viz-col-bar.is-in{background:var(--series-in)} .viz-col-bar.is-out{background:var(--series-out)}
+.viz-track{background:var(--track)}
+/* Helper mới: progress / cell / stacked / donut / line / kpi card / cal dots */
+.viz-progress{display:block;margin:6px 0}
+.viz-progress .viz-track{display:block}
+.viz-cell{min-width:150px}
+.viz-stacked{display:flex;height:16px;border-radius:99px;overflow:hidden;background:var(--track);margin:6px 0}
+.viz-stacked-seg{display:block;height:100%;min-width:0}
+.viz-stacked-seg.st-fill-running{background:var(--st-running)} .viz-stacked-seg.st-fill-done{background:var(--st-done)} .viz-stacked-seg.st-fill-overdue{background:var(--st-overdue)} .viz-stacked-seg.st-fill-blocked{background:var(--st-blocked)} .viz-stacked-seg.st-fill-pending{background:var(--st-pending-fill)} .viz-stacked-seg.st-fill-todo{background:var(--st-todo)} .viz-stacked-seg.st-fill-cancelled{background:var(--st-cancelled)} .viz-stacked-seg.st-fill-neutral{background:var(--st-neutral)}
+.viz-stacked-seg.series-alloc{background:var(--series-alloc)} .viz-stacked-seg.series-actual{background:var(--series-actual)} .viz-stacked-seg.series-commit{background:var(--series-commit)} .viz-stacked-seg.series-in{background:var(--series-in)} .viz-stacked-seg.series-out{background:var(--series-out)}
+.viz-stacked-seg.cat-1{background:var(--cat-1)} .viz-stacked-seg.cat-2{background:var(--cat-2)} .viz-stacked-seg.cat-3{background:var(--cat-3)} .viz-stacked-seg.cat-4{background:var(--cat-4)} .viz-stacked-seg.cat-5{background:var(--cat-5)} .viz-stacked-seg.cat-6{background:var(--cat-6)} .viz-stacked-seg.cat-7{background:var(--cat-7)} .viz-stacked-seg.cat-8{background:var(--cat-8)}
+.viz-donut-wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.viz-donut-svg{flex:0 0 auto;width:120px;height:120px;max-width:100%}
+.viz-donut-legend{flex:1 1 200px;min-width:0}
+.viz-donut-row{display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap}
+.viz-line-svg{width:100%;height:auto;display:block}
+.viz-kpi-card{display:flex;flex-direction:column;gap:4px}
+.viz-kpi-top{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.viz-kpi-label{font-weight:600;color:var(--muted);font-size:13px}
+.viz-kpi-card .big{overflow-wrap:anywhere}
+.viz-kpi-delta{font-size:12px;font-weight:700}
+.viz-delta-done{color:var(--st-done)} .viz-delta-overdue{color:var(--st-overdue)} .viz-delta-neutral{color:var(--st-neutral)}
+.viz-cal-dots{display:inline-flex;gap:3px;align-items:center;vertical-align:middle}
+.viz-cal-dots .viz-dot{width:7px;height:7px;border-radius:99px;margin:0}
+.viz-cal-more{font-size:11px;color:var(--muted);font-weight:700}
+.chip.st-edge-running{border-left:3px solid var(--st-running)} .chip.st-edge-done{border-left:3px solid var(--st-done)} .chip.st-edge-overdue{border-left:3px solid var(--st-overdue)} .chip.st-edge-blocked{border-left:3px solid var(--st-blocked)} .chip.st-edge-pending{border-left:3px solid var(--st-pending)} .chip.st-edge-todo{border-left:3px solid var(--st-todo)} .chip.st-edge-cancelled{border-left:3px solid var(--st-cancelled)} .chip.st-edge-neutral{border-left:3px solid var(--st-neutral)}
+/* Gantt: thân thanh giữ màu LOẠI, trạng thái qua lớp phủ/viền/chấm (SPEC §2.5) */
+.g2-bar.kind-campaign{background:var(--cat-4)} .g2-bar.kind-phase{background:var(--cat-3)} .g2-bar.kind-activity{background:var(--cat-2)} .g2-bar.kind-task{background:var(--cat-1)}
+.g2-bar.is-done{opacity:.55;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(255,255,255,.35) 4px,rgba(255,255,255,.35) 5px);cursor:not-allowed}
+.g2-bar.kind-task.is-done{background-color:var(--cat-1)} .g2-bar.kind-activity.is-done{background-color:var(--cat-2)} .g2-bar.kind-phase.is-done{background-color:var(--cat-3)} .g2-bar.kind-campaign.is-done{background-color:var(--cat-4)}
+.g2-bar.is-overdue{outline:2px solid var(--st-overdue);outline-offset:0}
+.g2-bar.is-blocked{outline:2px solid var(--st-blocked);outline-offset:0}
+.g2-today{background:var(--st-overdue)}
+.g2-legend{margin:6px 0}
+.g2-status-dot{flex:0 0 8px}
+@media(max-width:480px){
+  .viz-donut-wrap{flex-direction:column;align-items:center}
+  .viz-donut-svg{width:96px;height:96px}
+  .viz-donut-legend{width:100%}
+  .viz-cell{min-width:0}
+  .viz-kpi-card .big{font-size:22px}
+}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
 }

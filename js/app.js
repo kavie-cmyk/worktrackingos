@@ -164,13 +164,10 @@
     return String(t.dueDate).slice(0, 10) < todayISO() && s !== 'completed' && s !== 'done' && s !== 'cancelled';
   }
   function isCompletedTask(t) { var s = String((t && t.status) || '').toLowerCase(); return s === 'completed' || s === 'done' || s === 'complete'; }
+  // WAVE-A-VIZ2: statusBadge là alias tương thích của vizStatusPillHtml —
+  // mọi pill trạng thái toàn app ra đúng tông chuẩn duy nhất (SPEC §2.3).
   function statusBadge(status, label) {
-    var s = String(status || '').toLowerCase();
-    var cls = 'grey';
-    if (s === 'completed' || s === 'done' || s === 'approved' || s === 'active' || s === 'resolved' || s === 'settled' || s === 'final' || s === 'published') cls = 'ok';
-    if (s === 'in_progress' || s === 'in_review' || s === 'pending' || s === 'pending_approval' || s === 'scheduled' || s === 'open' || s === 'planning' || s === 'partial' || s === 'needs_reapproval' || s === 'changes_requested') cls = 'warn';
-    if (s === 'cancelled' || s === 'canceled' || s === 'rejected') cls = 'bad';
-    return '<span class="badge ' + cls + '">' + esc(label || labelStatus(status)) + '</span>';
+    return vizStatusPillHtml(status, { label: label });
   }
   function toast(msg) {
     var el = document.getElementById('toast');
@@ -185,9 +182,9 @@
   }
   function readinessBadge(task) {
     var r = readiness(task);
-    if (r.ready) return '<span class="badge ok">Sẵn sàng</span>';
+    if (r.ready) return vizStatusPillHtml('done', { label: 'Sẵn sàng' });
     var names = r.pendingPredecessors.map(function (id) { var t = taskById(id); return t ? t.title : id; }).join(', ');
-    return '<span class="badge warn">Đang chờ: ' + esc(names) + '</span>';
+    return vizStatusPillHtml('pending', { label: 'Đang chờ: ' + names });
   }
   function pageHead(title, sub, actions) {
     return '<div class="page-head"><div><h1>' + esc(title) + '</h1>' + (sub ? '<p class="sub">' + esc(sub) + '</p>' : '') + '</div>' +
@@ -1513,7 +1510,7 @@
     var commentEd = canEdit();
     var ro = taskPanelReadonly();
     var html = '<div class="panel-backdrop" data-action="task-close"></div><aside class="detail-panel" aria-label="Chi tiết công việc">';
-    html += '<div class="modal-head"><div><h2>' + esc(t.title) + '</h2><p class="sub">' + esc(campaignName(t.campaignId)) + ' · ' + statusBadge(t.status) + (isOverdue(t) ? ' <span class="badge bad">Quá hạn</span>' : '') + '</p></div>' +
+    html += '<div class="modal-head"><div><h2>' + esc(t.title) + '</h2><p class="sub">' + esc(campaignName(t.campaignId)) + ' · ' + statusBadge(t.status) + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</p></div>' +
       '<button class="btn secondary small" data-action="task-close">Đóng ✕</button></div>';
     // R2-05: ưu tiên draft đang gõ dở khi render lại cùng một việc.
     var draft = (UI.taskDraft && UI.taskDraft.taskId === t.id) ? UI.taskDraft.values : null;
@@ -1638,7 +1635,11 @@
       '<label>Đến ngày<input type="date" name="to" value="' + esc(UI.ganttRange.to) + '"></label>' +
       '<button class="btn small secondary" type="submit">Đặt khoảng xem</button>' +
       (UI.ganttRange.from || UI.ganttRange.to ? ' <button class="btn small secondary" type="button" data-action="gantt-range-clear">Bỏ khoảng</button>' : '') + '</form>' +
-      '<span class="sub">Kéo thanh để dời lịch, kéo hai đầu để đổi độ dài — thay đổi chỉ áp dụng khi bấm Lưu. Thanh mờ phía dưới là kế hoạch đã duyệt.</span></div>';
+      '<span class="sub">Kéo thanh để dời lịch, kéo hai đầu để đổi độ dài — thay đổi chỉ áp dụng khi bấm Lưu. Thanh mờ phía dưới là kế hoạch đã duyệt.</span></div>' +
+      vizLegendHtml([
+        { label: 'Campaign', cat: 4 }, { label: 'Giai đoạn', cat: 3 }, { label: 'Hoạt động', cat: 2 }, { label: 'Việc', cat: 1 },
+        { label: 'Hoàn thành', tone: 'done' }, { label: 'Đang chạy', tone: 'running' }, { label: 'Trễ (viền đỏ)', tone: 'overdue' }, { label: 'Bị chặn (viền tím)', tone: 'blocked' }
+      ], { chartId: 'gantt-legend' });
     if (UI.ganttError) {
       head += '<div class="notice bad" role="alert"><strong>Chưa lưu được thay đổi lịch:</strong> ' + esc(UI.ganttError) +
         ' Bản xem trước vẫn được giữ để bạn thử lại.<br><button class="btn small" data-action="gantt-apply"' + dis(UI.ganttSaving) + '>Thử lại</button> <button class="btn small secondary" data-action="gantt-cancel">Hủy</button></div>';
@@ -1701,7 +1702,8 @@
       rows.map(function (r) {
         var indent = 8 + (r.depth || 0) * 18;
         var toggle = r.hasChildren ? '<button class="g2-toggle" data-action="gantt-toggle" data-id="' + esc(r.key) + '" aria-label="Thu/mở">' + (UI.ganttCollapsed[r.key] ? '▸' : '▾') + '</button>' : '<span class="g2-toggle-sp"></span>';
-        var name = '<div class="g2-name" style="padding-left:' + indent + 'px">' + toggle + '<button class="linklike g2-title" data-action="gantt-open" data-id="' + esc(r.key) + '" data-coll="' + esc(r.coll || '') + '" data-oid="' + esc(r.ganttId || r.id) + '">' + esc(r.title) + '</button></div>';
+        var rowTone = vizGanttRowTone(r);
+        var name = '<div class="g2-name" style="padding-left:' + indent + 'px">' + toggle + vizStatusDotHtml(rowTone, 'Trạng thái: ' + rowTone) + '<button class="linklike g2-title" data-action="gantt-open" data-id="' + esc(r.key) + '" data-coll="' + esc(r.coll || '') + '" data-oid="' + esc(r.ganttId || r.id) + '">' + esc(r.title) + '</button></div>';
         var track = '<div class="g2-track">';
         if (r.start && r.end) {
           var left = xOf(r.start), width = Math.max(pxPerDay, xOf(addDaysISO(r.end, 1)) - left);
@@ -1709,9 +1711,9 @@
           var isPv = ganttIsPreviewRow(r);
           var dragAttrs = ' data-gantt-drag="1" data-coll="' + esc(r.coll || '') + '" data-oid="' + esc(r.ganttId || r.id) + '" data-title="' + esc(r.title) + '" data-start="' + esc(r.start) + '" data-end="' + esc(r.end) + '" data-locked="' + (locked ? '1' : '0') + '"';
           if (r.milestone) {
-            track += '<div class="g2-mile" data-mile="1"' + dragAttrs + ' style="left:' + left + 'px" title="Mốc: ' + esc(r.title) + ' · ' + esc(D.formatDateVN(r.start)) + ' (kéo để dời mốc)"></div>';
+            track += '<div class="g2-mile" data-mile="1"' + dragAttrs + ' style="left:' + left + 'px' + (rowTone === 'overdue' ? ';outline:2px solid var(--st-overdue)' : (rowTone === 'blocked' ? ';outline:2px solid var(--st-blocked)' : '')) + '" title="Mốc: ' + esc(r.title) + ' · ' + esc(D.formatDateVN(r.start)) + ' (kéo để dời mốc)"></div>';
           } else {
-            track += '<div class="g2-bar kind-' + esc(r.kind) + (r.completed ? ' is-done' : '') + (isPv ? ' is-original' : '') + '"' + dragAttrs + ' style="left:' + left + 'px;width:' + width + 'px" title="' + esc(r.title) + ' · ' + esc(D.formatDateVN(r.start)) + ' — ' + esc(D.formatDateVN(r.end)) + (r.completed ? ' · Đã hoàn thành — không kéo được' : '') + '"></div>';
+            track += '<div class="g2-bar kind-' + esc(r.kind) + (r.completed ? ' is-done' : '') + (rowTone === 'overdue' ? ' is-overdue' : '') + (rowTone === 'blocked' ? ' is-blocked' : '') + (isPv ? ' is-original' : '') + '"' + dragAttrs + ' style="left:' + left + 'px;width:' + width + 'px" title="' + esc(r.title) + ' · ' + esc(D.formatDateVN(r.start)) + ' — ' + esc(D.formatDateVN(r.end)) + (r.completed ? ' · Đã hoàn thành — không kéo được' : '') + '"></div>';
           }
           if (isPv) {
             var pvL = xOf(ganttEffStart(r)), pvW = Math.max(pxPerDay, xOf(addDaysISO(ganttEffEnd(r), 1)) - pvL);
@@ -1733,9 +1735,12 @@
   // Thứ tự lồng: campaign → phase → activity → task (theo activityId →
   // phaseId → campaign) → subtask đệ quy KHÔNG giới hạn cấp (ưu tiên parentId).
   function ganttTaskRow(t, parentKey, depth, tasks) {
+    var blocked = !!t.isBlocked;
+    try { if (!blocked) blocked = Store.list('blockers').some(function (b) { return b.taskId === t.id && b.status === 'open'; }); } catch (e) { /* giữ cờ isBlocked */ }
     return {
       key: 'task:' + t.id, parentKey: parentKey, coll: 'tasks', id: t.id, ganttId: t.id, title: t.title,
-      kind: 'task', depth: depth, start: t.startDate, end: t.dueDate,
+      kind: 'task', depth: depth, start: t.startDate, end: t.dueDate, status: t.status,
+      overdue: isOverdue(t), blocked: blocked,
       bStart: t.baselineStartDate, bEnd: t.baselineDueDate, completed: isCompletedTask(t),
       milestone: isMilestoneTask(t), hasChildren: tasks.some(function (x) { return x.parentId === t.id; })
     };
@@ -1752,13 +1757,13 @@
   function appendPhaseActivityRows(rows, c, phases, acts, tasks, baseDepth, campKey) {
     phases.forEach(function (p) {
       var pkey = 'phase:' + p.id;
-      rows.push({ key: pkey, parentKey: campKey || undefined, coll: 'phases', id: p.id, ganttId: p.id, title: p.name, kind: 'phase', depth: baseDepth, start: p.startDate, end: p.endDate, hasChildren: acts.some(function (a) { return a.phaseId === p.id; }) || tasks.some(function (t) { return t.phaseId === p.id && !t.activityId; }) });
+      rows.push({ key: pkey, parentKey: campKey || undefined, coll: 'phases', id: p.id, ganttId: p.id, title: p.name, kind: 'phase', status: p.status, depth: baseDepth, start: p.startDate, end: p.endDate, hasChildren: acts.some(function (a) { return a.phaseId === p.id; }) || tasks.some(function (t) { return t.phaseId === p.id && !t.activityId; }) });
       acts.filter(function (a) { return a.phaseId === p.id; }).forEach(function (a) {
-        rows.push({ key: 'act:' + a.id, parentKey: pkey, coll: 'activities', id: a.id, ganttId: a.id, title: a.name, kind: 'activity', depth: baseDepth + 1, start: a.startDate || p.startDate, end: a.endDate || p.endDate, hasChildren: tasks.some(function (t) { return t.activityId === a.id; }) });
+        rows.push({ key: 'act:' + a.id, parentKey: pkey, coll: 'activities', id: a.id, ganttId: a.id, title: a.name, kind: 'activity', status: a.status, depth: baseDepth + 1, start: a.startDate || p.startDate, end: a.endDate || p.endDate, hasChildren: tasks.some(function (t) { return t.activityId === a.id; }) });
       });
     });
     acts.filter(function (a) { return !a.phaseId; }).forEach(function (a) {
-      rows.push({ key: 'act:' + a.id, parentKey: campKey || undefined, coll: 'activities', id: a.id, ganttId: a.id, title: a.name + (a.channel ? ' (' + a.channel + ')' : ''), kind: 'activity', depth: baseDepth, start: a.startDate, end: a.endDate, hasChildren: tasks.some(function (t) { return t.activityId === a.id; }) });
+      rows.push({ key: 'act:' + a.id, parentKey: campKey || undefined, coll: 'activities', id: a.id, ganttId: a.id, title: a.name + (a.channel ? ' (' + a.channel + ')' : ''), kind: 'activity', status: a.status, depth: baseDepth, start: a.startDate, end: a.endDate, hasChildren: tasks.some(function (t) { return t.activityId === a.id; }) });
     });
     var unassigned = tasks.some(function (t) { return !t.parentId && !t.phaseId && !t.activityId; });
     if (unassigned) {
@@ -1782,7 +1787,7 @@
       var phases = Store.list('phases').filter(function (x) { return x.campaignId === c.id; });
       var acts = Store.list('activities').filter(function (x) { return x.campaignId === c.id; });
       var tasks = allTasks.filter(function (x) { return x.campaignId === c.id; });
-      rows.push({ key: ckey, coll: 'campaigns', id: c.id, ganttId: c.id, title: c.name, kind: 'campaign', depth: 0, start: c.startDate, end: c.endDate, bStart: c.baselineStartDate, bEnd: c.baselineEndDate, hasChildren: !!(phases.length || acts.length || tasks.length), completed: c.status === 'completed' });
+      rows.push({ key: ckey, coll: 'campaigns', id: c.id, ganttId: c.id, title: c.name, kind: 'campaign', status: c.status, depth: 0, start: c.startDate, end: c.endDate, bStart: c.baselineStartDate, bEnd: c.baselineEndDate, hasChildren: !!(phases.length || acts.length || tasks.length), completed: c.status === 'completed' });
       appendPhaseActivityRows(rows, c, phases, acts, tasks, 1, ckey);
     });
     var independent = allTasks.filter(function (t) { return !t.campaignId; });
@@ -1797,7 +1802,7 @@
     var phases = Store.list('phases').filter(function (x) { return x.campaignId === c.id; });
     var acts = Store.list('activities').filter(function (x) { return x.campaignId === c.id; });
     var tasks = Store.list('tasks').filter(function (x) { return x.campaignId === c.id && !isArchived(x); });
-    rows.push({ key: 'camp:' + c.id, coll: 'campaigns', id: c.id, ganttId: c.id, title: c.name, kind: 'campaign', depth: 0, start: c.startDate, end: c.endDate, bStart: c.baselineStartDate, bEnd: c.baselineEndDate, hasChildren: !!(phases.length || acts.length || tasks.length), completed: c.status === 'completed' });
+    rows.push({ key: 'camp:' + c.id, coll: 'campaigns', id: c.id, ganttId: c.id, title: c.name, kind: 'campaign', status: c.status, depth: 0, start: c.startDate, end: c.endDate, bStart: c.baselineStartDate, bEnd: c.baselineEndDate, hasChildren: !!(phases.length || acts.length || tasks.length), completed: c.status === 'completed' });
     appendPhaseActivityRows(rows, c, phases, acts, tasks, 1, 'camp:' + c.id);
     return rows;
   }
@@ -1905,7 +1910,12 @@
       });
       if (blockedReal.length) reasons.push(blockedReal.length + ' việc đang bị chặn thật (có trở ngại đang mở hoặc việc trước đã quá hạn)');
       if (c.risks) reasons.push('Rủi ro đã ghi: ' + c.risks);
-      if (reasons.length) atRisk.push({ campaign: c, reason: reasons.join('. ') });
+      if (reasons.length) {
+        var odIds = {}; od.forEach(function (t) { odIds[t.id] = true; });
+        var blIds = {}; blockedReal.forEach(function (t) { blIds[t.id] = true; });
+        var affected = ct.filter(function (t) { return odIds[t.id] || blIds[t.id]; }).length;
+        atRisk.push({ campaign: c, reason: reasons.join('. '), overdueCount: od.length, blockedCount: blockedReal.length, totalCount: ct.length, affectedCount: affected });
+      }
     });
     var html = pageHead('Tổng quan', 'Tình hình Marketing tại thời điểm hiện tại' + (Store.mode === 'demo' ? ' — dữ liệu minh họa' : '') + '.',
       canEdit() ? '<a class="btn" href="#/campaigns">+ Tạo campaign</a>' : '');
@@ -1915,24 +1925,31 @@
         '<p><a class="btn" href="#/campaigns">Tới mục IMC & Campaigns để tạo</a> <a class="btn secondary" href="#/settings">Thiết lập BU/sản phẩm trước</a></p>');
     }
     html += '<div class="cards">' +
-      '<div class="card"><div class="big">' + running.length + '</div>Campaign đang chạy<br><a href="#/campaigns">Xem danh sách</a></div>' +
-      '<div class="card"><div class="big">' + approvals.length + '</div>Nội dung chờ duyệt<br><a href="#/approvals">Tới hộp duyệt</a></div>' +
-      '<div class="card"><div class="big">' + overdue.length + '</div>Việc quá hạn<br><a href="#/tasks">Xem công việc</a></div>' +
-      '<div class="card"><div class="big">' + atRisk.length + '</div>Campaign có nguy cơ trễ (có căn cứ thời gian/trở ngại)</div></div>';
+      vizKpiCardHtml({ label: 'Campaign đang chạy', valueText: String(running.length), tone: 'running', toneLabel: 'Đang chạy', href: '#/campaigns', hrefLabel: 'Xem danh sách', progress: campaigns.length ? { value: running.length, max: campaigns.length, pct: vizPct(running.length, campaigns.length), tone: 'running', detail: running.length + '/' + campaigns.length + ' campaign (' + fmtPct(vizPct(running.length, campaigns.length)) + ')' } : null }) +
+      vizKpiCardHtml({ label: 'Nội dung chờ duyệt', valueText: String(approvals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/approvals', hrefLabel: 'Tới hộp duyệt' }) +
+      vizKpiCardHtml({ label: 'Việc quá hạn', valueText: String(overdue.length), tone: 'overdue', toneLabel: 'Quá hạn', href: '#/tasks', hrefLabel: 'Xem công việc', progress: tasks.length ? { value: overdue.length, max: tasks.length, pct: vizPct(overdue.length, tasks.length), tone: 'overdue', detail: overdue.length + '/' + tasks.length + ' việc (' + fmtPct(vizPct(overdue.length, tasks.length)) + ')' } : null }) +
+      vizKpiCardHtml({ label: 'Campaign nguy cơ trễ', valueText: String(atRisk.length), tone: 'overdue', toneLabel: 'Nguy cơ trễ', sub: 'Có căn cứ thời gian/trở ngại', progress: campaigns.length ? { value: atRisk.length, max: campaigns.length, pct: vizPct(atRisk.length, campaigns.length), tone: 'overdue', detail: atRisk.length + '/' + campaigns.length + ' campaign (' + fmtPct(vizPct(atRisk.length, campaigns.length)) + ')' } : null }) +
+      '</div>';
     html += '<h2>Campaign đang chạy</h2>';
     if (!running.length && campaigns.length) html += '<div class="state-box">Chưa có campaign nào đang chạy.</div>';
     running.forEach(function (c) {
-      var p = D.campaignProgress(tasks.filter(function (t) { return t.campaignId === c.id; }));
+      var ctasks2 = tasks.filter(function (t) { return t.campaignId === c.id; });
+      var p = D.campaignProgress(ctasks2);
+      var tone = p.percentage >= 100 ? 'done' : (ctasks2.some(isOverdue) ? 'overdue' : 'running');
       html += '<div class="card"><strong><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></strong><p class="sub">' + esc(D.formatDateVN(c.startDate)) + ' — ' + esc(D.formatDateVN(c.endDate)) + ' · Người phụ trách: ' + esc(memberName(c.ownerId)) + '</p>' +
-        '<div class="progress"><div style="width:' + p.percentage + '%"></div></div><p class="sub">Tiến độ (chỉ tính việc chi tiết, không tính việc cha): ' + p.completed + '/' + p.total + ' (' + p.percentage + '%)</p></div>';
+        vizProgressBarHtml({ value: p.completed, max: p.total, pct: p.percentage, tone: tone, detail: 'Tiến độ (chỉ tính việc chi tiết, không tính việc cha): ' + p.completed + '/' + p.total + ' (' + p.percentage + '%)' }) + '</div>';
     });
     html += workspaceChartsHtml();
     html += '<h2>Nguy cơ trễ (kèm lý do cụ thể)</h2>';
     if (collLoadingOrError('tasks')) html += collectionBanner('tasks');
     else if (!atRisk.length) html += '<div class="state-box">Không có campaign nào có dấu hiệu trễ có căn cứ.</div>';
-    atRisk.forEach(function (r) {
-      html += '<div class="notice warn"><strong><a href="#/campaigns/' + esc(r.campaign.id) + '">' + esc(r.campaign.name) + '</a></strong> — ' + esc(r.reason) + '</div>';
-    });
+    else {
+      html += '<div data-viz="overview-risk-table">' + tbl('<tr><th>Campaign</th><th>Việc trễ</th><th>Việc bị chặn</th><th>Tỉ lệ việc trễ/bị chặn</th><th>Lý do cụ thể</th></tr>' + atRisk.map(function (r) {
+        return '<tr><td><strong><a href="#/campaigns/' + esc(r.campaign.id) + '">' + esc(r.campaign.name) + '</a></strong></td><td>' + fmtNum(r.overdueCount) + '</td><td>' + fmtNum(r.blockedCount) + '</td><td>' +
+          vizCellBarHtml({ value: r.affectedCount, max: r.totalCount, tone: 'overdue', text: r.affectedCount + '/' + r.totalCount + ' việc bị ảnh hưởng (' + fmtPct(vizPct(r.affectedCount, r.totalCount)) + ')' }) +
+          '</td><td><span class="sub">' + esc(r.reason) + '</span></td></tr>';
+      }).join('')) + '</div>';
+    }
     html += '<h2>Chờ duyệt & quá hạn</h2><div class="grid2"><div class="panel"><h3>Chờ duyệt (' + approvals.length + ')</h3>' +
       (approvals.length ? '<ul class="clean">' + approvals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> · phiên bản nội dung số ' + esc(a.revision) + ' · từ ' + esc(memberName(a.requestedBy)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung chờ duyệt.</p>') + '</div>' +
       '<div class="panel"><h3>Quá hạn (' + overdue.length + ')</h3>' +
@@ -1972,7 +1989,7 @@
       if (!list.length) return '<p class="sub">' + esc(emptyText) + '</p>';
       return tbl('<tr><th>Việc</th><th>Campaign</th><th>Mốc cần hoàn thành</th><th>Trạng thái</th><th>Phụ thuộc</th></tr>' +
         list.map(function (t) {
-          return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button></td><td>' + esc(campaignName(t.campaignId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + (isOverdue(t) ? ' <span class="badge bad">Quá hạn</span>' : '') + '</td><td>' + statusBadge(t.status) + '</td><td>' + readinessBadge(t) + '</td></tr>';
+          return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button></td><td>' + esc(campaignName(t.campaignId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td><td>' + statusBadge(t.status) + '</td><td>' + readinessBadge(t) + '</td></tr>';
         }).join(''));
     }
     groups.forEach(function (g) { html += '<h2>' + esc(g[0]) + ' (' + g[1].length + ')</h2>' + taskList(g[1], 'Không có việc nào trong nhóm này.'); });
@@ -2076,9 +2093,11 @@
     }
     html += '<h2>Biểu đồ kế hoạch tổng thể (mọi campaign)</h2>' + ganttHtml(ganttRowsPortfolio(), Store.list('dependencies'));
     html += '<h2>Danh sách campaign (' + campaigns.length + ')</h2><div class="cards">' + campaigns.map(function (c) {
-      var p = D.campaignProgress(Store.list('tasks').filter(function (t) { return t.campaignId === c.id && !isArchived(t); }));
+      var ctasks3 = Store.list('tasks').filter(function (t) { return t.campaignId === c.id && !isArchived(t); });
+      var p = D.campaignProgress(ctasks3);
+      var tone = p.percentage >= 100 ? 'done' : (ctasks3.some(isOverdue) ? 'overdue' : 'running');
       return '<div class="card"><strong><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></strong><p class="sub">' + statusBadge(c.status) + ' · ' + esc(D.formatDateVN(c.startDate)) + ' — ' + esc(D.formatDateVN(c.endDate)) + ' · ' + esc(memberName(c.ownerId)) + '</p>' +
-        '<div class="progress"><div style="width:' + p.percentage + '%"></div></div><p class="sub">Tiến độ: ' + p.completed + '/' + p.total + ' việc chi tiết (' + p.percentage + '%)</p>' +
+        vizProgressBarHtml({ value: p.completed, max: p.total, pct: p.percentage, tone: tone, detail: 'Tiến độ: ' + p.completed + '/' + p.total + ' việc chi tiết (' + p.percentage + '%)' }) +
         '<p><a class="btn small" href="#/campaigns/' + esc(c.id) + '">Mở chi tiết</a> <button class="btn small secondary" data-action="editor-open" data-kind="campaign" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="campaigns" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Lưu trữ</button></p></div>';
     }).join('') + '</div>';
     var archived = archivedList('campaigns');
@@ -2158,7 +2177,7 @@
     ];
   }
   function vizBudgetGroupsChartHtml(groups) {
-    var legend = '<div class="viz-legend"><span><span class="viz-dot" style="background:var(--accent)"></span>Phân bổ</span><span><span class="viz-dot" style="background:#0e9384"></span>Thực chi</span><span><span class="viz-dot" style="background:#f79009"></span>Cam kết chưa trả</span></div>';
+    var legend = vizLegendHtml([{ label: 'Phân bổ', series: 'alloc' }, { label: 'Thực chi', series: 'actual' }, { label: 'Cam kết chưa trả', series: 'commit' }], { chartId: 'budget-groups-legend' });
     return '<div class="viz-chart" data-viz="budget-groups-chart"><div class="viz-scroll-inner">' + legend + (groups || []).map(function (g) {
       var max = 0;
       (g.bars || []).forEach(function (b) { var v = Number(b.value) || 0; if (v > max) max = v; });
@@ -2170,7 +2189,7 @@
     return '<div class="viz-chart" data-viz="kpi-progress-chart">' + (rows || []).map(function (r) {
       var st = r.state || { kind: 'insufficient_data', label: 'Chưa đủ dữ liệu' };
       if (st.kind !== 'ok') {
-        return '<div class="viz-row viz-kpi-row" data-viz-kpi-state="insufficient_data"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-track viz-track-empty"><span class="viz-fill" style="width:0%"></span></span><span class="viz-value"><span class="badge warn">' + esc(st.label || 'Chưa đủ dữ liệu') + '</span></span></div>';
+        return '<div class="viz-row viz-kpi-row" data-viz-kpi-state="insufficient_data"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-track viz-track-empty"><span class="viz-fill" style="width:0%"></span></span><span class="viz-value">' + vizStatusPillHtml('pending', { label: st.label || 'Chưa đủ dữ liệu' }) + '</span></div>';
       }
       var pctText = st.pct === null ? 'Chưa đặt mục tiêu' : fmtPct(st.pct);
       return '<div class="viz-row viz-kpi-row" data-viz-kpi-state="ok"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(st.pct) + '%"></span></span><span class="viz-value">' + esc(r.actualText || '') + ' / ' + esc(r.targetText || '—') + ' (' + esc(pctText) + ')</span></div>';
@@ -2187,14 +2206,266 @@
     var rows = (monthly || []).filter(function (m) { return m.currency === currency; });
     var max = 0;
     rows.forEach(function (m) { max = Math.max(max, Number(m.inTotal) || 0, Number(m.outTotal) || 0); });
-    return '<div class="viz-chart" data-viz="cash-columns"><div class="viz-legend"><span><span class="viz-dot" style="background:#067647"></span>Thu</span><span><span class="viz-dot" style="background:#b54708"></span>Chi</span><span class="sub">Đơn vị tiền: ' + esc(currency) + '</span></div><div class="viz-cols">' + rows.map(function (m) {
+    return '<div class="viz-chart" data-viz="cash-columns">' + vizLegendHtml([{ label: 'Thu', series: 'in' }, { label: 'Chi', series: 'out' }, { label: 'Đơn vị tiền: ' + currency, noDot: true }], { chartId: 'cash-columns-legend' }) + '<div class="viz-cols">' + rows.map(function (m) {
       var hIn = max > 0 ? vizBarWidth(Number(m.inTotal) / max * 100) : 0;
       var hOut = max > 0 ? vizBarWidth(Number(m.outTotal) / max * 100) : 0;
       return '<div class="viz-col"><div class="viz-col-bars"><span class="viz-col-bar is-in" style="height:' + Math.max(2, hIn) + '%" title="Thu ' + esc(fmtMoney(m.inTotal, currency)) + '"></span><span class="viz-col-bar is-out" style="height:' + Math.max(2, hOut) + '%" title="Chi ' + esc(fmtMoney(m.outTotal, currency)) + '"></span></div><div class="viz-col-label">' + esc(vizMonthLabel(m.month)) + '</div><div class="sub">Thu ' + esc(fmtMoney(m.inTotal, currency)) + '<br>Chi ' + esc(fmtMoney(m.outTotal, currency)) + '<br>Ròng ' + esc(fmtMoney(m.net, currency)) + '</div></div>';
     }).join('') + '</div></div>';
   }
+  // ---------- WAVE-A-VIZ2: helper thuần hệ trực quan thống nhất ----------
+  // Map mã trạng thái -> tông chuẩn (DESIGN_SYSTEM_SPEC §2.3). Nhãn tiếng
+  // Việt KHÔNG đổi (vẫn qua labelStatus ở adapter); đây chỉ là tông màu.
+  var STATUS_TONE = {
+    active: 'running', in_progress: 'running', open: 'running', scheduled: 'running',
+    completed: 'done', complete: 'done', done: 'done', approved: 'done', published: 'done',
+    settled: 'done', resolved: 'done', executed: 'done', converted: 'done', accepted: 'done', final: 'done',
+    overdue: 'overdue', rejected: 'overdue',
+    pending: 'pending', pending_approval: 'pending', in_review: 'pending', ready_for_review: 'pending',
+    submitted: 'pending', needs_review: 'pending', needs_reapproval: 'pending', changes_requested: 'pending',
+    partial: 'pending', partially_actualised: 'pending',
+    blocked: 'blocked',
+    todo: 'todo', not_started: 'todo',
+    cancelled: 'cancelled', canceled: 'cancelled',
+    draft: 'neutral', editing: 'neutral', planning: 'neutral', new: 'neutral',
+    paused: 'neutral', archived: 'neutral', closed: 'neutral'
+  };
+  function vizStatusTone(status, context) {
+    var s = String(status || '').toLowerCase();
+    if (!s) return 'neutral';
+    if (context === 'blocker' && s === 'open') return 'blocked';
+    return STATUS_TONE[s] || 'neutral';
+  }
+  function vizStatusPillHtml(status, opts) {
+    opts = opts || {};
+    var tone = opts.tone || vizStatusTone(status, opts.context);
+    var label = opts.label || (typeof labelStatus === 'function' ? labelStatus(status) : String(status || '—'));
+    return '<span class="badge st-' + tone + (tone === 'cancelled' ? ' viz-cancelled' : '') + '" data-viz="status-pill" data-viz-tone="' + tone + '"' + (opts.derived ? ' data-viz-derived="1"' : '') + '>' + esc(label) + '</span>';
+  }
+  function vizStatusDotHtml(tone, title) {
+    var t = tone || 'neutral';
+    return '<span class="viz-dot st-bg-' + esc(t) + '" data-viz="status-dot" data-viz-tone="' + esc(t) + '"' + (title ? ' title="' + esc(title) + '"' : '') + '></span>';
+  }
+  function vizLegendHtml(items, opts) {
+    opts = opts || {};
+    if (!items || !items.length) return '';
+    return '<div class="viz-legend" data-viz="' + esc(opts.chartId || 'legend') + '">' + items.map(function (it) {
+      var dotCls = it.tone ? 'st-bg-' + it.tone : (it.series ? 'series-' + it.series : (it.cat ? 'cat-' + it.cat : 'st-bg-neutral'));
+      return '<span>' + (it.noDot ? '' : '<span class="viz-dot ' + dotCls + '"></span>') + esc(it.label) + (it.valueText ? ' — ' + esc(it.valueText) : '') + '</span>';
+    }).join('') + '</div>';
+  }
+  function vizEmptyChartHtml(text) {
+    return '<div class="state-box" data-viz="empty-chart">' + esc(text || 'Chưa có dữ liệu để vẽ biểu đồ.') + '</div>';
+  }
+  function vizSegClass(seg, idx) {
+    if (seg.tone) return 'st-fill-' + seg.tone;
+    if (seg.series) return 'series-' + seg.series;
+    if (seg.cat) return 'cat-' + seg.cat;
+    return 'cat-' + ((idx % 8) + 1);
+  }
+  function vizSegVar(seg, idx) {
+    if (seg.tone) return 'var(--st-' + seg.tone + ')';
+    if (seg.series) return 'var(--series-' + seg.series + ')';
+    if (seg.cat) return 'var(--cat-' + seg.cat + ')';
+    return 'var(--cat-' + ((idx % 8) + 1) + ')';
+  }
+  function vizSegDotItem(seg, idx, valueText) {
+    var item = { label: seg.label, valueText: valueText };
+    if (seg.tone) item.tone = seg.tone; else if (seg.series) item.series = seg.series; else if (seg.cat) item.cat = seg.cat; else item.cat = (idx % 8) + 1;
+    return item;
+  }
+  function vizProgressBarHtml(opts) {
+    opts = opts || {};
+    var pct = (opts.pct !== null && opts.pct !== undefined) ? Number(opts.pct) : vizPct(opts.value, opts.max);
+    var tone = opts.tone || (pct !== null && pct >= 100 ? 'done' : 'running');
+    var detail = opts.detail || ((opts.value !== null && opts.value !== undefined && opts.max !== null && opts.max !== undefined)
+      ? fmtNum(opts.value) + ' / ' + fmtNum(opts.max) + ' (' + fmtPct(pct) + ')'
+      : (pct !== null ? fmtPct(pct) : '—'));
+    return '<div class="viz-progress" data-viz="progress-bar" data-viz-tone="' + esc(tone) + '">' +
+      (opts.label ? '<div class="sub"><strong>' + esc(opts.label) + '</strong></div>' : '') +
+      '<span class="viz-track' + (pct === null ? ' viz-track-empty' : '') + '"><span class="viz-fill st-fill-' + esc(tone) + '" style="width:' + vizBarWidth(pct) + '%"></span></span>' +
+      '<span class="sub">' + esc(detail) + '</span></div>';
+  }
+  function vizHBarHtml(opts) {
+    opts = opts || {};
+    var cls = opts.series ? 'series-' + opts.series : 'st-fill-' + (opts.tone || 'running');
+    var w = (opts.max && Number(opts.max) > 0 && opts.value !== null && opts.value !== undefined && !isNaN(Number(opts.value))) ? vizBarWidth(Number(opts.value) / Number(opts.max) * 100) : 0;
+    return '<div class="viz-row" data-viz="hbar"><span class="viz-label">' + esc(opts.label || '') + (opts.sub ? '<br><span class="sub">' + esc(opts.sub) + '</span>' : '') + '</span><span class="viz-track"><span class="viz-fill ' + cls + '" style="width:' + w + '%"></span></span><span class="viz-value">' + esc(opts.valueText || '') + '</span></div>';
+  }
+  function vizCellBarHtml(opts) {
+    opts = opts || {};
+    var pct = vizPct(opts.value, opts.max);
+    var tone = opts.tone || (pct !== null && pct >= 100 ? 'done' : 'running');
+    var text = opts.text || ((opts.value !== null && opts.value !== undefined ? fmtNum(opts.value) : '—') + ' / ' + (opts.max !== null && opts.max !== undefined ? fmtNum(opts.max) : '—') + ' (' + fmtPct(pct) + ')');
+    return '<div class="viz-mini viz-cell" data-viz="cell-bar" data-viz-tone="' + esc(tone) + '"><span class="viz-track' + (pct === null ? ' viz-track-empty' : '') + '"><span class="viz-fill st-fill-' + esc(tone) + '" style="width:' + vizBarWidth(pct) + '%"></span></span><span class="sub">' + esc(text) + '</span></div>';
+  }
+  function vizStackedBarHtml(opts) {
+    opts = opts || {};
+    var segs = (opts.segments || []).filter(function (s) { return s && Number(s.value) > 0; });
+    var total = (opts.total !== null && opts.total !== undefined) ? Number(opts.total) : segs.reduce(function (a, s) { return a + (Number(s.value) || 0); }, 0);
+    if (!segs.length || !(total > 0)) return vizEmptyChartHtml(opts.emptyText || 'Chưa có dữ liệu để vẽ thanh tỉ trọng.');
+    var bar = segs.map(function (s, i) {
+      var pct = vizPct(s.value, total);
+      return '<span class="viz-stacked-seg ' + vizSegClass(s, i) + '" style="width:' + vizBarWidth(pct) + '%" title="' + esc(s.label) + ': ' + esc(fmtNum(s.value)) + ' (' + esc(fmtPct(pct)) + ')"></span>';
+    }).join('');
+    var legend = vizLegendHtml(segs.map(function (s, i) { return vizSegDotItem(s, i, fmtNum(s.value) + ' (' + fmtPct(vizPct(s.value, total)) + ')'); }));
+    return '<div class="viz-chart" data-viz="stacked-bar">' + (opts.unitLabel ? '<p class="sub">Mẫu số: <strong>' + esc(fmtNum(total)) + '</strong> ' + esc(opts.unitLabel) + '</p>' : '') +
+      '<div class="viz-stacked">' + bar + '</div>' + legend + '</div>';
+  }
+  function vizDonutSvgHtml(opts) {
+    opts = opts || {};
+    var segs = (opts.segments || []).filter(function (s) { return s && Number(s.value) > 0; });
+    var total = (opts.total !== null && opts.total !== undefined) ? Number(opts.total) : segs.reduce(function (a, s) { return a + (Number(s.value) || 0); }, 0);
+    if (!segs.length || !(total > 0)) return vizEmptyChartHtml(opts.emptyText || 'Chưa có dữ liệu để vẽ biểu đồ vòng.');
+    var C = 2 * Math.PI * 42;
+    var cum = 0;
+    var circles = segs.map(function (s, i) {
+      var len = Number(s.value) / total * C;
+      var html = '<circle cx="60" cy="60" r="42" fill="none" style="stroke:' + vizSegVar(s, i) + '" stroke-width="16" stroke-dasharray="' + (Math.round(len * 100) / 100) + ' ' + (Math.round((C - len) * 100) / 100) + '" stroke-dashoffset="' + (Math.round(-cum * 100) / 100) + '" transform="rotate(-90 60 60)"></circle>';
+      cum += len;
+      return html;
+    }).join('');
+    var titleText = (opts.centerLabel || 'Tổng') + ': ' + fmtNum(total) + ' — ' + segs.map(function (s) { return s.label + ' ' + fmtNum(s.value) + ' (' + fmtPct(vizPct(s.value, total)) + ')'; }).join('; ');
+    var legendRows = segs.map(function (s, i) {
+      var item = vizSegDotItem(s, i, '');
+      var dotCls = item.tone ? 'st-bg-' + item.tone : (item.series ? 'series-' + item.series : 'cat-' + item.cat);
+      return '<div class="viz-donut-row"><span class="viz-dot ' + dotCls + '"></span><span>' + esc(s.label) + '</span><strong>' + esc(fmtNum(s.value)) + ' (' + esc(fmtPct(vizPct(s.value, total))) + ')</strong></div>';
+    }).join('');
+    return '<div class="viz-chart" data-viz="donut"><div class="viz-donut-wrap">' +
+      '<svg class="viz-donut-svg" viewBox="0 0 120 120" role="img" aria-label="' + esc(titleText) + '"><title>' + esc(titleText) + '</title>' +
+      '<circle cx="60" cy="60" r="42" fill="none" stroke="var(--track)" stroke-width="16"></circle>' + circles +
+      '<text x="60" y="58" text-anchor="middle" font-size="15" font-weight="800" fill="var(--text)">' + esc(fmtNum(total)) + '</text>' +
+      '<text x="60" y="74" text-anchor="middle" font-size="9" fill="var(--muted)">' + esc(opts.centerLabel || 'Tổng') + '</text></svg>' +
+      '<div class="viz-donut-legend">' + legendRows + (opts.unitLabel ? '<p class="sub">Mẫu số: <strong>' + esc(fmtNum(total)) + '</strong> ' + esc(opts.unitLabel) + '</p>' : '') + '</div>' +
+      '</div></div>';
+  }
+  function vizLineAreaSvgHtml(opts) {
+    opts = opts || {};
+    var points = opts.points || [];
+    var valid = points.filter(function (p) { return p && p.y !== null && p.y !== undefined && !isNaN(Number(p.y)); });
+    if (!points.length || !valid.length) return vizEmptyChartHtml(opts.emptyText || 'Chưa có dữ liệu để vẽ biểu đồ đường.');
+    var ys = valid.map(function (p) { return Number(p.y); });
+    var min = Math.min.apply(null, ys), max = Math.max.apply(null, ys);
+    if (min === max) { min -= 1; max += 1; }
+    var W = 320, H = 120, padL = 10, padR = 46, padT = 12, padB = 20;
+    var plotW = W - padL - padR, plotH = H - padT - padB, baseY = padT + plotH;
+    function xFor(i) { return points.length <= 1 ? padL + plotW / 2 : padL + i / (points.length - 1) * plotW; }
+    function yFor(v) { return padT + (1 - (Number(v) - min) / (max - min)) * plotH; }
+    var runs = [], cur = [];
+    points.forEach(function (p, i) {
+      if (p && p.y !== null && p.y !== undefined && !isNaN(Number(p.y))) cur.push(i);
+      else if (cur.length) { runs.push(cur); cur = []; }
+    });
+    if (cur.length) runs.push(cur);
+    var shapes = '';
+    runs.forEach(function (run) {
+      if (run.length < 2) return;
+      var d = run.map(function (i, j) { return (j === 0 ? 'M' : 'L') + (Math.round(xFor(i) * 10) / 10) + ',' + (Math.round(yFor(points[i].y) * 10) / 10); }).join(' ');
+      shapes += '<path d="' + d + ' L' + (Math.round(xFor(run[run.length - 1]) * 10) / 10) + ',' + baseY + ' L' + (Math.round(xFor(run[0]) * 10) / 10) + ',' + baseY + ' Z" fill="var(--st-running)" opacity="0.12"></path>';
+      shapes += '<path d="' + d + '" fill="none" stroke="var(--st-running)" stroke-width="2"></path>';
+    });
+    var dots = points.map(function (p, i) {
+      if (!p || p.y === null || p.y === undefined || isNaN(Number(p.y))) return '';
+      return '<circle cx="' + (Math.round(xFor(i) * 10) / 10) + '" cy="' + (Math.round(yFor(p.y) * 10) / 10) + '" r="3" fill="var(--st-running)"><title>' + esc(p.x) + ': ' + esc(fmtNum(p.y)) + '</title></circle>';
+    }).join('');
+    var labelIdx = {};
+    var step = Math.max(1, Math.ceil(points.length / 5));
+    for (var li = 0; li < points.length; li += step) labelIdx[li] = true;
+    labelIdx[points.length - 1] = true;
+    var xlabels = points.map(function (p, i) {
+      if (!labelIdx[i] || !p) return '';
+      return '<text x="' + (Math.round(xFor(i) * 10) / 10) + '" y="' + (H - 5) + '" text-anchor="middle" font-size="9" fill="var(--muted)">' + esc(p.x) + '</text>';
+    }).join('');
+    var firstV = valid[0], lastV = valid[valid.length - 1];
+    var lastIdx = points.indexOf(lastV);
+    var lastLabel = '<text x="' + Math.min(W - 2, (Math.round(xFor(lastIdx) * 10) / 10) + 6) + '" y="' + (Math.round(yFor(lastV.y) * 10) / 10 + 3) + '" font-size="10" font-weight="700" fill="var(--text)">' + esc(fmtNum(lastV.y)) + '</text>';
+    var titleText = (opts.yLabel ? opts.yLabel + ' — ' : '') + 'Điểm đầu: ' + firstV.x + ' = ' + fmtNum(firstV.y) + '; điểm cuối: ' + lastV.x + ' = ' + fmtNum(lastV.y);
+    return '<div class="viz-chart" data-viz="line-area"><svg class="viz-line-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(titleText) + '"><title>' + esc(titleText) + '</title>' +
+      '<line x1="' + padL + '" y1="' + baseY + '" x2="' + (W - padR) + '" y2="' + baseY + '" stroke="var(--line)"></line>' + shapes + dots + xlabels + lastLabel + '</svg>' +
+      (opts.yLabel ? '<p class="sub">' + esc(opts.yLabel) + ': điểm đầu ' + esc(fmtNum(firstV.y)) + ' · điểm cuối ' + esc(fmtNum(lastV.y)) + '</p>' : '') + '</div>';
+  }
+  function vizDeltaHtml(opts) {
+    opts = opts || {};
+    if (opts.current === null || opts.current === undefined || opts.previous === null || opts.previous === undefined || isNaN(Number(opts.current)) || isNaN(Number(opts.previous))) return '';
+    var cur = Number(opts.current), prev = Number(opts.previous), diff = cur - prev;
+    if (prev === 0 && diff !== 0) return '';
+    var pct = vizPct(diff, Math.abs(prev));
+    var good = opts.invert ? diff < 0 : diff > 0;
+    var tone = diff === 0 ? 'neutral' : (good ? 'done' : 'overdue');
+    var arrow = diff > 0 ? '▲' : (diff < 0 ? '▼' : '—');
+    return '<span class="viz-delta viz-delta-' + tone + '" data-viz="delta" data-viz-tone="' + tone + '">' + arrow + ' ' + esc(fmtNum(Math.abs(diff))) + (opts.unit ? ' ' + esc(opts.unit) : '') + (pct !== null ? ' (' + esc(fmtPct(Math.abs(pct))) + ')' : '') + '</span>';
+  }
+  function vizKpiCardHtml(opts) {
+    opts = opts || {};
+    var tone = opts.tone || 'neutral';
+    var pill = (tone && opts.toneLabel) ? '<span class="badge st-' + esc(tone) + '">' + esc(opts.toneLabel) + '</span>' : '';
+    var progressHtml = '';
+    if (opts.progress !== null && opts.progress !== undefined) {
+      progressHtml = (typeof opts.progress === 'object') ? vizProgressBarHtml(opts.progress) : vizProgressBarHtml({ pct: Number(opts.progress), tone: tone });
+    }
+    var deltaHtml = opts.deltaHtml || (opts.delta ? '<div class="viz-kpi-delta">' + esc(opts.delta) + '</div>' : '');
+    var subHtml = opts.subHtml || (opts.sub ? '<div class="sub">' + esc(opts.sub) + '</div>' : '');
+    var linkHtml = opts.href ? '<div><a href="' + esc(opts.href) + '">' + esc(opts.hrefLabel || 'Xem chi tiết') + '</a></div>' : '';
+    return '<div class="card viz-kpi-card" data-viz="kpi-card" data-viz-tone="' + esc(tone) + '">' +
+      '<div class="viz-kpi-top"><span class="viz-kpi-label">' + esc(opts.label || '') + '</span>' + pill + '</div>' +
+      '<div class="big">' + esc(opts.valueText !== null && opts.valueText !== undefined ? opts.valueText : '—') + '</div>' +
+      progressHtml + deltaHtml + subHtml + linkHtml + '</div>';
+  }
+  function vizCalDotsHtml(dayItems) {
+    var tones = [];
+    var total = 0;
+    (dayItems || []).forEach(function (it) {
+      if (!it) return;
+      var n = Math.max(0, Math.floor(Number(it.count) || 0));
+      total += n;
+      for (var i = 0; i < n && tones.length < 100; i++) tones.push(it.tone || 'neutral');
+    });
+    if (!total) return '';
+    var dots = tones.slice(0, 3).map(function (t) { return vizStatusDotHtml(t); }).join('');
+    return '<span class="viz-cal-dots" data-viz="cal-dots">' + dots + (total > 3 ? '<span class="viz-cal-more">+' + (total - 3) + '</span>' : '') + '</span>';
+  }
+  function vizWorkloadBarHtml(row) {
+    row = row || {};
+    var hours = (row.hours === null || row.hours === undefined) ? null : Number(row.hours);
+    var cap = (row.capacityHours === null || row.capacityHours === undefined) ? null : Number(row.capacityHours);
+    var head = row.label ? '<strong>' + esc(row.label) + '</strong><br>' : '';
+    if (cap === null) {
+      return '<div class="viz-mini viz-workload" data-viz="workload-bar" data-viz-state="unconfigured">' + head +
+        '<span class="viz-track viz-track-empty"><span class="viz-fill" style="width:0%"></span></span>' +
+        '<span class="sub">' + esc(fmtNum(hours)) + ' giờ · Chưa cấu hình năng lực</span> <span class="badge st-pending">Chưa cấu hình</span></div>';
+    }
+    var pct = vizPct(hours, cap);
+    var over = !!row.overCapacity || (pct !== null && pct > 100);
+    var tone = over ? 'overdue' : 'done';
+    return '<div class="viz-mini viz-workload" data-viz="workload-bar" data-viz-tone="' + tone + '">' + head +
+      '<span class="viz-track"><span class="viz-fill st-fill-' + tone + '" style="width:' + vizBarWidth(pct) + '%"></span></span>' +
+      '<span class="sub">' + esc(fmtNum(hours)) + ' / ' + esc(fmtNum(cap)) + ' giờ (' + esc(fmtPct(pct)) + ')</span>' +
+      (over ? ' <span class="badge st-overdue">Vượt năng lực</span>' : '') + '</div>';
+  }
   // R3.1-VIZ-PURE-END
   // --- Adapter: chuẩn bị dữ liệu chart TỪ các hàm domain/Store hiện có ---
+  // WAVE-A-VIZ2 adapter: tông SUY RA của task (SPEC §2.3) — chỉ đọc kết quả
+  // D.assessTaskRisk + isOverdue có sẵn, không định nghĩa rủi ro mới.
+  // Trả 'overdue' | 'blocked' | null (không có tình huống suy ra).
+  function vizTaskDerivedTone(t) {
+    if (!t || isCompletedTask(t)) return null;
+    try {
+      var r = D.assessTaskRisk(t, { today: todayISO(), tasks: Store.list('tasks'), dependencies: Store.list('dependencies'), blockers: Store.list('blockers') });
+      if (r && r.reasons && r.reasons.indexOf('overdue') !== -1) return 'overdue';
+      if (r && r.reasons && (r.reasons.indexOf('blocker') !== -1 || r.reasons.indexOf('negative_slack') !== -1)) return 'blocked';
+    } catch (e) { /* rơi xuống kiểm tra quá hạn đơn giản bên dưới */ }
+    if (isOverdue(t)) return 'overdue';
+    return null;
+  }
+  // Tông hiển thị của 1 hàng Gantt: hoàn thành -> done; suy ra trễ/chặn qua
+  // adapter trên (với task); còn lại theo tông của status gốc.
+  function vizGanttRowTone(r) {
+    if (!r) return 'neutral';
+    if (r.completed) return 'done';
+    if (r.overdue) return 'overdue';
+    if (r.blocked) return 'blocked';
+    if (r.coll === 'tasks' && r.id) { var t = taskById(r.id); var dt = t ? vizTaskDerivedTone(t) : null; if (dt) return dt; }
+    return vizStatusTone(r.status || '');
+  }
   function vizKpiRowFor(k) {
     var roll = kpiRollupFor(k);
     var mode = String(k.aggregationMode || k.aggregation_mode || 'direct').toLowerCase();
@@ -2288,7 +2559,7 @@
     var sorted = txns.slice().sort(function (a, b) { return String(b.occurredOn || b.occurred_on || b.date || '').localeCompare(String(a.occurredOn || a.occurred_on || a.date || '')); });
     html += '<h4>Giao dịch Thu–Chi (' + txns.length + ')</h4>' + tbl('<tr><th>Ngày</th><th>Tài khoản</th><th>Thu / Chi</th><th>Số tiền</th><th>Nội dung</th></tr>' + sorted.slice(0, 50).map(function (t) {
       var cur = t.currency || accCur(t.accountId);
-      return '<tr><td>' + esc(D.formatDateVN(t.occurredOn || t.occurred_on || t.date)) + '</td><td>' + esc(accName(t.accountId)) + '</td><td>' + (t.direction === 'in' ? '<span class="badge ok">Thu</span>' : '<span class="badge warn">Chi</span>') + '</td><td>' + fmtMoney(t.amount, cur) + '</td><td>' + esc(t.title || t.note || t.description || '—') + '</td></tr>';
+      return '<tr><td>' + esc(D.formatDateVN(t.occurredOn || t.occurred_on || t.date)) + '</td><td>' + esc(accName(t.accountId)) + '</td><td>' + (t.direction === 'in' ? '<span class="badge pill-series-in" data-viz="cash-pill">Thu</span>' : '<span class="badge pill-series-out" data-viz="cash-pill">Chi</span>') + '</td><td>' + fmtMoney(t.amount, cur) + '</td><td>' + esc(t.title || t.note || t.description || '—') + '</td></tr>';
     }).join('')) + (txns.length > 50 ? '<p class="sub">Bảng giao dịch hiển thị 50 giao dịch gần nhất trong tổng số ' + txns.length + '.</p>' : '') + '</div>';
     return html;
   }
@@ -2528,7 +2799,7 @@
         return '<tr><td><button class="linklike" data-action="activity-open" data-id="' + esc(a.id) + '"><strong>' + esc(a.name) + '</strong></button>' + (a.channel ? '<br><span class="sub">' + esc(a.channel) + '</span>' : '') + '</td>' +
           '<td>' + esc(memberName(a.ownerId)) + '</td>' +
           '<td>' + (a.startDate ? esc(D.formatDateVN(a.startDate)) : '—') + ' – ' + (a.endDate ? esc(D.formatDateVN(a.endDate)) : '—') + '</td>' +
-          '<td>' + statusBadge(a.status || '', info.label) + (info.overdue ? '<br><span class="badge bad">' + info.overdue + ' việc trễ</span>' : '') + (info.blocked ? '<br><span class="badge bad">' + info.blocked + ' việc bị chặn</span>' : '') + '</td>' +
+          '<td>' + statusBadge(a.status || '', info.label) + (info.overdue ? '<br>' + vizStatusPillHtml('overdue', { label: info.overdue + ' việc trễ', derived: true }) : '') + (info.blocked ? '<br>' + vizStatusPillHtml('blocked', { label: info.blocked + ' việc bị chặn', derived: true }) : '') + '</td>' +
           '<td>' + info.done + '/' + info.total + ' task xong' + (info.overdue ? '<br><span class="sub">Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</span>' : '<br><span class="sub">Bị chặn: ' + info.blocked + '</span>') + (a.deliverables || a.deliverable ? '<br><span class="sub">' + esc(a.deliverables || a.deliverable) + '</span>' : '') +
           // R3.1-VIZ 3: thanh % hoàn thành task ngay trong cột Đầu ra.
           '<div class="viz-mini" data-viz="action-task-progress"><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(vizPct(info.done, info.total)) + '%"></span></span><span class="sub">Hoàn thành ' + fmtPct(vizPct(info.done, info.total)) + ' (' + info.done + '/' + info.total + ' task)</span></div></td>' +
@@ -2590,7 +2861,7 @@
     if (tab === 'tasks') {
       html += '<h3>Tasks của hoạt động (' + tasks.length + ')</h3>' +
         (tasks.length ? tbl('<tr><th>Việc</th><th>Người phụ trách</th><th>Hạn</th><th>Trạng thái</th></tr>' + tasks.map(function (t) {
-          return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button></td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : '—') + (isOverdue(t) ? ' <span class="badge bad">Quá hạn</span>' : '') + '</td><td>' + statusBadge(t.status) + '</td></tr>';
+          return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button></td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : '—') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td><td>' + statusBadge(t.status) + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có task nào — dùng nút "Tạo task" ở trên.</p>');
     }
     if (tab === 'kpi') {
@@ -3240,9 +3511,9 @@
         // gắn đúng tình trạng quyền (chỉ-đổi-trạng-thái / chỉ xem).
         var stDisabled = !canUpdateTaskStatus();
         var stTitle = stDisabled ? noEditTitle(true) : (!canEditTask() ? statusOnlyTitle(true) : '');
-        return '<tr><td style="padding-left:' + (10 + depth * 22) + 'px">' + (depth ? '↳ ' : '') + '<button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + (myBlockers.length ? '<br><span class="badge bad">Trở ngại: ' + esc(myBlockers[0].title) + '</span>' : '') + '</td>' +
+        return '<tr><td style="padding-left:' + (10 + depth * 22) + 'px">' + (depth ? '↳ ' : '') + '<button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + (myBlockers.length ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn: ' + myBlockers[0].title, derived: true }) : '') + '</td>' +
           '<td>' + esc(memberName(t.assigneeId)) + '</td><td>' + esc(campaignName(t.campaignId)) + '</td>' +
-          '<td>' + (t.startDate ? esc(D.formatDateVN(t.startDate)) : '—') + ' → ' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + (isOverdue(t) ? ' <span class="badge bad">Quá hạn</span>' : '') + '</td>' +
+          '<td>' + (t.startDate ? esc(D.formatDateVN(t.startDate)) : '—') + ' → ' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td>' +
           '<td>' + (t.effortHours ? esc(t.effortHours) + ' giờ' : '<span class="badge warn">Chưa ước tính</span>') + '</td>' +
           '<td>Đang chờ: ' + (waitingFor.length ? esc(waitingFor.join(', ')) : '—') + '<br>Việc đang chờ mình: ' + (blockingOthers.length ? esc(blockingOthers.join(', ')) : '—') + '<br>' + readinessBadge(t) + '</td>' +
           '<td><select data-action-change="task-status" data-id="' + esc(t.id) + '"' + dis(stDisabled) + stTitle + '>' + opts + '</select></td></tr>' +
@@ -3385,11 +3656,11 @@
         var warn = [];
         if (cap !== null && cap !== undefined && total > cap) warn.push('Tổng ' + fmtNum(total) + ' giờ vượt năng lực ' + cap + ' giờ trong tuần này');
         Object.keys(perDay).forEach(function (date) { if (perDay[date] > 8) warn.push('Ngày ' + D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + ' giờ (quá 8 giờ/ngày)'); });
-        return '<tr><td><strong>' + esc(m.name) + '</strong>' + (m.isActive === false ? ' <span class="badge grey">Ngừng hoạt động</span>' : '') + '</td><td>' + esc(m.roleLabel || labelStatus(m.role)) + '</td><td>' + (cap !== null && cap !== undefined ? esc(cap) + ' giờ/tuần' : '<span class="badge warn">Chưa cấu hình</span>') + '</td>' +
+        return '<tr><td><strong>' + esc(m.name) + '</strong>' + (m.isActive === false ? ' <span class="badge grey">Ngừng hoạt động</span>' : '') + '</td><td>' + esc(m.roleLabel || labelStatus(m.role)) + '</td><td>' + (cap !== null && cap !== undefined ? esc(cap) + ' giờ/tuần' : vizStatusPillHtml('pending', { label: 'Chưa cấu hình' })) + '</td>' +
           '<td>' + ((mDaysOff || []).length ? mDaysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') : '—') + '</td>' +
-          '<td>' + fmtNum(total) + ' giờ' + (unestimated.length ? '<br>' + unestimated.map(function (t) { return '<span class="badge warn">' + esc(t.title) + ': Chưa ước tính</span>'; }).join(' ') : '') + '</td>' +
+          '<td>' + fmtNum(total) + ' giờ' + vizWorkloadBarHtml({ hours: total, capacityHours: cap, overCapacity: (cap !== null && cap !== undefined && total > cap) }) + (unestimated.length ? '<br>' + unestimated.map(function (t) { return '<span class="badge warn">' + esc(t.title) + ': Chưa ước tính</span>'; }).join(' ') : '') + '</td>' +
           '<td><span class="sub">' + (Object.keys(perDay).sort().map(function (date) { return D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + 'h'; }).join(' · ') || '—') + '</span></td>' +
-          '<td>' + (warn.length ? warn.map(function (w) { return '<span class="badge bad">' + esc(w) + '</span>'; }).join(' ') : '<span class="badge ok">Ổn</span>') + '</td>' +
+          '<td>' + (warn.length ? warn.map(function (w) { return vizStatusPillHtml('overdue', { label: w, derived: true }); }).join(' ') : vizStatusPillHtml('done', { label: 'Ổn' })) + '</td>' +
           '<td><button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Đặt năng lực / ngày nghỉ</button></td></tr>';
       }).join(''));
     html += '<p class="sub">Việc thiếu effort hiển thị "Chưa ước tính" và không tính vào effort đã phân bổ.</p>';
@@ -3516,7 +3787,7 @@
           '<strong>Cam kết (' + commits.length + ')</strong>' + (budgetEd ? ' <button class="btn small" data-action="editor-open" data-kind="commitment" data-line="' + esc(b.id) + '">+ Thêm cam kết</button>' : '') + commitRows +
           '<strong>Thực chi (' + acts.length + ')</strong>' + (budgetEd ? ' <button class="btn small" data-action="editor-open" data-kind="actual" data-line="' + esc(b.id) + '">+ Ghi khoản chi</button>' : '') + actRows +
           '</td></tr>';
-        return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc(campaignName(b.campaignId)) + '</td><td>' + fmtMoney(b.planned, cur) + '</td><td>' + fmtMoney(b.approved, cur) + '</td><td>' + fmtMoney(openCommit, cur) + '</td><td>' + fmtMoney(actualTotal, cur) + '</td><td>' + fmtMoney(rem, cur) + '</td><td>' + (rem < 0 ? '<span class="badge bad">Vượt ngân sách ' + fmtMoney(-rem, cur) + '</span>' : '<span class="badge ok">Trong ngân sách</span>') + '</td>' +
+        return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc(campaignName(b.campaignId)) + '</td><td>' + fmtMoney(b.planned, cur) + '</td><td>' + fmtMoney(b.approved, cur) + '</td><td>' + fmtMoney(openCommit, cur) + '</td><td>' + fmtMoney(actualTotal, cur) + '</td><td>' + fmtMoney(rem, cur) + '</td><td>' + (rem < 0 ? vizStatusPillHtml('overdue', { label: 'Vượt ngân sách ' + fmtMoney(-rem, cur), derived: true }) : vizStatusPillHtml('done', { label: 'Trong ngân sách' })) + '</td>' +
           '<td class="row-actions"><button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-id="' + esc(b.id) + '"' + dis(!budgetEd) + '>Sửa dòng</button></td></tr>' + detail;
       }).join(''));
     });
