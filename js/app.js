@@ -3405,6 +3405,8 @@
     html += readonlyNote();
     html += collectionBanner('kpis');
     html += '<h2>KPI</h2>';
+    // AC22: export KPI của đúng tập đang hiển thị ở trang này (kèm IDs, scope, kỳ, đơn vị).
+    html += '<p><button class="btn secondary" data-action="export-kpi-csv">Xuất CSV KPI (IDs, scope, kỳ, đơn vị)</button></p>';
     var kpis = Store.list('kpis');
     var measurements = [];
     try { measurements = Store.list('measurements'); } catch (e) { measurements = []; }
@@ -3439,6 +3441,8 @@
       html += '<div class="notice info">Vai trò hiện tại không có quyền xem số liệu ngân sách chi tiết nên phần này được ẩn. KPI ở trên vẫn xem được bình thường.</div>';
       return html;
     }
+    // AC22: export ngân sách — chỉ tới được đây khi vai có quyền xem ngân sách (cùng cổng với khối số ở dưới).
+    html += '<p><button class="btn secondary" data-action="export-budget-csv">Xuất CSV ngân sách (dòng + fact + tổng hợp theo scope)</button></p>';
     var linesAll = visibleList('budgetLines');
     var allCommits = Store.list('commitments');
     var allActuals = Store.list('actuals');
@@ -3519,7 +3523,7 @@
     html += '<p class="sub">Phần đã thanh toán của một cam kết được tính từ các khoản thanh toán liên kết và chỉ tính một lần ở cột Đã chi.</p>';
     // R3.1-VIZ 5: khối Thu–Chi (sổ cash, tách hẳn ngân sách campaign) —
     // chart cột Thu/Chi theo tháng + số dư + bảng giao dịch ngay dưới.
-    html += '<h2>Thu–Chi &amp; Ngân sách (sổ quỹ)</h2>' + cashChartHtml();
+    html += '<h2>Thu–Chi &amp; Ngân sách (sổ quỹ)</h2><p><button class="btn secondary" data-action="export-cash-csv">Xuất CSV Thu–Chi (giao dịch kèm tài khoản, scope)</button></p>' + cashChartHtml();
     return html;
   }
 
@@ -3959,6 +3963,310 @@
     if (ROUTE) UI.scrollMem[routeKey(ROUTE)] = window.scrollY;
   }, { passive: true });
 
+  // ---------- R3.1-EXPORT (AC22): export CSV KPI / ngân sách / thu–chi ----------
+  // Cấu trúc đã chọn — mỗi loại dữ liệu là MỘT file CSV với header rõ nghĩa:
+  // - KPI (sava-kpi.csv): 1 dòng / KPI thuộc đúng tập trang "KPI & Ngân sách"
+  //   đang hiển thị (Store.list('kpis') như viewKpi — trang này không có bộ
+  //   lọc riêng, nên phạm vi export = phạm vi trang). Giá trị actual và trạng
+  //   thái dữ liệu do ADAPTER tính bằng kpiRollupFor (D.rollupKpi — cùng số
+  //   UI đang hiển thị) rồi truyền vào qua opts.rollups; builder không tự
+  //   tính lại KPI.
+  // - Ngân sách (sava-ngan-sach.csv): 1 file, nhiều row_type trên CÙNG header:
+  //   budget_line (dòng gốc, planned/approved riêng + actual/open/remaining
+  //   theo đúng cách viewKpi tính cho từng dòng: Σ actual liên kết,
+  //   D.openCommitmentTotal, D.budgetRemaining), commitment / actual /
+  //   allocation (fact gốc có ID), và summary_activity / summary_campaign
+  //   (tổng hợp qua summarizeActivityBudget / summarizeCampaignBudget →
+  //   D.summarizeBudgetScope, kèm ceiling của campaign). row_type +
+  //   scope_type giúp người đọc Excel lọc từng lớp mà không cộng lẫn hạn
+  //   mức với fact gốc.
+  // - Thu–Chi (sava-thu-chi.csv): 1 dòng / giao dịch cashTransactions.
+  // Quyền: export lấy đúng nguồn dữ liệu trang đã dùng (đã qua quyền/scope
+  // của Store); riêng ngân sách + thu–chi bị chặn khi !canBudget() — cùng
+  // cổng ẩn số liệu của viewKpi — nên vai chỉ xem (CEO) vẫn export được KPI
+  // mình được xem nhưng không lộ thêm ngân sách.
+  // Vùng PURE dưới đây chỉ ĐÓNG GÓI dòng + escape CSV từ dữ liệu và kết quả
+  // domain đã tính — không chạm Store/D, không định nghĩa công thức mới.
+  // R3.1-EXPORT-PURE-BEGIN
+  var KPI_EXPORT_COLUMNS = ['id', 'scope_type', 'campaign_id', 'activity_id', 'task_id', 'content_item_id', 'pillar_id', 'metric_code', 'name', 'definition', 'aggregation_mode', 'target', 'actual', 'unit', 'period_start', 'period_end', 'period_key', 'currency', 'owner_id', 'owner_name', 'target_version', 'data_status'];
+  var BUDGET_EXPORT_COLUMNS = ['id', 'row_type', 'scope_type', 'campaign_id', 'activity_id', 'task_id', 'budget_line_id', 'commitment_id', 'title', 'planned', 'approved', 'amount', 'share_percent', 'allocated', 'unallocated', 'actual_total', 'open_commitments', 'forecast_use', 'available', 'ceiling', 'currency', 'period_start', 'period_end', 'date', 'status'];
+  var CASH_EXPORT_COLUMNS = ['id', 'account_id', 'account_name', 'category_id', 'category', 'direction', 'amount', 'currency', 'occurred_on', 'campaign_id', 'activity_id', 'title', 'note', 'status'];
+  function r31CsvCell(v) {
+    if (v === null || v === undefined) return '';
+    var s = String(v);
+    return /[",\n\r;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function r31RowsToCsv(columns, rows) {
+    var lines = [columns.map(r31CsvCell).join(',')];
+    (rows || []).forEach(function (r) {
+      lines.push(columns.map(function (c) { return r31CsvCell(r ? r[c] : ''); }).join(','));
+    });
+    return lines.join('\n');
+  }
+  function r31Field(obj, camel, snake) {
+    if (!obj) return undefined;
+    if (obj[camel] !== undefined && obj[camel] !== null) return obj[camel];
+    if (snake && obj[snake] !== undefined && obj[snake] !== null) return obj[snake];
+    if (obj.customFields && obj.customFields[camel] !== undefined && obj.customFields[camel] !== null) return obj.customFields[camel];
+    if (obj.custom_fields && obj.custom_fields[camel] !== undefined && obj.custom_fields[camel] !== null) return obj.custom_fields[camel];
+    return undefined;
+  }
+  function r31NumOrEmpty(v) { return (v === null || v === undefined || v === '' || isNaN(Number(v))) ? '' : Number(v); }
+  function r31KpiDefinitionText(k) {
+    var d = r31Field(k, 'definition');
+    if (d === undefined || d === null) return '';
+    if (typeof d === 'string') return d;
+    if (typeof d === 'object') return d.description || d.how || JSON.stringify(d);
+    return String(d);
+  }
+  function buildKpiExportRows(kpis, opts) {
+    opts = opts || {};
+    var rollups = opts.rollups || {};
+    var ownerNames = opts.ownerNames || {};
+    return (kpis || []).map(function (k) {
+      var activityId = r31Field(k, 'activityId', 'activity_id') || '';
+      var taskId = r31Field(k, 'taskId', 'task_id') || '';
+      var contentItemId = r31Field(k, 'contentItemId', 'content_item_id') || '';
+      var pillarId = r31Field(k, 'pillarId', 'pillar_id') || '';
+      var scopeType = r31Field(k, 'scopeType', 'scope_type') || (activityId ? 'activity' : (taskId ? 'task' : (contentItemId ? 'content' : (pillarId ? 'pillar' : 'campaign'))));
+      var roll = rollups[k.id];
+      var actual = '';
+      var dataStatus = 'insufficient_data';
+      if (roll) {
+        if (roll.status !== 'insufficient_data' && roll.value !== null && roll.value !== undefined && roll.value !== '' && !isNaN(Number(roll.value))) { actual = Number(roll.value); dataStatus = 'ok'; }
+      } else {
+        var av = r31Field(k, 'actual');
+        if (av !== undefined && av !== null && av !== '' && !isNaN(Number(av))) { actual = Number(av); dataStatus = 'ok'; }
+      }
+      var ownerId = r31Field(k, 'ownerId', 'owner_id') || '';
+      var targetRaw = (k.target !== undefined && k.target !== null) ? k.target : ((k.targetValue !== undefined && k.targetValue !== null) ? k.targetValue : r31Field(k, 'target', 'target_value'));
+      var targetVersion = r31Field(k, 'targetVersion', 'target_version');
+      return {
+        id: k.id || '', scope_type: scopeType,
+        campaign_id: r31Field(k, 'campaignId', 'campaign_id') || '',
+        activity_id: activityId, task_id: taskId, content_item_id: contentItemId, pillar_id: pillarId,
+        metric_code: r31Field(k, 'metricCode', 'metric_code') || '',
+        name: r31Field(k, 'name') || '', definition: r31KpiDefinitionText(k),
+        aggregation_mode: r31Field(k, 'aggregationMode', 'aggregation_mode') || '',
+        target: r31NumOrEmpty(targetRaw), actual: actual,
+        unit: r31Field(k, 'unit') || '',
+        period_start: r31Field(k, 'periodStart', 'period_start') || '',
+        period_end: r31Field(k, 'periodEnd', 'period_end') || '',
+        period_key: r31Field(k, 'periodKey', 'period_key') || r31Field(k, 'period') || '',
+        currency: r31Field(k, 'currency') || '',
+        owner_id: ownerId, owner_name: ownerId ? (ownerNames[ownerId] || '') : '',
+        target_version: (targetVersion === undefined || targetVersion === null) ? '' : targetVersion,
+        data_status: dataStatus
+      };
+    });
+  }
+  function buildBudgetExportRows(input) {
+    input = input || {};
+    var lines = input.lines || [];
+    var commitments = input.commitments || [];
+    var actuals = input.actuals || [];
+    var allocations = input.allocations || [];
+    var summaries = input.summaries || [];
+    var lineStats = input.lineStats || {};
+    var lineById = {};
+    lines.forEach(function (l) { lineById[l.id] = l; });
+    var rows = [];
+    function factScope(fact, line) {
+      var campaignId = r31Field(fact, 'campaignId', 'campaign_id') || (line ? (r31Field(line, 'campaignId', 'campaign_id') || '') : '');
+      var activityId = r31Field(fact, 'activityId', 'activity_id') || (line ? (r31Field(line, 'activityId', 'activity_id') || '') : '');
+      var taskId = r31Field(fact, 'taskId', 'task_id') || (line ? (r31Field(line, 'taskId', 'task_id') || '') : '');
+      return { campaignId: campaignId, activityId: activityId, taskId: taskId, scopeType: activityId ? 'activity' : 'campaign' };
+    }
+    lines.forEach(function (l) {
+      var st = lineStats[l.id] || {};
+      var activityId = r31Field(l, 'activityId', 'activity_id') || '';
+      var forecast = (st.forecastUse !== undefined && st.forecastUse !== null) ? r31NumOrEmpty(st.forecastUse)
+        : ((st.actualTotal !== undefined && st.actualTotal !== null && st.openCommitments !== undefined && st.openCommitments !== null) ? Number(st.actualTotal) + Number(st.openCommitments) : '');
+      rows.push({
+        id: l.id || '', row_type: 'budget_line', scope_type: activityId ? 'activity' : 'campaign',
+        campaign_id: r31Field(l, 'campaignId', 'campaign_id') || '', activity_id: activityId,
+        task_id: r31Field(l, 'taskId', 'task_id') || '', budget_line_id: l.id || '', commitment_id: '',
+        title: r31Field(l, 'name') || r31Field(l, 'title') || '',
+        planned: r31NumOrEmpty((l.planned !== undefined && l.planned !== null) ? l.planned : r31Field(l, 'planned', 'planned_amount')),
+        approved: r31NumOrEmpty((l.approved !== undefined && l.approved !== null) ? l.approved : r31Field(l, 'approved', 'approved_amount')),
+        amount: '', share_percent: '', allocated: '', unallocated: '',
+        actual_total: r31NumOrEmpty(st.actualTotal), open_commitments: r31NumOrEmpty(st.openCommitments),
+        forecast_use: forecast,
+        // Với dòng ngân sách, "available" = còn phân bổ theo D.budgetRemaining (khớp cột "Còn lại" của UI).
+        available: r31NumOrEmpty(st.remaining), ceiling: '',
+        currency: r31Field(l, 'currency') || '',
+        period_start: r31Field(l, 'periodStart', 'period_start') || '', period_end: r31Field(l, 'periodEnd', 'period_end') || '',
+        date: '',
+        status: r31Field(l, 'status') || ((st.remaining !== undefined && st.remaining !== null) ? (Number(st.remaining) < 0 ? 'over_budget' : 'within_budget') : '')
+      });
+    });
+    commitments.forEach(function (f) {
+      var line = lineById[r31Field(f, 'budgetLineId', 'budget_line_id')];
+      var sc = factScope(f, line);
+      rows.push({
+        id: f.id || '', row_type: 'commitment', scope_type: sc.scopeType,
+        campaign_id: sc.campaignId, activity_id: sc.activityId, task_id: sc.taskId,
+        budget_line_id: r31Field(f, 'budgetLineId', 'budget_line_id') || '', commitment_id: '',
+        title: r31Field(f, 'title') || r31Field(f, 'description') || '',
+        planned: '', approved: '', amount: r31NumOrEmpty(r31Field(f, 'amount')), share_percent: '',
+        allocated: '', unallocated: '', actual_total: '', open_commitments: '', forecast_use: '', available: '', ceiling: '',
+        currency: r31Field(f, 'currency') || (line ? (r31Field(line, 'currency') || '') : ''),
+        period_start: line ? (r31Field(line, 'periodStart', 'period_start') || '') : '', period_end: line ? (r31Field(line, 'periodEnd', 'period_end') || '') : '',
+        date: r31Field(f, 'date') || r31Field(f, 'committedAt', 'committed_at') || r31Field(f, 'expectedAt', 'expected_at') || '',
+        status: r31Field(f, 'status') || ''
+      });
+    });
+    actuals.forEach(function (f) {
+      var line = lineById[r31Field(f, 'budgetLineId', 'budget_line_id')];
+      var sc = factScope(f, line);
+      rows.push({
+        id: f.id || '', row_type: 'actual', scope_type: sc.scopeType,
+        campaign_id: sc.campaignId, activity_id: sc.activityId, task_id: sc.taskId,
+        budget_line_id: r31Field(f, 'budgetLineId', 'budget_line_id') || '', commitment_id: r31Field(f, 'commitmentId', 'commitment_id') || '',
+        title: r31Field(f, 'title') || r31Field(f, 'description') || '',
+        planned: '', approved: '', amount: r31NumOrEmpty(r31Field(f, 'amount')), share_percent: '',
+        allocated: '', unallocated: '', actual_total: '', open_commitments: '', forecast_use: '', available: '', ceiling: '',
+        currency: r31Field(f, 'currency') || (line ? (r31Field(line, 'currency') || '') : ''),
+        period_start: line ? (r31Field(line, 'periodStart', 'period_start') || '') : '', period_end: line ? (r31Field(line, 'periodEnd', 'period_end') || '') : '',
+        date: r31Field(f, 'date') || r31Field(f, 'spentAt', 'spent_at') || '',
+        status: r31Field(f, 'status') || ''
+      });
+    });
+    allocations.forEach(function (a) {
+      var srcKind = r31Field(a, 'sourceKind', 'source_kind') || 'actual';
+      var srcId = srcKind === 'commitment' ? (r31Field(a, 'commitmentId', 'commitment_id') || '') : (r31Field(a, 'actualId', 'actual_id') || '');
+      var srcFact = (srcKind === 'commitment' ? commitments : actuals).filter(function (x) { return String(x.id) === String(srcId); })[0] || null;
+      var line = srcFact ? lineById[r31Field(srcFact, 'budgetLineId', 'budget_line_id')] : null;
+      var sc = srcFact ? factScope(srcFact, line) : { campaignId: '', activityId: '', taskId: '', scopeType: 'campaign' };
+      var activityId = r31Field(a, 'activityId', 'activity_id') || sc.activityId;
+      rows.push({
+        id: a.id || '', row_type: 'allocation', scope_type: activityId ? 'activity' : sc.scopeType,
+        campaign_id: r31Field(a, 'campaignId', 'campaign_id') || sc.campaignId, activity_id: activityId, task_id: sc.taskId,
+        budget_line_id: srcFact ? (r31Field(srcFact, 'budgetLineId', 'budget_line_id') || '') : '',
+        commitment_id: srcKind === 'commitment' ? srcId : (srcFact ? (r31Field(srcFact, 'commitmentId', 'commitment_id') || '') : ''),
+        title: srcFact ? (r31Field(srcFact, 'title') || r31Field(srcFact, 'description') || '') : '',
+        planned: '', approved: '', amount: r31NumOrEmpty(r31Field(a, 'amount')), share_percent: r31NumOrEmpty(r31Field(a, 'sharePercent', 'share_percent')),
+        allocated: '', unallocated: '', actual_total: '', open_commitments: '', forecast_use: '', available: '', ceiling: '',
+        currency: r31Field(a, 'currency') || (srcFact ? (r31Field(srcFact, 'currency') || '') : '') || (line ? (r31Field(line, 'currency') || '') : ''),
+        period_start: line ? (r31Field(line, 'periodStart', 'period_start') || '') : '', period_end: line ? (r31Field(line, 'periodEnd', 'period_end') || '') : '',
+        date: r31Field(a, 'effectiveDate', 'effective_date') || '',
+        status: ''
+      });
+    });
+    summaries.forEach(function (s) {
+      rows.push({
+        id: s.scopeType === 'campaign' ? (s.campaignId || '') : (s.activityId || ''),
+        row_type: s.scopeType === 'campaign' ? 'summary_campaign' : 'summary_activity', scope_type: s.scopeType || '',
+        campaign_id: s.campaignId || '', activity_id: s.activityId || '', task_id: '', budget_line_id: '', commitment_id: '',
+        title: s.title || '', planned: '', approved: '', amount: '', share_percent: '',
+        allocated: r31NumOrEmpty(s.allocated), unallocated: r31NumOrEmpty(s.unallocated),
+        actual_total: r31NumOrEmpty(s.actualTotal), open_commitments: r31NumOrEmpty(s.openCommitments),
+        forecast_use: r31NumOrEmpty(s.forecastUse), available: r31NumOrEmpty(s.available), ceiling: r31NumOrEmpty(s.ceiling),
+        currency: s.currency || '', period_start: '', period_end: '', date: '', status: ''
+      });
+    });
+    return rows;
+  }
+  function buildCashExportRows(txns, opts) {
+    opts = opts || {};
+    var accountNames = opts.accountNames || {};
+    var accountCurrencies = opts.accountCurrencies || {};
+    var categoryNames = opts.categoryNames || {};
+    return (txns || []).map(function (t) {
+      var accountId = r31Field(t, 'accountId', 'account_id') || '';
+      var categoryId = r31Field(t, 'categoryId', 'category_id') || '';
+      return {
+        id: t.id || '', account_id: accountId, account_name: accountId ? (accountNames[accountId] || '') : '',
+        category_id: categoryId, category: categoryId ? (categoryNames[categoryId] || '') : (r31Field(t, 'category') || ''),
+        direction: r31Field(t, 'direction') || '', amount: r31NumOrEmpty(r31Field(t, 'amount')),
+        currency: r31Field(t, 'currency') || (accountId ? (accountCurrencies[accountId] || '') : ''),
+        occurred_on: r31Field(t, 'occurredOn', 'occurred_on') || r31Field(t, 'date') || '',
+        campaign_id: r31Field(t, 'campaignId', 'campaign_id') || '', activity_id: r31Field(t, 'activityId', 'activity_id') || '',
+        title: r31Field(t, 'title') || '', note: r31Field(t, 'note') || r31Field(t, 'description') || '',
+        status: r31Field(t, 'status') || ''
+      };
+    });
+  }
+  // R3.1-EXPORT-PURE-END
+  // --- Adapter export: lấy đúng dữ liệu + hàm domain mà trang KPI & Ngân sách đang dùng ---
+  function downloadCsvText(filename, csvText) {
+    var blob = new Blob(['\ufeff' + csvText], { type: 'text/csv;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+  function exportKpiCsv() {
+    var kpis = Store.list('kpis');
+    var ownerNames = {};
+    Store.list('members').forEach(function (m) { ownerNames[m.id] = m.name || ''; });
+    var rollups = {};
+    kpis.forEach(function (k) {
+      var roll = kpiRollupFor(k);
+      if (roll) {
+        var mode = String(k.aggregationMode || k.aggregation_mode || '').toLowerCase();
+        // Khớp cách viewKpi hiển thị: ratio làm tròn về số nguyên, còn lại giữ nguyên giá trị rollup.
+        rollups[k.id] = { value: (roll.value === null || roll.value === undefined) ? null : (mode === 'ratio' ? Math.round(roll.value) : roll.value), status: roll.status || 'ok' };
+      } else {
+        var d = D.kpiDisplay(k);
+        rollups[k.id] = d.isMissing ? { value: null, status: 'insufficient_data' } : { value: d.value, status: 'ok' };
+      }
+    });
+    downloadCsvText('sava-kpi.csv', r31RowsToCsv(KPI_EXPORT_COLUMNS, buildKpiExportRows(kpis, { rollups: rollups, ownerNames: ownerNames })));
+  }
+  function exportBudgetCsv() {
+    if (!canBudget()) { toast('Vai trò hiện tại không có quyền xem ngân sách nên không xuất được dữ liệu ngân sách.'); return; }
+    var lines = visibleList('budgetLines');
+    var lineIds = {};
+    lines.forEach(function (l) { lineIds[l.id] = true; });
+    var commitments = Store.list('commitments').filter(function (x) { return !!lineIds[x.budgetLineId]; });
+    var actuals = Store.list('actuals').filter(function (x) { return !!lineIds[x.budgetLineId]; });
+    var actualIds = {};
+    var commitmentIds = {};
+    actuals.forEach(function (x) { actualIds[x.id] = true; });
+    commitments.forEach(function (x) { commitmentIds[x.id] = true; });
+    var allocations = listSafe('budgetAllocations').filter(function (a) {
+      var kind = a.sourceKind || a.source_kind || 'actual';
+      return kind === 'commitment' ? !!commitmentIds[a.commitmentId || a.commitment_id] : !!actualIds[a.actualId || a.actual_id];
+    });
+    var lineStats = {};
+    lines.forEach(function (l) {
+      var cs = commitments.filter(function (x) { return x.budgetLineId === l.id; });
+      var as = actuals.filter(function (x) { return x.budgetLineId === l.id; });
+      lineStats[l.id] = {
+        actualTotal: as.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0),
+        openCommitments: (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(cs, as) : 0,
+        remaining: D.budgetRemaining(l, cs, as)
+      };
+    });
+    var summaries = [];
+    visibleList('campaigns').forEach(function (c) {
+      summarizeCampaignBudget(c).forEach(function (r) {
+        if (r.ceiling > 0 || r.allocated > 0 || r.actualTotal > 0 || r.openCommitments > 0) {
+          summaries.push({ scopeType: 'campaign', campaignId: c.id, title: c.name, currency: r.currency, ceiling: r.ceiling, allocated: r.allocated, unallocated: r.unallocated, actualTotal: r.actualTotal, openCommitments: r.openCommitments, forecastUse: r.forecastUse, available: r.available });
+        }
+      });
+      Store.list('activities').filter(function (a) { return a.campaignId === c.id; }).forEach(function (a) {
+        summarizeActivityBudget(c, a).forEach(function (r) {
+          if (r.ceiling > 0 || r.actualTotal > 0 || r.openCommitments > 0) {
+            summaries.push({ scopeType: 'activity', campaignId: c.id, activityId: a.id, title: a.name, currency: r.currency, ceiling: r.ceiling, allocated: r.allocated, unallocated: r.unallocated, actualTotal: r.actualTotal, openCommitments: r.openCommitments, forecastUse: r.forecastUse, available: r.available });
+          }
+        });
+      });
+    });
+    downloadCsvText('sava-ngan-sach.csv', r31RowsToCsv(BUDGET_EXPORT_COLUMNS, buildBudgetExportRows({ lines: lines, commitments: commitments, actuals: actuals, allocations: allocations, summaries: summaries, lineStats: lineStats })));
+  }
+  function exportCashCsv() {
+    if (!canBudget()) { toast('Vai trò hiện tại không có quyền xem ngân sách nên không xuất được dữ liệu thu–chi.'); return; }
+    var accountNames = {};
+    var accountCurrencies = {};
+    var categoryNames = {};
+    listSafe('cashAccounts').forEach(function (a) { accountNames[a.id] = a.name || a.title || ''; accountCurrencies[a.id] = a.currency || 'VND'; });
+    listSafe('cashCategories').forEach(function (ct) { categoryNames[ct.id] = ct.name || ''; });
+    downloadCsvText('sava-thu-chi.csv', r31RowsToCsv(CASH_EXPORT_COLUMNS, buildCashExportRows(listSafe('cashTransactions'), { accountNames: accountNames, accountCurrencies: accountCurrencies, categoryNames: categoryNames })));
+  }
+
   function exportCsv() {
     var rows = UI.reportRowsCache || [];
     // R2-21: CSV có cột currency — mỗi dòng thuộc đúng một tiền tệ, không cộng chéo.
@@ -4223,6 +4531,9 @@
       render();
     }
     if (action === 'export-csv') exportCsv();
+    if (action === 'export-kpi-csv') exportKpiCsv();
+    if (action === 'export-budget-csv') exportBudgetCsv();
+    if (action === 'export-cash-csv') exportCashCsv();
     if (action === 'demo-on') { Store.setDemoEnabled(true); window.location.hash = '#/overview'; window.location.reload(); }
     if (action === 'demo-off') { Store.setDemoEnabled(false); window.location.hash = '#/settings'; window.location.reload(); }
     if (action === 'demo-reset') { Store.resetDemo(); render(); toast('Đã đặt lại dữ liệu minh họa về trạng thái ban đầu.'); }
