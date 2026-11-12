@@ -6,6 +6,17 @@
 (function (global) {
   'use strict';
 
+  // Khóa định danh đăng ký cho fixture KPI livestream (R3.1 D.2): ads có
+  // reg-001..reg-100; seeding có 60 khóa trong đó 20 khóa trùng ads
+  // (reg-081..reg-100) → unique toàn campaign = 100 + 60 − 20 = 140.
+  function regKeys(from, to) {
+    var out = [];
+    for (var i = from; i <= to; i++) out.push('reg-' + String(i).padStart(3, '0'));
+    return out;
+  }
+  var ADS_REG_KEYS = regKeys(1, 100);
+  var SEEDING_REG_KEYS = regKeys(81, 100).concat(regKeys(101, 140));
+
   var data = {
     demoLabel: 'Dữ liệu minh họa — không phải dữ liệu thật',
     holidays: ['2026-11-19'],
@@ -57,18 +68,42 @@
         creativeDirection: 'Ảnh chụp trải nghiệm thật, bố cục sạch, ưu tiên chữ lớn dễ đọc.',
         risks: 'Chưa chốt địa điểm trải nghiệm thử.',
         lessons: ''
+      },
+      {
+        // Fixture R3.1 D.1/D.2 — campaign livestream: hạn mức 32tr; phân bổ
+        // 8/15/5/2 = 30tr; thực chi 20,5tr; cam kết còn mở 7,5tr.
+        id: 'camp-live', name: 'Livestream giới thiệu giải pháp (minh họa R3.1)', businessUnitId: 'bu-ai', product: 'Nền tảng AI mẫu',
+        status: 'active', statusLabel: 'Đang chạy', startDate: '2026-11-16', endDate: '2026-11-29',
+        ownerId: 'member-lead', budgetCeiling: 32000000, budgetCeilingCurrency: 'VND',
+        why: 'Fixture minh họa cho Action Plan / KPI / ngân sách theo đặc tả R3.1 (số liệu D.1/D.2).',
+        businessGoal: 'Đạt 150 đăng ký hợp lệ không trùng cho buổi livestream.',
+        marketingGoal: 'Chạy ads + seeding để gom đăng ký, mời 2 khách mời xác nhận, tổ chức 1 phiên livestream đúng kế hoạch.',
+        desiredOutcome: '140/150 đăng ký unique (93,33%) tại thời điểm minh họa.',
+        audiences: [{ name: 'Người quan tâm giải pháp AI', description: 'Đăng ký qua ads hoặc bài seeding trong cộng đồng.' }],
+        audienceInsights: 'Khóa định danh đăng ký đã chuẩn hóa để khử trùng giữa ads và seeding.',
+        bigIdea: 'Một buổi livestream, hai nguồn đăng ký, một con số unique.',
+        keyMessage: 'Đăng ký một lần, xem trực tiếp buổi giới thiệu giải pháp.',
+        creativeDirection: 'Creative quảng cáo + landing page đăng ký gắn với hoạt động Chạy ads.',
+        risks: 'Trùng đăng ký giữa hai nguồn nếu thiếu khóa định danh.',
+        lessons: ''
       }
     ],
     phases: [
       { id: 'phase-1', campaignId: 'camp-1', name: 'Giai đoạn 1 — Khởi động', startDate: '2026-11-02', endDate: '2026-11-13' },
       { id: 'phase-2', campaignId: 'camp-1', name: 'Giai đoạn 2 — Cao điểm', startDate: '2026-11-14', endDate: '2026-11-27' },
-      { id: 'phase-3', campaignId: 'camp-2', name: 'Giai đoạn 1 — Chuẩn bị', startDate: '2026-11-16', endDate: '2026-11-27' }
+      { id: 'phase-3', campaignId: 'camp-2', name: 'Giai đoạn 1 — Chuẩn bị', startDate: '2026-11-16', endDate: '2026-11-27' },
+      { id: 'phase-live-prep', campaignId: 'camp-live', name: 'Chuẩn bị & tổ chức', startDate: '2026-11-16', endDate: '2026-11-29' },
+      { id: 'phase-live-media', campaignId: 'camp-live', name: 'Truyền thông & đăng ký', startDate: '2026-11-18', endDate: '2026-11-28' }
     ],
     activities: [
       { id: 'act-1', campaignId: 'camp-1', phaseId: 'phase-1', name: 'Teaser trên mạng xã hội', channel: 'Facebook, Instagram', ownerId: 'member-content' },
       { id: 'act-2', campaignId: 'camp-1', phaseId: 'phase-2', name: 'Video thử thách trên TikTok', channel: 'TikTok (đăng ngoài app)', ownerId: 'member-content' },
       { id: 'act-3', campaignId: 'camp-1', phaseId: 'phase-2', name: 'Quảng cáo chuyển đổi', channel: 'Meta Ads', ownerId: 'member-lead' },
-      { id: 'act-4', campaignId: 'camp-2', phaseId: 'phase-3', name: 'Trang giới thiệu trải nghiệm thử', channel: 'Website', ownerId: 'member-design' }
+      { id: 'act-4', campaignId: 'camp-2', phaseId: 'phase-3', name: 'Trang giới thiệu trải nghiệm thử', channel: 'Website', ownerId: 'member-design' },
+      { id: 'act-live-invite', campaignId: 'camp-live', phaseId: 'phase-live-prep', name: 'Mời khách mời', channel: 'Email / điện thoại', ownerId: 'member-lead', status: 'in_progress', startDate: '2026-11-16', endDate: '2026-11-22', objective: 'Chốt 2 khách mời xác nhận trước hạn', deliverables: '2 khách xác nhận' },
+      { id: 'act-live-ads', campaignId: 'camp-live', phaseId: 'phase-live-media', name: 'Chạy ads', channel: 'Meta Ads', ownerId: 'member-content', status: 'in_progress', startDate: '2026-11-18', endDate: '2026-11-28', objective: '120 đăng ký hợp lệ từ ads', deliverables: 'Bộ creative quảng cáo + landing page đăng ký' },
+      { id: 'act-live-seeding', campaignId: 'camp-live', phaseId: 'phase-live-media', name: 'Seeding', channel: 'Cộng đồng Facebook', ownerId: 'member-content', status: 'in_progress', startDate: '2026-11-18', endDate: '2026-11-28', objective: '80 đăng ký hợp lệ từ seeding', deliverables: 'Bài seeding đạt yêu cầu ở các cộng đồng' },
+      { id: 'act-live-show', campaignId: 'camp-live', phaseId: 'phase-live-prep', name: 'Tổ chức livestream', channel: 'Livestream', ownerId: 'member-design', status: 'not_started', startDate: '2026-11-23', endDate: '2026-11-29', objective: '1 phiên phát đúng kế hoạch', deliverables: 'Phiên livestream + bản ghi' }
     ],
     tasks: [
       { id: 'task-a', campaignId: 'camp-1', phaseId: 'phase-1', activityId: 'act-1', title: 'Chốt kịch bản video thử thách', assigneeId: 'member-content', ownerId: 'member-content', status: 'completed', startDate: '2026-11-02', dueDate: '2026-11-04', baselineStartDate: '2026-11-02', baselineDueDate: '2026-11-04', effortHours: 8, deliverable: 'Kịch bản theo cảnh đã duyệt', availabilityNote: 'Có thể nhận việc từ 02/11' },
@@ -86,7 +121,12 @@
       { id: 'task-tree-3', campaignId: 'camp-1', phaseId: 'phase-2', activityId: 'act-3', parentId: 'task-tree-2', title: 'Viết biến thể quảng cáo cho nhóm 18–34', assigneeId: 'member-content', ownerId: 'member-content', status: 'todo', startDate: '2026-11-16', dueDate: '2026-11-19', effortHours: 4, deliverable: '3 biến thể quảng cáo' },
       { id: 'task-mile-1', campaignId: 'camp-1', phaseId: 'phase-2', title: 'Mốc: mở sự kiện mùa lễ trong game', assigneeId: 'member-lead', ownerId: 'member-lead', status: 'todo', startDate: '2026-11-14', dueDate: '2026-11-14', isMilestone: true, effortHours: 1, deliverable: 'Sự kiện mở đúng giờ' },
       // Việc độc lập (không gắn campaign) — hiện ở nhóm "Việc độc lập" của Gantt tổng.
-      { id: 'task-solo-1', campaignId: null, title: 'Cập nhật hồ sơ năng lực của đội Marketing', assigneeId: 'member-owner', ownerId: 'member-owner', status: 'todo', startDate: '2026-11-18', dueDate: '2026-11-21', effortHours: 3, deliverable: 'Hồ sơ năng lực bản mới' }
+      { id: 'task-solo-1', campaignId: null, title: 'Cập nhật hồ sơ năng lực của đội Marketing', assigneeId: 'member-owner', ownerId: 'member-owner', status: 'todo', startDate: '2026-11-18', dueDate: '2026-11-21', effortHours: 3, deliverable: 'Hồ sơ năng lực bản mới' },
+      // Fixture R3.1: task quay video gắn action Ads — chỉ là tham chiếu công
+      // việc, KHÔNG tạo thêm chi phí (tổng tiền campaign vẫn 20,5tr).
+      { id: 'task-live-video', campaignId: 'camp-live', phaseId: 'phase-live-media', activityId: 'act-live-ads', title: 'Quay video creative cho ads livestream', assigneeId: 'member-design', ownerId: 'member-design', status: 'in_progress', startDate: '2026-11-18', dueDate: '2026-11-21', effortHours: 10, deliverable: 'Video creative 30 giây cho quảng cáo' },
+      { id: 'task-live-invite', campaignId: 'camp-live', phaseId: 'phase-live-prep', activityId: 'act-live-invite', title: 'Lập shortlist và liên hệ khách mời', assigneeId: 'member-lead', ownerId: 'member-lead', status: 'completed', startDate: '2026-11-16', dueDate: '2026-11-20', effortHours: 6, deliverable: 'Danh sách khách mời đã xác nhận' },
+      { id: 'task-live-seeding', campaignId: 'camp-live', phaseId: 'phase-live-media', activityId: 'act-live-seeding', title: 'Đăng bài seeding đợt 1', assigneeId: 'member-content', ownerId: 'member-content', status: 'in_progress', startDate: '2026-11-18', dueDate: '2026-11-24', effortHours: 8, deliverable: 'Link các bài seeding đã đăng' }
     ],
     dependencies: [
       { id: 'dep-1', predecessorId: 'task-a', successorId: 'task-b' },
@@ -101,7 +141,11 @@
       { id: 'content-1', campaignId: 'camp-1', title: 'Video thử thách mùa lễ', type: 'video', editorialStatus: 'in_review', ownerId: 'member-content', scheduledDate: '2026-11-17' },
       { id: 'content-2', campaignId: 'camp-1', title: 'Bài giới thiệu sự kiện trong game', type: 'post', editorialStatus: 'approved', ownerId: 'member-content', scheduledDate: '2026-11-12' },
       { id: 'content-3', campaignId: 'camp-1', title: 'Ảnh KV teaser', type: 'image', editorialStatus: 'draft', ownerId: 'member-design', scheduledDate: '2026-11-11' },
-      { id: 'content-4', campaignId: 'camp-2', title: 'Mời trải nghiệm thử VR', type: 'post', editorialStatus: 'scheduled', ownerId: 'member-design', scheduledDate: '2026-11-24' }
+      { id: 'content-4', campaignId: 'camp-2', title: 'Mời trải nghiệm thử VR', type: 'post', editorialStatus: 'scheduled', ownerId: 'member-design', scheduledDate: '2026-11-24' },
+      // Fixture R3.1: 2 content item CHỈ LIÊN KẾT với action Ads — liên kết
+      // này không tạo thêm chi phí (thực chi campaign vẫn 20,5tr).
+      { id: 'content-live-ads-1', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Creative quảng cáo livestream — bản A', type: 'video', editorialStatus: 'approved', ownerId: 'member-content', scheduledDate: '2026-11-20' },
+      { id: 'content-live-ads-2', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Landing page đăng ký livestream', type: 'article', editorialStatus: 'in_review', ownerId: 'member-content', scheduledDate: '2026-11-19' }
     ],
     variants: [
       { id: 'variant-fb-1', contentItemId: 'content-2', platform: 'facebook', channelLabel: 'Facebook', caption: 'Mùa lễ đã mở trong game! Hoàn thành thử thách mỗi ngày để nhận quà giới hạn. Bạn đã sẵn sàng chưa?', scheduledAt: '2026-11-12T09:00:00+07:00', editorialStatus: 'approved', approvalStatus: 'approved', revision: 2, publishMode: 'app' },
@@ -163,22 +207,54 @@
       { id: 'budget-1', campaignId: 'camp-1', name: 'Sản xuất nội dung', currency: 'VND', planned: 60000000, approved: 50000000 },
       { id: 'budget-2', campaignId: 'camp-1', name: 'Quảng cáo Meta', currency: 'VND', planned: 90000000, approved: 80000000 },
       { id: 'budget-3', campaignId: 'camp-2', name: 'Trang giới thiệu và trải nghiệm', currency: 'VND', planned: 40000000, approved: 30000000 },
-      { id: 'budget-4', campaignId: 'camp-2', name: 'Sự kiện trải nghiệm (USD mẫu)', currency: 'USD', planned: 2000, approved: 1500 }
+      { id: 'budget-4', campaignId: 'camp-2', name: 'Sự kiện trải nghiệm (USD mẫu)', currency: 'USD', planned: 2000, approved: 1500 },
+      // Fixture R3.1 D.1: approved = phân bổ cho từng action (8/15/5/2 = 30tr);
+      // planned cố ý khác approved để chứng minh hai số lưu độc lập (AC10).
+      { id: 'bl-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', name: 'Phân bổ — Mời khách mời', currency: 'VND', planned: 9000000, approved: 8000000 },
+      { id: 'bl-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', name: 'Phân bổ — Chạy ads', currency: 'VND', planned: 16000000, approved: 15000000 },
+      { id: 'bl-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', name: 'Phân bổ — Seeding', currency: 'VND', planned: 6000000, approved: 5000000 },
+      { id: 'bl-live-show', campaignId: 'camp-live', activityId: 'act-live-show', name: 'Phân bổ — Tổ chức livestream', currency: 'VND', planned: 2500000, approved: 2000000 }
     ],
     commitments: [
       { id: 'commit-1', budgetLineId: 'budget-1', title: 'Đặt cọc quay dựng video', amount: 20000000, currency: 'VND', status: 'open' },
       { id: 'commit-2', budgetLineId: 'budget-1', title: 'Thuê thiết bị quay', amount: 5000000, currency: 'VND', status: 'open' },
-      { id: 'commit-3', budgetLineId: 'budget-2', title: 'Ngân sách quảng cáo đã cam kết tuần 1', amount: 30000000, currency: 'VND', status: 'open' }
+      { id: 'commit-3', budgetLineId: 'budget-2', title: 'Ngân sách quảng cáo đã cam kết tuần 1', amount: 30000000, currency: 'VND', status: 'open' },
+      // Fixture R3.1 D.1: cam kết = thực chi + phần còn mở (8=6+2, 14=10+4, 4=3+1, 2=1,5+0,5).
+      { id: 'cm-live-invite', budgetLineId: 'bl-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', title: 'Cam kết chi mời khách mời', amount: 8000000, currency: 'VND', status: 'committed' },
+      { id: 'cm-live-ads', budgetLineId: 'bl-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Cam kết ngân sách ads livestream', amount: 14000000, currency: 'VND', status: 'committed' },
+      { id: 'cm-live-seeding', budgetLineId: 'bl-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', title: 'Cam kết chi seeding', amount: 4000000, currency: 'VND', status: 'committed' },
+      { id: 'cm-live-show', budgetLineId: 'bl-live-show', campaignId: 'camp-live', activityId: 'act-live-show', title: 'Cam kết chi tổ chức livestream', amount: 2000000, currency: 'VND', status: 'committed' }
     ],
     actuals: [
       { id: 'actual-1', budgetLineId: 'budget-1', commitmentId: 'commit-1', title: 'Thanh toán đợt 1 quay dựng', amount: 8000000, currency: 'VND', date: '2026-11-08' },
-      { id: 'actual-2', budgetLineId: 'budget-2', commitmentId: null, title: 'Chi quảng cáo thực tế tuần 1', amount: 18000000, currency: 'VND', date: '2026-11-09' }
+      { id: 'actual-2', budgetLineId: 'budget-2', commitmentId: null, title: 'Chi quảng cáo thực tế tuần 1', amount: 18000000, currency: 'VND', date: '2026-11-09' },
+      // Fixture R3.1 D.1: thực chi 6/10/3/1,5 = 20,5tr. Hóa đơn chung 60/40
+      // KHÔNG nằm ở campaign này (đã có ở test domain/store) để giữ tổng 20,5.
+      { id: 'pay-live-invite', budgetLineId: 'bl-live-invite', commitmentId: 'cm-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', title: 'Chi mời khách mời', description: 'Chứng từ minh họa R3.1', amount: 6000000, currency: 'VND', date: '2026-11-20', source: 'manual' },
+      { id: 'pay-live-ads', budgetLineId: 'bl-live-ads', commitmentId: 'cm-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Chi ads livestream', description: 'Chứng từ minh họa R3.1', amount: 10000000, currency: 'VND', date: '2026-11-24', source: 'manual' },
+      { id: 'pay-live-seeding', budgetLineId: 'bl-live-seeding', commitmentId: 'cm-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', title: 'Chi seeding', description: 'Chứng từ minh họa R3.1', amount: 3000000, currency: 'VND', date: '2026-11-24', source: 'manual' },
+      { id: 'pay-live-show', budgetLineId: 'bl-live-show', commitmentId: 'cm-live-show', campaignId: 'camp-live', activityId: 'act-live-show', title: 'Chi tổ chức livestream', description: 'Chứng từ minh họa R3.1', amount: 1500000, currency: 'VND', date: '2026-11-25', source: 'manual' }
     ],
     kpis: [
       { id: 'kpi-1', campaignId: 'camp-1', name: 'Lượt cài đặt mới', target: 10000, actual: 6200, unit: 'lượt', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },
       { id: 'kpi-2', campaignId: 'camp-1', name: 'Lượt xem video thử thách', target: 100000, actual: null, unit: 'lượt xem', source: 'Chưa có nguồn số liệu', updatedAt: null },
-      { id: 'kpi-3', campaignId: 'camp-2', name: 'Lịch hẹn trải nghiệm thử', target: 30, actual: 0, unit: 'lịch hẹn', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' }
+      { id: 'kpi-3', campaignId: 'camp-2', name: 'Lịch hẹn trải nghiệm thử', target: 30, actual: 0, unit: 'lịch hẹn', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },
+      // Fixture R3.1 D.2: đăng ký ads 100 (target 120), seeding 60 (target 80),
+      // trùng 20 khóa → campaign unique 140/150 = 93,33%.
+      { id: 'kpi-live-ads-reg', campaignId: 'camp-live', activityId: 'act-live-ads', scopeType: 'activity', name: 'Đăng ký hợp lệ từ ads', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 120, actual: 100, unit: 'người', periodKey: '2026-11', identityKeys: ADS_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ ads theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-seeding-reg', campaignId: 'camp-live', activityId: 'act-live-seeding', scopeType: 'activity', name: 'Đăng ký hợp lệ từ seeding', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 80, actual: 60, unit: 'người', periodKey: '2026-11', identityKeys: SEEDING_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ seeding theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-campaign-reg', campaignId: 'camp-live', scopeType: 'campaign', name: 'Đăng ký hợp lệ không trùng — toàn campaign', metricCode: 'valid_registrations', aggregationMode: 'unique', target: 150, actual: null, unit: 'người', periodKey: '2026-11', definition: { description: 'COUNT DISTINCT khóa định danh trên tập KPI nguồn đã chọn (ads + seeding).' }, source: 'Roll-up từ KPI nguồn (contributions)', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-guests', campaignId: 'camp-live', activityId: 'act-live-invite', scopeType: 'activity', name: 'Khách mời xác nhận', metricCode: 'confirmed_guests', aggregationMode: 'sum', target: 2, actual: 2, unit: 'khách', periodKey: '2026-11', definition: { description: 'Số khách mời đã xác nhận tham gia — metric khác, không cộng vào đăng ký.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      // CPL ratio hai scope: Ads = 10tr/100 = 100.000; toàn campaign =
+      // 20,5tr/140 ≈ 146.429 — nhãn phạm vi ghi rõ ở từng KPI.
+      { id: 'kpi-live-ads-cpl', campaignId: 'camp-live', activityId: 'act-live-ads', scopeType: 'activity', name: 'Chi phí / đăng ký — phạm vi Chạy ads', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 10000000, denominator: 100, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi của hoạt động Chạy ads / đăng ký hợp lệ từ ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-campaign-cpl', campaignId: 'camp-live', scopeType: 'campaign', name: 'Chi phí / đăng ký — phạm vi toàn campaign', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 20500000, denominator: 140, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi toàn campaign / đăng ký unique toàn campaign — KHÔNG phải CPL của riêng ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' }
     ],
+    kpiContributions: [
+      { id: 'contrib-live-1', kpiId: 'kpi-live-campaign-reg', sourceKpiId: 'kpi-live-ads-reg', rule: 'unique', dedupKeyField: 'identityKeys' },
+      { id: 'contrib-live-2', kpiId: 'kpi-live-campaign-reg', sourceKpiId: 'kpi-live-seeding-reg', rule: 'unique', dedupKeyField: 'identityKeys' }
+    ],
+    budgetAllocations: [],
     adAccounts: [
       { id: 'adacc-1', name: 'Tài khoản quảng cáo mẫu 01', platform: 'Meta Ads', status: 'Chỉ đọc — chờ kết nối' }
     ],

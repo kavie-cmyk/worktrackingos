@@ -187,6 +187,11 @@ form.inline.compact input[type="date"]{max-width:150px}
   .grid2{grid-template-columns:1fr}
   .g2-inner{min-width:640px}
 }
+/* ===== Vòng R3.1: Action Plan + drawer hoạt động ===== */
+tr.group-row td{background:#f0f2f5;font-weight:700}
+.activity-backdrop{z-index:58}
+.activity-panel{z-index:62}
+.drawer-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
 }

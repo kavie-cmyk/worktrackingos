@@ -88,6 +88,9 @@
     contentFilter: { campaignId: 'all', platform: 'all', ownerId: 'all', status: 'all' },
     brandFilter: { ownerId: 'all', status: 'all', type: 'all' },
     approvalsTab: 'mine',
+    actionGroupBy: 'phase',
+    activityDrawerId: null,
+    activityTab: 'overview',
     confirmClose: null,
     editor: null,
     editorSubmitting: false,
@@ -387,7 +390,7 @@
     if (name === 'calendar') { UI.contentTab = 'calendar'; name = 'content'; }
     if (ROUTES.indexOf(name) === -1) name = 'overview';
     var route = { name: name, id: parts[1] ? decodeURIComponent(parts[1]) : null, sub: parts[2] ? decodeURIComponent(parts[2]) : null };
-    if (name === 'campaigns' && route.sub && ['overview', 'plan', 'tasks', 'content', 'kpi', 'docs', 'summary'].indexOf(route.sub) !== -1) UI.campaignTab = route.sub;
+    if (name === 'campaigns' && route.sub && ['overview', 'action', 'plan', 'tasks', 'content', 'kpi', 'docs', 'summary'].indexOf(route.sub) !== -1) UI.campaignTab = route.sub;
     if (name === 'campaigns' && route.id && !route.sub) UI.campaignTab = 'overview';
     return route;
   }
@@ -588,6 +591,16 @@
           F('ownerId', 'Người phụ trách', 'select', ev('ownerId', c.ownerId || Store.currentUserId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
           F('businessUnitId', 'BU', 'select', ev('businessUnitId', c.businessUnitId), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name]; }), emptyLabel: '— Không gắn BU —' }) +
           F('product', 'Sản phẩm', 'text', ev('product', c.product)) +
+          F('budgetCeiling', 'Hạn mức ngân sách campaign', 'number', ev('budgetCeiling', c.budgetCeiling !== null && c.budgetCeiling !== undefined ? c.budgetCeiling : cfVal(c, 'budgetCeiling')), { min: 0, step: 'any', help: 'Hạn mức được duyệt ở cấp campaign — khác với tổng phân bổ xuống các hoạt động.' }) +
+          F('budgetCeilingCurrency', 'Tiền tệ của hạn mức', 'select', ev('budgetCeilingCurrency', c.budgetCeilingCurrency || cfVal(c, 'budgetCeilingCurrency') || 'VND'), { options: [['VND', 'VND'], ['USD', 'USD']] }) +
+          (!e.id
+            ? F('template', 'Mẫu campaign', 'select', ev('template', ''), { options: [['', 'Không dùng mẫu'], ['livestream', 'Livestream — 4 hoạt động mẫu']], emptyLabel: null, help: 'Mẫu chỉ tạo hoạt động/task/KPI gợi ý và dòng phân bổ DỰ THẢO (chưa duyệt, chưa có khoản chi/thanh toán thật). Sửa số phân bổ ngay bên dưới trước khi tạo.' }) +
+              '<div class="fld wide"><span>Phân bổ dự thảo của mẫu Livestream (VNĐ) — sửa được trước khi tạo</span></div>' +
+              F('tplAlloc0', 'Mời khách mời — phân bổ dự thảo', 'number', ev('tplAlloc0', 8000000), { min: 0, step: 'any' }) +
+              F('tplAlloc1', 'Chạy ads — phân bổ dự thảo', 'number', ev('tplAlloc1', 15000000), { min: 0, step: 'any' }) +
+              F('tplAlloc2', 'Seeding — phân bổ dự thảo', 'number', ev('tplAlloc2', 5000000), { min: 0, step: 'any' }) +
+              F('tplAlloc3', 'Tổ chức livestream — phân bổ dự thảo', 'number', ev('tplAlloc3', 2000000), { min: 0, step: 'any' })
+            : '') +
           F('startDate', 'Ngày bắt đầu', 'date', ev('startDate', c.startDate)) +
           F('endDate', 'Ngày kết thúc', 'date', ev('endDate', c.endDate)) +
           // R2-28c: baseline KHÔNG nhập trực tiếp nữa — chỉ chốt qua hành động
@@ -631,8 +644,10 @@
           F('phaseId', 'Giai đoạn', 'select', ev('phaseId', a.phaseId), { options: phases.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Không gắn giai đoạn —' }) +
           F('channel', 'Kênh triển khai', 'text', ev('channel', a.channel)) +
           F('ownerId', 'Người phụ trách', 'select', ev('ownerId', a.ownerId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
+          F('status', 'Trạng thái', 'select', ev('status', a.status || ''), { options: [['not_started', 'Chưa bắt đầu'], ['in_progress', 'Đang làm'], ['blocked', 'Bị chặn'], ['completed', 'Hoàn thành']], emptyLabel: '— Tự suy từ task —' }) +
           F('startDate', 'Ngày bắt đầu', 'date', ev('startDate', a.startDate)) +
           F('endDate', 'Ngày kết thúc', 'date', ev('endDate', a.endDate)) +
+          F('objective', 'Mục tiêu hoạt động', 'textarea', ev('objective', a.objective), { wide: true }) +
           F('deliverables', 'Đầu ra cần bàn giao', 'textarea', ev('deliverables', a.deliverables || a.deliverable), { wide: true }),
           'Lưu hoạt động');
       }
@@ -672,7 +687,7 @@
           F('title', 'Tên việc *', 'text', ev('title', t.title), { required: true, wide: true }) +
           F('campaignId', 'Campaign (để trống = việc độc lập)', 'select', tCamp, { options: campaignPairs(), emptyLabel: '— Việc độc lập —', attrs: ' data-refresh-editor="1"' }) +
           F('phaseId', 'Giai đoạn (theo campaign)', 'select', tPhase, { options: taskPhases.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn giai đoạn —', attrs: ' data-refresh-editor="1"' }) +
-          F('activityId', 'Hoạt động (theo giai đoạn)', 'select', ev('activityId', t.activityId || ''), { options: taskActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn hoạt động —' }) +
+          F('activityId', 'Hoạt động (theo giai đoạn)', 'select', ev('activityId', t.activityId || e.context.activityId || ''), { options: taskActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn hoạt động —' }) +
           F('parentId', 'Việc cha', 'select', ev('parentId', t.parentId), { options: visibleList('tasks').filter(function (x) { return x.id !== e.id; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không có —' }) +
           F('assigneeId', 'Người phụ trách', 'select', ev('assigneeId', t.assigneeId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
           F('status', 'Trạng thái', 'select', ev('status', t.status || 'todo'), { options: TASK_STATUSES }) +
@@ -729,15 +744,32 @@
       }
       case 'kpi': {
         var k = editorItem('kpis') || {};
+        var kScope = ev('scopeType', k.scopeType || k.scope_type || (e.context.activityId ? 'activity' : (e.context.taskId ? 'task' : (e.context.contentItemId ? 'content' : 'campaign'))));
+        var kDefText = (k.definition === null || k.definition === undefined) ? '' : (typeof k.definition === 'string' ? k.definition : (k.definition.description || k.definition.how || ''));
+        var kContribIds = listSafe('kpiContributions').filter(function (x) { return x.kpiId === k.id; }).map(function (x) { return x.sourceKpiId; });
+        var kSourcePairs = visibleList('kpis').filter(function (x) { return x.id !== k.id; }).map(function (x) { return [x.id, x.name + (x.metricCode ? ' (' + x.metricCode + ')' : '')]; });
+        var kRoll = k.id ? kpiRollupFor(k) : null;
         return formShell('kpi', e.id ? 'Sửa KPI' : 'Tạo KPI',
           F('name', 'Tên KPI *', 'text', ev('name', k.name), { required: true, wide: true }) +
+          F('scopeType', 'Phạm vi (scope)', 'select', kScope, { options: [['campaign', 'Campaign'], ['activity', 'Hoạt động'], ['task', 'Task'], ['content', 'Content'], ['pillar', 'Pillar'], ['bu_product', 'Brand-Product']], help: 'Chọn Hoạt động thì campaign + activity được tự điền từ hoạt động đã chọn.' }) +
           F('campaignId', 'Campaign', 'select', ev('campaignId', k.campaignId || e.context.campaignId), { options: campaignPairs(), emptyLabel: '— Toàn workspace —' }) +
+          F('activityId', 'Hoạt động', 'select', ev('activityId', k.activityId || e.context.activityId), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không gắn hoạt động —' }) +
+          F('taskId', 'Task', 'select', ev('taskId', k.taskId || e.context.taskId), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn task —' }) +
+          F('contentItemId', 'Content', 'select', ev('contentItemId', k.contentItemId || e.context.contentItemId), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn content —' }) +
+          F('pillarId', 'Pillar', 'select', ev('pillarId', k.pillarId), { options: listSafe('contentPillars').map(function (x) { return [x.id, x.name || x.title]; }), emptyLabel: '— Không gắn pillar —' }) +
+          F('metricCode', 'Mã chỉ số (metric_code)', 'text', ev('metricCode', k.metricCode || k.metric_code), { placeholder: 'vd: valid_registrations' }) +
+          F('definition', 'Định nghĩa / cách đo (definition)', 'textarea', ev('definition', kDefText), { wide: true, help: 'Mô tả cách đo: nguồn số liệu, điều kiện hợp lệ, khóa khử trùng nếu là chỉ số unique.' }) +
+          F('aggregationMode', 'Cách tổng hợp (aggregation_mode)', 'select', ev('aggregationMode', k.aggregationMode || k.aggregation_mode || 'direct'), { options: [['direct', 'Đo trực tiếp (direct)'], ['sum', 'Cộng các nguồn cùng chỉ số (sum)'], ['unique', 'Đếm không trùng theo khóa định danh (unique)'], ['ratio', 'Tỷ lệ — tính lại từ tử số/mẫu số (ratio)'], ['snapshot', 'Snapshot mới nhất theo đối tượng (snapshot)'], ['manual', 'Nhập tay có bằng chứng (manual)']] }) +
           F('target', 'Mục tiêu', 'number', ev('target', k.target), { step: 'any' }) +
           F('unit', 'Đơn vị', 'text', ev('unit', k.unit)) +
-          F('definition', 'Định nghĩa / cách đo', 'textarea', ev('definition', k.definition), { wide: true }) +
+          F('direction', 'Chiều tốt lên', 'select', ev('direction', k.direction || 'increase'), { options: [['increase', 'Càng cao càng tốt'], ['decrease', 'Càng thấp càng tốt']] }) +
           F('periodStart', 'Kỳ đo — từ ngày', 'date', ev('periodStart', k.periodStart ? String(k.periodStart).slice(0, 10) : '')) +
           F('periodEnd', 'Kỳ đo — đến ngày', 'date', ev('periodEnd', k.periodEnd ? String(k.periodEnd).slice(0, 10) : '')) +
-          F('ownerId', 'Người phụ trách', 'select', ev('ownerId', k.ownerId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }),
+          F('ownerId', 'Người phụ trách', 'select', ev('ownerId', k.ownerId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
+          '<label class="fld wide">KPI nguồn để roll-up (contributions) — chỉ dùng khi KPI này tổng hợp từ KPI khác cùng metric' +
+          '<select name="sourceKpiIds" multiple size="4">' + kSourcePairs.map(function (p) { return '<option value="' + esc(p[0]) + '"' + (kContribIds.indexOf(p[0]) !== -1 ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select>' +
+          '<span class="field-help">Chọn các KPI nguồn cùng metric_code/đơn vị/kỳ. Với unique, KPI nguồn phải có khóa định danh (identity keys) — thiếu khóa thì kết quả là "Chưa đủ dữ liệu", không cộng thô.</span></label>' +
+          (kRoll ? '<div class="fld wide"><span>Kết quả roll-up hiện tại</span><p class="sub" style="margin:2px 0">Phạm vi: ' + esc(kpiScopeLabel(k)) + ' · Trạng thái: ' + (kRoll.status === 'insufficient_data' ? 'Chưa đủ dữ liệu' : 'Đủ dữ liệu') + (kRoll.value !== null && kRoll.value !== undefined ? ' · Giá trị: ' + fmtNum(kRoll.value) : '') + (kRoll.achievementPercent !== null && kRoll.achievementPercent !== undefined ? ' · Mức đạt: ' + fmtNum(kRoll.achievementPercent) + '%' : '') + '</p></div>' : ''),
           'Lưu KPI');
       }
       case 'measurement': {
@@ -750,13 +782,35 @@
       }
       case 'budgetLine': {
         var b = editorItem('budgetLines') || {};
+        var blCamp = ev('campaignId', b.campaignId || e.context.campaignId || '');
+        var blActs = visibleList('activities').filter(function (x) { return !blCamp || x.campaignId === blCamp; });
+        var blAct = ev('activityId', b.activityId || e.context.activityId || '');
+        var blTasks = visibleList('tasks').filter(function (x) { if (blAct) return x.activityId === blAct; if (blCamp) return x.campaignId === blCamp; return true; });
         return formShell('budgetLine', e.id ? 'Sửa dòng ngân sách' : 'Tạo dòng ngân sách',
           F('name', 'Tên dòng ngân sách *', 'text', ev('name', b.name), { required: true, wide: true }) +
-          F('campaignId', 'Campaign', 'select', ev('campaignId', b.campaignId || e.context.campaignId), { options: campaignPairs(), emptyLabel: '— Chưa gắn —' }) +
-          F('planned', 'Kế hoạch (planned)', 'number', ev('planned', b.planned), { min: 0, step: 'any' }) +
-          F('approved', 'Đã duyệt (approved)', 'number', ev('approved', b.approved), { min: 0, step: 'any' }) +
+          F('campaignId', 'Campaign', 'select', blCamp, { options: campaignPairs(), emptyLabel: '— Chưa gắn —', attrs: ' data-refresh-editor="1"' }) +
+          F('activityId', 'Hoạt động (thuộc campaign)', 'select', blAct, { options: blActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chi trực tiếp campaign / chưa phân bổ —', attrs: ' data-refresh-editor="1"' }) +
+          F('taskId', 'Task (thuộc campaign)', 'select', ev('taskId', b.taskId || e.context.taskId || ''), { options: blTasks.map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn task —' }) +
+          F('planned', 'Kế hoạch (planned)', 'number', ev('planned', b.planned), { min: 0, step: 'any', help: 'Số kế hoạch — lưu độc lập, không suy từ số được duyệt.' }) +
+          F('approved', 'Được duyệt (approved)', 'number', ev('approved', b.approved), { min: 0, step: 'any', help: 'Số đã được duyệt — lưu độc lập với kế hoạch.' }) +
           F('currency', 'Tiền tệ', 'select', ev('currency', b.currency || 'VND'), { options: [['VND', 'VND'], ['USD', 'USD']] }),
           'Lưu dòng ngân sách');
+      }
+      case 'allocation': {
+        var srcKind = ev('sourceKind', e.context.sourceKind || 'actual');
+        var srcId = ev('sourceId', e.context.sourceId || '');
+        var srcList = srcKind === 'commitment' ? Store.list('commitments') : Store.list('actuals');
+        var srcItem = srcList.find(function (x) { return x.id === srcId; }) || {};
+        var existingAllocs = srcId ? (hasFn('listAllocationsForSource') ? Store.listAllocationsForSource(srcKind, srcId) : listSafe('budgetAllocations').filter(function (a) { return (a.sourceKind || 'actual') === srcKind && String(srcKind === 'actual' ? (a.actualId || a.actual_id) : (a.commitmentId || a.commitment_id)) === String(srcId); })) : [];
+        return formShell('allocation', 'Phân bổ chi chung — chia một khoản cho nhiều hoạt động',
+          F('sourceKind', 'Loại khoản nguồn', 'select', srcKind, { options: [['actual', 'Khoản chi thực tế (actual)'], ['commitment', 'Cam kết (commitment)']], attrs: ' data-refresh-editor="1"' }) +
+          F('sourceId', 'Khoản nguồn *', 'select', srcId, { options: srcList.map(function (x) { return [x.id, (x.title || '—') + ' — ' + fmtMoney(x.amount, x.currency)]; }), emptyLabel: '— Chọn khoản nguồn —', attrs: ' data-refresh-editor="1"' }) +
+          (srcId ? '<div class="fld wide"><span>Tình trạng phân bổ của khoản nguồn</span><p class="sub" style="margin:2px 0">Số tiền gốc: <strong>' + fmtMoney(srcItem.amount, srcItem.currency) + '</strong>' + (existingAllocs.length ? ' · Đã phân bổ: ' + existingAllocs.map(function (a) { var aa = Store.get('activities', a.activityId); return esc(aa ? aa.name : (a.activityId || '—')) + ' = ' + (a.amount !== null && a.amount !== undefined ? fmtMoney(a.amount, srcItem.currency) : (a.sharePercent + '%')); }).join('; ') : ' · Chưa phân bổ cho hoạt động nào.') + '</p></div>' : '') +
+          F('activityId', 'Phân bổ cho hoạt động *', 'select', ev('activityId', ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Chọn hoạt động —' }) +
+          F('amount', 'Số tiền phân bổ', 'number', ev('amount', ''), { min: 0, step: 'any', help: 'Điền số tiền HOẶC tỷ lệ % bên dưới — tổng phân bổ không được vượt số tiền gốc / 100%.' }) +
+          F('sharePercent', 'Tỷ lệ phân bổ (%)', 'number', ev('sharePercent', ''), { min: 0, step: 'any' }) +
+          F('effectiveDate', 'Ngày hiệu lực', 'date', ev('effectiveDate', todayISO())),
+          'Lưu phân bổ');
       }
       case 'commitment': {
         var cm = editorItem('commitments') || {};
@@ -789,10 +843,11 @@
         var payCur = payLine.currency || payCm.currency || 'VND';
         return formShell('commitmentPayment', 'Ghi thanh toán — ' + (payCm.title || 'cam kết chi'),
           '<div class="fld wide"><span>Cam kết</span><p class="sub" style="margin:2px 0"><strong>' + esc(payCm.title || '—') + '</strong> · tổng cam kết ' + fmtMoney(payCm.amount, payCur) + ' · dòng ngân sách: ' + esc(payLine.name || '—') + '</p></div>' +
+          F('title', 'Nội dung khoản chi', 'text', ev('title', 'Thanh toán cho: ' + (payCm.title || 'cam kết chi')), { wide: true }) +
           F('amount', 'Số tiền lần thanh toán này *', 'number', ev('amount', ''), { required: true, min: 0, step: 'any' }) +
           '<div class="fld"><span>Tiền tệ (theo dòng ngân sách)</span><p class="sub" style="margin:2px 0"><strong>' + esc(payCur) + '</strong></p></div>' +
           F('date', 'Ngày thanh toán', 'date', ev('date', todayISO())) +
-          F('description', 'Số chứng từ / ghi chú', 'text', ev('description', ''), { wide: true }),
+          F('description', 'Ghi chú / Chứng từ', 'text', ev('description', ''), { wide: true }),
           'Lưu thanh toán');
       }
       case 'actual': {
@@ -803,13 +858,13 @@
         return formShell('actual', e.id ? 'Sửa khoản chi thực tế' : 'Ghi khoản chi thực tế',
           F('budgetLineId', 'Dòng ngân sách *', 'select', lineId, { options: visibleList('budgetLines').map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chọn dòng —', attrs: ' data-refresh-editor="1"' }) +
           F('commitmentId', 'Cam kết liên quan (nếu có)', 'select', ev('commitmentId', ac.commitmentId), { options: visibleList('commitments').filter(function (x) { return !lineId || x.budgetLineId === lineId; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn cam kết —' }) +
-          F('title', 'Nội dung chi *', 'text', ev('title', ac.title), { required: true, wide: true }) +
+          F('title', 'Nội dung khoản chi *', 'text', ev('title', ac.title), { required: true, wide: true }) +
           F('amount', 'Số tiền', 'number', ev('amount', ac.amount), { min: 0, step: 'any' }) +
           '<div class="fld"><span>Tiền tệ (theo dòng ngân sách)</span><p class="sub" style="margin:2px 0"><strong>' + esc(acCur) + '</strong></p></div>' +
           F('date', 'Ngày chi', 'date', ev('date', ac.date || todayISO())) +
           // R2-09: nguồn là enum cố định, không còn text tự do.
           F('source', 'Nguồn chi', 'select', ev('source', ac.source || 'manual'), { options: [['manual', 'Nhập tay'], ['invoice', 'Hóa đơn'], ['import', 'Nhập từ file']] }) +
-          F('description', 'Số chứng từ / ghi chú', 'text', ev('description', ac.description || ''), { wide: true }),
+          F('description', 'Số chứng từ / ghi chú', 'text', ev('description', ac.description || ''), { wide: true, help: 'Ô Ghi chú / Chứng từ — tách riêng khỏi ô Nội dung khoản chi ở trên, hai ô lưu hai trường khác nhau.' }),
           'Lưu khoản chi');
       }
       case 'post': {
@@ -894,6 +949,48 @@
     if (after) after();
   }
 
+  // R3.1: mẫu campaign Livestream — 4 hoạt động + gợi ý task/KPI/phân bổ.
+  // Phân bổ chỉ là DỰ THẢO (planned, approved để trống), KHÔNG tạo khoản
+  // chi/thanh toán thật và KHÔNG đánh dấu đã duyệt.
+  var LIVESTREAM_TEMPLATE = [
+    { name: 'Mời khách mời', channel: 'Email / điện thoại', alloc: 8000000, taskTitle: 'Lập shortlist, liên hệ và chốt lịch khách mời', kpiName: 'Khách mời xác nhận', kpiTarget: 2, kpiUnit: 'khách', metricCode: 'confirmed_guests' },
+    { name: 'Chạy ads', channel: 'Meta Ads', alloc: 15000000, taskTitle: 'Thiết lập và theo dõi chiến dịch quảng cáo livestream', kpiName: 'Đăng ký hợp lệ từ ads', kpiTarget: 120, kpiUnit: 'đăng ký', metricCode: 'valid_registrations' },
+    { name: 'Seeding', channel: 'Cộng đồng', alloc: 5000000, taskTitle: 'Soạn và đăng bài seeding vào các cộng đồng', kpiName: 'Đăng ký hợp lệ từ seeding', kpiTarget: 80, kpiUnit: 'đăng ký', metricCode: 'valid_registrations' },
+    { name: 'Tổ chức livestream', channel: 'Livestream', alloc: 2000000, taskTitle: 'Kịch bản, chạy thử và tổ chức buổi livestream', kpiName: 'Phiên livestream hoàn tất', kpiTarget: 1, kpiUnit: 'phiên', metricCode: 'livestream_sessions' }
+  ];
+  function createLivestreamChildren(campaignId, allocs, doneCb) {
+    var idx = 0;
+    function next() {
+      if (idx >= LIVESTREAM_TEMPLATE.length) { doneCb(); return; }
+      var tpl = LIVESTREAM_TEMPLATE[idx];
+      var alloc = (allocs && allocs[idx] !== null && allocs[idx] !== undefined && !isNaN(Number(allocs[idx]))) ? Number(allocs[idx]) : tpl.alloc;
+      idx++;
+      saveResult(sCreate('activities', { name: tpl.name, channel: tpl.channel, campaignId: campaignId, ownerId: Store.currentUserId }), function (r) {
+        var actId = r && r.item ? r.item.id : null;
+        var jobs = [];
+        if (actId) {
+          jobs.push(function (n) { saveResult(sCreate('budgetLines', { name: 'Phân bổ dự thảo — ' + tpl.name, campaignId: campaignId, activityId: actId, planned: alloc, approved: null, currency: 'VND' }), n, n); });
+          jobs.push(function (n) { saveResult(sCreate('tasks', { title: tpl.taskTitle, campaignId: campaignId, activityId: actId, assigneeId: Store.currentUserId, ownerId: Store.currentUserId, status: 'todo', priority: 'Trung bình', checklist: [] }), n, n); });
+          jobs.push(function (n) { saveResult(sCreate('kpis', { name: tpl.kpiName, campaignId: campaignId, activityId: actId, scopeType: 'activity', metricCode: tpl.metricCode, target: tpl.kpiTarget, unit: tpl.kpiUnit, aggregationMode: 'manual' }), n, n); });
+        }
+        (function step() { var j = jobs.shift(); if (!j) { next(); return; } j(step); })();
+      }, function () { next(); });
+    }
+    next();
+  }
+  // Đồng bộ kpiContributions cho 1 KPI: gỡ nguồn không còn chọn, thêm nguồn mới.
+  function syncKpiContributions(kpiId, sourceIds, mode, doneCb) {
+    var existing = listSafe('kpiContributions').filter(function (x) { return x.kpiId === kpiId; });
+    var jobs = [];
+    existing.filter(function (x) { return sourceIds.indexOf(x.sourceKpiId) === -1; }).forEach(function (x) {
+      jobs.push(function (n) { if (hasFn('remove')) saveResult(Store.remove('kpiContributions', x.id), n, n); else n(); });
+    });
+    sourceIds.filter(function (sid) { return !existing.some(function (x) { return x.sourceKpiId === sid; }); }).forEach(function (sid) {
+      jobs.push(function (n) { saveResult(sCreate('kpiContributions', { kpiId: kpiId, sourceKpiId: sid, rule: mode || 'sum', dedupKeyField: 'identityKeys' }), n, n); });
+    });
+    (function step() { var j = jobs.shift(); if (!j) { doneCb(); return; } j(step); })();
+  }
+
   function saveEditor(kind, data, form) {
     var e = UI.editor;
     if (e) e.values = data; // giữ lại giá trị đã nhập khi báo lỗi cạnh từng trường
@@ -915,6 +1012,8 @@
         var obj = {
           name: data.name, status: data.status, statusLabel: labelStatus(data.status), ownerId: data.ownerId || null,
           businessUnitId: data.businessUnitId || null, product: data.product || '',
+          budgetCeiling: data.budgetCeiling ? Number(data.budgetCeiling) : null,
+          budgetCeilingCurrency: data.budgetCeilingCurrency || 'VND',
           startDate: data.startDate || null, endDate: data.endDate || null,
           why: data.why || '', businessGoal: data.businessGoal || '', marketingGoal: data.marketingGoal || '',
           desiredOutcome: data.desiredOutcome || '', audiences: audiences, audienceInsights: data.audienceInsights || '',
@@ -922,6 +1021,16 @@
           risks: data.risks || '', lessons: data.lessons || ''
         };
         if (e.id) done(sUpdate('campaigns', e.id, obj), 'Đã lưu campaign.');
+        else if (data.template === 'livestream') {
+          var tplAllocs = [data.tplAlloc0, data.tplAlloc1, data.tplAlloc2, data.tplAlloc3];
+          saveResult(sCreate('campaigns', obj), function (r) {
+            var newId = r && r.item ? r.item.id : null;
+            if (!newId) { finishSave('Đã tạo campaign.'); return; }
+            createLivestreamChildren(newId, tplAllocs, function () {
+              finishSave('Đã tạo campaign từ mẫu Livestream: 4 hoạt động kèm task/KPI gợi ý và phân bổ dự thảo (chưa duyệt, chưa có khoản chi thật).');
+            });
+          }, function (msg) { editorFail(msg, errors); });
+        }
         else done(sCreate('campaigns', obj), 'Đã tạo campaign.', null);
         return;
       }
@@ -935,7 +1044,7 @@
       case 'activity': {
         req('name', 'tên hoạt động'); validateDateRange(errors, data.startDate, data.endDate);
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
-        var ao = { name: data.name, phaseId: data.phaseId || null, channel: data.channel || '', ownerId: data.ownerId || null, startDate: data.startDate || null, endDate: data.endDate || null, deliverables: data.deliverables || '', campaignId: e.context.campaignId };
+        var ao = { name: data.name, phaseId: data.phaseId || null, channel: data.channel || '', ownerId: data.ownerId || null, status: data.status || null, startDate: data.startDate || null, endDate: data.endDate || null, objective: data.objective || '', deliverables: data.deliverables || '', campaignId: e.context.campaignId || (editorItem('activities') || {}).campaignId || null };
         if (e.id) done(sUpdate('activities', e.id, ao), 'Đã lưu hoạt động.'); else done(sCreate('activities', ao), 'Đã thêm hoạt động.');
         return;
       }
@@ -1022,8 +1131,38 @@
         var periodLabel = (data.periodStart || data.periodEnd)
           ? (D.formatDateVN(data.periodStart) || '…') + ' — ' + (D.formatDateVN(data.periodEnd) || '…')
           : '';
-        var ko = { name: data.name, campaignId: data.campaignId || null, target: data.target ? Number(data.target) : null, unit: data.unit || '', definition: data.definition || '', period: periodLabel, periodStart: data.periodStart || null, periodEnd: data.periodEnd || null, ownerId: data.ownerId || null };
-        if (e.id) done(sUpdate('kpis', e.id, ko), 'Đã lưu KPI.'); else done(sCreate('kpis', ko), 'Đã tạo KPI.');
+        var scopeType = data.scopeType || 'campaign';
+        // R3.1: scope quyết định bộ FK — chọn activity thì campaign tự suy từ
+        // activity (store cũng kiểm tra mâu thuẫn R31_SCOPE ở tầng dữ liệu).
+        var koCampaign = data.campaignId || null;
+        var koActivity = scopeType === 'activity' || scopeType === 'task' ? (data.activityId || null) : null;
+        if (scopeType === 'activity' && koActivity) { var kAct = Store.get('activities', koActivity); if (kAct && kAct.campaignId) koCampaign = kAct.campaignId; }
+        var koTask = scopeType === 'task' ? (data.taskId || null) : null;
+        if (koTask) { var kTask = taskById(koTask); if (kTask) { if (kTask.campaignId) koCampaign = kTask.campaignId; if (kTask.activityId) koActivity = kTask.activityId; } }
+        var ko = {
+          name: data.name, scopeType: scopeType,
+          campaignId: koCampaign, activityId: koActivity, taskId: koTask,
+          contentItemId: scopeType === 'content' ? (data.contentItemId || null) : null,
+          pillarId: scopeType === 'pillar' ? (data.pillarId || null) : null,
+          metricCode: data.metricCode || null,
+          aggregationMode: data.aggregationMode || 'direct',
+          target: data.target ? Number(data.target) : null, unit: data.unit || '',
+          direction: data.direction || 'increase',
+          definition: data.definition ? { description: data.definition } : {},
+          period: periodLabel, periodStart: data.periodStart || null, periodEnd: data.periodEnd || null,
+          ownerId: data.ownerId || null
+        };
+        var srcSel = form ? form.querySelector('[name="sourceKpiIds"]') : null;
+        var srcIds = [];
+        if (srcSel && srcSel.selectedOptions) { for (var si = 0; si < srcSel.selectedOptions.length; si++) srcIds.push(srcSel.selectedOptions[si].value); }
+        else if (data.sourceKpiIds) srcIds = [data.sourceKpiIds];
+        function afterKpi(r) {
+          var kid = (r && r.item && r.item.id) || e.id;
+          if (!kid) { finishSave('Đã lưu KPI.'); return; }
+          syncKpiContributions(kid, srcIds, ko.aggregationMode, function () { finishSave(e.id ? 'Đã lưu KPI.' : 'Đã tạo KPI.'); });
+        }
+        if (e.id) saveResult(sUpdate('kpis', e.id, ko), afterKpi, function (msg) { editorFail(msg, errors); });
+        else saveResult(sCreate('kpis', ko), afterKpi, function (msg) { editorFail(msg, errors); });
         return;
       }
       case 'measurement': {
@@ -1036,8 +1175,45 @@
       case 'budgetLine': {
         req('name', 'tên dòng ngân sách');
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
-        var blo = { name: data.name, campaignId: data.campaignId || null, planned: data.planned ? Number(data.planned) : null, approved: data.approved ? Number(data.approved) : null, currency: data.currency };
+        // R3.1/AC10: planned và approved là HAI số độc lập — planned trống thì
+        // giữ null, tuyệt đối không lấy approved lấp vào (và ngược lại).
+        var blo = { name: data.name, campaignId: data.campaignId || null, activityId: data.activityId || null, taskId: data.taskId || null, planned: (data.planned === '' || data.planned === null || data.planned === undefined) ? null : Number(data.planned), approved: (data.approved === '' || data.approved === null || data.approved === undefined) ? null : Number(data.approved), currency: data.currency };
         if (e.id) done(sUpdate('budgetLines', e.id, blo), 'Đã lưu dòng ngân sách.'); else done(sCreate('budgetLines', blo), 'Đã tạo dòng ngân sách.');
+        return;
+      }
+      case 'allocation': {
+        req('sourceId', 'khoản nguồn'); req('activityId', 'hoạt động');
+        if (!data.amount && !data.sharePercent) errors.amount = 'Điền số tiền phân bổ hoặc tỷ lệ %.';
+        if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
+        var alKind = data.sourceKind === 'commitment' ? 'commitment' : 'actual';
+        var alSrc = Store.get(alKind === 'actual' ? 'actuals' : 'commitments', data.sourceId);
+        if (!alSrc) return editorFail('Không tìm thấy khoản nguồn để phân bổ.', errors);
+        var alAct = Store.get('activities', data.activityId);
+        // R3.1: validate bằng domain.validateAllocations TRƯỚC khi lưu —
+        // vượt 100% / vượt tiền gốc thì báo lỗi rõ, không cho lưu.
+        var alExisting = hasFn('listAllocationsForSource') ? Store.listAllocationsForSource(alKind, data.sourceId)
+          : listSafe('budgetAllocations').filter(function (a) { return (a.sourceKind || 'actual') === alKind && String(alKind === 'actual' ? (a.actualId || a.actual_id) : (a.commitmentId || a.commitment_id)) === String(data.sourceId); });
+        var alCandidate = { amount: data.amount ? Number(data.amount) : null, percent: data.sharePercent ? Number(data.sharePercent) : null };
+        var alCheck = (typeof D.validateAllocations === 'function')
+          ? D.validateAllocations(alSrc, alExisting.map(function (a) { return { amount: (a.amount === null || a.amount === undefined) ? null : Number(a.amount), percent: (a.sharePercent === null || a.sharePercent === undefined) ? null : Number(a.sharePercent) }; }).concat([alCandidate]))
+          : { valid: true, errors: [] };
+        if (!alCheck.valid) {
+          return editorFail('Phân bổ không hợp lệ: tổng phân bổ (' + fmtNum(alCheck.totalAllocated) + ') vượt quá số tiền của khoản nguồn (' + fmtNum(alCheck.amount) + ') — ' + alCheck.errors.join(', ') + '. Hãy giảm số tiền/tỷ lệ rồi lưu lại.', errors);
+        }
+        var alo = {
+          sourceKind: alKind,
+          actualId: alKind === 'actual' ? data.sourceId : null,
+          commitmentId: alKind === 'commitment' ? data.sourceId : null,
+          campaignId: (alAct && alAct.campaignId) || alSrc.campaignId || null,
+          activityId: data.activityId,
+          amount: data.amount ? Number(data.amount) : null,
+          sharePercent: data.sharePercent ? Number(data.sharePercent) : null,
+          effectiveDate: data.effectiveDate || todayISO(),
+          currency: alSrc.currency || 'VND'
+        };
+        // Lỗi backend (R31_ALLOC/R31_SCOPE/409) đi qua editorFail nguyên
+        // thông điệp — không nuốt thành thông báo thành công giả.
+        if (e.id) done(sUpdate('budgetAllocations', e.id, alo), 'Đã lưu phân bổ.'); else done(sCreate('budgetAllocations', alo), 'Đã lưu phân bổ chi chung.');
         return;
       }
       case 'commitment': {
@@ -1061,7 +1237,7 @@
         var payObj = {
           budgetLineId: payLine2.id || payCm2.budgetLineId || null,
           commitmentId: payCm2.id || e.context.commitmentId || null,
-          title: 'Thanh toán cho: ' + (payCm2.title || 'cam kết chi'),
+          title: data.title || ('Thanh toán cho: ' + (payCm2.title || 'cam kết chi')),
           amount: Number(data.amount), currency: payLine2.currency || payCm2.currency || 'VND',
           date: data.date || todayISO(), source: 'manual', description: data.description || ''
         };
@@ -1118,7 +1294,15 @@
         var badDay = days.find(function (x) { return !/^\d{4}-\d{2}-\d{2}$/.test(x); });
         if (badDay) errors.daysOff = 'Ngày nghỉ phải dạng yyyy-mm-dd: ' + badDay;
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
-        done(sUpdate('members', e.context.memberId, { capacityHoursPerWeek: data.capacityHoursPerWeek ? Number(data.capacityHoursPerWeek) : 0, daysOff: days }), 'Đã lưu năng lực & ngày nghỉ.');
+        // R3.1/R3-09: capacity lưu qua Store.saveMemberCapacity (RPC/bản ghi
+        // thật); để trống = chưa cấu hình, KHÔNG tự gán số giờ mặc định.
+        if (hasFn('saveMemberCapacity') && data.capacityHoursPerWeek) {
+          done(Store.saveMemberCapacity(e.context.memberId, { hoursPerWeek: Number(data.capacityHoursPerWeek), daysOff: days }), 'Đã lưu năng lực & ngày nghỉ.');
+        } else if (hasFn('saveMemberCapacity')) {
+          return editorFail('Hãy nhập số giờ/tuần để cấu hình năng lực — để trống nghĩa là "Chưa cấu hình", hệ thống không tự gán số giờ mặc định.', errors);
+        } else {
+          done(sUpdate('members', e.context.memberId, { capacityHoursPerWeek: data.capacityHoursPerWeek ? Number(data.capacityHoursPerWeek) : null, daysOff: days }), 'Đã lưu năng lực & ngày nghỉ.');
+        }
         return;
       }
       case 'invite': {
@@ -1810,6 +1994,290 @@
     return html;
   }
 
+  // ---------- R3.1: Action Plan — tổng hợp KPI/ngân sách QUA domain ----------
+  // Mọi con số tiền/KPI ở các view R3.1 đều đi qua D.summarizeBudgetScope /
+  // D.rollupKpi / D.validateAllocations — view không tự cộng tiền/KPI.
+  function listSafe(coll) { try { return Store.list(coll) || []; } catch (e) { return []; } }
+  function campaignCeilingValue(c) {
+    if (!c) return null;
+    var amt = (c.budgetCeiling !== null && c.budgetCeiling !== undefined && c.budgetCeiling !== '') ? Number(c.budgetCeiling)
+      : ((cfVal(c, 'budgetCeiling') !== null && cfVal(c, 'budgetCeiling') !== undefined && cfVal(c, 'budgetCeiling') !== '') ? Number(cfVal(c, 'budgetCeiling')) : null);
+    if (amt === null || isNaN(amt)) return null;
+    return { amount: amt, currency: c.budgetCeilingCurrency || cfVal(c, 'budgetCeilingCurrency') || 'VND' };
+  }
+  // Fact gốc của campaign (dòng ngân sách → cam kết/thực chi), kèm allocations
+  // đã gắn vào từng fact để domain chia share theo scope. Task/content/KPI chỉ
+  // tham chiếu các fact này — thêm tham chiếu không làm tăng tiền.
+  function budgetFacts(campaignId) {
+    var lines = visibleList('budgetLines').filter(function (b) { return b.campaignId === campaignId; });
+    var lineIds = {}; lines.forEach(function (l) { lineIds[l.id] = true; });
+    var actIds = {}; Store.list('activities').filter(function (a) { return a.campaignId === campaignId; }).forEach(function (a) { actIds[a.id] = true; });
+    function inScope(x) { return !!(lineIds[x.budgetLineId] || x.campaignId === campaignId || (x.activityId && actIds[x.activityId])); }
+    var allocs = listSafe('budgetAllocations');
+    function attach(f, kind) {
+      var mine = allocs.filter(function (a) {
+        if ((a.sourceKind || 'actual') !== kind) return false;
+        var sid = kind === 'actual' ? (a.actualId || a.actual_id) : (a.commitmentId || a.commitment_id);
+        return String(sid) === String(f.id);
+      });
+      if (!mine.length) return f;
+      var copy = Object.assign({}, f);
+      copy.allocations = mine.map(function (a) {
+        return { scopeId: a.activityId, activityId: a.activityId, amount: (a.amount === null || a.amount === undefined) ? null : Number(a.amount), percent: (a.sharePercent === null || a.sharePercent === undefined) ? null : Number(a.sharePercent) };
+      });
+      return copy;
+    }
+    return {
+      lines: lines,
+      commitments: Store.list('commitments').filter(inScope).map(function (f) { return attach(f, 'commitment'); }),
+      actuals: Store.list('actuals').filter(inScope).map(function (f) { return attach(f, 'actual'); })
+    };
+  }
+  function summarizeCampaignBudget(c) {
+    var facts = budgetFacts(c.id);
+    var curs = [];
+    function addCur(x) { if (x && curs.indexOf(x) === -1) curs.push(x); }
+    facts.lines.forEach(function (l) { addCur(l.currency); });
+    facts.commitments.forEach(function (f) { addCur(f.currency); });
+    facts.actuals.forEach(function (f) { addCur(f.currency); });
+    if (!curs.length) curs = ['VND'];
+    var ceilingRaw = campaignCeilingValue(c);
+    return curs.map(function (cur) {
+      var child = {};
+      facts.lines.filter(function (l) { return (l.currency || 'VND') === cur && l.activityId; }).forEach(function (l) { child[l.activityId] = (child[l.activityId] || 0) + Number(l.approved || 0); });
+      var childAllocations = Object.keys(child).map(function (aid) { return { activityId: aid, scopeId: aid, amount: child[aid], currency: cur }; });
+      var allocatedSum = childAllocations.reduce(function (s, a) { return s + a.amount; }, 0);
+      var configured = !!(ceilingRaw && (ceilingRaw.currency || 'VND') === cur);
+      var s = D.summarizeBudgetScope({ ceiling: configured ? ceilingRaw.amount : allocatedSum, currency: cur, childAllocations: childAllocations, commitments: facts.commitments, actuals: facts.actuals });
+      var b = (s.byCurrency && s.byCurrency[cur]) || s;
+      return { currency: cur, ceilingConfigured: configured, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: b.available };
+    });
+  }
+  // Fact thuộc về một activity: qua dòng ngân sách của activity, qua chính
+  // activityId trên fact, hoặc qua allocation trỏ tới activity.
+  function factsForActivity(facts, act) {
+    var lineAct = {};
+    facts.lines.forEach(function (l) { lineAct[l.id] = l.activityId; });
+    function belongs(f) {
+      if (f.activityId && String(f.activityId) === String(act.id)) return true;
+      if (f.budgetLineId && lineAct[f.budgetLineId] && String(lineAct[f.budgetLineId]) === String(act.id)) return true;
+      return (f.allocations || []).some(function (a) { return String(a.scopeId) === String(act.id); });
+    }
+    return { commitments: facts.commitments.filter(belongs), actuals: facts.actuals.filter(belongs) };
+  }
+  function summarizeActivityBudget(c, act) {
+    var facts = budgetFacts(c.id);
+    var scoped = factsForActivity(facts, act);
+    var curs = [];
+    function addCur(x) { if (x && curs.indexOf(x) === -1) curs.push(x); }
+    facts.lines.filter(function (l) { return l.activityId === act.id; }).forEach(function (l) { addCur(l.currency); });
+    scoped.commitments.forEach(function (f) { addCur(f.currency); });
+    scoped.actuals.forEach(function (f) { addCur(f.currency); });
+    if (!curs.length) curs = ['VND'];
+    var out = curs.map(function (cur) {
+      var ceiling = facts.lines.filter(function (l) { return l.activityId === act.id && (l.currency || 'VND') === cur; }).reduce(function (s, l) { return s + Number(l.approved || 0); }, 0);
+      var s = D.summarizeBudgetScope({ ceiling: ceiling, currency: cur, scopeId: act.id, commitments: facts.commitments, actuals: facts.actuals });
+      var b = (s.byCurrency && s.byCurrency[cur]) || s;
+      return { currency: cur, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: b.available };
+    }).filter(function (r) { return r.ceiling > 0 || r.actualTotal > 0 || r.openCommitments > 0; });
+    return out.length ? out : [{ currency: 'VND', ceiling: 0, allocated: 0, unallocated: 0, actualTotal: 0, openCommitments: 0, forecastUse: 0, available: 0 }];
+  }
+  function kpiPeriodKey(k) { return k.periodKey || k.period_key || null; }
+  function kpiScopeType(k) { return k.scopeType || k.scope_type || (k.activityId ? 'activity' : (k.taskId ? 'task' : (k.contentItemId ? 'content' : (k.pillarId ? 'pillar' : 'campaign')))); }
+  function kpiScopeLabel(k) {
+    var st = kpiScopeType(k);
+    if (st === 'activity') { var a = Store.get('activities', k.activityId); return 'Hoạt động: ' + (a ? a.name : '—'); }
+    if (st === 'task') { var t = taskById(k.taskId); return 'Việc: ' + (t ? t.title : '—'); }
+    if (st === 'content') return 'Nội dung: ' + contentTitle(k.contentItemId);
+    if (st === 'pillar') { var p = listSafe('contentPillars').find(function (x) { return x.id === k.pillarId; }); return 'Pillar: ' + (p ? (p.name || p.title) : '—'); }
+    if (st === 'bu_product') return 'Brand / Sản phẩm';
+    return 'Campaign: ' + campaignName(k.campaignId);
+  }
+  // Roll-up KPI qua domain: contributions (KPI nguồn cùng metric) khi có;
+  // ratio tính lại từ tử/mẫu đã khai; unique thiếu khóa định danh →
+  // insufficient_data (không hiện số bịa).
+  function kpiRollupFor(k) {
+    if (!k || typeof D.rollupKpi !== 'function') return null;
+    var mode = String(k.aggregationMode || k.aggregation_mode || 'direct').toLowerCase();
+    var contribs = listSafe('kpiContributions').filter(function (x) { return x.kpiId === k.id; });
+    if (contribs.length && mode !== 'ratio') {
+      var facts = [];
+      contribs.forEach(function (ct) {
+        var sk = Store.get('kpis', ct.sourceKpiId);
+        if (!sk) return;
+        facts.push({ id: 'fact-' + sk.id, metricCode: sk.metricCode || k.metricCode || null, unit: sk.unit || k.unit || null, period: kpiPeriodKey(sk) || kpiPeriodKey(k), value: (sk.actual === undefined ? null : sk.actual), identities: sk.identityKeys || sk.identity_keys || null, objectId: sk.id, observedAt: sk.updatedAt || null });
+      });
+      return D.rollupKpi(facts, { mode: mode === 'direct' || mode === 'manual' ? 'sum' : mode, metricCode: k.metricCode || null, unit: k.unit || null, period: kpiPeriodKey(k), target: (k.target === undefined ? null : k.target), scopeLabel: kpiScopeLabel(k) });
+    }
+    if (mode === 'ratio') {
+      var num = (k.numerator !== null && k.numerator !== undefined) ? Number(k.numerator) : ((k.numeratorValue !== null && k.numeratorValue !== undefined) ? Number(k.numeratorValue) : null);
+      var den = (k.denominator !== null && k.denominator !== undefined) ? Number(k.denominator) : ((k.denominatorValue !== null && k.denominatorValue !== undefined) ? Number(k.denominatorValue) : null);
+      return D.rollupKpi([], { mode: 'ratio', numerator: num, denominator: den, target: (k.target === undefined ? null : k.target), scopeLabel: kpiScopeLabel(k), currency: k.currency || null });
+    }
+    if (mode === 'unique' || mode === 'snapshot') {
+      return D.rollupKpi([], { mode: mode, target: (k.target === undefined ? null : k.target), scopeLabel: kpiScopeLabel(k) });
+    }
+    if (k.actual === null || k.actual === undefined) return null;
+    return D.rollupKpi([{ id: 'fact-' + k.id, metricCode: k.metricCode || null, unit: k.unit || null, period: kpiPeriodKey(k), value: Number(k.actual) }], { mode: 'sum', metricCode: k.metricCode || null, unit: k.unit || null, period: kpiPeriodKey(k), target: (k.target === undefined ? null : k.target), scopeLabel: kpiScopeLabel(k) });
+  }
+  function kpiHasValidSource(k) {
+    var mode = String(k.aggregationMode || 'direct').toLowerCase();
+    if (mode === 'unique') {
+      var contribs = listSafe('kpiContributions').filter(function (x) { return x.kpiId === k.id; });
+      if (!contribs.length) return false;
+      return contribs.every(function (ct) { var sk = Store.get('kpis', ct.sourceKpiId); return sk && Array.isArray(sk.identityKeys || sk.identity_keys) && (sk.identityKeys || sk.identity_keys).length > 0; });
+    }
+    if (mode === 'ratio') return k.numerator !== null && k.numerator !== undefined && k.denominator !== null && k.denominator !== undefined && Number(k.denominator) !== 0;
+    return true;
+  }
+  function kpiSummaryHtml(k) {
+    var r = kpiRollupFor(k);
+    var mode = String(k.aggregationMode || 'direct').toLowerCase();
+    if (r && r.status === 'insufficient_data') return '<span class="badge warn">Chưa đủ dữ liệu</span>';
+    if (r && r.value !== null && r.value !== undefined) {
+      if (mode === 'ratio') return fmtNum(Math.round(r.value)) + ' ' + esc(k.unit || '') + ' <span class="sub">(phạm vi: ' + esc(kpiScopeLabel(k)) + ')</span>';
+      return fmtNum(r.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + (r.achievementPercent !== null && r.achievementPercent !== undefined ? ' (' + fmtNum(r.achievementPercent) + '%)' : '');
+    }
+    var d = D.kpiDisplay(k);
+    return d.isMissing ? '<span class="badge warn">Chưa cập nhật</span>' : fmtNum(d.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '');
+  }
+  function activityTasks(act) { return Store.list('tasks').filter(function (t) { return t.activityId === act.id && !isArchived(t); }); }
+  function activityStatusInfo(act, tasks) {
+    var total = tasks.length;
+    var done = tasks.filter(isCompletedTask).length;
+    var overdue = tasks.filter(isOverdue).length;
+    var blockedIds = {};
+    Store.list('blockers').filter(function (b) { return b.status === 'open'; }).forEach(function (b) { blockedIds[b.taskId] = true; });
+    var blocked = tasks.filter(function (t) { return blockedIds[t.id] || t.isBlocked; }).length;
+    var label = act.status ? labelStatus(act.status) : (total && done === total ? 'Hoàn thành' : (tasks.some(function (t) { return t.status === 'in_progress'; }) ? 'Đang làm' : 'Chưa bắt đầu'));
+    return { total: total, done: done, overdue: overdue, blocked: blocked, label: label };
+  }
+  function contentForActivity(actId) {
+    return visibleList('contentItems').filter(function (x) { return x.activityId === actId || cfVal(x, 'activityId') === actId || cfVal(x, 'activity_id') === actId; });
+  }
+  function budgetSummaryText(rows) {
+    return rows.map(function (r) {
+      return 'Phân bổ ' + fmtMoney(r.ceiling, r.currency) + ' · Thực chi ' + fmtMoney(r.actualTotal, r.currency) + ' · Cam kết chưa trả ' + fmtMoney(r.openCommitments, r.currency) + ' · Còn trong hạn mức ' + fmtMoney(r.available, r.currency);
+    }).join('<br>');
+  }
+  function actionPlanHtml(c) {
+    var acts = Store.list('activities').filter(function (a) { return a.campaignId === c.id; });
+    var ed = canEdit();
+    var html = '<div class="toolbar"><strong>Action Plan — ' + acts.length + ' hoạt động</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm hoạt động</button>' : '') + '</span></div>';
+    html += '<p class="sub">Mỗi dòng là một hoạt động. Số KPI/ngân sách lấy qua đúng hàm tổng hợp dùng chung (rollup KPI, tổng ngân sách theo scope) — bấm vào tên hoạt động để mở drawer chi tiết.</p>';
+    html += '<div class="toolbar"><span class="sub">Nhóm theo:</span><span>' + [['phase', 'Giai đoạn'], ['owner', 'Người phụ trách'], ['channel', 'Kênh'], ['none', 'Không nhóm']].map(function (g) {
+      return '<button type="button" class="btn small ' + (UI.actionGroupBy === g[0] ? '' : 'secondary') + '" data-action="action-group" data-id="' + g[0] + '">' + g[1] + '</button>';
+    }).join(' ') + '</span></div>';
+    if (!acts.length) return html + emptyState('Chưa có hoạt động nào trong Action Plan', 'Thêm hoạt động đầu tiên — mỗi hoạt động có thể có task, KPI và ngân sách riêng.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm hoạt động</button></p>' : '');
+    function groupKey(a) {
+      if (UI.actionGroupBy === 'owner') return 'Người phụ trách: ' + memberName(a.ownerId);
+      if (UI.actionGroupBy === 'channel') return 'Kênh: ' + (a.channel || 'Chưa rõ kênh');
+      if (UI.actionGroupBy === 'none') return '';
+      var ph = Store.get('phases', a.phaseId);
+      return ph ? ph.name : 'Chưa gắn giai đoạn';
+    }
+    var groups = []; var gmap = {};
+    acts.forEach(function (a) { var g = groupKey(a); if (!gmap[g]) { gmap[g] = []; groups.push(g); } gmap[g].push(a); });
+    var head = '<tr><th>Hoạt động</th><th>Người phụ trách</th><th>Bắt đầu–Hạn</th><th>Trạng thái</th><th>Đầu ra</th><th>KPI</th><th>Ngân sách</th><th>Content liên quan</th><th></th></tr>';
+    html += tbl(head + groups.map(function (g) {
+      var out = g ? '<tr class="group-row"><td colspan="9">' + esc(g) + '</td></tr>' : '';
+      out += gmap[g].map(function (a) {
+        var tasks = activityTasks(a);
+        var info = activityStatusInfo(a, tasks);
+        var kpis = Store.list('kpis').filter(function (k) { return k.activityId === a.id; });
+        var contents = contentForActivity(a.id);
+        var budgetRows = summarizeActivityBudget(c, a);
+        return '<tr><td><button class="linklike" data-action="activity-open" data-id="' + esc(a.id) + '"><strong>' + esc(a.name) + '</strong></button>' + (a.channel ? '<br><span class="sub">' + esc(a.channel) + '</span>' : '') + '</td>' +
+          '<td>' + esc(memberName(a.ownerId)) + '</td>' +
+          '<td>' + (a.startDate ? esc(D.formatDateVN(a.startDate)) : '—') + ' – ' + (a.endDate ? esc(D.formatDateVN(a.endDate)) : '—') + '</td>' +
+          '<td>' + statusBadge(a.status || '', info.label) + (info.overdue ? '<br><span class="badge bad">' + info.overdue + ' việc trễ</span>' : '') + (info.blocked ? '<br><span class="badge bad">' + info.blocked + ' việc bị chặn</span>' : '') + '</td>' +
+          '<td>' + info.done + '/' + info.total + ' task xong' + (info.overdue ? '<br><span class="sub">Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</span>' : '<br><span class="sub">Bị chặn: ' + info.blocked + '</span>') + (a.deliverables || a.deliverable ? '<br><span class="sub">' + esc(a.deliverables || a.deliverable) + '</span>' : '') + '</td>' +
+          '<td>' + (kpis.length ? kpis.slice(0, 2).map(function (k) { return esc(k.name) + ': ' + kpiSummaryHtml(k); }).join('<br>') + (kpis.length > 2 ? '<br><span class="sub">+ ' + (kpis.length - 2) + ' KPI khác</span>' : '') : '—') + '</td>' +
+          '<td>' + budgetSummaryText(budgetRows) + '</td>' +
+          '<td>' + (contents.length ? contents.length + ' nội dung liên quan' : 'Không có nội dung liên quan') + '</td>' +
+          '<td class="row-actions"><button class="btn small" data-action="activity-open" data-id="' + esc(a.id) + '">Mở chi tiết</button></td></tr>';
+      }).join('');
+      return out;
+    }).join(''));
+    return html;
+  }
+  function activityDrawerHtml() {
+    var actId = UI.activityDrawerId;
+    if (!actId) return '';
+    var act = Store.get('activities', actId);
+    if (!act) return '';
+    var c = Store.get('campaigns', act.campaignId) || {};
+    var tab = UI.activityTab || 'overview';
+    var ed = canEdit();
+    var budgetEd = canBudgetChange();
+    var tasks = activityTasks(act);
+    var info = activityStatusInfo(act, tasks);
+    var kpis = Store.list('kpis').filter(function (k) { return k.activityId === act.id; });
+    var contents = contentForActivity(act.id);
+    var facts = budgetFacts(c.id || '');
+    var scopedFacts = factsForActivity(facts, act);
+    var lines = facts.lines.filter(function (l) { return l.activityId === act.id; });
+    var budgetRows = summarizeActivityBudget(c, act);
+    var firstLine = lines[0] || facts.lines[0] || null;
+    var openCommit = scopedFacts.commitments.find(function (x) { return ['open', 'committed', 'planned', 'partially_actualised', 'partial'].indexOf(String(x.status || 'open').toLowerCase()) !== -1; });
+    var ph = Store.get('phases', act.phaseId);
+    var html = '<div class="panel-backdrop activity-backdrop" data-action="activity-close"></div>' +
+      '<div class="detail-panel activity-panel" role="dialog" aria-modal="true" aria-label="Chi tiết hoạt động">' +
+      '<div class="modal-head"><h2>' + esc(act.name) + '</h2><button type="button" class="btn secondary small" data-action="activity-close">Đóng</button></div>' +
+      '<p class="sub">Campaign: ' + esc(c.name || '—') + (ph ? ' · Giai đoạn: ' + esc(ph.name) : '') + (act.channel ? ' · Kênh: ' + esc(act.channel) : '') + '<br>Người phụ trách: ' + esc(memberName(act.ownerId)) + ' · ' + (act.startDate ? esc(D.formatDateVN(act.startDate)) : '—') + ' – ' + (act.endDate ? esc(D.formatDateVN(act.endDate)) : '—') + ' · Trạng thái: ' + esc(info.label) + '</p>' +
+      '<div class="drawer-actions">' +
+      (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Tạo task</button>' : '') +
+      (ed ? '<button class="btn small secondary" data-action="editor-open" data-kind="kpi" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Thêm KPI</button>' : '') +
+      (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Thêm dòng ngân sách</button>' : '') +
+      (budgetEd && firstLine ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitment" data-line="' + esc(firstLine.id) + '">Ghi cam kết</button>' : '') +
+      (budgetEd && openCommit ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(openCommit.id) + '">Ghi thanh toán</button>' : '') +
+      '</div>' +
+      tabsHtml([['overview', 'Overview'], ['tasks', 'Tasks'], ['kpi', 'KPI'], ['budget', 'Ngân sách'], ['docs', 'Tài liệu']], tab, 'activity-tab');
+    if (tab === 'overview') {
+      html += '<h3>Mục tiêu & đầu ra</h3><p>' + esc(act.objective || '—') + '</p><p><strong>Đầu ra cần bàn giao:</strong> ' + esc(act.deliverables || act.deliverable || '—') + '</p>' +
+        '<h3>Tiến độ task</h3><p>' + info.done + '/' + info.total + ' task xong · Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</p>' +
+        '<h3>KPI của hoạt động</h3>' + (kpis.length ? '<ul class="clean">' + kpis.map(function (k) { return '<li>' + esc(k.name) + ': ' + kpiSummaryHtml(k) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI nào cho hoạt động này.</p>') +
+        '<h3>Ngân sách của hoạt động</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
+        '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + ' — ' + statusBadge(x.editorialStatus) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
+    }
+    if (tab === 'tasks') {
+      html += '<h3>Tasks của hoạt động (' + tasks.length + ')</h3>' +
+        (tasks.length ? tbl('<tr><th>Việc</th><th>Người phụ trách</th><th>Hạn</th><th>Trạng thái</th></tr>' + tasks.map(function (t) {
+          return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button></td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : '—') + (isOverdue(t) ? ' <span class="badge bad">Quá hạn</span>' : '') + '</td><td>' + statusBadge(t.status) + '</td></tr>';
+        }).join('')) : '<p class="sub">Chưa có task nào — dùng nút "Tạo task" ở trên.</p>');
+    }
+    if (tab === 'kpi') {
+      html += '<h3>KPI của hoạt động (' + kpis.length + ')</h3>' +
+        (kpis.length ? tbl('<tr><th>KPI</th><th>Phạm vi</th><th>Cách tổng hợp</th><th>Kết quả</th></tr>' + kpis.map(function (k) {
+          return '<tr><td><strong>' + esc(k.name) + '</strong>' + (k.definition ? '<br><span class="sub">' + esc(typeof k.definition === 'string' ? k.definition : (k.definition.description || k.definition.how || '')) + '</span>' : '') + '</td><td>' + esc(kpiScopeLabel(k)) + '</td><td>' + esc(k.aggregationMode || 'direct') + '</td><td>' + kpiSummaryHtml(k) + '</td></tr>';
+        }).join('')) : '<p class="sub">Chưa có KPI nào — dùng nút "Thêm KPI" ở trên.</p>');
+    }
+    if (tab === 'budget') {
+      html += '<h3>Ngân sách của hoạt động</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
+        '<h3>Dòng ngân sách (' + lines.length + ')</h3>' +
+        (lines.length ? tbl('<tr><th>Dòng</th><th>Kế hoạch</th><th>Được duyệt</th><th>Tiền tệ</th></tr>' + lines.map(function (l) {
+          return '<tr><td>' + esc(l.name) + '</td><td>' + (l.planned === null || l.planned === undefined ? '—' : fmtMoney(l.planned, l.currency)) + '</td><td>' + fmtMoney(l.approved, l.currency) + '</td><td>' + esc(l.currency || 'VND') + '</td></tr>';
+        }).join('')) : '<p class="sub">Chưa có dòng ngân sách nào gắn hoạt động này.</p>') +
+        '<h3>Cam kết (' + scopedFacts.commitments.length + ')</h3>' +
+        (scopedFacts.commitments.length ? tbl('<tr><th>Cam kết</th><th>Số tiền</th><th>Trạng thái</th><th>Thao tác</th></tr>' + scopedFacts.commitments.map(function (cm) {
+          return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency) + '</td><td>' + statusBadge(cm.status) + '</td><td class="row-actions">' + (budgetEd ? '<button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
+        }).join('')) : '<p class="sub">Chưa có cam kết nào.</p>') +
+        '<h3>Thực chi (' + scopedFacts.actuals.length + ')</h3>' +
+        (scopedFacts.actuals.length ? tbl('<tr><th>Khoản chi</th><th>Số tiền</th><th>Ngày</th><th>Thao tác</th></tr>' + scopedFacts.actuals.map(function (a) {
+          return '<tr><td>' + esc(a.title) + '</td><td>' + fmtMoney(a.amount, a.currency) + '</td><td>' + esc(D.formatDateVN(a.date)) + '</td><td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="actual" data-source-id="' + esc(a.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
+        }).join('')) : '<p class="sub">Chưa có khoản chi nào.</p>');
+    }
+    if (tab === 'docs') {
+      var links = hasFn('listCampaignAssets') ? (Store.listCampaignAssets(c.id || '') || []) : [];
+      var assetRows = links.map(function (lk) { var a = Store.get('brandAssets', lk.assetId); return a ? '<li><strong>' + esc(a.name) + '</strong>' + (lk.role ? ' — ' + esc(lk.role) : '') + '</li>' : ''; }).join('');
+      var dels = tasks.filter(function (t) { return t.deliverable; });
+      html += '<h3>Tài liệu</h3>' + (assetRows ? '<ul class="clean">' + assetRows + '</ul>' : '<p class="sub">Chưa có tài liệu nào được liên kết với campaign này.</p>') +
+        '<h3>Đầu ra cần bàn giao của các task</h3>' + (dels.length ? '<ul class="clean">' + dels.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có task nào ghi đầu ra.</p>') +
+        '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
+    }
+    return html + '</div>';
+  }
+
   function campaignDetailHtml(id) {
     var c = Store.get('campaigns', id);
     if (!c) return emptyState('Không tìm thấy campaign', 'Campaign có thể đã bị lưu trữ. Quay lại danh sách để kiểm tra.', '<p><a class="btn secondary" href="#/campaigns">Về danh sách campaign</a></p>');
@@ -1824,7 +2292,7 @@
     html += '<div class="campaign-status-block">' + statusBadge(c.status) +
       ' <span class="sub">Kế hoạch đã duyệt (baseline): ' + (c.baselineStartDate || c.baselineEndDate ? esc(D.formatDateVN(c.baselineStartDate)) + ' — ' + esc(D.formatDateVN(c.baselineEndDate)) : 'chưa chốt') + '</span>' +
       (canSetBaseline() ? ' <button class="btn small secondary" data-action="campaign-baseline" data-id="' + esc(c.id) + '">Chốt baseline theo lịch hiện tại</button>' : '') + '</div>';
-    html += '<div class="tabs" role="tablist">' + [['overview', 'Tổng quan'], ['plan', 'Kế hoạch & Timeline'], ['tasks', 'Công việc'], ['content', 'Nội dung'], ['kpi', 'KPI & Ngân sách'], ['docs', 'Tài liệu'], ['summary', 'Tổng kết']].map(function (x) {
+    html += '<div class="tabs" role="tablist">' + [['overview', 'Tổng quan'], ['action', 'Action Plan'], ['plan', 'Kế hoạch & Timeline'], ['tasks', 'Công việc'], ['content', 'Nội dung'], ['kpi', 'KPI & Ngân sách'], ['docs', 'Tài liệu'], ['summary', 'Tổng kết']].map(function (x) {
       return '<a class="tab' + (tab === x[0] ? ' active' : '') + '" href="' + base + '/' + x[0] + '" role="tab">' + esc(x[1]) + '</a>';
     }).join('') + '</div>';
     var ctasks = Store.list('tasks').filter(function (t) { return t.campaignId === c.id && !isArchived(t); });
@@ -1841,6 +2309,39 @@
         '<h3>Big idea & Key message</h3><p><strong>Big idea:</strong> ' + esc(c.bigIdea || '—') + '</p><p><strong>Key message:</strong> ' + esc(c.keyMessage || '—') + '</p>' +
         '<h3>KV & hướng sáng tạo</h3><p>' + esc(c.creativeDirection || 'Chưa ghi nhận.') + '</p>' +
         '<h3>Rủi ro</h3><p>' + esc(c.risks || 'Chưa ghi nhận rủi ro.') + '</p></div>';
+      // R3.1 C.7: khối ngân sách cấp campaign qua summarizeBudgetScope +
+      // KPI kết quả chung + đếm action đúng hạn/trễ/bị chặn.
+      var ovBudget = summarizeCampaignBudget(c);
+      html += '<h3>Ngân sách campaign</h3>';
+      ovBudget.forEach(function (r) {
+        if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa thiết lập hạn mức campaign cho ' + esc(r.currency) + ' — các số dưới đây tạm lấy tổng phân bổ đã duyệt làm hạn mức. Đặt hạn mức trong form Sửa campaign để tách rõ "Chưa phân bổ" và "Còn có thể dùng".</div>';
+        html += '<div class="cards">' +
+          '<div class="card"><div class="big">' + fmtMoney(r.ceiling, r.currency) + '</div>Hạn mức (' + esc(r.currency) + ')</div>' +
+          '<div class="card"><div class="big">' + fmtMoney(r.allocated, r.currency) + '</div>Đã phân bổ (' + esc(r.currency) + ')</div>' +
+          '<div class="card"><div class="big">' + fmtMoney(r.unallocated, r.currency) + '</div>Chưa phân bổ (' + esc(r.currency) + ')</div>' +
+          '<div class="card"><div class="big">' + fmtMoney(r.actualTotal, r.currency) + '</div>Thực chi (' + esc(r.currency) + ')</div>' +
+          '<div class="card"><div class="big">' + fmtMoney(r.openCommitments, r.currency) + '</div>Cam kết chưa trả (' + esc(r.currency) + ')</div>' +
+          '<div class="card"><div class="big">' + fmtMoney(r.forecastUse, r.currency) + '</div>Dự kiến sử dụng (' + esc(r.currency) + ')</div>' +
+          '<div class="card"><div class="big">' + fmtMoney(r.available, r.currency) + '</div>Còn có thể dùng (' + esc(r.currency) + ')</div></div>' +
+          '<p class="sub">"Chưa phân bổ" = hạn mức − đã phân bổ cho các hoạt động. "Còn có thể dùng" = hạn mức − thực chi − cam kết chưa trả. Hai số này khác nhau và không cộng lẫn nhau.</p>';
+      });
+      var ovKpis = Store.list('kpis').filter(function (k) { return k.campaignId === c.id && kpiScopeType(k) === 'campaign'; });
+      html += '<h3>KPI kết quả chung</h3>';
+      if (ovKpis.length) {
+        ovKpis.forEach(function (k) {
+          if (!kpiHasValidSource(k)) html += '<div class="notice warn">KPI "' + esc(k.name) + '" chưa có nguồn/cách tổng hợp hợp lệ (chế độ ' + esc(k.aggregationMode || 'direct') + ') — chưa thể tuyên bố số tổng hợp cho KPI này.</div>';
+        });
+        html += '<ul class="clean">' + ovKpis.map(function (k) { return '<li>' + esc(k.name) + ': ' + kpiSummaryHtml(k) + ' <span class="sub">(' + esc(kpiScopeLabel(k)) + ')</span></li>'; }).join('') + '</ul>';
+      } else html += '<p class="sub">Chưa có KPI kết quả chung ở cấp campaign.</p>';
+      var onTrack = 0, lateActs = 0, blockedActs = 0;
+      acts.forEach(function (a) { var inf = activityStatusInfo(a, activityTasks(a)); if (inf.blocked > 0) blockedActs++; else if (inf.overdue > 0) lateActs++; else onTrack++; });
+      html += '<h3>Tiến độ Action Plan</h3><div class="cards">' +
+        '<div class="card"><div class="big">' + onTrack + '</div>Hoạt động đúng hạn</div>' +
+        '<div class="card"><div class="big">' + lateActs + '</div>Hoạt động có việc trễ</div>' +
+        '<div class="card"><div class="big">' + blockedActs + '</div>Hoạt động bị chặn</div></div>';
+    }
+    if (tab === 'action') {
+      html += actionPlanHtml(c);
     }
     if (tab === 'plan') {
       html += '<div class="toolbar"><strong>Giai đoạn (' + phases.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="phase" data-campaign="' + esc(c.id) + '">+ Thêm giai đoạn</button>' : '') + '</div>';
@@ -2202,8 +2703,14 @@
     html += '<form class="inline" id="team-week-form"><label>Tuần bắt đầu từ (thứ Hai)<input type="date" id="team-week-input" value="' + esc(weekStart) + '"></label><button class="btn secondary" type="submit">Xem tuần</button> <button class="btn secondary" type="button" data-action="team-week-now">Tuần hiện tại</button></form>';
     html += '<p class="sub">Tuần đang xem: ' + esc(D.formatDateVN(weekStart)) + ' — ' + esc(D.formatDateVN(weekEnd)) + '. Ngày nghỉ chung: ' + (holidays.length ? holidays.map(function (h) { return D.formatDateVN(h); }).join(', ') : '—') + '</p>';
     html += collectionBanner('members');
+    // R3.1/R3-09: capacity lấy từ Store.capacityByMember() — member chưa
+    // cấu hình thì capacity = null và hiển thị "Chưa cấu hình", TUYỆT ĐỐI
+    // không hiển thị số giờ mặc định bịa (vd 40h).
+    var capMap = hasFn('capacityByMember') ? Store.capacityByMember() : {};
     html += tbl('<tr><th>Thành viên</th><th>Vai trò</th><th>Năng lực (giờ/tuần)</th><th>Ngày nghỉ riêng</th><th>Effort trong tuần này</th><th>Chi tiết theo ngày</th><th>Cảnh báo</th><th>Thao tác</th></tr>' +
       members.map(function (m) {
+        var capCfg = capMap[m.id] || null;
+        var mDaysOff = capCfg ? (capCfg.daysOff || []) : (m.daysOff || []);
         var leaves = tasks.filter(function (t) {
           return t.assigneeId === m.id && !isCompletedTask(t) && String(t.status).toLowerCase() !== 'cancelled' &&
             !tasks.some(function (x) { return x.parentId === t.id; });
@@ -2211,17 +2718,17 @@
         var unestimated = [];
         var perDay = {};
         leaves.forEach(function (t) {
-          var dist = D.distributeEffort(t, holidays.concat(m.daysOff || []));
+          var dist = D.distributeEffort(t, holidays.concat(mDaysOff || []));
           if (!Array.isArray(dist)) { unestimated.push(t); return; }
           dist.forEach(function (d) { if (d.date >= weekStart && d.date <= weekEnd) perDay[d.date] = (perDay[d.date] || 0) + d.hours; });
         });
         var total = Object.keys(perDay).reduce(function (s, k) { return s + perDay[k]; }, 0);
-        var cap = m.capacityHoursPerWeek || 0;
+        var cap = capCfg ? capCfg.hoursPerWeek : null;
         var warn = [];
-        if (cap > 0 && total > cap) warn.push('Tổng ' + fmtNum(total) + ' giờ vượt năng lực ' + cap + ' giờ trong tuần này');
+        if (cap !== null && cap !== undefined && total > cap) warn.push('Tổng ' + fmtNum(total) + ' giờ vượt năng lực ' + cap + ' giờ trong tuần này');
         Object.keys(perDay).forEach(function (date) { if (perDay[date] > 8) warn.push('Ngày ' + D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + ' giờ (quá 8 giờ/ngày)'); });
-        return '<tr><td><strong>' + esc(m.name) + '</strong>' + (m.isActive === false ? ' <span class="badge grey">Ngừng hoạt động</span>' : '') + '</td><td>' + esc(m.roleLabel || labelStatus(m.role)) + '</td><td>' + (cap ? esc(cap) + ' giờ/tuần' : '—') + '</td>' +
-          '<td>' + ((m.daysOff || []).length ? m.daysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') : '—') + '</td>' +
+        return '<tr><td><strong>' + esc(m.name) + '</strong>' + (m.isActive === false ? ' <span class="badge grey">Ngừng hoạt động</span>' : '') + '</td><td>' + esc(m.roleLabel || labelStatus(m.role)) + '</td><td>' + (cap !== null && cap !== undefined ? esc(cap) + ' giờ/tuần' : '<span class="badge warn">Chưa cấu hình</span>') + '</td>' +
+          '<td>' + ((mDaysOff || []).length ? mDaysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') : '—') + '</td>' +
           '<td>' + fmtNum(total) + ' giờ' + (unestimated.length ? '<br>' + unestimated.map(function (t) { return '<span class="badge warn">' + esc(t.title) + ': Chưa ước tính</span>'; }).join(' ') : '') + '</td>' +
           '<td><span class="sub">' + (Object.keys(perDay).sort().map(function (date) { return D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + 'h'; }).join(' · ') || '—') + '</span></td>' +
           '<td>' + (warn.length ? warn.map(function (w) { return '<span class="badge bad">' + esc(w) + '</span>'; }).join(' ') : '<span class="badge ok">Ổn</span>') + '</td>' +
@@ -2246,12 +2753,22 @@
     if (!kpis.length && !collLoadingOrError('kpis')) html += emptyState('Chưa có KPI nào', 'Tạo KPI đầu tiên và cập nhật số đo kèm nguồn để theo dõi thực đạt.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button></p>' : '');
     else html += tbl('<tr><th>KPI</th><th>Campaign</th><th>Định nghĩa / kỳ</th><th>Mục tiêu</th><th>Thực đạt</th><th>Nguồn số liệu</th><th>Cập nhật</th><th>Thao tác</th></tr>' + kpis.map(function (k) {
       var d = D.kpiDisplay(k);
+      var roll = kpiRollupFor(k);
+      var contribs = listSafe('kpiContributions').filter(function (x) { return x.kpiId === k.id; });
       var hist = measurements.filter(function (m) { return m.kpiId === k.id || m.kpi_id === k.id; });
       var periodText = (k.periodStart || k.periodEnd)
         ? (D.formatDateVN(k.periodStart) || '…') + ' — ' + (D.formatDateVN(k.periodEnd) || '…')
         : (k.period || '');
-      var main = '<tr><td><strong>' + esc(k.name) + '</strong></td><td>' + esc(campaignName(k.campaignId)) + '</td><td>' + esc(k.definition || '—') + (periodText ? '<br><span class="sub">Kỳ: ' + esc(periodText) + '</span>' : '') + '</td><td>' + fmtNum(k.target) + ' ' + esc(k.unit || '') + '</td><td>' + (d.isMissing ? '<span class="badge warn">Chưa cập nhật</span>' : fmtNum(d.value) + ' ' + esc(k.unit || '')) + '</td><td>' + esc(k.source || '—') + '</td><td>' + (k.updatedAt ? esc(D.formatDateTimeVN(k.updatedAt)) : '—') + '</td>' +
+      var defText = (k.definition === null || k.definition === undefined) ? '—' : (typeof k.definition === 'string' ? k.definition : (k.definition.description || k.definition.how || '—'));
+      var actualCell;
+      if (roll && roll.status === 'insufficient_data') actualCell = '<span class="badge warn">Chưa đủ dữ liệu</span>';
+      else if (roll && roll.value !== null && roll.value !== undefined) actualCell = fmtNum(String(k.aggregationMode || '').toLowerCase() === 'ratio' ? Math.round(roll.value) : roll.value) + ' ' + esc(k.unit || '') + (roll.achievementPercent !== null && roll.achievementPercent !== undefined ? '<br><span class="sub">Mức đạt: ' + fmtNum(roll.achievementPercent) + '%</span>' : '');
+      else actualCell = d.isMissing ? '<span class="badge warn">Chưa cập nhật</span>' : fmtNum(d.value) + ' ' + esc(k.unit || '');
+      var main = '<tr><td><strong>' + esc(k.name) + '</strong>' + (k.metricCode ? '<br><span class="sub">' + esc(k.metricCode) + ' · ' + esc(k.aggregationMode || 'direct') + '</span>' : '') + '</td><td>' + esc(campaignName(k.campaignId)) + '<br><span class="sub">' + esc(kpiScopeLabel(k)) + '</span></td><td>' + esc(defText) + (periodText ? '<br><span class="sub">Kỳ: ' + esc(periodText) + '</span>' : '') + '</td><td>' + fmtNum(k.target) + ' ' + esc(k.unit || '') + '</td><td>' + actualCell + '</td><td>' + esc(k.source || '—') + '</td><td>' + (k.updatedAt ? esc(D.formatDateTimeVN(k.updatedAt)) : '—') + '</td>' +
         '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="measurement" data-kpi="' + esc(k.id) + '"' + dis(!ed) + '>+ Thêm số đo</button> <button class="btn small secondary" data-action="editor-open" data-kind="kpi" data-id="' + esc(k.id) + '"' + dis(!ed) + '>Sửa KPI</button></td></tr>';
+      if (contribs.length) {
+        main += '<tr class="detail-row"><td colspan="8"><strong>Roll-up từ ' + contribs.length + ' KPI nguồn</strong> (phạm vi: ' + esc(kpiScopeLabel(k)) + '): ' + (roll && roll.status === 'insufficient_data' ? '<span class="badge warn">Chưa đủ dữ liệu</span> — thiếu khóa định danh/nguồn hợp lệ nên không tuyên bố tổng đã khử trùng.' : 'giá trị ' + fmtNum(roll ? roll.value : null) + ' ' + esc(k.unit || '') + (roll && roll.achievementPercent !== null && roll.achievementPercent !== undefined ? ' · mức đạt ' + fmtNum(roll.achievementPercent) + '%' : '')) + '</td></tr>';
+      }
       if (hist.length) main += '<tr class="detail-row"><td colspan="8"><strong>Lịch sử số đo:</strong> ' + hist.map(function (m) { return fmtNum(m.value) + ' (' + esc(m.source || '—') + ', ' + esc(D.formatDateTimeVN(m.measuredAt || m.measured_at)) + ')'; }).join(' · ') + '</td></tr>';
       return main;
     }).join(''));
@@ -2306,12 +2823,14 @@
           var paid = (typeof D.commitmentPaidTotal === 'function') ? D.commitmentPaidTotal(cm, cmActs) : cmActs.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0);
           var cmOpen = String(cm.status).toLowerCase() === 'cancelled' ? 0 : Math.max(0, Number(cm.amount || 0) - paid);
           return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency || cur) + '</td><td>' + fmtMoney(paid, cm.currency || cur) + '</td><td>' + fmtMoney(cmOpen, cm.currency || cur) + '</td><td>' + statusBadge(cm.status) + '</td>' +
-            '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitment" data-id="' + esc(cm.id) + '">Sửa cam kết</button> <button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button>' : '') + '</td></tr>';
+            '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitment" data-id="' + esc(cm.id) + '">Sửa cam kết</button> <button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có cam kết nào.</p>';
         var actRows = acts.length ? tbl('<tr><th>Khoản chi</th><th>Số tiền</th><th>Ngày chi</th><th>Nguồn</th><th>Ghi chú / chứng từ</th><th>Thao tác</th></tr>' + acts.map(function (a) {
           var srcLabel = { manual: 'Nhập tay', invoice: 'Hóa đơn', import: 'Nhập từ file' }[a.source] || a.source || 'Nhập tay';
-          return '<tr><td>' + esc(a.title) + '</td><td>' + fmtMoney(a.amount, a.currency || cur) + '</td><td>' + esc(D.formatDateVN(a.date)) + '</td><td>' + esc(srcLabel) + '</td><td>' + esc(a.description || '') + '</td>' +
-            '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="actual" data-id="' + esc(a.id) + '">Sửa</button>' : '') + '</td></tr>';
+          var aAllocs = hasFn('listAllocationsForSource') ? Store.listAllocationsForSource('actual', a.id) : [];
+          var allocText = aAllocs.length ? '<br><span class="sub">Phân bổ: ' + aAllocs.map(function (al) { var aa = Store.get('activities', al.activityId); return esc(aa ? aa.name : (al.activityId || '—')) + ' = ' + (al.amount !== null && al.amount !== undefined ? fmtMoney(al.amount, a.currency || cur) : (al.sharePercent + '%')); }).join('; ') + '</span>' : '';
+          return '<tr><td>' + esc(a.title) + allocText + '</td><td>' + fmtMoney(a.amount, a.currency || cur) + '</td><td>' + esc(D.formatDateVN(a.date)) + '</td><td>' + esc(srcLabel) + '</td><td>' + esc(a.description || '') + '</td>' +
+            '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="actual" data-id="' + esc(a.id) + '">Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="actual" data-source-id="' + esc(a.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có khoản chi nào.</p>';
         var detail = '<tr class="detail-row"><td colspan="9">' +
           '<strong>Cam kết (' + commits.length + ')</strong>' + (budgetEd ? ' <button class="btn small" data-action="editor-open" data-kind="commitment" data-line="' + esc(b.id) + '">+ Thêm cam kết</button>' : '') + commitRows +
@@ -2629,7 +3148,7 @@
       var roleSel = '<select data-action-change="member-role" data-id="' + esc(m.id) + '"' + dis(!isOwner) + '>' + [['owner', 'Owner'], ['lead', 'Lead'], ['member', 'Member'], ['ceo', 'CEO (chỉ xem)']].map(function (r) { return '<option value="' + r[0] + '"' + (m.role === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select>';
       var activeSel = '<select data-action-change="member-active" data-id="' + esc(m.id) + '"' + dis(!isOwner) + '><option value="1"' + (m.isActive !== false ? ' selected' : '') + '>Đang hoạt động</option><option value="0"' + (m.isActive === false ? ' selected' : '') + '>Ngừng hoạt động</option></select>';
       return '<tr><td><strong>' + esc(m.name) + '</strong></td><td>' + esc(m.email) + '</td><td>' + (isOwner ? roleSel : esc(m.roleLabel || labelStatus(m.role))) + '</td><td>' + (isOwner ? activeSel : (m.isActive === false ? 'Ngừng hoạt động' : 'Đang hoạt động')) + '</td>' +
-        '<td>' + (m.capacityHoursPerWeek ? esc(m.capacityHoursPerWeek) + ' giờ/tuần' : '—') + ((m.daysOff || []).length ? '<br><span class="sub">Nghỉ: ' + m.daysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') + '</span>' : '') + ' <button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Sửa</button></td></tr>';
+        '<td>' + (m.capacityHoursPerWeek !== null && m.capacityHoursPerWeek !== undefined ? esc(m.capacityHoursPerWeek) + ' giờ/tuần' : 'Chưa cấu hình') + ((m.daysOff || []).length ? '<br><span class="sub">Nghỉ: ' + m.daysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') + '</span>' : '') + ' <button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Sửa</button></td></tr>';
     }).join(''));
     if (!isOwner) html += '<p class="sub">Chỉ Owner mới đổi vai trò / trạng thái hoạt động của thành viên và gửi lời mời.</p>';
     html += '<h3>Ma trận quyền (4 vai)</h3>';
@@ -2728,7 +3247,7 @@
   function renderOverlay() {
     var root = document.getElementById('overlay-root');
     if (!root) return;
-    root.innerHTML = editorHtml() + taskPanelHtml() + confirmCloseHtml();
+    root.innerHTML = editorHtml() + taskPanelHtml() + activityDrawerHtml() + confirmCloseHtml();
   }
   function render() {
     ROUTE = parseRoute();
@@ -2822,6 +3341,10 @@
       var kind = t.getAttribute('data-kind');
       var context = {};
       if (t.getAttribute('data-campaign')) context.campaignId = t.getAttribute('data-campaign');
+      if (t.getAttribute('data-activity')) context.activityId = t.getAttribute('data-activity');
+      if (t.getAttribute('data-task')) context.taskId = t.getAttribute('data-task');
+      if (t.getAttribute('data-source-kind')) context.sourceKind = t.getAttribute('data-source-kind');
+      if (t.getAttribute('data-source-id')) context.sourceId = t.getAttribute('data-source-id');
       if (t.getAttribute('data-content')) context.contentItemId = t.getAttribute('data-content');
       if (t.getAttribute('data-kpi')) context.kpiId = t.getAttribute('data-kpi');
       if (t.getAttribute('data-line')) context.budgetLineId = t.getAttribute('data-line');
@@ -2882,6 +3405,10 @@
     if (action === 'brand-clear') { UI.brandQuery = ''; render(); }
     if (action === 'post-metrics') { UI.postOpenId = UI.postOpenId === id ? null : id; render(); }
     if (action === 'content-tab') { UI.contentTab = id; render(); }
+    if (action === 'activity-open') { UI.activityDrawerId = id; UI.activityTab = 'overview'; renderOverlay(); }
+    if (action === 'activity-close') { UI.activityDrawerId = null; renderOverlay(); }
+    if (action === 'activity-tab') { UI.activityTab = id; renderOverlay(); }
+    if (action === 'action-group') { UI.actionGroupBy = id || 'phase'; render(); }
     if (action === 'report-view') { UI.report.view = id; render(); }
     if (action === 'report-clear') { UI.report = { view: UI.report.view, level: 'campaign', accountId: 'all', campaignId: 'all', from: '', to: '' }; render(); }
     if (action === 'cal-today') { var n = new Date(); UI.calYear = n.getFullYear(); UI.calMonth = n.getMonth(); render(); }
@@ -3064,6 +3591,7 @@
     if (ev.key === 'Escape') {
       if (UI.confirmClose) { UI.confirmClose = null; renderOverlay(); }
       else if (UI.editor) requestCloseEditor();
+      else if (UI.activityDrawerId) { UI.activityDrawerId = null; renderOverlay(); }
       else if (currentTaskPanelId()) requestCloseTaskPanel();
       var sb = document.getElementById('sidebar'); if (sb) sb.classList.remove('open');
       var bd = document.getElementById('sidebar-backdrop'); if (bd) bd.hidden = true;
