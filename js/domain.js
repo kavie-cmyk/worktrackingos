@@ -798,6 +798,586 @@
     return { atRisk: reasons.length > 0, reasons: reasons };
   }
 
+  // ======================================================================
+  // R3.1 — Tổng hợp ngân sách theo scope + roll-up KPI (chống đếm trùng)
+  // ======================================================================
+  // Nguyên tắc (đặc tả R3.1 B.3/B.4, C.4/C.5, D.1/D.2):
+  // - Tiền chỉ đếm từ FACT GỐC (commitment / actual / payment), khử trùng
+  //   theo fact ID. Task/content/KPI chỉ THAM CHIẾU fact — thêm tham chiếu
+  //   không bao giờ làm tăng tiền.
+  // - available = ceiling − actualTotal − openCommitments. KHÔNG cộng
+  //   "còn trong hạn mức action" + "chưa phân bổ" vào available lần nữa:
+  //   hai khoản đó là THÀNH PHẦN của available, không phải cộng thêm.
+  // - Số khác currency không cộng chung: mọi tổng tách theo byCurrency
+  //   (giữ pattern của aggregateRates R2-21).
+
+  /** Làm tròn tiền tới 6 chữ số thập phân để khử nhiễu float (1.799999… → 1.8). */
+  function _r31RoundMoney(x) { return Math.round(x * 1e6) / 1e6; }
+  /** Làm tròn 2 chữ số thập phân (dùng cho % đạt KPI). */
+  function _r31Round2(x) { return Math.round(x * 100) / 100; }
+
+  function _r31FactId(f) {
+    if (!f) return null;
+    var id = f.id !== undefined && f.id !== null ? f.id : (f.factId !== undefined && f.factId !== null ? f.factId : f.fact_id);
+    return (id === null || id === undefined || id === '') ? null : String(id);
+  }
+  function _r31FactKind(f, fallback) {
+    var k = normStatus((f && (f.kind || f.factType || f.fact_type || f.type)) || fallback || '');
+    if (k === 'payment' || k === 'actual' || k === 'actuals' || k === 'expense') return 'actual';
+    if (k === 'commitment' || k === 'commitments') return 'commitment';
+    return fallback === 'commitment' ? 'commitment' : 'actual';
+  }
+  function _r31FactAmount(f) { return pickNum(f, ['amount', 'actualAmount', 'actual_amount', 'value', 'total']) || 0; }
+  function _r31FactCurrency(f, fallback) {
+    var c = f && (f.currency || f.currencyCode || f.currency_code);
+    return (c !== null && c !== undefined && String(c).trim() !== '') ? String(c).trim() : (fallback || 'VND');
+  }
+  function _r31AllocScopeId(a) {
+    if (!a) return null;
+    var v = a.scopeId !== undefined && a.scopeId !== null ? a.scopeId
+      : (a.activityId !== undefined && a.activityId !== null ? a.activityId
+      : (a.activity_id !== undefined && a.activity_id !== null ? a.activity_id
+      : (a.targetId !== undefined && a.targetId !== null ? a.targetId : a.target_id)));
+    return (v === null || v === undefined || v === '') ? null : String(v);
+  }
+  /** Số tiền của một allocation: amount tường minh, hoặc ratio (0–1), hoặc percent (0–100). */
+  function _r31AllocAmount(a, factAmount) {
+    if (!a) return 0;
+    var amt = pickNum(a, ['amount', 'shareAmount', 'share_amount', 'allocatedAmount']);
+    if (amt !== null) return amt;
+    var ratio = pickNum(a, ['ratio', 'shareRatio', 'share_ratio']);
+    if (ratio !== null) return ratio * factAmount;
+    var pct = pickNum(a, ['percent', 'percentage', 'sharePercent']);
+    if (pct !== null) return pct / 100 * factAmount;
+    return 0;
+  }
+  function _r31FactAllocations(f) {
+    if (!f) return [];
+    var list = f.allocations || f.allocationShares || f.shares || [];
+    return Array.isArray(list) ? list : [];
+  }
+  function _r31FactScopeId(f) {
+    if (!f) return null;
+    var v = f.activityId !== undefined && f.activityId !== null ? f.activityId
+      : (f.activity_id !== undefined && f.activity_id !== null ? f.activity_id
+      : (f.scopeId !== undefined && f.scopeId !== null ? f.scopeId : f.scope_id));
+    return (v === null || v === undefined || v === '') ? null : String(v);
+  }
+
+  /**
+   * Kiểm tra allocations của MỘT fact gốc: tổng share không được vượt
+   * amount gốc (tiền và tỷ lệ). UI/store dùng kết quả để chặn lưu; backend
+   * cũng phải chặn riêng (hàm này là tầng domain dùng chung).
+   * @param {object|number} fact Fact gốc (có amount) hoặc chính amount.
+   * @param {Array<object>} [allocations] Allocations; bỏ qua thì lấy fact.allocations.
+   * @returns {{valid:boolean, errors:string[], totalAllocated:number,
+   *   totalRatio:(number|null), amount:number, unallocated:number}}
+   *   errors chứa 'over_allocated' (tổng tiền vượt gốc) và/hoặc
+   *   'allocation_exceeds_100_percent' (tổng tỷ lệ vượt 100%),
+   *   'negative_allocation' khi có share âm.
+   */
+  function validateAllocations(fact, allocations) {
+    var amount = (typeof fact === 'number') ? fact : _r31FactAmount(fact || {});
+    var list = allocations || (fact && typeof fact === 'object' ? _r31FactAllocations(fact) : []);
+    var errors = [];
+    var totalAllocated = 0;
+    var totalRatio = null;
+    (list || []).forEach(function (a) {
+      var amt = _r31AllocAmount(a, amount);
+      if (amt < 0) errors.push('negative_allocation');
+      totalAllocated += amt;
+      var ratio = a ? pickNum(a, ['ratio', 'shareRatio', 'share_ratio']) : null;
+      var pct = a ? pickNum(a, ['percent', 'percentage', 'sharePercent']) : null;
+      if (ratio !== null || pct !== null) {
+        if (totalRatio === null) totalRatio = 0;
+        totalRatio += (ratio !== null ? ratio : 0) + (pct !== null ? pct / 100 : 0);
+      }
+    });
+    totalAllocated = _r31RoundMoney(totalAllocated);
+    if (totalRatio !== null) {
+      totalRatio = _r31RoundMoney(totalRatio);
+      if (totalRatio > 1 + 1e-9 && errors.indexOf('allocation_exceeds_100_percent') === -1) {
+        errors.push('allocation_exceeds_100_percent');
+      }
+    }
+    if (amount > 0 && totalAllocated > amount + 1e-9 && errors.indexOf('over_allocated') === -1) {
+      errors.push('over_allocated');
+    }
+    if (amount <= 0 && totalAllocated > 1e-9 && errors.indexOf('over_allocated') === -1) {
+      errors.push('over_allocated');
+    }
+    return {
+      valid: errors.length === 0,
+      errors: errors,
+      totalAllocated: totalAllocated,
+      totalRatio: totalRatio,
+      amount: amount,
+      unallocated: _r31RoundMoney(amount - totalAllocated)
+    };
+  }
+
+  /**
+   * Share của một fact gốc nhìn từ một scope (activity): có allocations thì
+   * lấy tổng share khớp scope; không có allocations thì fact thuộc đúng
+   * scope mới tính trọn, fact không gắn scope nào thì tính trọn (caller
+   * được hiểu là đã lọc fact theo scope). Không có scopeId → trọn amount.
+   * @param {object} fact Fact gốc.
+   * @param {string} [scopeId] Scope cần xem (vd activity id).
+   * @returns {number} Số tiền thuộc scope.
+   */
+  function allocationShareForScope(fact, scopeId) {
+    if (!fact) return 0;
+    var amount = _r31FactAmount(fact);
+    if (!scopeId) return amount;
+    var allocs = _r31FactAllocations(fact);
+    if (allocs.length) {
+      var sum = 0; var matched = false;
+      allocs.forEach(function (a) {
+        if (_r31AllocScopeId(a) === String(scopeId)) { matched = true; sum += _r31AllocAmount(a, amount); }
+      });
+      return matched ? _r31RoundMoney(sum) : 0;
+    }
+    var own = _r31FactScopeId(fact);
+    if (own) return own === String(scopeId) ? amount : 0;
+    return amount;
+  }
+
+  /**
+   * Engine tổng hợp ngân sách DÙNG CHUNG cho campaign và activity (R3.1 C.5/D.1).
+   * @param {object} input
+   * @param {number|object} input.ceiling Hạn mức của scope (số, hoặc {amount, currency}).
+   * @param {string} [input.currency] Currency chính của scope (mặc định suy từ ceiling/fact, cuối cùng 'VND').
+   * @param {Array<object>} [input.childAllocations] Phân bổ hạn mức xuống scope con
+   *   (vd 4 activity của campaign): [{id?, scopeId/activityId, amount, currency?}].
+   *   Cũng chấp nhận input.activityAllocations / input.allocations.
+   * @param {number} [input.directCeiling] Hạn mức giữ cho chi trực tiếp của scope
+   *   (vd chi phí trực tiếp campaign) — trừ vào unallocated.
+   * @param {Array<object>} [input.commitments] Fact cam kết gốc.
+   * @param {Array<object>} [input.actuals] Fact thực chi gốc (payment cũng vào đây).
+   * @param {Array<object>} [input.payments] Alias của actuals.
+   * @param {Array<object>} [input.facts] Fact hỗn hợp (kind/type phân biệt commitment|actual).
+   * @param {string} [input.scopeId] Khi xem theo MỘT activity: tiền tính theo
+   *   allocation share của từng fact cho scope đó. Bỏ qua = view toàn scope cha
+   *   (mỗi fact tính trọn 1 lần theo ID).
+   * Các khoá tham chiếu như views/references/tasks/contents/kpis KHÔNG được
+   * đọc để tính tiền — chúng chỉ là đường dẫn xem lại fact gốc.
+   * @returns {object} { ceiling, allocated, unallocated, actualTotal,
+   *   openCommitments, forecastUse, available, currency, mixed, byCurrency,
+   *   valid, allocationErrors, factCount, duplicateFactIds }
+   *   forecastUse = actualTotal + openCommitments;
+   *   available = ceiling − actualTotal − openCommitments;
+   *   unallocated = ceiling − allocated − directCeiling.
+   *   Khi nhiều currency: các trường top-level = null (không cộng trộn),
+   *   số đúng nằm trong byCurrency[CUR] với cùng công thức.
+   */
+  function summarizeBudgetScope(input) {
+    input = input || {};
+    var ceilingObj = (input.ceiling && typeof input.ceiling === 'object') ? input.ceiling : null;
+    var ceiling = ceilingObj ? (pickNum(ceilingObj, ['amount', 'value']) || 0)
+      : (pickNum(input, ['ceiling', 'ceilingAmount', 'approvedCeiling', 'limit', 'approved']) || 0);
+    var primaryCurrency = input.currency || (ceilingObj && ceilingObj.currency) || null;
+    var directCeiling = pickNum(input, ['directCeiling', 'direct_ceiling', 'directAmount']) || 0;
+    var scopeId = (input.scopeId !== undefined && input.scopeId !== null && input.scopeId !== '')
+      ? String(input.scopeId)
+      : (input.activityId !== undefined && input.activityId !== null && input.activityId !== '' ? String(input.activityId) : null);
+
+    // --- Thu thập fact gốc, khử trùng theo (kind, id) ---
+    var seen = {};
+    var duplicateFactIds = [];
+    var facts = [];
+    function collect(list, fallbackKind) {
+      (list || []).forEach(function (f) {
+        if (!f || typeof f !== 'object') return;
+        var kind = _r31FactKind(f, fallbackKind);
+        var id = _r31FactId(f);
+        if (id !== null) {
+          var key = kind + ':' + id;
+          if (seen[key]) { duplicateFactIds.push(id); return; }
+          seen[key] = true;
+        }
+        facts.push({ raw: f, kind: kind, id: id });
+      });
+    }
+    collect(input.facts, null);
+    collect(input.commitments, 'commitment');
+    collect(input.actuals, 'actual');
+    collect(input.payments, 'actual');
+
+    // Currency chính: tham số > ceiling > fact đầu tiên > 'VND'.
+    if (!primaryCurrency) {
+      for (var i = 0; i < facts.length; i++) {
+        var fc = facts[i].raw.currency || facts[i].raw.currencyCode;
+        if (fc) { primaryCurrency = String(fc).trim(); break; }
+      }
+      if (!primaryCurrency) primaryCurrency = 'VND';
+    }
+
+    // --- Validate allocations của từng fact (chặn over-allocation ở tầng domain) ---
+    var allocationErrors = [];
+    facts.forEach(function (entry) {
+      var allocs = _r31FactAllocations(entry.raw);
+      if (!allocs.length) return;
+      var v = validateAllocations(entry.raw, allocs);
+      if (!v.valid) allocationErrors.push({ factId: entry.id, errors: v.errors, totalAllocated: v.totalAllocated, amount: v.amount });
+    });
+
+    // --- Phân bổ hạn mức xuống scope con (khử trùng theo id nếu có) ---
+    var childAllocations = input.childAllocations || input.activityAllocations || input.allocations || [];
+    var seenAlloc = {};
+    var allocEntries = [];
+    (childAllocations || []).forEach(function (a) {
+      if (!a || typeof a !== 'object') return;
+      var aid = a.id !== undefined && a.id !== null && a.id !== '' ? String(a.id) : null;
+      if (aid !== null) {
+        if (seenAlloc[aid]) return;
+        seenAlloc[aid] = true;
+      }
+      allocEntries.push(a);
+    });
+
+    // --- Cộng theo từng currency ---
+    var buckets = {};
+    function bucketFor(cur) {
+      if (!buckets[cur]) {
+        buckets[cur] = { currency: cur, ceiling: 0, allocated: 0, actualTotal: 0, openCommitments: 0 };
+      }
+      return buckets[cur];
+    }
+    bucketFor(primaryCurrency).ceiling = ceiling;
+    if (input.ceilingsByCurrency && typeof input.ceilingsByCurrency === 'object') {
+      Object.keys(input.ceilingsByCurrency).forEach(function (cur) {
+        bucketFor(cur).ceiling = Number(input.ceilingsByCurrency[cur]) || 0;
+      });
+    }
+    allocEntries.forEach(function (a) {
+      var cur = _r31FactCurrency(a, primaryCurrency);
+      bucketFor(cur).allocated += pickNum(a, ['amount', 'allocatedAmount', 'value']) || 0;
+    });
+    // Actual trước (để tính phần đã trả theo share cho cam kết của từng scope).
+    var actualEntries = facts.filter(function (e) { return e.kind === 'actual'; });
+    actualEntries.forEach(function (entry) {
+      var cur = _r31FactCurrency(entry.raw, primaryCurrency);
+      bucketFor(cur).actualTotal += allocationShareForScope(entry.raw, scopeId);
+    });
+    facts.filter(function (e) { return e.kind === 'commitment'; }).forEach(function (entry) {
+      if (!isOpenCommitment(entry.raw)) return;
+      var cur = _r31FactCurrency(entry.raw, primaryCurrency);
+      var scopedAmount = allocationShareForScope(entry.raw, scopeId);
+      if (scopedAmount <= 0) return;
+      // Đã trả trong scope = tổng share của actuals liên kết commitment này.
+      var paidScoped = 0;
+      actualEntries.forEach(function (ae) {
+        var cid = ae.raw.commitmentId !== undefined && ae.raw.commitmentId !== null ? ae.raw.commitmentId : ae.raw.commitment_id;
+        if (cid !== null && cid !== undefined && cid !== '' && entry.id !== null && String(cid) === entry.id) {
+          paidScoped += allocationShareForScope(ae.raw, scopeId);
+        }
+      });
+      bucketFor(cur).openCommitments += Math.max(0, scopedAmount - paidScoped);
+    });
+
+    var byCurrency = {};
+    Object.keys(buckets).forEach(function (cur) {
+      var b = buckets[cur];
+      var actualTotal = _r31RoundMoney(b.actualTotal);
+      var openCommitments = _r31RoundMoney(b.openCommitments);
+      var allocated = _r31RoundMoney(b.allocated);
+      byCurrency[cur] = {
+        currency: cur,
+        ceiling: b.ceiling,
+        allocated: allocated,
+        unallocated: _r31RoundMoney(b.ceiling - allocated - (cur === primaryCurrency ? directCeiling : 0)),
+        actualTotal: actualTotal,
+        openCommitments: openCommitments,
+        forecastUse: _r31RoundMoney(actualTotal + openCommitments),
+        available: _r31RoundMoney(b.ceiling - actualTotal - openCommitments)
+      };
+    });
+    var currencies = Object.keys(byCurrency);
+    var mixed = currencies.length > 1;
+    var result = {
+      scopeId: scopeId,
+      mixed: mixed,
+      byCurrency: byCurrency,
+      valid: allocationErrors.length === 0,
+      allocationErrors: allocationErrors,
+      factCount: facts.length,
+      duplicateFactIds: duplicateFactIds
+    };
+    if (!mixed && currencies.length === 1) {
+      var only = byCurrency[currencies[0]];
+      result.ceiling = only.ceiling;
+      result.allocated = only.allocated;
+      result.unallocated = only.unallocated;
+      result.actualTotal = only.actualTotal;
+      result.openCommitments = only.openCommitments;
+      result.forecastUse = only.forecastUse;
+      result.available = only.available;
+      result.currency = only.currency;
+    } else {
+      // Nhiều currency (hoặc không có dữ liệu): không xuất số gộp trộn tiền tệ.
+      result.ceiling = mixed ? null : ceiling;
+      result.allocated = mixed ? null : 0;
+      result.unallocated = mixed ? null : _r31RoundMoney(ceiling - directCeiling);
+      result.actualTotal = mixed ? null : 0;
+      result.openCommitments = mixed ? null : 0;
+      result.forecastUse = mixed ? null : 0;
+      result.available = mixed ? null : ceiling;
+      result.currency = mixed ? null : primaryCurrency;
+    }
+    return result;
+  }
+
+  // ---------- KPI roll-up (R3.1 C.4 / D.2) ----------
+
+  function _r31FactMetric(f) {
+    if (!f) return null;
+    var v = f.metricCode || f.metric_code || f.metric || f.metricKey || f.metric_key;
+    return (v === null || v === undefined || v === '') ? null : String(v);
+  }
+  function _r31FactUnit(f) {
+    if (!f) return null;
+    var v = f.unit || f.unitCode || f.unit_code;
+    return (v === null || v === undefined || v === '') ? null : String(v);
+  }
+  function _r31FactPeriod(f) {
+    if (!f) return null;
+    if (f.period) return String(f.period);
+    var s = f.periodStart || f.period_start;
+    var e = f.periodEnd || f.period_end;
+    if (s || e) return String(s || '') + '..' + String(e || '');
+    return null;
+  }
+  function _r31NormalizeIdentityKey(k) {
+    return String(k === null || k === undefined ? '' : k).trim().toLowerCase();
+  }
+  function _r31FactIdentityKeys(f) {
+    if (!f) return null;
+    var lists = [f.identities, f.identityKeys, f.identity_keys, f.keys, f.registrationIds, f.memberIds, f.leadIds];
+    for (var i = 0; i < lists.length; i++) {
+      if (Array.isArray(lists[i])) return lists[i].map(_r31NormalizeIdentityKey).filter(function (k) { return k !== ''; });
+    }
+    var single = f.identityKey || f.identity_key || f.dedupKey || f.dedup_key;
+    if (single !== null && single !== undefined && String(single).trim() !== '') return [_r31NormalizeIdentityKey(single)];
+    return null;
+  }
+  function _r31KpiAchievement(value, target) {
+    if (value === null || value === undefined || target === null || target === undefined || Number(target) === 0 || isNaN(Number(target))) return null;
+    return _r31Round2(value / Number(target) * 100);
+  }
+
+  /**
+   * Roll-up KPI theo chế độ khai báo (R3.1 C.4/D.2) — chống đếm trùng theo fact ID.
+   * @param {Array<object>} facts Fact/observation nguồn. Mỗi fact: { id,
+   *   metricCode, unit, period (hoặc periodStart/periodEnd), value,
+   *   identities?/identityKey? (cho unique), objectId? + observedAt? (cho
+   *   snapshot), numerator?/denominator? (cho ratio) }.
+   * @param {object} options { mode:'sum'|'unique'|'ratio'|'snapshot',
+   *   metricCode?, unit?, period?, target?, scope?/scopeId?/scopeLabel?,
+   *   numeratorFacts?, denominatorFacts?, numeratorMetricCode?,
+   *   denominatorMetricCode?, numerator?, denominator?, currency? }
+   * @returns {object} Kết quả luôn có { mode, value, status, scope, scopeLabel,
+   *   includedFactIds, excluded:[{id, reason}], duplicateFactIds }.
+   *   - sum: chỉ cộng fact cùng metric_code + unit + period; fact lệch bị
+   *     loại và liệt kê trong excluded (không cộng ngầm).
+   *   - unique: đếm distinct theo khóa định danh đã chuẩn hoá (trim +
+   *     lowercase); fact thiếu khóa → value=null, status='insufficient_data'
+   *     (không bao giờ trả tổng thô như thể đã khử trùng).
+   *   - ratio: tính lại Σ tử / Σ mẫu của scope khai báo, kết quả mang
+   *     scope/scopeLabel + numeratorTotal/denominatorTotal.
+   *   - snapshot: mỗi object chỉ lấy observation mới nhất rồi mới cộng.
+   *   Có target hợp lệ → kèm achievementPercent (làm tròn 2 chữ số).
+   */
+  function rollupKpi(facts, options) {
+    options = options || {};
+    var mode = normStatus(options.mode || 'sum');
+    var scopeLabel = options.scopeLabel || options.scope || options.scopeId || null;
+    var scope = options.scope || options.scopeId || scopeLabel;
+
+    // Khử trùng theo fact ID trước mọi phép tính.
+    var seen = {};
+    var duplicateFactIds = [];
+    var deduped = [];
+    (facts || []).forEach(function (f) {
+      if (!f || typeof f !== 'object') return;
+      var id = _r31FactId(f);
+      if (id !== null) {
+        if (seen[id]) { duplicateFactIds.push(id); return; }
+        seen[id] = true;
+      }
+      deduped.push(f);
+    });
+
+    var refMetric = options.metricCode || options.metric_code || null;
+    var refUnit = options.unit || null;
+    var refPeriod = options.period || null;
+    if (!refPeriod && (options.periodStart || options.periodEnd)) {
+      refPeriod = String(options.periodStart || '') + '..' + String(options.periodEnd || '');
+    }
+    if (mode !== 'ratio') {
+      // Tham chiếu mặc định = fact đầu tiên (khi caller không khai báo).
+      for (var i = 0; i < deduped.length; i++) {
+        if (!refMetric) refMetric = _r31FactMetric(deduped[i]);
+        if (!refUnit) refUnit = _r31FactUnit(deduped[i]);
+        if (!refPeriod) refPeriod = _r31FactPeriod(deduped[i]);
+        if (refMetric && refUnit && refPeriod) break;
+      }
+    }
+
+    function eligibility(f) {
+      var m = _r31FactMetric(f);
+      if (refMetric && m !== String(refMetric)) return 'metric_mismatch';
+      var u = _r31FactUnit(f);
+      if (refUnit && u !== String(refUnit)) return 'unit_mismatch';
+      var p = _r31FactPeriod(f);
+      if (refPeriod && p !== String(refPeriod)) return 'period_mismatch';
+      return null;
+    }
+
+    var base = {
+      mode: mode,
+      scope: scope,
+      scopeLabel: scopeLabel,
+      metricCode: refMetric ? String(refMetric) : null,
+      unit: refUnit ? String(refUnit) : null,
+      period: refPeriod ? String(refPeriod) : null,
+      duplicateFactIds: duplicateFactIds
+    };
+
+    if (mode === 'ratio') {
+      var numTotal = null;
+      var denTotal = null;
+      var includedRatio = [];
+      function sumFactValues(list) {
+        var total = 0; var any = false;
+        (list || []).forEach(function (f) {
+          if (!f || typeof f !== 'object') return;
+          var v = pickNum(f, ['value', 'amount', 'count']);
+          if (v !== null) { total += v; any = true; var fid = _r31FactId(f); if (fid) includedRatio.push(fid); }
+        });
+        return any ? total : null;
+      }
+      if (Array.isArray(options.numeratorFacts) || Array.isArray(options.denominatorFacts)) {
+        numTotal = sumFactValues(options.numeratorFacts);
+        denTotal = sumFactValues(options.denominatorFacts);
+      } else if (options.numeratorMetricCode || options.denominatorMetricCode) {
+        numTotal = sumFactValues(deduped.filter(function (f) { return _r31FactMetric(f) === String(options.numeratorMetricCode); }));
+        denTotal = sumFactValues(deduped.filter(function (f) { return _r31FactMetric(f) === String(options.denominatorMetricCode); }));
+      } else if (deduped.some(function (f) { return f.numerator !== undefined || f.denominator !== undefined; })) {
+        var nSum = 0; var dSum = 0; var nAny = false; var dAny = false;
+        deduped.forEach(function (f) {
+          var nv = pickNum(f, ['numerator', 'numeratorValue']);
+          var dv = pickNum(f, ['denominator', 'denominatorValue']);
+          if (nv !== null) { nSum += nv; nAny = true; }
+          if (dv !== null) { dSum += dv; dAny = true; }
+          var fid = _r31FactId(f); if (fid) includedRatio.push(fid);
+        });
+        numTotal = nAny ? nSum : null;
+        denTotal = dAny ? dSum : null;
+      }
+      if (numTotal === null && options.numerator !== undefined && options.numerator !== null) numTotal = Number(options.numerator);
+      if (denTotal === null && options.denominator !== undefined && options.denominator !== null) denTotal = Number(options.denominator);
+      var ratioExcluded = deduped.filter(function (f) {
+        var fid = _r31FactId(f);
+        return fid && includedRatio.indexOf(fid) === -1;
+      }).map(function (f) { return { id: _r31FactId(f), reason: 'not_in_ratio_scope' }; });
+      var ratioResult = Object.assign({}, base, {
+        includedFactIds: includedRatio,
+        excluded: ratioExcluded,
+        numeratorTotal: numTotal,
+        denominatorTotal: denTotal,
+        currency: options.currency || null
+      });
+      if (numTotal === null || denTotal === null || denTotal === 0) {
+        ratioResult.value = null;
+        ratioResult.status = 'insufficient_data';
+        ratioResult.reason = 'Thiếu tử số/mẫu số hoặc mẫu số bằng 0 cho scope đã khai báo.';
+      } else {
+        ratioResult.value = numTotal / denTotal;
+        ratioResult.status = 'ok';
+      }
+      ratioResult.achievementPercent = _r31KpiAchievement(ratioResult.value, options.target);
+      return ratioResult;
+    }
+
+    // sum / unique / snapshot: lọc theo metric + unit + period trước.
+    var included = [];
+    var excluded = [];
+    deduped.forEach(function (f) {
+      var reason = eligibility(f);
+      if (reason) excluded.push({ id: _r31FactId(f), metricCode: _r31FactMetric(f), unit: _r31FactUnit(f), period: _r31FactPeriod(f), reason: reason });
+      else included.push(f);
+    });
+    var result = Object.assign({}, base, {
+      includedFactIds: included.map(_r31FactId).filter(function (x) { return x !== null; }),
+      excluded: excluded
+    });
+
+    if (mode === 'unique') {
+      var missingKeyFacts = [];
+      var distinct = {};
+      included.forEach(function (f) {
+        var keys = _r31FactIdentityKeys(f);
+        if (!keys || !keys.length) { missingKeyFacts.push(_r31FactId(f)); return; }
+        keys.forEach(function (k) { distinct[k] = true; });
+      });
+      result.missingIdentityFactIds = missingKeyFacts;
+      if (!included.length || missingKeyFacts.length) {
+        result.value = null;
+        result.status = 'insufficient_data';
+        result.reason = 'Thiếu khóa định danh để khử trùng — không tuyên bố tổng unique từ tổng thô.';
+      } else {
+        result.value = Object.keys(distinct).length;
+        result.status = 'ok';
+        result.distinctCount = result.value;
+      }
+      result.achievementPercent = _r31KpiAchievement(result.value, options.target);
+      if (options.target !== undefined && options.target !== null) result.target = Number(options.target);
+      return result;
+    }
+
+    if (mode === 'snapshot') {
+      var latestByObject = {};
+      included.forEach(function (f, idx) {
+        var objectId = f.objectId || f.object_id || f.externalPostId || f.external_post_id || f.postId || _r31FactId(f) || ('row' + idx);
+        var key = String(objectId);
+        var t = toDate(f.observedAt || f.observed_at || f.date || f.capturedAt);
+        var prev = latestByObject[key];
+        if (!prev || (t && (!prev._t || t >= prev._t)) || (!t && !prev._t)) {
+          latestByObject[key] = {
+            objectId: key,
+            value: pickNum(f, ['value', 'metricValue', 'amount', 'count']),
+            observedAt: f.observedAt || f.observed_at || f.date || f.capturedAt || null,
+            _t: t
+          };
+        }
+      });
+      var perObject = Object.keys(latestByObject).sort().map(function (k) {
+        var e = latestByObject[k]; return { objectId: e.objectId, value: e.value, observedAt: e.observedAt };
+      });
+      result.perObject = perObject;
+      if (!perObject.length || perObject.some(function (e) { return e.value === null; })) {
+        result.value = null;
+        result.status = 'insufficient_data';
+        result.reason = 'Thiếu observation hợp lệ để lấy snapshot mới nhất.';
+      } else {
+        result.value = perObject.reduce(function (sum, e) { return sum + e.value; }, 0);
+        result.status = 'ok';
+      }
+      result.achievementPercent = _r31KpiAchievement(result.value, options.target);
+      if (options.target !== undefined && options.target !== null) result.target = Number(options.target);
+      return result;
+    }
+
+    // mode sum (mặc định)
+    var total = 0;
+    included.forEach(function (f) { total += pickNum(f, ['value', 'amount', 'count']) || 0; });
+    result.value = _r31RoundMoney(total);
+    result.status = 'ok';
+    result.achievementPercent = _r31KpiAchievement(result.value, options.target);
+    if (options.target !== undefined && options.target !== null) result.target = Number(options.target);
+    return result;
+  }
+
   var api = {
     wouldCreateCycle: wouldCreateCycle,
     taskReadiness: taskReadiness,
@@ -825,7 +1405,13 @@
     buildCsv: buildCsv,
     csvEscape: csvEscape,
     weeklyWorkload: weeklyWorkload,
-    assessTaskRisk: assessTaskRisk
+    assessTaskRisk: assessTaskRisk,
+    validateAllocations: validateAllocations,
+    allocationShareForScope: allocationShareForScope,
+    summarizeBudgetScope: summarizeBudgetScope,
+    budgetScopeSummary: summarizeBudgetScope,
+    rollupKpi: rollupKpi,
+    kpiRollup: rollupKpi
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
