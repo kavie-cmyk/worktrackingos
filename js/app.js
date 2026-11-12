@@ -2436,11 +2436,12 @@
     labelIdx[points.length - 1] = true;
     var xlabels = points.map(function (p, i) {
       if (!labelIdx[i] || !p) return '';
-      return '<text x="' + (Math.round(xFor(i) * 10) / 10) + '" y="' + (H - 5) + '" text-anchor="middle" font-size="9" fill="var(--muted)">' + esc(p.x) + '</text>';
+      var anchor = i === 0 ? 'start' : (i === points.length - 1 ? 'end' : 'middle');
+      return '<text x="' + (Math.round(xFor(i) * 10) / 10) + '" y="' + (H - 5) + '" text-anchor="' + anchor + '" font-size="9" fill="var(--muted)">' + esc(p.x) + '</text>';
     }).join('');
     var firstV = valid[0], lastV = valid[valid.length - 1];
     var lastIdx = points.indexOf(lastV);
-    var lastLabel = '<text x="' + Math.min(W - 2, (Math.round(xFor(lastIdx) * 10) / 10) + 6) + '" y="' + (Math.round(yFor(lastV.y) * 10) / 10 + 3) + '" font-size="10" font-weight="700" fill="var(--text)">' + esc(fmtNum(lastV.y)) + '</text>';
+    var lastLabel = '<text x="' + (W - 2) + '" y="' + (Math.round(yFor(lastV.y) * 10) / 10 + 3) + '" text-anchor="end" font-size="10" font-weight="700" fill="var(--text)">' + esc(fmtNum(lastV.y)) + '</text>';
     var titleText = (opts.yLabel ? opts.yLabel + ' — ' : '') + 'Điểm đầu: ' + firstV.x + ' = ' + fmtNum(firstV.y) + '; điểm cuối: ' + lastV.x + ' = ' + fmtNum(lastV.y);
     return '<div class="viz-chart" data-viz="line-area"><svg class="viz-line-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(titleText) + '"><title>' + esc(titleText) + '</title>' +
       '<line x1="' + padL + '" y1="' + baseY + '" x2="' + (W - padR) + '" y2="' + baseY + '" stroke="var(--line)"></line>' + shapes + dots + xlabels + lastLabel + '</svg>' +
