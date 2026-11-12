@@ -313,6 +313,30 @@
       { id: 'req-1', title: 'Cần bài giới thiệu tính năng cho kênh đối tác', requester: 'Đội Sản phẩm (minh họa)', campaignId: 'camp-1', status: 'new', statusLabel: 'Mới ghi nhận', priority: 'Cao', dueDate: '2026-11-18', note: 'Ghi nhận để Lead sắp xếp vào Action Plan.' },
       { id: 'req-2', title: 'Xin bộ ảnh sản phẩm cho trang bán hàng', requester: 'Đội Kinh doanh (minh họa)', campaignId: null, status: 'accepted', statusLabel: 'Đã tiếp nhận', priority: 'Trung bình', dueDate: '2026-11-21', note: '' }
     ],
+    // Fixture WAVE-B3 (demo): sổ quỹ Thu–Chi TỐI THIỂU để biểu đồ cột tháng +
+    // đường số dư lũy kế hiện trong chế độ demo/screenshot. Đây CHỈ là dữ
+    // liệu minh họa trong demo-data, không phải thay đổi mô hình dữ liệu.
+    // Đối chiếu tay (VND): T9 Thu 20tr / Chi 4tr / Ròng +16tr; T10 Thu 30tr /
+    // Chi 8,5tr / Ròng +21,5tr; T11 Thu 37tr / Chi 14,5tr / Ròng +22,5tr.
+    // Số dư lũy kế (từ 0): T9 16tr -> T10 37,5tr -> T11 60tr.
+    // Số dư tài khoản: Quỹ vận hành 50tr mở đầu + Thu 82tr - Chi 23,5tr =
+    // 108,5tr; Quỹ sự kiện 10tr mở đầu + Thu 5tr - Chi 3,5tr = 11,5tr.
+    cashAccounts: [
+      { id: 'cash-acc-1', name: 'Quỹ vận hành Marketing (minh họa)', currency: 'VND', openingBalance: 50000000 },
+      { id: 'cash-acc-2', name: 'Quỹ sự kiện & sản xuất (minh họa)', currency: 'VND', openingBalance: 10000000 }
+    ],
+    cashTransactions: [
+      { id: 'cash-tx-01', accountId: 'cash-acc-1', direction: 'in', amount: 20000000, occurredOn: '2026-09-05', title: 'Nạp quỹ đầu tháng 9 (minh họa)' },
+      { id: 'cash-tx-02', accountId: 'cash-acc-1', direction: 'out', amount: 4000000, occurredOn: '2026-09-12', title: 'Chi sản xuất nội dung tháng 9 (minh họa)' },
+      { id: 'cash-tx-03', accountId: 'cash-acc-1', direction: 'in', amount: 30000000, occurredOn: '2026-10-03', title: 'Nạp quỹ tháng 10 (minh họa)' },
+      { id: 'cash-tx-04', accountId: 'cash-acc-1', direction: 'out', amount: 6500000, occurredOn: '2026-10-15', title: 'Chi quảng cáo tháng 10 (minh họa)' },
+      { id: 'cash-tx-05', accountId: 'cash-acc-2', direction: 'out', amount: 2000000, occurredOn: '2026-10-20', title: 'Đặt cọc địa điểm sự kiện (minh họa)' },
+      { id: 'cash-tx-06', accountId: 'cash-acc-1', direction: 'in', amount: 32000000, occurredOn: '2026-11-05', campaignId: 'camp-live', title: 'Nạp quỹ cho campaign livestream (minh họa)' },
+      { id: 'cash-tx-07', accountId: 'cash-acc-1', direction: 'out', amount: 10000000, occurredOn: '2026-11-18', campaignId: 'camp-live', title: 'Chi ads livestream đợt 1 (minh họa)' },
+      { id: 'cash-tx-08', accountId: 'cash-acc-1', direction: 'out', amount: 3000000, occurredOn: '2026-11-24', campaignId: 'camp-live', title: 'Chi seeding livestream (minh họa)' },
+      { id: 'cash-tx-09', accountId: 'cash-acc-2', direction: 'out', amount: 1500000, occurredOn: '2026-11-25', campaignId: 'camp-live', title: 'Chi tổ chức livestream (minh họa)' },
+      { id: 'cash-tx-10', accountId: 'cash-acc-2', direction: 'in', amount: 5000000, occurredOn: '2026-11-28', title: 'Thu hồi một phần tiền cọc sự kiện (minh họa)' }
+    ],
     reportSnapshots: [
       { id: 'report-1', title: 'Báo cáo tuần 02/11/2026 — 08/11/2026 (minh họa)', frozenAt: '2026-11-09T08:00:00+07:00', status: 'Đã chốt', summary: 'Snapshot đã chốt: nội dung hiển thị đóng băng tại thời điểm chốt, không sửa được trong app.', metrics: { spend: 18000000, impressions: 240000, clicks: 7200 } }
     ],

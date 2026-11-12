@@ -2505,6 +2505,40 @@
       '<span class="sub">' + esc(fmtNum(hours)) + ' / ' + esc(fmtNum(cap)) + ' giờ (' + esc(fmtPct(pct)) + ')</span>' +
       (over ? ' <span class="badge st-overdue">Vượt năng lực</span>' : '') + '</div>';
   }
+  // WAVE-B3: điểm số dư LŨY KẾ theo tháng cho biểu đồ đường Thu–Chi.
+  // Thuần trình bày: chỉ cộng dồn trường `net` (Thu − Chi) mà vizCashMonthly
+  // đã gom theo tháng ở trên — không đọc fact gốc, không định nghĩa số mới.
+  // Tháng không rõ ('unknown') bị loại khỏi đường lũy kế (không suy diễn kỳ).
+  function vizCashCumulativePoints(monthly, currency) {
+    var rows = (monthly || []).filter(function (m) { return m && /^\d{4}-\d{2}$/.test(String(m.month)) && (!currency || m.currency === currency); })
+      .slice().sort(function (a, b) { return String(a.month).localeCompare(String(b.month)); });
+    var bal = 0;
+    return rows.map(function (m) { bal += Number(m.net) || 0; return { x: vizMonthLabel(m.month), y: bal }; });
+  }
+  // WAVE-B3: timeline mốc ngày ngang (vd Hạn sản xuất → Hạn duyệt → Ngày
+  // đăng). points = [{label, date:'YYYY-MM-DD'|datetime|'', dateText, tone}].
+  // Khi mọi mốc đều có ngày hợp lệ và không giảm dần: vị trí chấm tính theo
+  // tỉ lệ thời gian thật; ngược lại chấm chia đều theo thứ tự (không bịa tỉ lệ).
+  function vizTimelineHtml(points) {
+    var pts = (points || []).filter(function (p) { return p && p.label; });
+    if (!pts.length) return '<span class="sub">—</span>';
+    var times = pts.map(function (p) { var t = Date.parse(String(p.date || '').slice(0, 10) + 'T00:00:00'); return isNaN(t) ? null : t; });
+    var allValid = times.every(function (t) { return t !== null; });
+    var min = allValid ? Math.min.apply(null, times) : 0;
+    var max = allValid ? Math.max.apply(null, times) : 0;
+    var proportional = allValid && max > min && times.every(function (t, i) { return i === 0 || t >= times[i - 1]; });
+    function pctAt(i) {
+      if (proportional) return vizBarWidth((times[i] - min) / (max - min) * 100);
+      return pts.length <= 1 ? 50 : Math.round(i / (pts.length - 1) * 10000) / 100;
+    }
+    var fillTo = pctAt(pts.length - 1);
+    return '<div class="viz-timeline" data-viz="timeline"><div class="viz-tl-track"><span class="viz-tl-fill" style="width:' + fillTo + '%"></span></div>' +
+      pts.map(function (p, i) {
+        return '<span class="viz-tl-point' + (i === 0 ? ' is-first' : '') + (i === pts.length - 1 ? ' is-last' : '') + '" style="left:' + pctAt(i) + '%">' +
+          vizStatusDotHtml(p.tone || 'running') +
+          '<span class="viz-tl-label">' + esc(p.label) + '<strong>' + esc(p.dateText || '—') + '</strong></span></span>';
+      }).join('') + '</div>';
+  }
   // R3.1-VIZ-PURE-END
   // --- Adapter: chuẩn bị dữ liệu chart TỪ các hàm domain/Store hiện có ---
   // WAVE-A-VIZ2 adapter: tông SUY RA của task (SPEC §2.3) — chỉ đọc kết quả
@@ -2749,6 +2783,14 @@
     var curs = [];
     monthly.forEach(function (m) { if (curs.indexOf(m.currency) === -1) curs.push(m.currency); });
     var html = head + '<h4>Biểu đồ cột Thu / Chi theo tháng</h4>' + curs.map(function (cur) { return vizCashColumnsHtml(monthly, cur); }).join('');
+    // WAVE-B3: đường số dư lũy kế theo tháng — điểm tháng lấy từ chính
+    // vizCashMonthly ở trên (net từng tháng), cộng dồn thuần trình bày qua
+    // vizCashCumulativePoints; đường nằm ngay dưới cột Thu/Chi cùng tiền tệ.
+    html += curs.map(function (cur) {
+      var pts = vizCashCumulativePoints(monthly, cur);
+      if (!pts.length) return '';
+      return '<h4>Đường số dư lũy kế theo tháng (' + esc(cur) + ')</h4><div data-viz="cash-balance-line">' + vizLineAreaSvgHtml({ points: pts, yLabel: 'Số dư lũy kế (' + cur + ')', emptyText: 'Chưa có tháng rõ ràng để vẽ đường số dư lũy kế.' }) + '</div>';
+    }).join('');
     var balances = vizCashBalancesSync();
     html += '<h4>Số dư theo tài khoản</h4>' + (balances.length ? tbl('<tr><th>Tài khoản</th><th>Tiền tệ</th><th>Số dư</th></tr>' + balances.map(function (b) {
       return '<tr><td>' + esc(accName(b.accountId)) + '</td><td>' + esc(b.currency || accCur(b.accountId)) + '</td><td>' + fmtMoney(b.balance, b.currency || accCur(b.accountId)) + '</td></tr>';
@@ -3517,6 +3559,15 @@
       // Backlog/Ý tưởng: nội dung CHƯA có lịch đăng nào — không gán ngày giả.
       var backlog = items.filter(function (x) { return !pubsOfItem(x.id).length && !x.scheduledDate; });
       html += '<h2>Backlog / Ý tưởng (' + backlog.length + ')</h2><p class="sub">Ý tưởng chưa có lịch đăng chỉ nằm ở đây — hệ thống không tự gán ngày hôm nay hay ngày bất kỳ để lấp ô lịch.</p>';
+      if (backlog.length) {
+        var blSegs = EDITORIAL_STATUSES.map(function (st) {
+          var n = backlog.filter(function (x) { return x.editorialStatus === st[0]; }).length;
+          return { label: st[1], value: n, tone: vizStatusTone(st[0]) };
+        }).filter(function (s) { return s.value > 0; });
+        var blOther = backlog.length - blSegs.reduce(function (a, s) { return a + s.value; }, 0);
+        if (blOther > 0) blSegs.push({ label: 'Trạng thái khác', value: blOther, tone: 'neutral' });
+        html += '<div data-viz="content-backlog-pipeline"><h3>Pipeline trạng thái của Backlog</h3>' + vizStackedBarHtml({ segments: blSegs, total: backlog.length, unitLabel: 'nội dung trong Backlog' }) + '</div>';
+      }
       html += backlog.length ? tbl(itemHead + backlog.map(itemRow).join('')) : emptyState('Backlog đang trống', 'Mọi nội dung đang lọc đều đã có lịch đăng, hoặc chưa có nội dung nào.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="content">+ Tạo ý tưởng mới</button></p>' : '');
     }
     if (UI.contentTab === 'pillars') {
@@ -3525,8 +3576,13 @@
       var order = [];
       items.forEach(function (x) { var k = contentPillarId(x) || '__none'; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
       if (!order.length) html += emptyState('Chưa có nội dung nào', 'Tạo nội dung đầu tiên cho Content Plan.', '');
+      var pillarMix = contentMixRows(items, pubs, 'content');
       order.forEach(function (k) {
-        html += '<h3>' + esc(k === '__none' ? 'Chưa phân loại pillar' : pillarName(k)) + ' (' + groups[k].length + ')</h3>' + tbl(itemHead + groups[k].map(itemRow).join(''));
+        var mixRow = pillarMix.rows.find(function (r) { return (r.pillarId || '__none') === k; });
+        var shareVal = mixRow ? mixRow.total : groups[k].length;
+        html += '<h3>' + esc(k === '__none' ? 'Chưa phân loại pillar' : pillarName(k)) + ' (' + groups[k].length + ')</h3>' +
+          '<div data-viz="content-pillar-share">' + vizProgressBarHtml({ value: shareVal, max: pillarMix.denominator || items.length, pct: vizPct(shareVal, pillarMix.denominator || items.length), tone: 'running', label: 'Tỉ trọng pillar trong Content mix', detail: shareVal + ' / ' + (pillarMix.denominator || items.length) + ' nội dung gốc (' + fmtPct(vizPct(shareVal, pillarMix.denominator || items.length)) + ')' }) + '</div>' +
+          tbl(itemHead + groups[k].map(itemRow).join(''));
       });
     }
     if (UI.contentTab === 'calendar') {
@@ -3548,19 +3604,22 @@
         var representedVar = {};
         allPubs.forEach(function (p) { if (p.variantId) representedVar[p.variantId] = true; });
         var dayVariants = variants.filter(function (v) { return dateInTz(v.scheduledAt) === iso; }).filter(function (v) { return !representedVar[v.id]; });
-        return '<div class="cal-cell' + (d.getMonth() !== month ? ' dim' : '') + (iso === todayISO() ? ' today' : '') + '" data-action="cal-day" data-id="' + iso + '" role="button" tabindex="0" aria-label="Ngày ' + iso + '"><div class="day">' + d.getDate() + '/' + (d.getMonth() + 1) + '</div>' +
+        var dayItems = [];
+        dayPubs.forEach(function (p) { dayItems.push({ tone: vizStatusTone(p.status), count: 1 }); });
+        dayVariants.forEach(function (v) { dayItems.push({ tone: vizStatusTone(v.editorialStatus), count: 1 }); });
+        return '<div class="cal-cell' + (d.getMonth() !== month ? ' dim' : '') + (iso === todayISO() ? ' today' : '') + '" data-action="cal-day" data-id="' + iso + '" role="button" tabindex="0" aria-label="Ngày ' + iso + '"><div class="day">' + d.getDate() + '/' + (d.getMonth() + 1) + ' ' + vizCalDotsHtml(dayItems) + '</div>' +
           dayPubs.map(function (p) {
             var it = items.find(function (x) { return x.id === p.contentItemId; }) || Store.get('contentItems', p.contentItemId) || {};
             var time = toDatetimeLocalValue(p.at).slice(11, 16);
-            return '<span class="chip" data-action="' + (p.variantId ? 'chip-variant' : 'editor-open') + '"' + (p.variantId ? ' data-id="' + esc(p.variantId) + '"' : ' data-kind="post" data-id="' + esc(p.refId) + '"') + ' role="button" tabindex="0" title="' + esc(p.title) + ' · ' + esc(accountName(p.channelAccountId)) + ' · Pillar: ' + esc(pillarName(contentPillarId(it))) + ' · Campaign: ' + esc(p.campaignId ? campaignName(p.campaignId) : 'Không thuộc campaign') + '">' + esc(time) + ' ' + esc(labelStatus(p.platform)) + ': ' + esc(p.title) + '</span>';
+            return '<span class="chip st-edge-' + vizStatusTone(p.status) + '" data-action="' + (p.variantId ? 'chip-variant' : 'editor-open') + '"' + (p.variantId ? ' data-id="' + esc(p.variantId) + '"' : ' data-kind="post" data-id="' + esc(p.refId) + '"') + ' role="button" tabindex="0" title="' + esc(p.title) + ' · ' + esc(accountName(p.channelAccountId)) + ' · Pillar: ' + esc(pillarName(contentPillarId(it))) + ' · Campaign: ' + esc(p.campaignId ? campaignName(p.campaignId) : 'Không thuộc campaign') + '">' + esc(time) + ' ' + esc(labelStatus(p.platform)) + ': ' + esc(p.title) + '</span>';
           }).join('') +
-          dayVariants.map(function (v) { return '<span class="chip" data-action="chip-variant" data-id="' + esc(v.id) + '" role="button" tabindex="0">' + esc(v.channelLabel || labelStatus(v.platform)) + ': ' + esc(contentTitle(v.contentItemId)) + '</span>'; }).join('') + '</div>';
+          dayVariants.map(function (v) { return '<span class="chip st-edge-' + vizStatusTone(v.editorialStatus) + '" data-action="chip-variant" data-id="' + esc(v.id) + '" role="button" tabindex="0">' + esc(v.channelLabel || labelStatus(v.platform)) + ': ' + esc(contentTitle(v.contentItemId)) + '</span>'; }).join('') + '</div>';
       }).join('') + '</div>';
       var monthPrefix = year + '-' + String(month + 1).padStart(2, '0');
       var monthPubs = pubs.filter(function (p) { return dateInTz(p.at).slice(0, 7) === monthPrefix; }).sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
       html += '<div class="cal-agenda"><h3>Danh sách lần đăng theo ngày (màn hình nhỏ)</h3>' + (monthPubs.length ? '<ul class="clean">' + monthPubs.map(function (p) {
         var it2 = Store.get('contentItems', p.contentItemId) || {};
-        return '<li>' + esc(D.formatDateTimeVN(p.at)) + ' — <button class="linklike" data-action="editor-open" data-kind="' + (p.variantId ? 'variant' : 'post') + '" data-id="' + esc(p.variantId || p.refId) + '">' + esc(p.title) + '</button> (' + esc(labelStatus(p.platform)) + ' · ' + esc(accountName(p.channelAccountId)) + ') ' + statusBadge(p.status) + '<br><span class="sub">Pillar: ' + esc(pillarName(contentPillarId(it2))) + ' · Campaign: ' + esc(p.campaignId ? campaignName(p.campaignId) : 'Không thuộc campaign') + '</span></li>';
+        return '<li>' + vizStatusDotHtml(vizStatusTone(p.status)) + esc(D.formatDateTimeVN(p.at)) + ' — <button class="linklike" data-action="editor-open" data-kind="' + (p.variantId ? 'variant' : 'post') + '" data-id="' + esc(p.variantId || p.refId) + '">' + esc(p.title) + '</button> (' + esc(labelStatus(p.platform)) + ' · ' + esc(accountName(p.channelAccountId)) + ') ' + statusBadge(p.status) + '<br><span class="sub">Pillar: ' + esc(pillarName(contentPillarId(it2))) + ' · Campaign: ' + esc(p.campaignId ? campaignName(p.campaignId) : 'Không thuộc campaign') + '</span></li>';
       }).join('') + '</ul>' : '<p class="sub">Tháng này chưa có lần đăng nào.</p>') + '</div>';
       html += '<h3>Tất cả lần đăng trong tháng (' + monthPubs.length + ')</h3>' + (monthPubs.length ? tbl('<tr><th>Ngày giờ đăng</th><th>Nội dung</th><th>Kênh / Tài khoản</th><th>Pillar</th><th>Campaign của lần đăng</th><th>Trạng thái</th></tr>' + monthPubs.map(function (p) {
         var it3 = Store.get('contentItems', p.contentItemId) || {};
@@ -3588,8 +3647,14 @@
     }
     if (UI.contentTab === 'production') {
       var sorted = variants.slice().sort(function (a, b) { return String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')); });
-      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở bảng nội dung (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu nội dung không tự tạo task, và task sản xuất có thể chỉ gắn content, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
-        return '<tr><td>' + esc(D.formatDateTimeVN(v.scheduledAt)) + '</td><td><strong>' + esc(contentTitle(v.contentItemId)) + '</strong></td><td>' + esc(v.channelLabel || labelStatus(v.platform)) + '</td><td>' + esc(memberName(v.ownerId)) + '</td><td>' + esc(memberName(v.reviewerId)) + '</td><td>' + esc(D.formatDateVN(v.productionDeadline)) + '</td><td>' + esc(D.formatDateVN(v.reviewDeadline)) + '</td><td>' + statusBadge(v.editorialStatus) + '</td><td class="row-actions">' + variantCardActions(v) + '</td></tr>';
+      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở bảng nội dung (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu nội dung không tự tạo task, và task sản xuất có thể chỉ gắn content, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
+        var tlPts = [
+          { label: 'Hạn sản xuất', date: v.productionDeadline ? String(v.productionDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.productionDeadline) || '—', tone: 'running' },
+          { label: 'Hạn duyệt', date: v.reviewDeadline ? String(v.reviewDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.reviewDeadline) || '—', tone: 'pending' },
+          { label: 'Ngày đăng', date: v.scheduledAt ? String(v.scheduledAt).slice(0, 10) : '', dateText: D.formatDateVN(v.scheduledAt) || '—', tone: 'done' }
+        ];
+        var tlHave = tlPts.filter(function (p) { return p.date; }).length;
+        return '<tr><td>' + esc(D.formatDateTimeVN(v.scheduledAt)) + '</td><td><strong>' + esc(contentTitle(v.contentItemId)) + '</strong></td><td>' + esc(v.channelLabel || labelStatus(v.platform)) + '</td><td>' + esc(memberName(v.ownerId)) + '</td><td>' + esc(memberName(v.reviewerId)) + '</td><td>' + esc(D.formatDateVN(v.productionDeadline)) + '</td><td>' + esc(D.formatDateVN(v.reviewDeadline)) + '</td><td>' + (tlHave >= 2 ? vizTimelineHtml(tlPts) : '<span class="sub">Chưa đủ mốc ngày để vẽ timeline</span>') + '</td><td>' + statusBadge(v.editorialStatus) + '</td><td class="row-actions">' + variantCardActions(v) + '</td></tr>';
       }).join(''));
       var tiktok = variants.filter(function (v) { return v.platform === 'tiktok'; });
       html += '<h2>TikTok — sản xuất trong app, đăng ngoài app</h2>';
@@ -3606,16 +3671,42 @@
           (v.scriptScenes && v.scriptScenes.length ? '<div class="table-wrap"><table class="scene-table"><tr><th>Cảnh</th><th>Hook</th><th>Hình ảnh</th><th>Lời thoại</th><th>Chữ trên màn hình</th><th>Thời lượng (giây)</th><th>CTA</th></tr>' +
             v.scriptScenes.map(function (s) { return '<tr><td>' + esc(s.shot) + '</td><td>' + esc(s.hook || '') + '</td><td>' + esc(s.visual) + '</td><td>' + esc(s.dialogue) + '</td><td>' + esc(s.onScreenText) + '</td><td>' + esc(s.durationSec) + '</td><td>' + esc(s.cta || '') + '</td></tr>'; }).join('') + '</table></div>' : '<p class="sub">Chưa có kịch bản theo cảnh — mở sửa để thêm.</p>') +
           (v.externalUrl ? '<p>Link bài đã đăng: <a href="' + esc(v.externalUrl) + '" target="_blank" rel="noopener">' + esc(v.externalUrl) + '</a>' + (v.actualPublishedAt ? ' · Ngày đăng thực tế: ' + esc(D.formatDateTimeVN(v.actualPublishedAt)) : '') + '</p>' : '') +
-          (metrics.length ? '<p class="sub">Số liệu đã nhập cho video này: ' + metrics.map(function (m) { return esc(m.metric) + ' = ' + fmtNum(m.value) + ' (' + esc(m.source || '') + ', ' + esc(D.formatDateTimeVN(m.observedAt)) + ')'; }).join(' · ') + '</p>' : '<p class="sub">Chưa có số liệu nào được nhập cho video này.</p>') +
+          (metrics.length ? '<div data-viz="tiktok-metrics"><p>' + metrics.map(function (m) { return '<span class="metric-chip">' + esc(m.metric) + ' = <strong>' + fmtNum(m.value) + '</strong></span>'; }).join('') + '</p>' + tbl('<tr><th>Chỉ số</th><th>Giá trị</th><th>Nguồn</th><th>Thời điểm</th></tr>' + metrics.map(function (m) { return '<tr><td>' + esc(m.metric) + '</td><td>' + fmtNum(m.value) + '</td><td>' + esc(m.source || '—') + '</td><td>' + esc(D.formatDateTimeVN(m.observedAt)) + '</td></tr>'; }).join('')) + '</div>' : '<p class="sub">Chưa có số liệu nào được nhập cho video này.</p>') +
           '<p>' + variantCardActions(v) + '</p></div>';
       });
     }
     if (UI.contentTab === 'library') {
       var posted = pubs.filter(function (p) { return p.kind === 'post'; });
       html += '<h2>Thư viện bài đã đăng (' + posted.length + ' lần đăng)</h2><p class="sub">Mỗi dòng là MỘT lần đăng. Đăng lại cùng nội dung tạo một dòng mới riêng — link và số liệu của lần đăng trước không bị ghi đè.</p>';
-      html += posted.length ? tbl('<tr><th>Bài đã đăng</th><th>Nội dung gốc</th><th>Kênh / Tài khoản</th><th>Ngày đăng</th><th>Pillar</th><th>Campaign của lần đăng</th><th>Link</th></tr>' + posted.map(function (p) {
+      // WAVE-B3: số liệu của lần đăng lấy từ metricObservations đã có trong
+      // Store (khóa externalPostId = refId của lần đăng) — chỉ lấy bản ghi
+      // MỚI NHẤT cho từng chỉ số; lần đăng không có quan trắc thì để trống.
+      var libObs = listSafe('metricObservations');
+      function libLatestMetric(postId, names) {
+        var cand = libObs.filter(function (o) { return o.externalPostId === postId && names.indexOf(o.metric) !== -1; })
+          .sort(function (a, b) { return String(a.observedAt || '').localeCompare(String(b.observedAt || '')); });
+        if (!cand.length) return null;
+        var v = Number(cand[cand.length - 1].value);
+        return isNaN(v) ? null : v;
+      }
+      var libViews = posted.map(function (p) { return libLatestMetric(p.refId, ['views', 'lifetime_views']); });
+      var libMaxViews = 0;
+      libViews.forEach(function (v) { if (v !== null && v > libMaxViews) libMaxViews = v; });
+      html += posted.length ? tbl('<tr><th>Bài đã đăng</th><th>Nội dung gốc</th><th>Kênh / Tài khoản</th><th>Ngày đăng</th><th>Pillar</th><th>Campaign của lần đăng</th><th>Số liệu lần đăng</th><th>Link</th></tr>' + posted.map(function (p, pi) {
         var it4 = Store.get('contentItems', p.contentItemId) || {};
-        return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(it4.title || '—') + '</td><td>' + esc(labelStatus(p.platform)) + '<br><span class="sub">' + esc(accountName(p.channelAccountId)) + '</span></td><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td>' + esc(pillarName(contentPillarId(it4))) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : 'Không thuộc campaign') + '</td><td>' + (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">Mở bài</a>' : '—') + '</td></tr>';
+        var views = libViews[pi];
+        var reach = libLatestMetric(p.refId, ['reach']);
+        var impressions = libLatestMetric(p.refId, ['impressions']);
+        var metricCell;
+        if (views === null && reach === null && impressions === null) metricCell = '—';
+        else {
+          var parts = [];
+          if (views !== null) parts.push('Lượt xem: ' + fmtNum(views));
+          if (reach !== null) parts.push('Reach: ' + fmtNum(reach));
+          if (impressions !== null) parts.push('Hiển thị: ' + fmtNum(impressions));
+          metricCell = (views !== null && libMaxViews > 0 ? vizCellBarHtml({ value: views, max: libMaxViews, tone: 'running', text: parts.join(' · ') }) : '<span class="sub">' + esc(parts.join(' · ')) + '</span>');
+        }
+        return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(it4.title || '—') + '</td><td>' + esc(labelStatus(p.platform)) + '<br><span class="sub">' + esc(accountName(p.channelAccountId)) + '</span></td><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td>' + esc(pillarName(contentPillarId(it4))) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : 'Không thuộc campaign') + '</td><td>' + metricCell + '</td><td>' + (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">Mở bài</a>' : '—') + '</td></tr>';
       }).join('')) : '<div class="state-box">Chưa có bài đã đăng nào khớp bộ lọc.</div>';
     }
     if (UI.contentTab === 'mix') {
@@ -3631,9 +3722,21 @@
         // R3.1-VIZ 4: biểu đồ tỷ trọng theo pillar + theo kênh, dùng ĐÚNG
         // đơn vị đếm đang chọn và in mẫu số ngay tại chart; bảng số ở dưới.
         html += vizMixChartHtml(mix, unit);
-        html += tbl('<tr><th>Pillar chính</th>' + mix.channels.map(function (c) { return '<th>' + esc(labelStatus(c)) + '</th>'; }).join('') + '<th>Tổng</th><th>Tỷ trọng</th></tr>' + mix.rows.map(function (r) {
-          return '<tr><td><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong></td>' + mix.channels.map(function (c) { return '<td>' + (r.byChannel[c] || 0) + '</td>'; }).join('') + '<td><strong>' + r.total + '</strong></td><td>' + (mix.denominator ? (Math.round(r.total / mix.denominator * 1000) / 10) + '%' : '—') + '</td></tr>';
-        }).join('') + '<tr><td><strong>Tổng (mẫu số)</strong></td>' + mix.channels.map(function (c) { return '<td></td>'; }).join('') + '<td><strong>' + mix.denominator + '</strong></td><td><strong>100%</strong></td></tr>');
+        var heatMax = 0;
+        mix.rows.forEach(function (r) { mix.channels.forEach(function (c) { heatMax = Math.max(heatMax, Number(r.byChannel[c]) || 0); }); });
+        html += '<div data-viz="content-mix-heat"><h3>Ma trận Pillar × Kênh (tô nền theo mật độ ô)</h3>' + tbl('<tr><th>Pillar chính</th>' + mix.channels.map(function (c) { return '<th>' + esc(labelStatus(c)) + '</th>'; }).join('') + '<th>Tổng</th><th>Tỷ trọng</th></tr>' + mix.rows.map(function (r) {
+          return '<tr><td><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong></td>' + mix.channels.map(function (c) {
+            var v = Number(r.byChannel[c]) || 0;
+            var ratio = heatMax > 0 ? v / heatMax : 0;
+            var heatCls = v === 0 ? 'heat-0' : (ratio <= 0.25 ? 'heat-1' : (ratio <= 0.5 ? 'heat-2' : (ratio <= 0.75 ? 'heat-3' : 'heat-4')));
+            return '<td class="' + heatCls + '" title="' + esc(labelStatus(c)) + ': ' + v + ' / ô đậm nhất ' + heatMax + '">' + v + '</td>';
+          }).join('') + '<td><strong>' + r.total + '</strong></td><td>' + (mix.denominator ? (Math.round(r.total / mix.denominator * 1000) / 10) + '%' : '—') + '</td></tr>';
+        }).join('') + '<tr><td><strong>Tổng (mẫu số)</strong></td>' + mix.channels.map(function (c) { return '<td></td>'; }).join('') + '<td><strong>' + mix.denominator + '</strong></td><td><strong>100%</strong></td></tr>') + '</div>';
+        html += '<div data-viz="content-mix-stacked"><h3>Cơ cấu kênh trong từng Pillar (thanh 100%)</h3>' + mix.rows.map(function (r) {
+          var segs = mix.channels.map(function (c, ci) { return { label: labelStatus(c), value: Number(r.byChannel[c]) || 0, cat: (ci % 8) + 1 }; }).filter(function (s) { return s.value > 0; });
+          if (!segs.length) return '';
+          return '<p class="sub"><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong> — tổng ' + r.total + '</p>' + vizStackedBarHtml({ segments: segs, total: r.total, unitLabel: (unit === 'publication' ? 'lần đăng' : 'nội dung gốc') + ' của pillar này' });
+        }).join('') + '</div>';
         var tagList = Object.keys(mix.tagCounts);
         html += '<p class="sub">Tỷ trọng theo tags phụ (chỉ tham khảo): ' + (tagList.length ? tagList.map(function (t) { return esc(t) + ': ' + mix.tagCounts[t]; }).join(' · ') : '—') + '. <strong>Lưu ý: tỷ trọng theo tags KHÔNG cộng ra tổng</strong> — một nội dung có nhiều tags được tính ở mọi tag của nó, trong khi tổng chính thức chỉ tính theo pillar chính (mỗi nội dung 1 lần).</p>';
       }
@@ -3646,7 +3749,23 @@
       var orphanPosts = [];
       try { orphanPosts = Store.list('externalPosts').filter(function (p) { return !p.contentItemId; }); } catch (e) { orphanPosts = []; }
       html += '<h2>Chờ phân loại (' + queueItems.length + ' nội dung)</h2>' +
-        '<p class="sub">Bài import/đồng bộ về mà thiếu pillar nằm ở hàng đợi riêng này cho tới khi được phân loại thủ công — hệ thống không tự gán pillar và không tạo campaign giả cho chúng. Bài đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ, không phải lỗi và không nằm ở đây.</p>';
+        '<p class="sub">Bài import/đồng bộ về mà thiếu pillar nằm ở hàng đợi riêng này cho tới khi được phân loại thủ công — hệ thống không tự gán pillar và không tạo campaign giả cho chúng. Bài đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ, không phải lỗi và không nằm ở đây.</p>' +
+        '<div class="cards" data-viz="content-queue-cards">' +
+        vizKpiCardHtml({ label: 'Nội dung chờ phân loại', valueText: String(queueItems.length), tone: 'pending', toneLabel: 'Chờ phân loại', sub: 'Thiếu pillar chính — cần phân loại thủ công' }) +
+        vizKpiCardHtml({ label: 'Bài đã đăng chưa gắn nội dung gốc', valueText: String(orphanPosts.length), tone: 'blocked', toneLabel: 'Chưa gắn gốc', sub: 'Bài ngoài hệ thống chưa nối về nội dung gốc' }) +
+        vizKpiCardHtml({ label: 'Tổng cần xử lý', valueText: String(queueItems.length + orphanPosts.length), tone: 'running', toneLabel: 'Hàng đợi', sub: 'Tổng hai nhóm chờ xử lý ở tab này' }) +
+        '</div>';
+      if (queueItems.length) {
+        html += '<h3>Tuổi chờ phân loại</h3><ul class="clean" data-viz="content-queue-age">' + queueItems.map(function (x) {
+          var raw = x.createdAt || x.created_at || x.updatedAt || x.updated_at || '';
+          var d0 = raw ? String(raw).slice(0, 10) : '';
+          var days = (/^\d{4}-\d{2}-\d{2}$/.test(d0)) ? Math.max(0, Math.floor((Date.parse(todayISO() + 'T00:00:00') - Date.parse(d0 + 'T00:00:00')) / 86400000)) : null;
+          var badge = days === null
+            ? vizStatusPillHtml('neutral', { label: 'Chưa rõ ngày vào hàng đợi', tone: 'neutral' })
+            : vizStatusPillHtml('pending', { label: 'Đã chờ ' + days + ' ngày', tone: days >= 7 ? 'overdue' : (days >= 3 ? 'pending' : 'neutral') });
+          return '<li><strong>' + esc(x.title) + '</strong> ' + badge + '</li>';
+        }).join('') + '</ul>';
+      }
       html += queueItems.length ? tbl(itemHead + queueItems.map(itemRow).join('')) : '<div class="state-box">Không có nội dung nào đang chờ phân loại pillar.</div>';
       if (orphanPosts.length) {
         html += '<h3>Bài đã đăng chưa gắn nội dung gốc (' + orphanPosts.length + ')</h3>' + tbl('<tr><th>Bài</th><th>Kênh</th><th>Ngày đăng</th><th>Thao tác</th></tr>' + orphanPosts.map(function (p) {
@@ -3664,11 +3783,13 @@
           return '<div class="card"><strong>' + esc(s.name) + '</strong><br><span class="sub">' + esc(s.description) + '</span><br>' + (ed ? '<button class="btn small" data-action="pillar-suggest" data-name="' + esc(s.name) + '">Dùng gợi ý này</button>' : '') + '</div>';
         }).join('') + '</div>';
       } else {
-        html += tbl('<tr><th>Pillar</th><th>Phạm vi Brand/BU</th><th>Mô tả</th><th>Hướng dẫn phân loại & ví dụ</th><th>Số nội dung</th><th>Trạng thái</th><th>Thao tác</th></tr>' + pillarsAll.map(function (p) {
-          var cnt = allItems.filter(function (x) { return contentPillarId(x) === p.id; }).length;
+        var pillarCounts = pillarsAll.map(function (p) { return allItems.filter(function (x) { return contentPillarId(x) === p.id; }).length; });
+        var pillarMaxCnt = Math.max.apply(null, pillarCounts.concat([0]));
+        html += tbl('<tr><th>Pillar</th><th>Phạm vi Brand/BU</th><th>Mô tả</th><th>Hướng dẫn phân loại & ví dụ</th><th>Số nội dung</th><th>Trạng thái</th><th>Thao tác</th></tr>' + pillarsAll.map(function (p, pIdx) {
+          var cnt = pillarCounts[pIdx];
           var bu = Store.list('businessUnits').find(function (b) { return b.id === (p.buProductId || p.bu_product_id); });
           var arch = isPillarArchived(p);
-          return '<tr><td><strong>' + esc(p.name || p.title) + '</strong></td><td>' + esc(bu ? (bu.name || bu.buName) : 'Toàn workspace') + '</td><td>' + esc(p.description || '—') + '</td><td>' + esc(p.classificationGuide || p.classification_guide || '—') + '</td><td>' + cnt + '</td><td>' + (arch ? '<span class="badge grey">Đã lưu trữ</span>' : '<span class="badge ok">Đang dùng</span>') + '</td>' +
+          return '<tr><td><strong>' + esc(p.name || p.title) + '</strong></td><td>' + esc(bu ? (bu.name || bu.buName) : 'Toàn workspace') + '</td><td>' + esc(p.description || '—') + '</td><td>' + esc(p.classificationGuide || p.classification_guide || '—') + '</td><td>' + (pillarMaxCnt > 0 ? vizCellBarHtml({ value: cnt, max: pillarMaxCnt, tone: 'running', text: fmtNum(cnt) + ' nội dung (' + fmtPct(vizPct(cnt, allItems.length)) + ' tổng số)' }) : String(cnt)) + '</td><td>' + (arch ? '<span class="badge grey">Đã lưu trữ</span>' : '<span class="badge ok">Đang dùng</span>') + '</td>' +
             '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="pillar" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Sửa</button> ' + (arch
               ? '<button class="btn small secondary" data-action="restore-item" data-coll="contentPillars" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Khôi phục</button>'
               : '<button class="btn small secondary" data-action="archive-item" data-coll="contentPillars" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Lưu trữ</button>') + '</td></tr>';
@@ -3970,13 +4091,25 @@
       });
       var projected = sum.approved - sum.remaining; // dự kiến sử dụng = đã duyệt − còn phân bổ
       html += '<h3>Tiền tệ: ' + esc(cur) + '</h3>';
-      html += '<div class="cards">' +
-        '<div class="card"><div class="big">' + fmtMoney(sum.planned, cur) + '</div>Kế hoạch</div>' +
-        '<div class="card"><div class="big">' + fmtMoney(sum.approved, cur) + '</div>Được duyệt</div>' +
-        '<div class="card"><div class="big">' + fmtMoney(sum.spent, cur) + '</div>Đã chi</div>' +
-        '<div class="card"><div class="big">' + fmtMoney(sum.open, cur) + '</div>Cam kết chưa trả</div>' +
-        '<div class="card"><div class="big">' + fmtMoney(sum.remaining, cur) + '</div>Còn phân bổ</div>' +
-        '<div class="card"><div class="big">' + fmtMoney(projected, cur) + '</div>Dự kiến sử dụng (đã chi + cam kết chưa trả)</div></div>';
+      // WAVE-B3: 6 thẻ tiền trần -> vizKpiCardHtml (số giữ nguyên nguồn cộng
+      // hiện tại của view: planned/approved từ dòng ngân sách, spent từ
+      // actuals, open qua D.openCommitmentTotal, remaining qua
+      // D.budgetRemaining) + 1 thanh xếp chồng dòng tiền trên hạn mức duyệt.
+      html += '<div class="cards" data-viz="kpi-money-cards">' +
+        vizKpiCardHtml({ label: 'Kế hoạch', valueText: fmtMoney(sum.planned, cur), tone: 'neutral', toneLabel: 'Kế hoạch', sub: 'Tổng kế hoạch các dòng ngân sách (' + cur + ')' }) +
+        vizKpiCardHtml({ label: 'Được duyệt', valueText: fmtMoney(sum.approved, cur), tone: 'running', toneLabel: 'Hạn mức', sub: 'Tổng hạn mức đã duyệt (' + cur + ')' }) +
+        vizKpiCardHtml({ label: 'Đã chi', valueText: fmtMoney(sum.spent, cur), tone: 'running', toneLabel: 'Thực chi', sub: 'Tổng thực chi đã ghi (' + cur + ')' }) +
+        vizKpiCardHtml({ label: 'Cam kết chưa trả', valueText: fmtMoney(sum.open, cur), tone: 'pending', toneLabel: 'Cam kết mở', sub: 'Cam kết còn mở chưa thanh toán (' + cur + ')' }) +
+        vizKpiCardHtml({ label: 'Còn phân bổ', valueText: fmtMoney(sum.remaining, cur), tone: sum.remaining < 0 ? 'overdue' : 'done', toneLabel: sum.remaining < 0 ? 'Vượt ngân sách' : 'Còn dùng được', sub: 'Đã duyệt trừ dự kiến sử dụng (' + cur + ')' }) +
+        vizKpiCardHtml({ label: 'Dự kiến sử dụng', valueText: fmtMoney(projected, cur), tone: 'pending', toneLabel: 'Dự kiến', sub: 'Đã chi + cam kết chưa trả (' + cur + ')', progress: sum.approved > 0 ? { value: projected, max: sum.approved, pct: vizPct(projected, sum.approved), tone: projected > sum.approved ? 'overdue' : 'pending', detail: fmtMoney(projected, cur) + ' / ' + fmtMoney(sum.approved, cur) + ' (' + fmtPct(vizPct(projected, sum.approved)) + ')' } : null }) +
+        '</div>';
+      if (sum.approved > 0) {
+        html += '<div data-viz="kpi-budget-stacked"><h4>Dòng tiền trên hạn mức đã duyệt (' + esc(cur) + ')</h4>' + vizStackedBarHtml({ segments: [
+          { label: 'Đã chi', value: sum.spent, series: 'actual' },
+          { label: 'Cam kết chưa trả', value: sum.open, series: 'commit' },
+          { label: 'Còn dùng được', value: Math.max(0, sum.remaining), tone: 'done' }
+        ], total: sum.approved, unitLabel: cur + ' đã duyệt' }) + '</div>';
+      }
       html += tbl('<tr><th>Dòng ngân sách</th><th>Campaign</th><th>Kế hoạch</th><th>Đã duyệt</th><th>Cam kết còn mở</th><th>Thực chi</th><th>Còn lại</th><th>Trạng thái</th><th>Thao tác</th></tr>' + lines.map(function (b) {
         var commits = allCommits.filter(function (x) { return x.budgetLineId === b.id; });
         var acts = allActuals.filter(function (x) { return x.budgetLineId === b.id; });
@@ -4004,7 +4137,8 @@
           '<strong>Cam kết (' + commits.length + ')</strong>' + (budgetEd ? ' <button class="btn small" data-action="editor-open" data-kind="commitment" data-line="' + esc(b.id) + '">+ Thêm cam kết</button>' : '') + commitRows +
           '<strong>Thực chi (' + acts.length + ')</strong>' + (budgetEd ? ' <button class="btn small" data-action="editor-open" data-kind="actual" data-line="' + esc(b.id) + '">+ Ghi khoản chi</button>' : '') + actRows +
           '</td></tr>';
-        return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc(campaignName(b.campaignId)) + '</td><td>' + fmtMoney(b.planned, cur) + '</td><td>' + fmtMoney(b.approved, cur) + '</td><td>' + fmtMoney(openCommit, cur) + '</td><td>' + fmtMoney(actualTotal, cur) + '</td><td>' + fmtMoney(rem, cur) + '</td><td>' + (rem < 0 ? vizStatusPillHtml('overdue', { label: 'Vượt ngân sách ' + fmtMoney(-rem, cur), derived: true }) : vizStatusPillHtml('done', { label: 'Trong ngân sách' })) + '</td>' +
+        var lineUsed = actualTotal + openCommit;
+        return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc(campaignName(b.campaignId)) + '</td><td>' + fmtMoney(b.planned, cur) + '</td><td>' + fmtMoney(b.approved, cur) + '</td><td>' + fmtMoney(openCommit, cur) + '</td><td>' + fmtMoney(actualTotal, cur) + '</td><td>' + fmtMoney(rem, cur) + (Number(b.approved) > 0 ? vizCellBarHtml({ value: lineUsed, max: Number(b.approved), tone: rem < 0 ? 'overdue' : (rem === 0 ? 'pending' : 'running'), text: 'Đã dùng ' + fmtMoney(lineUsed, cur) + ' / hạn mức dòng ' + fmtMoney(b.approved, cur) + ' (' + fmtPct(vizPct(lineUsed, Number(b.approved))) + ')' }) : '') + '</td><td>' + (rem < 0 ? vizStatusPillHtml('overdue', { label: 'Vượt ngân sách ' + fmtMoney(-rem, cur), derived: true }) : vizStatusPillHtml('done', { label: 'Trong ngân sách' })) + '</td>' +
           '<td class="row-actions"><button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-id="' + esc(b.id) + '"' + dis(!budgetEd) + '>Sửa dòng</button></td></tr>' + detail;
       }).join(''));
     });
