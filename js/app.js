@@ -85,7 +85,8 @@
     taskDraft: null,
     taskDraftConflict: false,
     taskFilter: { campaignId: 'all', ownerId: 'all', status: 'all', priority: 'all', due: 'all', blocked: 'all', unassigned: false },
-    contentFilter: { campaignId: 'all', platform: 'all', ownerId: 'all', status: 'all' },
+    contentFilter: { campaignId: 'all', platform: 'all', ownerId: 'all', status: 'all', pillarId: 'all', buProductId: 'all', product: 'all', format: 'all', channelAccountId: 'all', activityId: 'all', taskId: 'all', from: '', to: '' },
+    contentMixUnit: 'content',
     brandFilter: { ownerId: 'all', status: 'all', type: 'all' },
     approvalsTab: 'mine',
     actionGroupBy: 'phase',
@@ -126,7 +127,16 @@
   var EDITORIAL_STATUSES = [['draft', 'Nháp'], ['in_review', 'Đang chờ duyệt'], ['approved', 'Đã duyệt'], ['scheduled', 'Đã lên lịch']];
   var BRAND_STATUSES = [['Draft', 'Bản nháp'], ['Approved', 'Đã duyệt'], ['Archived', 'Lưu trữ']];
   var PRIORITIES = ['Thấp', 'Trung bình', 'Cao', 'Khẩn cấp'];
-  var PLATFORMS = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['website', 'Website'], ['other', 'Kênh khác']];
+  var PLATFORMS = [['facebook', 'Facebook'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['tiktok', 'TikTok'], ['youtube', 'YouTube'], ['website', 'Website'], ['other', 'Kênh khác']];
+  // R3.1 C.6.1: 4 pillar GỢI Ý của đặc tả — chỉ hiện khi workspace CHƯA có
+  // pillar nào; người dùng bấm vào gợi ý thì form tạo mới mở ra đã điền sẵn
+  // để xem/sửa rồi mới Lưu. App KHÔNG tự tạo sẵn và KHÔNG áp cho mọi BU.
+  var PILLAR_SUGGESTIONS = [
+    { name: 'Kiến thức ngành', description: 'Nội dung giải thích khái niệm, xu hướng và kiến thức nền của ngành.', guide: 'Phân loại khi bài chủ yếu giúp người đọc hiểu một chủ đề của ngành. Ví dụ: giải thích một ứng dụng VR trong đào tạo.' },
+    { name: 'Giải pháp & sản phẩm', description: 'Nội dung giới thiệu giải pháp, tính năng và cách sản phẩm giải quyết vấn đề.', guide: 'Phân loại khi bài tập trung vào giải pháp/sản phẩm cụ thể. Ví dụ: bài mời tham gia buổi giới thiệu giải pháp.' },
+    { name: 'Dự án & ứng dụng thực tế', description: 'Case study, dự án đã triển khai và kết quả thực tế được phép công bố.', guide: 'Phân loại khi bài kể một dự án/ứng dụng có thật. Ví dụ: case study một dự án đã được phép công bố.' },
+    { name: 'Con người & thương hiệu', description: 'Con người, văn hóa đội ngũ và câu chuyện thương hiệu.', guide: 'Phân loại khi bài tập trung vào con người/thương hiệu thay vì sản phẩm. Ví dụ: hậu trường đội ngũ thực hiện dự án.' }
+  ];
 
   // ---------- Tiện ích hiển thị ----------
   function esc(s) {
@@ -700,15 +710,54 @@
           F('description', 'Mô tả', 'textarea', ev('description', t.description), { wide: true }),
           e.id ? 'Lưu công việc' : 'Tạo công việc');
       }
+      case 'pillar': {
+        var pl = editorItem('contentPillars') || {};
+        var plName = ev('name', pl.name || e.context.suggestedName || '');
+        var plDesc = ev('description', pl.description || e.context.suggestedDescription || '');
+        var plGuide = ev('classificationGuide', pl.classificationGuide || pl.classification_guide || e.context.suggestedGuide || '');
+        return formShell('pillar', e.id ? 'Sửa Content Pillar' : 'Tạo Content Pillar',
+          F('name', 'Tên pillar *', 'text', plName, { required: true, wide: true }) +
+          F('buProductId', 'Phạm vi Brand / BU / sản phẩm', 'select', ev('buProductId', pl.buProductId || pl.bu_product_id || ''), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name || b.buName || b.id]; }), emptyLabel: '— Toàn workspace —', help: 'Pillar thuộc phạm vi này; mỗi BU có bộ pillar riêng, app không áp một bộ pillar cho mọi BU.' }) +
+          F('description', 'Mô tả pillar', 'textarea', plDesc, { wide: true, rows: 3 }) +
+          F('classificationGuide', 'Hướng dẫn phân loại & ví dụ', 'textarea', plGuide, { wide: true, rows: 4, help: 'Ghi điều kiện phân loại và ví dụ cụ thể để cả đội phân loại nhất quán.' }) +
+          F('status', 'Trạng thái', 'select', ev('status', pl.status || 'active'), { options: [['active', 'Đang dùng'], ['archived', 'Đã lưu trữ']], help: 'Lưu trữ chỉ ngừng dùng cho phân loại mới — ID và lịch sử phân loại của nội dung cũ được giữ nguyên.' }),
+          e.id ? 'Lưu pillar' : 'Tạo pillar');
+      }
       case 'content': {
         var ci = editorItem('contentItems') || {};
+        var ciPillar = contentPillarId(ci);
+        var ciChoice = contentCampaignChoice(ci);
+        var ciProducts = [];
+        Store.list('businessUnits').forEach(function (b) { (b.products || []).forEach(function (p) { if (ciProducts.indexOf(p) === -1) ciProducts.push(p); }); });
+        var ciProduct = cfVal(ci, 'product') || ci.product || '';
+        if (ciProduct && ciProducts.indexOf(ciProduct) === -1) ciProducts.push(ciProduct);
+        var pillarOpts = activePillars().map(function (p) { return [p.id, p.name || p.title]; });
+        if (ciPillar && !pillarOpts.some(function (p) { return p[0] === ciPillar; })) { var oldP = pillarById(ciPillar); if (oldP) pillarOpts.push([oldP.id, (oldP.name || oldP.title) + ' (đã lưu trữ)']); }
         return formShell('content', e.id ? 'Sửa nội dung gốc' : 'Tạo nội dung',
           F('title', 'Tiêu đề nội dung *', 'text', ev('title', ci.title), { required: true, wide: true }) +
-          F('type', 'Loại', 'select', ev('type', ci.type || 'post'), { options: [['post', 'Bài đăng'], ['video', 'Video'], ['image', 'Hình ảnh'], ['article', 'Bài viết'], ['other', 'Khác']] }) +
-          F('campaignId', 'Campaign (có thể để trống)', 'select', ev('campaignId', ci.campaignId || e.context.campaignId), { options: campaignPairs(), emptyLabel: '— Chưa gắn campaign —' }) +
+          F('angle', 'Góc khai thác (angle)', 'text', ev('angle', cfVal(ci, 'angle') || ''), { wide: true, placeholder: 'Góc nhìn riêng của bài này so với các bài cùng chủ đề…' }) +
+          F('buProductId', 'Brand / BU', 'select', ev('buProductId', ci.buProductId || ci.bu_product_id || ''), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name || b.buName || b.id]; }), emptyLabel: '— Chưa chọn brand/BU —' }) +
+          F('product', 'Sản phẩm', 'select', ev('product', ciProduct), { options: ciProducts.map(function (p) { return [p, p]; }), emptyLabel: '— Chưa chọn sản phẩm —' }) +
+          F('pillarId', 'Pillar chính', 'select', ev('pillarId', ciPillar || ''), { options: pillarOpts, emptyLabel: '— Chưa chọn pillar (nằm ở Backlog) —', help: 'Một nội dung chỉ có MỘT pillar chính để tính content mix không trùng. Chưa chọn pillar vẫn lưu được ở dạng nháp/Backlog.' }) +
+          F('type', 'Định dạng (format)', 'select', ev('type', ci.type || 'post'), { options: [['post', 'Bài đăng'], ['video', 'Video'], ['image', 'Hình ảnh'], ['article', 'Bài viết'], ['other', 'Khác']] }) +
+          F('campaignChoice', 'Quan hệ với campaign', 'select', ev('campaignChoice', ciChoice), { options: [['unset', 'Chưa chọn'], ['none', 'Nội dung thường xuyên — không thuộc campaign'], ['campaign', 'Thuộc campaign — chọn campaign ở ô bên cạnh']], help: '"Nội dung thường xuyên — không thuộc campaign" là lựa chọn tường minh và hợp lệ; "Chưa chọn" nghĩa là chưa quyết định. Campaign KHÔNG bắt buộc để lưu/lên lịch nội dung.' }) +
+          F('campaignId', 'Campaign (chỉ khi chọn "Thuộc campaign")', 'select', ev('campaignId', ci.campaignId || e.context.campaignId || ''), { options: campaignPairs(), emptyLabel: '— Chọn campaign —' }) +
+          F('goal', 'Mục tiêu của nội dung', 'textarea', ev('goal', cfVal(ci, 'goal') || cfVal(ci, 'objective') || ''), { wide: true, rows: 2 }) +
           F('ownerId', 'Người phụ trách', 'select', ev('ownerId', ci.ownerId || Store.currentUserId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
-          F('scheduledDate', 'Ngày dự kiến đăng', 'date', ev('scheduledDate', ci.scheduledDate || e.context.scheduledDate)) +
-          F('brief', 'Brief / ý tưởng nội dung', 'textarea', ev('brief', ci.brief || ci.description), { wide: true, rows: 4 }),
+          F('productionDeadline', 'Hạn sản xuất', 'date', ev('productionDeadline', cfVal(ci, 'productionDeadline') ? String(cfVal(ci, 'productionDeadline')).slice(0, 10) : '')) +
+          F('editorialStatus', 'Trạng thái', 'select', ev('editorialStatus', ci.editorialStatus || 'draft'), { options: EDITORIAL_STATUSES.concat([['published', 'Đã đăng']]) }) +
+          F('brief', 'Brief / ý tưởng nội dung', 'textarea', ev('brief', ci.brief || ci.description), { wide: true, rows: 4 }) +
+          F('assetUrl', 'Link brief / asset đính kèm', 'url', ev('assetUrl', cfVal(ci, 'assetUrl') || ''), { wide: true, placeholder: 'https://…' }) +
+          F('series', 'Series / chuỗi bài (tùy chọn)', 'text', ev('series', ci.series || '')) +
+          F('audience', 'Đối tượng khán giả (tùy chọn)', 'text', ev('audience', cfVal(ci, 'audience') || '')) +
+          F('sourceContentId', 'Nội dung gốc được dùng lại (nguồn, tùy chọn)', 'select', ev('sourceContentId', ci.sourceContentId || ci.source_content_id || ''), { options: visibleList('contentItems').filter(function (x) { return x.id !== e.id; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không dùng lại nội dung nào —', help: 'Quan hệ dùng lại (repost/repurpose/remix): chỉ ghi nguồn, không tự đổi campaign của nội dung này.' }) +
+          F('tags', 'Tags / chủ đề phụ (cách nhau bằng dấu phẩy)', 'text', ev('tags', contentTags(ci).join(', ')), { wide: true, help: 'Tags phụ chỉ để lọc/tìm — báo cáo theo tags KHÔNG cộng các nhóm tags ra tổng (xem Content mix).' }) +
+          '<label class="fld"><span>Vận hành</span><span><input type="checkbox" name="alwaysOn"' + (contentIsAlwaysOn(ci) ? ' checked' : '') + '> Always-on — nội dung vận hành thường xuyên</span></label>' +
+          '<label class="fld"><span>Giá trị sử dụng</span><span><input type="checkbox" name="evergreen"' + (contentIsEvergreen(ci) ? ' checked' : '') + '> Evergreen — nội dung có giá trị lâu dài</span></label>' +
+          F('expiresAt', 'Ngày hết hiệu lực (tùy chọn)', 'date', ev('expiresAt', cfVal(ci, 'expiresAt') ? String(cfVal(ci, 'expiresAt')).slice(0, 10) : ''), { help: 'Hai thuộc tính always-on và evergreen là RIÊNG BIỆT: always-on nói cách vận hành, evergreen nói giá trị lâu dài. Nội dung evergreen vẫn có thể dùng trong campaign.' }) +
+          '<div class="fld wide"><span>Công việc liên quan (tùy chọn — không bắt buộc, không phải quan hệ cha)</span></div>' +
+          F('activityId', 'Hoạt động liên quan (Action Plan)', 'select', ev('activityId', ci.activityId || e.context.activityId || ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không liên kết hoạt động —' }) +
+          F('taskId', 'Task liên quan', 'select', ev('taskId', ci.taskId || cfVal(ci, 'taskId') || e.context.taskId || ''), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không liên kết task —', help: 'Lưu nội dung từ Content Plan là luồng bình thường — không cần qua Action Plan hay campaign. Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở danh sách nội dung, KHÔNG tự tạo khi Lưu.' }),
           e.id ? 'Lưu nội dung' : 'Tạo nội dung');
       }
       case 'variant': {
@@ -723,7 +772,8 @@
           F('reviewerId', 'Người duyệt', 'select', ev('reviewerId', vv.reviewerId), { options: memberPairs(), emptyLabel: '— Chưa chọn —' }) +
           F('productionDeadline', 'Hạn sản xuất', 'date', ev('productionDeadline', vv.productionDeadline)) +
           F('reviewDeadline', 'Hạn duyệt', 'date', ev('reviewDeadline', vv.reviewDeadline)) +
-          F('scheduledAt', 'Lịch đăng dự kiến', 'datetime-local', ev('scheduledAt', toDatetimeLocalValue(vv.scheduledAt))) +
+          F('scheduledAt', 'Lịch đăng dự kiến của lần đăng này', 'datetime-local', ev('scheduledAt', vv.scheduledAt ? toDatetimeLocalValue(vv.scheduledAt) : (e.context.scheduledAtLocal || ''))) +
+          F('campaignId', 'Campaign của lần đăng này', 'select', ev('campaignId', cfVal(vv, 'campaignId') || ''), { options: campaignPairs(), emptyLabel: '— Kế thừa campaign của nội dung gốc —', help: 'Chỉ điền khi lần đăng này dùng cho campaign KHÁC nội dung gốc (dùng lại nội dung) — lựa chọn lưu ở lần đăng, không đổi campaign của nội dung gốc.' }) +
           F('editorialStatus', 'Trạng thái biên tập', 'select', ev('editorialStatus', vv.editorialStatus || 'draft'), { options: EDITORIAL_STATUSES }) +
           F('caption', 'Caption', 'textarea', ev('caption', vv.caption), { wide: true, rows: 4 }) +
           F('hashtags', 'Hashtag (TikTok/mạng xã hội)', 'text', ev('hashtags', vv.hashtags), { wide: true, placeholder: '#sava #...' }) +
@@ -760,6 +810,8 @@
           F('metricCode', 'Mã chỉ số (metric_code)', 'text', ev('metricCode', k.metricCode || k.metric_code), { placeholder: 'vd: valid_registrations' }) +
           F('definition', 'Định nghĩa / cách đo (definition)', 'textarea', ev('definition', kDefText), { wide: true, help: 'Mô tả cách đo: nguồn số liệu, điều kiện hợp lệ, khóa khử trùng nếu là chỉ số unique.' }) +
           F('aggregationMode', 'Cách tổng hợp (aggregation_mode)', 'select', ev('aggregationMode', k.aggregationMode || k.aggregation_mode || 'direct'), { options: [['direct', 'Đo trực tiếp (direct)'], ['sum', 'Cộng các nguồn cùng chỉ số (sum)'], ['unique', 'Đếm không trùng theo khóa định danh (unique)'], ['ratio', 'Tỷ lệ — tính lại từ tử số/mẫu số (ratio)'], ['snapshot', 'Snapshot mới nhất theo đối tượng (snapshot)'], ['manual', 'Nhập tay có bằng chứng (manual)']] }) +
+          F('numerator', 'Tử số (chỉ khi aggregation_mode = ratio)', 'number', ev('numerator', (k.numerator !== null && k.numerator !== undefined) ? k.numerator : k.numeratorValue), { step: 'any', help: 'Vd KPI kiểu CPL: tử số là tổng chi phí của đúng scope đã khai (chi ads / chi toàn campaign).' }) +
+          F('denominator', 'Mẫu số (chỉ khi aggregation_mode = ratio)', 'number', ev('denominator', (k.denominator !== null && k.denominator !== undefined) ? k.denominator : k.denominatorValue), { step: 'any', help: 'Vd CPL: mẫu số là số kết quả hợp lệ của cùng scope (đăng ký hợp lệ). rollupKpi tính lại tỷ lệ = tử số / mẫu số, không lấy trung bình các tỷ lệ con.' }) +
           F('target', 'Mục tiêu', 'number', ev('target', k.target), { step: 'any' }) +
           F('unit', 'Đơn vị', 'text', ev('unit', k.unit)) +
           F('direction', 'Chiều tốt lên', 'select', ev('direction', k.direction || 'increase'), { options: [['increase', 'Càng cao càng tốt'], ['decrease', 'Càng thấp càng tốt']] }) +
@@ -876,7 +928,9 @@
           F('title', 'Tiêu đề *', 'text', ev('title', po.title), { required: true, wide: true }) +
           F('url', 'Đường dẫn bài', 'url', ev('url', po.url), { wide: true }) +
           F('publishedAt', 'Ngày đăng', 'datetime-local', ev('publishedAt', toDatetimeLocalValue(po.publishedAt))) +
-          F('campaignId', 'Gắn campaign', 'select', ev('campaignId', po.campaignId), { options: campaignPairs(), emptyLabel: '— Chưa gắn —' }),
+          F('contentItemId', 'Nội dung gốc của lần đăng này', 'select', ev('contentItemId', po.contentItemId || e.context.contentItemId || ''), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Chưa gắn nội dung gốc —' }) +
+          F('variantId', 'Phiên bản theo kênh của lần đăng này', 'select', ev('variantId', po.variantId || ''), { options: Store.list('variants').map(function (x) { return [x.id, contentTitle(x.contentItemId) + ' — ' + (x.channelLabel || labelStatus(x.platform))]; }), emptyLabel: '— Chưa gắn phiên bản —', help: 'Đăng lại (repost) = tạo một bài/lần đăng MỚI ở đây — không sửa đè link/số liệu của lần đăng trước.' }) +
+          F('campaignId', 'Campaign của lần đăng này', 'select', ev('campaignId', po.campaignId), { options: campaignPairs(), emptyLabel: '— Không thuộc campaign —', help: 'Campaign lưu ở LẦN ĐĂNG: khi dùng lại nội dung thường xuyên cho một campaign, chọn campaign tại đây — campaign của nội dung gốc KHÔNG bị đổi.' }),
           'Lưu bài');
       }
       case 'adcr': {
@@ -1093,11 +1147,49 @@
         else done(sCreate('tasks', Object.assign({ checklist: [] }, to)), 'Đã tạo công việc.');
         return;
       }
+      case 'pillar': {
+        req('name', 'tên pillar');
+        if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
+        // Archive qua status='archived' HOẶC nút Lưu trữ (archived_at ở Store):
+        // cả hai đều GIỮ ID + lịch sử phân loại — không xóa cứng pillar.
+        var plo = { name: data.name, buProductId: data.buProductId || null, description: data.description || '', classificationGuide: data.classificationGuide || '', status: data.status || 'active' };
+        if (e.id) done(sUpdate('contentPillars', e.id, plo), 'Đã lưu pillar.'); else done(sCreate('contentPillars', plo), 'Đã tạo pillar.');
+        return;
+      }
       case 'content': {
         req('title', 'tiêu đề nội dung');
+        // R3.1: campaign là TÙY CHỌN — chỉ báo lỗi khi người dùng chọn tường
+        // minh "Thuộc campaign" mà chưa chọn campaign cụ thể. Thiếu pillar
+        // KHÔNG phải lỗi: nội dung nằm ở Backlog / Chờ phân loại.
+        var cChoice = data.campaignChoice || (data.campaignId ? 'campaign' : 'unset');
+        if (cChoice === 'campaign' && !data.campaignId) errors.campaignId = 'Đã chọn "Thuộc campaign" — hãy chọn campaign cụ thể, hoặc đổi sang "Nội dung thường xuyên — không thuộc campaign".';
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
-        var co = { title: data.title, type: data.type, campaignId: data.campaignId || null, ownerId: data.ownerId || null, scheduledDate: data.scheduledDate || null, brief: data.brief || '', description: data.brief || '', editorialStatus: (editorItem('contentItems') || {}).editorialStatus || 'draft' };
-        if (e.id) done(sUpdate('contentItems', e.id, co), 'Đã lưu nội dung.'); else done(sCreate('contentItems', co), 'Đã tạo nội dung.');
+        var curCi = editorItem('contentItems') || {};
+        var alwaysEl = form ? form.querySelector('[name="alwaysOn"]') : null;
+        var everEl = form ? form.querySelector('[name="evergreen"]') : null;
+        var co = {
+          title: data.title, type: data.type,
+          buProductId: data.buProductId || null, product: data.product || '',
+          pillarId: data.pillarId || null,
+          campaignId: cChoice === 'campaign' ? data.campaignId : null, campaignChoice: cChoice,
+          angle: data.angle || '', goal: data.goal || '', objective: data.goal || '',
+          ownerId: data.ownerId || null,
+          productionDeadline: data.productionDeadline || null,
+          brief: data.brief || '', description: data.brief || '', assetUrl: data.assetUrl || '',
+          editorialStatus: data.editorialStatus || curCi.editorialStatus || 'draft',
+          status: data.editorialStatus || curCi.editorialStatus || 'draft',
+          series: data.series || '', audience: data.audience || '',
+          sourceContentId: data.sourceContentId || null,
+          activityId: data.activityId || null, taskId: data.taskId || null,
+          tags: splitTags(data.tags),
+          alwaysOn: alwaysEl ? !!alwaysEl.checked : !!data.alwaysOn,
+          evergreen: everEl ? !!everEl.checked : !!data.evergreen,
+          expiresAt: data.expiresAt || null,
+          // Giữ nguyên ngày dự kiến cũ của nội dung gốc khi sửa (ngày đăng
+          // thật thuộc TỪNG lần đăng/variant, không phải của nội dung gốc).
+          scheduledDate: e.id ? (curCi.scheduledDate || null) : null
+        };
+        if (e.id) done(sUpdate('contentItems', e.id, co), 'Đã lưu nội dung.'); else done(sCreate('contentItems', co), 'Đã tạo nội dung (nằm ở Backlog nếu chưa có lịch đăng).');
         return;
       }
       case 'variant': {
@@ -1109,6 +1201,7 @@
           ownerId: data.ownerId || null, reviewerId: data.reviewerId || null,
           productionDeadline: data.productionDeadline || null, reviewDeadline: data.reviewDeadline || null,
           scheduledAt: data.scheduledAt ? fromDatetimeLocalValue(data.scheduledAt) : null,
+          campaignId: data.campaignId || null,
           editorialStatus: data.editorialStatus, caption: data.caption || '', hashtags: data.hashtags || '',
           brief: data.brief || '', mediaUrl: data.mediaUrl || '', linkUrl: data.linkUrl || '', script: data.script || ''
         };
@@ -1146,6 +1239,8 @@
           pillarId: scopeType === 'pillar' ? (data.pillarId || null) : null,
           metricCode: data.metricCode || null,
           aggregationMode: data.aggregationMode || 'direct',
+          numerator: (data.numerator === '' || data.numerator === null || data.numerator === undefined) ? null : Number(data.numerator),
+          denominator: (data.denominator === '' || data.denominator === null || data.denominator === undefined) ? null : Number(data.denominator),
           target: data.target ? Number(data.target) : null, unit: data.unit || '',
           direction: data.direction || 'increase',
           definition: data.definition ? { description: data.definition } : {},
@@ -1257,7 +1352,7 @@
       case 'post': {
         req('externalPostId', 'mã bài'); req('title', 'tiêu đề');
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
-        var poo = { platform: data.platform, channelAccountId: data.channelAccountId || null, externalPostId: data.externalPostId, title: data.title, url: data.url || '', publishedAt: data.publishedAt ? fromDatetimeLocalValue(data.publishedAt) : new Date().toISOString(), campaignId: data.campaignId || null, source: 'manual' };
+        var poo = { platform: data.platform, channelAccountId: data.channelAccountId || null, externalPostId: data.externalPostId, title: data.title, url: data.url || '', publishedAt: data.publishedAt ? fromDatetimeLocalValue(data.publishedAt) : new Date().toISOString(), campaignId: data.campaignId || null, contentItemId: data.contentItemId || null, variantId: data.variantId || null, source: 'manual' };
         if (e.id) done(sUpdate('externalPosts', e.id, poo), 'Đã lưu bài đã đăng.'); else done(sCreate('externalPosts', poo), 'Đã thêm bài đã đăng (nguồn: nhập tay).');
         return;
       }
@@ -2379,13 +2474,25 @@
       }).join('')) : emptyState('Chưa có công việc nào', 'Thêm việc đầu tiên cho campaign này.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm việc</button></p>' : '');
     }
     if (tab === 'content') {
-      var items = visibleList('contentItems').filter(function (x) { return x.campaignId === c.id; });
+      // R3.1: tab này chỉ lấy content/publication GẮN campaign này — gồm cả
+      // nội dung gốc thuộc campaign VÀ nội dung thường xuyên được dùng lại
+      // qua một lần đăng mang campaign này (campaign ở publication, nội
+      // dung gốc giữ nguyên). Bài chỉ cùng pillar KHÔNG xuất hiện ở đây.
+      var directItems = visibleList('contentItems').filter(function (x) { return x.campaignId === c.id; });
+      var directIds = {}; directItems.forEach(function (x) { directIds[x.id] = true; });
+      var pubsForCamp = buildPublications().filter(function (p) { return p.campaignId === c.id; });
+      var viaPubItems = [];
+      pubsForCamp.forEach(function (p) { if (p.contentItemId && !directIds[p.contentItemId]) { var xi = Store.get('contentItems', p.contentItemId); if (xi && viaPubItems.indexOf(xi) === -1) viaPubItems.push(xi); } });
+      var items = directItems.concat(viaPubItems);
       var vars = Store.list('variants').filter(function (v) { return items.some(function (x) { return x.id === v.contentItemId; }); });
       html += '<div class="toolbar"><strong>Nội dung của campaign (' + items.length + ')</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="content" data-campaign="' + esc(c.id) + '">+ Tạo nội dung</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-campaign="' + esc(c.id) + '">+ Thêm phiên bản theo kênh</button>' : '') + ' <a class="btn small secondary" href="#/content">Mở mục Nội dung</a></span></div>';
-      html += items.length ? tbl('<tr><th>Nội dung</th><th>Phiên bản theo kênh</th><th>Lịch đăng</th><th>Trạng thái</th></tr>' + items.map(function (x) {
+      html += items.length ? tbl('<tr><th>Nội dung</th><th>Cách gắn campaign</th><th>Phiên bản theo kênh</th><th>Lịch đăng</th><th>Trạng thái</th></tr>' + items.map(function (x) {
         var vs = vars.filter(function (v) { return v.contentItemId === x.id; });
-        return '<tr><td><strong>' + esc(x.title) + '</strong></td><td>' + (vs.length ? vs.map(function (v) { return esc(v.channelLabel || labelStatus(v.platform)); }).join(', ') : 'Chưa có') + '</td><td>' + esc(D.formatDateVN(x.scheduledDate)) + '</td><td>' + statusBadge(x.editorialStatus) + '</td></tr>';
+        return '<tr><td><strong>' + esc(x.title) + '</strong></td><td>' + (directIds[x.id] ? 'Nội dung thuộc campaign' : 'Qua lần đăng dùng lại') + '</td><td>' + (vs.length ? vs.map(function (v) { return esc(v.channelLabel || labelStatus(v.platform)); }).join(', ') : 'Chưa có') + '</td><td>' + esc(D.formatDateVN(x.scheduledDate)) + '</td><td>' + statusBadge(x.editorialStatus) + '</td></tr>';
       }).join('')) : '<div class="state-box">Chưa có nội dung nào thuộc campaign này.</div>';
+      if (pubsForCamp.length) html += '<h3>Lần đăng thuộc campaign (' + pubsForCamp.length + ')</h3>' + tbl('<tr><th>Ngày giờ</th><th>Nội dung</th><th>Kênh / Tài khoản</th><th>Trạng thái</th></tr>' + pubsForCamp.map(function (p) {
+        return '<tr><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td>' + esc(p.title) + '</td><td>' + esc(labelStatus(p.platform)) + ' · ' + esc(accountName(p.channelAccountId)) + '</td><td>' + statusBadge(p.status) + '</td></tr>';
+      }).join(''));
     }
     if (tab === 'kpi') {
       var ckpis = Store.list('kpis').filter(function (x) { return x.campaignId === c.id; });
@@ -2419,6 +2526,146 @@
     return html;
   }
 
+  // ---------- R3.1: Content Plan — pillar / publication / content mix ----------
+  // Pillar, campaign và lịch đăng là BA chiều độc lập của cùng một dữ liệu:
+  // pillar = nội dung nói về chủ đề gì; campaign = phục vụ chiến dịch nào
+  // (nếu có); lịch đăng = bản nào đăng ở tài khoản nào, lúc nào (publication).
+  function pillarById(id) { if (!id) return null; return listSafe('contentPillars').find(function (p) { return p.id === id; }) || null; }
+  function contentPillarId(x) { if (!x) return null; return x.pillarId || x.pillar_id || cfVal(x, 'pillarId') || cfVal(x, 'pillar_id') || null; }
+  function pillarName(id) { var p = pillarById(id); return p ? (p.name || p.title || '—') : 'Chưa phân loại'; }
+  function isPillarArchived(p) { return !p || isArchived(p) || String(p.status || '').toLowerCase() === 'archived'; }
+  function activePillars() { return listSafe('contentPillars').filter(function (p) { return !isPillarArchived(p); }); }
+  function allPillars() {
+    var map = {}; var out = [];
+    visibleList('contentPillars').concat(archivedList('contentPillars')).forEach(function (p) { if (!map[p.id]) { map[p.id] = true; out.push(p); } });
+    return out;
+  }
+  function contentCampaignChoice(x) {
+    if (!x) return 'unset';
+    if (x.campaignId) return 'campaign';
+    var ch = cfVal(x, 'campaignChoice') || cfVal(x, 'campaign_choice');
+    return ch === 'none' ? 'none' : 'unset';
+  }
+  function contentCampaignBadge(x) {
+    var ch = contentCampaignChoice(x);
+    if (ch === 'campaign') return esc(campaignName(x.campaignId));
+    if (ch === 'none') return '<span class="badge ok">Nội dung thường xuyên — không thuộc campaign</span>';
+    return '<span class="badge grey">Chưa chọn campaign</span>';
+  }
+  function contentTags(x) {
+    if (!x) return [];
+    var t = (x.tags !== undefined && x.tags !== null) ? x.tags : cfVal(x, 'tags');
+    if (Array.isArray(t)) return t.map(function (s) { return String(s).trim(); }).filter(Boolean);
+    return splitTags(t || '');
+  }
+  function contentIsAlwaysOn(x) { if (!x) return false; var v = (x.alwaysOn !== undefined) ? x.alwaysOn : cfVal(x, 'alwaysOn'); return v === true || v === 'true' || v === 1 || v === '1'; }
+  function contentIsEvergreen(x) { if (!x) return false; var v = (x.evergreen !== undefined) ? x.evergreen : cfVal(x, 'evergreen'); return v === true || v === 'true' || v === 1 || v === '1'; }
+  function contentFlagsHtml(x) {
+    var out = '';
+    if (contentIsAlwaysOn(x)) out += '<span class="badge">Always-on</span> ';
+    if (contentIsEvergreen(x)) out += '<span class="badge ok">Evergreen</span> ';
+    var exp = cfVal(x, 'expiresAt'); if (exp) out += '<span class="badge warn">Hết hiệu lực: ' + esc(D.formatDateVN(exp)) + '</span> ';
+    return out;
+  }
+  function accountName(id) { if (!id) return 'Chưa gắn tài khoản'; var a = Store.get('channelAccounts', id); return a ? a.name : '—'; }
+  function contentBuLabel(x) {
+    var bu = Store.list('businessUnits').find(function (b) { return b.id === (x.buProductId || x.bu_product_id); });
+    var prod = cfVal(x, 'product') || x.product || '';
+    return (bu ? (bu.name || bu.buName) : '') + (prod ? (bu ? ' / ' : '') + prod : '') || '—';
+  }
+  // Publication = MỘT lần đăng cụ thể. Nguồn dữ liệu là publishJobs (job chờ
+  // đăng), externalPosts (bài đã đăng) và variant có lịch (lần đăng dự kiến)
+  // — job và external post của CÙNG một variant là CÙNG một lần đăng nên
+  // chỉ hiện MỘT entry; đăng lại (repost) là external post MỚI nên hiện
+  // thêm một entry riêng, không ghi đè lần trước.
+  function buildPublications() {
+    var posts = []; try { posts = Store.list('externalPosts'); } catch (e) { posts = []; }
+    var jobs = []; try { jobs = Store.list('publishJobs'); } catch (e) { jobs = []; }
+    var variants = []; try { variants = Store.list('variants'); } catch (e) { variants = []; }
+    var variantById = {}; variants.forEach(function (v) { variantById[v.id] = v; });
+    var itemById = {}; visibleList('contentItems').forEach(function (x) { itemById[x.id] = x; });
+    var pubs = [];
+    var variantsWithPost = {};
+    var variantsWithJob = {};
+    posts.forEach(function (p) { if (p.variantId) variantsWithPost[p.variantId] = true; });
+    jobs.forEach(function (j) { if (j.variantId) variantsWithJob[j.variantId] = true; });
+    function effCampaign(explicit, variant, item) {
+      if (explicit) return explicit;
+      var vc = variant ? cfVal(variant, 'campaignId') : null;
+      if (vc) return vc;
+      return item ? (item.campaignId || null) : null;
+    }
+    posts.forEach(function (p) {
+      var v = p.variantId ? variantById[p.variantId] : null;
+      var item = (p.contentItemId && itemById[p.contentItemId]) || (v && itemById[v.contentItemId]) || null;
+      pubs.push({ id: 'post:' + p.id, kind: 'post', refId: p.id, variantId: p.variantId || null, contentItemId: item ? item.id : (p.contentItemId || null), platform: p.platform, channelAccountId: p.channelAccountId || (v && v.channelAccountId) || null, at: p.publishedAt || null, status: 'published', campaignId: effCampaign(p.campaignId || cfVal(p, 'campaignId'), v, item), url: p.url || '', title: p.title || (item ? item.title : '—') });
+    });
+    jobs.forEach(function (j) {
+      if (j.variantId && variantsWithPost[j.variantId]) return; // job đã thành bài đăng: cùng 1 lần đăng
+      var v2 = j.variantId ? variantById[j.variantId] : null;
+      var item2 = v2 ? itemById[v2.contentItemId] : null;
+      pubs.push({ id: 'job:' + j.id, kind: 'job', refId: j.id, variantId: j.variantId || null, contentItemId: item2 ? item2.id : null, platform: j.platform || (v2 && v2.platform) || '', channelAccountId: j.channelAccountId || (v2 && v2.channelAccountId) || null, at: j.scheduledAt || (v2 && v2.scheduledAt) || null, status: j.status || 'scheduled', campaignId: effCampaign(j.campaignId || cfVal(j, 'campaignId'), v2, item2), url: '', title: item2 ? item2.title : '—' });
+    });
+    variants.forEach(function (v) {
+      if (variantsWithPost[v.id] || variantsWithJob[v.id]) return; // đã có entry job/post cho lần đăng này
+      if (!v.scheduledAt) return;
+      var item3 = itemById[v.contentItemId];
+      pubs.push({ id: 'variant:' + v.id, kind: 'planned', refId: v.id, variantId: v.id, contentItemId: v.contentItemId, platform: v.platform, channelAccountId: v.channelAccountId || null, at: v.scheduledAt, status: v.publishingStatus || v.editorialStatus || 'scheduled', campaignId: effCampaign(null, v, item3), url: '', title: item3 ? item3.title : '—' });
+    });
+    return pubs;
+  }
+  function publicationsOfContent(contentId) { return buildPublications().filter(function (p) { return p.contentItemId === contentId; }); }
+  // Content mix theo pillar × channel. Đơn vị đếm do người dùng chọn:
+  // 'content' = nội dung gốc (pillar chính tính 1 lần cho 1 content);
+  // 'publication' = lần đăng. Mẫu số luôn ghi rõ; tags phụ KHÔNG tham gia
+  // phép đếm này nên tổng theo pillar luôn bằng mẫu số.
+  function contentMixRows(items, pubs, unit) {
+    var channels = [];
+    function addCh(c) { if (c && channels.indexOf(c) === -1) channels.push(c); }
+    var variantPlatform = {};
+    Store.list('variants').forEach(function (v) { variantPlatform[v.id] = v.platform; });
+    var byPillar = {};
+    var denominator = 0;
+    function bump(pillarId, channel) {
+      var key = pillarId || '__none';
+      if (!byPillar[key]) byPillar[key] = { pillarId: pillarId || null, total: 0, byChannel: {} };
+      byPillar[key].total++; denominator++;
+      if (channel) { byPillar[key].byChannel[channel] = (byPillar[key].byChannel[channel] || 0) + 1; addCh(channel); }
+    }
+    if (unit === 'publication') {
+      pubs.forEach(function (p) { var it = items.find(function (x) { return x.id === p.contentItemId; }); if (it) bump(contentPillarId(it), p.platform || variantPlatform[p.variantId] || ''); });
+    } else {
+      items.forEach(function (x) {
+        var chs = {};
+        Store.list('variants').filter(function (v) { return v.contentItemId === x.id; }).forEach(function (v) { if (v.platform) chs[v.platform] = true; });
+        var firstCh = Object.keys(chs)[0] || '';
+        // Đếm content 1 lần ở pillar chính; kênh chỉ để chia cột theo kênh
+        // ĐẦU TIÊN của content (không nhân tổng theo số kênh).
+        bump(contentPillarId(x), firstCh);
+      });
+    }
+    var rows = Object.keys(byPillar).map(function (k) { return byPillar[k]; }).sort(function (a, b) { return b.total - a.total; });
+    var tagCounts = {};
+    items.forEach(function (x) { contentTags(x).forEach(function (t) { tagCounts[t] = (tagCounts[t] || 0) + 1; }); });
+    return { rows: rows, channels: channels, denominator: denominator, tagCounts: tagCounts };
+  }
+  var PRODUCTION_TASK_TEMPLATES = ['Viết nội dung', 'Thiết kế / sản xuất media', 'Quay / dựng', 'Duyệt nội dung'];
+  function createProductionTasks(contentId) {
+    var ci = Store.get('contentItems', contentId);
+    if (!ci) { toast('Không tìm thấy nội dung.'); return; }
+    // CHỈ tạo khi người dùng bấm nút này (template sản xuất) — thao tác Lưu
+    // nội dung không bao giờ tự tạo task. Task chỉ gắn content là đủ:
+    // campaign/activity lấy theo liên kết sẵn có của content (có thể trống).
+    var jobs = PRODUCTION_TASK_TEMPLATES.map(function (label) {
+      return { title: label + ': ' + ci.title, contentItemId: ci.id, campaignId: ci.campaignId || null, activityId: ci.activityId || null, assigneeId: ci.ownerId || Store.currentUserId, ownerId: ci.ownerId || Store.currentUserId, status: 'todo', priority: 'Trung bình', checklist: [] };
+    });
+    (function step() {
+      var job = jobs.shift();
+      if (!job) { toast('Đã tạo ' + PRODUCTION_TASK_TEMPLATES.length + ' task sản xuất từ template cho nội dung "' + ci.title + '".'); render(); return; }
+      saveResult(sCreate('tasks', job), step, function (msg) { toast(msg); });
+    })();
+  }
+
   // ---------- Nội dung (Content) ----------
   function variantCardActions(v) {
     var ed = canEdit();
@@ -2429,43 +2676,123 @@
     return html;
   }
   function viewContent() {
-    // R2-29.6: bộ lọc campaign/kênh/owner/trạng thái áp cho CẢ 4 tab.
+    // R3.1 C.6: Content Plan là điểm vào RIÊNG của đội content — mọi view ở
+    // đây (Backlog / Theo Pillar / Lịch đăng / Bảng / Board / Tiến độ /
+    // Thư viện / Content mix / Chờ phân loại / Quản lý Pillar) đọc CÙNG một
+    // dữ liệu contentItems + variants + publications, không copy bản ghi.
     var cf = UI.contentFilter;
+    var ed = canEdit();
     var allItems = visibleList('contentItems');
-    var items = allItems.filter(function (x) {
-      if (cf.campaignId !== 'all' && x.campaignId !== cf.campaignId) return false;
+    var allVariants = Store.list('variants');
+    var allPubs = buildPublications();
+    function pubsOfItem(id) { return allPubs.filter(function (p) { return p.contentItemId === id; }); }
+    function itemPass(x) {
+      if (cf.buProductId !== 'all' && (x.buProductId || x.bu_product_id || '') !== cf.buProductId) return false;
+      if (cf.product !== 'all' && (cfVal(x, 'product') || x.product || '') !== cf.product) return false;
+      if (cf.pillarId !== 'all' && (contentPillarId(x) || '') !== cf.pillarId) return false;
+      if (cf.campaignId === 'none' && contentCampaignChoice(x) !== 'none') return false;
+      if (cf.campaignId === 'unset' && contentCampaignChoice(x) !== 'unset') return false;
+      if (cf.campaignId !== 'all' && cf.campaignId !== 'none' && cf.campaignId !== 'unset' && x.campaignId !== cf.campaignId) return false;
       if (cf.ownerId !== 'all' && x.ownerId !== cf.ownerId) return false;
       if (cf.status !== 'all' && x.editorialStatus !== cf.status) return false;
+      if (cf.format !== 'all' && (x.type || '') !== cf.format) return false;
+      if (cf.activityId !== 'all' && (x.activityId || cfVal(x, 'activityId') || '') !== cf.activityId) return false;
+      if (cf.taskId !== 'all' && (x.taskId || cfVal(x, 'taskId') || '') !== cf.taskId) return false;
+      if (cf.platform !== 'all' || cf.channelAccountId !== 'all') {
+        var vs = allVariants.filter(function (v) { return v.contentItemId === x.id; });
+        var okPlat = vs.some(function (v) {
+          if (cf.platform !== 'all' && v.platform !== cf.platform) return false;
+          if (cf.channelAccountId !== 'all' && (v.channelAccountId || '') !== cf.channelAccountId) return false;
+          return true;
+        });
+        if (!okPlat) return false;
+      }
+      if (cf.from || cf.to) {
+        var dates = pubsOfItem(x.id).map(function (p) { return dateInTz(p.at); }).filter(Boolean);
+        if (x.scheduledDate) dates.push(String(x.scheduledDate).slice(0, 10));
+        var inRange = dates.some(function (d) { return (!cf.from || d >= cf.from) && (!cf.to || d <= cf.to); });
+        if (!inRange) return false;
+      }
       return true;
-    });
+    }
+    var items = allItems.filter(itemPass);
     var itemIds = {};
     items.forEach(function (x) { itemIds[x.id] = true; });
-    var variants = Store.list('variants').filter(function (v) {
+    var variants = allVariants.filter(function (v) {
       if (!itemIds[v.contentItemId]) return false;
       if (cf.platform !== 'all' && v.platform !== cf.platform) return false;
+      if (cf.channelAccountId !== 'all' && (v.channelAccountId || '') !== cf.channelAccountId) return false;
       if (cf.ownerId !== 'all' && v.ownerId !== cf.ownerId) return false;
       if (cf.status !== 'all' && v.editorialStatus !== cf.status) return false;
       return true;
     });
-    var ed = canEdit();
-    var html = pageHead('Nội dung', 'Lịch nội dung, bảng, bảng trạng thái và tiến độ sản xuất — tất cả dùng chung một bản ghi.',
-      (ed ? '<button class="btn" data-action="editor-open" data-kind="content">+ Tạo nội dung</button> <button class="btn secondary" data-action="editor-open" data-kind="variant">+ Thêm phiên bản theo kênh</button>' : ''));
+    var pubs = allPubs.filter(function (p) {
+      if (!p.contentItemId || !itemIds[p.contentItemId]) return false;
+      if (cf.platform !== 'all' && p.platform !== cf.platform) return false;
+      if (cf.channelAccountId !== 'all' && (p.channelAccountId || '') !== cf.channelAccountId) return false;
+      if (cf.campaignId !== 'all' && cf.campaignId !== 'none' && cf.campaignId !== 'unset' && p.campaignId !== cf.campaignId) return false;
+      if (cf.campaignId === 'none' && p.campaignId) return false;
+      if (cf.from || cf.to) { var d = dateInTz(p.at); if (!d) return false; if (cf.from && d < cf.from) return false; if (cf.to && d > cf.to) return false; }
+      return true;
+    });
+    var productsAll = [];
+    Store.list('businessUnits').forEach(function (b) { (b.products || []).forEach(function (p) { if (productsAll.indexOf(p) === -1) productsAll.push(p); }); });
+    var html = pageHead('Content Plan', 'Lập kế hoạch nội dung theo Pillar, campaign (tùy chọn), kênh và lịch đăng. Tạo nội dung ngay tại đây là luồng bình thường — không cần qua Action Plan hay campaign.',
+      (ed ? '<button class="btn" data-action="editor-open" data-kind="content">+ Tạo nội dung</button> <button class="btn secondary" data-action="editor-open" data-kind="variant">+ Thêm phiên bản theo kênh</button> <button class="btn secondary" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : ''));
     html += readonlyNote() + collectionBanner('variants');
     html += '<form class="inline" id="content-filter-form"><span class="sub">Lọc:</span>' +
-      '<label>Campaign<select name="campaignId"><option value="all">Tất cả campaign</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (cf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Brand / BU<select name="buProductId"><option value="all">Tất cả</option>' + Store.list('businessUnits').map(function (b) { return '<option value="' + esc(b.id) + '"' + (cf.buProductId === b.id ? ' selected' : '') + '>' + esc(b.name || b.buName || b.id) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Sản phẩm<select name="product"><option value="all">Tất cả</option>' + productsAll.map(function (p) { return '<option value="' + esc(p) + '"' + (cf.product === p ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Pillar<select name="pillarId"><option value="all">Tất cả pillar</option><option value=""' + (cf.pillarId === '' ? ' selected' : '') + '>Chưa phân loại</option>' + allPillars().map(function (p) { return '<option value="' + esc(p.id) + '"' + (cf.pillarId === p.id ? ' selected' : '') + '>' + esc(p.name || p.title) + (isPillarArchived(p) ? ' (đã lưu trữ)' : '') + '</option>'; }).join('') + '</select></label>' +
+      '<label>Campaign<select name="campaignId"><option value="all">Tất cả</option><option value="none"' + (cf.campaignId === 'none' ? ' selected' : '') + '>Không thuộc campaign (nội dung thường xuyên)</option><option value="unset"' + (cf.campaignId === 'unset' ? ' selected' : '') + '>Chưa chọn campaign</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (cf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Kênh<select name="platform"><option value="all">Tất cả kênh</option>' + PLATFORMS.map(function (p) { return '<option value="' + p[0] + '"' + (cf.platform === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
+      '<label>Tài khoản kênh<select name="channelAccountId"><option value="all">Tất cả tài khoản</option>' + Store.list('channelAccounts').map(function (a) { return '<option value="' + esc(a.id) + '"' + (cf.channelAccountId === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Định dạng<select name="format"><option value="all">Tất cả</option>' + [['post', 'Bài đăng'], ['video', 'Video'], ['image', 'Hình ảnh'], ['article', 'Bài viết'], ['other', 'Khác']].map(function (p) { return '<option value="' + p[0] + '"' + (cf.format === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Người phụ trách<select name="ownerId"><option value="all">Tất cả</option>' + memberPairs().map(function (p) { return '<option value="' + esc(p[0]) + '"' + (cf.ownerId === p[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select></label>' +
       '<label>Trạng thái<select name="status"><option value="all">Tất cả</option>' + EDITORIAL_STATUSES.map(function (p) { return '<option value="' + p[0] + '"' + (cf.status === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
-      '<button class="btn secondary" type="submit">Lọc</button></form>';
-    html += tabsHtml([['calendar', 'Lịch'], ['table', 'Bảng'], ['board', 'Bảng trạng thái'], ['production', 'Tiến độ sản xuất']], UI.contentTab, 'content-tab');
-    if (!items.length && !variants.length && !collLoadingOrError('variants')) {
-      html += emptyState('Chưa có nội dung nào', 'Tạo nội dung gốc trước, sau đó thêm phiên bản cho từng kênh (caption/kịch bản riêng từng kênh).', ed ? '<p><button class="btn" data-action="editor-open" data-kind="content">+ Tạo nội dung đầu tiên</button></p>' : '');
-      return html;
+      '<label>Từ ngày<input type="date" name="from" value="' + esc(cf.from) + '"></label>' +
+      '<label>Đến ngày<input type="date" name="to" value="' + esc(cf.to) + '"></label>' +
+      '<label>Hoạt động (nâng cao)<select name="activityId"><option value="all">Tất cả</option>' + visibleList('activities').map(function (a) { return '<option value="' + esc(a.id) + '"' + (cf.activityId === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Task (nâng cao)<select name="taskId"><option value="all">Tất cả</option>' + visibleList('tasks').map(function (t) { return '<option value="' + esc(t.id) + '"' + (cf.taskId === t.id ? ' selected' : '') + '>' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
+      '<button class="btn secondary" type="submit">Lọc</button></form>' +
+      '<p class="sub">Lọc theo Hoạt động/Task là bộ lọc nâng cao theo liên kết công việc (tùy chọn). Lọc Pillar thấy cả bài thuộc campaign lẫn bài thường xuyên; lọc Campaign chỉ thấy nội dung/lần đăng thuộc campaign đó.</p>';
+    html += tabsHtml([['backlog', 'Backlog / Ý tưởng'], ['pillars', 'Theo Pillar'], ['calendar', 'Lịch đăng'], ['table', 'Bảng nội dung'], ['board', 'Board sản xuất / duyệt'], ['production', 'Tiến độ sản xuất'], ['library', 'Thư viện đã đăng'], ['mix', 'Content mix'], ['queue', 'Chờ phân loại'], ['manage', 'Quản lý Pillar']], UI.contentTab, 'content-tab');
+    function itemActions(x) {
+      return '<button class="btn small" data-action="editor-open" data-kind="content" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-content="' + esc(x.id) + '"' + dis(!ed) + '>+ Phiên bản kênh</button> <button class="btn small secondary" data-action="content-prod-tasks" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Tạo task sản xuất</button>';
+    }
+    function itemRow(x) {
+      var myPubs = pubsOfItem(x.id);
+      return '<tr><td><strong>' + esc(x.title) + '</strong>' + (cfVal(x, 'angle') ? '<br><span class="sub">Góc: ' + esc(cfVal(x, 'angle')) + '</span>' : '') + (x.brief ? '<br><span class="sub">' + esc(x.brief) + '</span>' : '') + '<br>' + contentFlagsHtml(x) + '</td>' +
+        '<td>' + esc(contentBuLabel(x)) + '</td>' +
+        '<td>' + esc(pillarName(contentPillarId(x))) + '</td>' +
+        '<td>' + contentCampaignBadge(x) + '</td>' +
+        '<td>' + esc(labelStatus(x.type)) + (contentTags(x).length ? '<br><span class="sub">Tags: ' + esc(contentTags(x).join(', ')) + '</span>' : '') + (x.series ? '<br><span class="sub">Series: ' + esc(x.series) + '</span>' : '') + '</td>' +
+        '<td>' + esc(memberName(x.ownerId)) + '</td>' +
+        '<td>' + (cfVal(x, 'productionDeadline') ? esc(D.formatDateVN(cfVal(x, 'productionDeadline'))) : '—') + '</td>' +
+        '<td>' + statusBadge(x.editorialStatus) + '<br><span class="sub">' + myPubs.length + ' lần đăng</span></td>' +
+        '<td class="row-actions">' + itemActions(x) + '</td></tr>';
+    }
+    var itemHead = '<tr><th>Nội dung</th><th>Brand / Sản phẩm</th><th>Pillar chính</th><th>Campaign</th><th>Định dạng / Tags</th><th>Người phụ trách</th><th>Hạn sản xuất</th><th>Trạng thái</th><th>Thao tác</th></tr>';
+    if (UI.contentTab === 'backlog') {
+      // Backlog/Ý tưởng: nội dung CHƯA có lịch đăng nào — không gán ngày giả.
+      var backlog = items.filter(function (x) { return !pubsOfItem(x.id).length && !x.scheduledDate; });
+      html += '<h2>Backlog / Ý tưởng (' + backlog.length + ')</h2><p class="sub">Ý tưởng chưa có lịch đăng chỉ nằm ở đây — hệ thống không tự gán ngày hôm nay hay ngày bất kỳ để lấp ô lịch.</p>';
+      html += backlog.length ? tbl(itemHead + backlog.map(itemRow).join('')) : emptyState('Backlog đang trống', 'Mọi nội dung đang lọc đều đã có lịch đăng, hoặc chưa có nội dung nào.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="content">+ Tạo ý tưởng mới</button></p>' : '');
+    }
+    if (UI.contentTab === 'pillars') {
+      html += '<h2>Nội dung theo Pillar</h2><p class="sub">Mỗi nội dung nằm ở đúng MỘT pillar chính. Lọc pillar thấy cả bài campaign lẫn bài thường xuyên (pillar khác campaign).</p>';
+      var groups = {};
+      var order = [];
+      items.forEach(function (x) { var k = contentPillarId(x) || '__none'; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
+      if (!order.length) html += emptyState('Chưa có nội dung nào', 'Tạo nội dung đầu tiên cho Content Plan.', '');
+      order.forEach(function (k) {
+        html += '<h3>' + esc(k === '__none' ? 'Chưa phân loại pillar' : pillarName(k)) + ' (' + groups[k].length + ')</h3>' + tbl(itemHead + groups[k].map(itemRow).join(''));
+      });
     }
     if (UI.contentTab === 'calendar') {
       var year = UI.calYear, month = UI.calMonth;
       html += '<form class="inline" id="cal-nav-form"><label>Tháng<input type="number" id="cal-month" min="1" max="12" value="' + (month + 1) + '"></label><label>Năm<input type="number" id="cal-year" value="' + year + '"></label><button class="btn secondary" type="submit">Xem tháng</button> <button class="btn secondary" type="button" data-action="cal-today">Về tháng hiện tại</button></form>';
-      html += '<p class="sub">Bấm vào một ngày để tạo nội dung với ngày đó được điền sẵn; bấm vào mục nội dung trong ngày để mở đúng bản ghi đó.</p>';
+      html += '<p class="sub">Lịch hiển thị theo TỪNG LẦN ĐĂNG (publication): ngày + giờ, tài khoản, trạng thái, nhãn pillar/campaign. Bấm vào một ngày chỉ mở form phiên bản/lần đăng với lịch của ngày đó được điền sẵn — không tự gán campaign/action. Ý tưởng chưa có lịch nằm ở Backlog, không hiện ở lịch.</p>';
       var first = new Date(year, month, 1);
       var start = D.weekStartMonday(first);
       var cells = [];
@@ -2473,22 +2800,36 @@
       html += '<div class="cal">' + ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ nhật'].map(function (x) { return '<div class="cal-head">' + x + '</div>'; }).join('') + '</div>';
       html += '<div class="cal">' + cells.map(function (d) {
         var iso = isoOf(d);
-        var dayVariants = variants.filter(function (v) { return dateInTz(v.scheduledAt) === iso; });
+        var dayPubs = pubs.filter(function (p) { return dateInTz(p.at) === iso; });
+        // Lưới an toàn timezone (R2-04): variant có lịch đăng nhưng vì bất kỳ
+        // lý do dữ liệu nào chưa thành một publication ở trên (vd lần đăng
+        // của nó bị lọc khỏi tập đang xem) vẫn phải hiện đúng ngày ICT của
+        // lịch variant — không để mất lịch khỏi calendar.
+        var representedVar = {};
+        allPubs.forEach(function (p) { if (p.variantId) representedVar[p.variantId] = true; });
+        var dayVariants = variants.filter(function (v) { return dateInTz(v.scheduledAt) === iso; }).filter(function (v) { return !representedVar[v.id]; });
         return '<div class="cal-cell' + (d.getMonth() !== month ? ' dim' : '') + (iso === todayISO() ? ' today' : '') + '" data-action="cal-day" data-id="' + iso + '" role="button" tabindex="0" aria-label="Ngày ' + iso + '"><div class="day">' + d.getDate() + '/' + (d.getMonth() + 1) + '</div>' +
+          dayPubs.map(function (p) {
+            var it = items.find(function (x) { return x.id === p.contentItemId; }) || Store.get('contentItems', p.contentItemId) || {};
+            var time = toDatetimeLocalValue(p.at).slice(11, 16);
+            return '<span class="chip" data-action="' + (p.variantId ? 'chip-variant' : 'editor-open') + '"' + (p.variantId ? ' data-id="' + esc(p.variantId) + '"' : ' data-kind="post" data-id="' + esc(p.refId) + '"') + ' role="button" tabindex="0" title="' + esc(p.title) + ' · ' + esc(accountName(p.channelAccountId)) + ' · Pillar: ' + esc(pillarName(contentPillarId(it))) + ' · Campaign: ' + esc(p.campaignId ? campaignName(p.campaignId) : 'Không thuộc campaign') + '">' + esc(time) + ' ' + esc(labelStatus(p.platform)) + ': ' + esc(p.title) + '</span>';
+          }).join('') +
           dayVariants.map(function (v) { return '<span class="chip" data-action="chip-variant" data-id="' + esc(v.id) + '" role="button" tabindex="0">' + esc(v.channelLabel || labelStatus(v.platform)) + ': ' + esc(contentTitle(v.contentItemId)) + '</span>'; }).join('') + '</div>';
       }).join('') + '</div>';
-      // Agenda cho màn hình nhỏ (CSS hiện thay lịch lưới ở ≤820px)
       var monthPrefix = year + '-' + String(month + 1).padStart(2, '0');
-      var monthVars = variants.filter(function (v) { return dateInTz(v.scheduledAt).slice(0, 7) === monthPrefix; }).sort(function (a, b) { return String(a.scheduledAt).localeCompare(String(b.scheduledAt)); });
-      html += '<div class="cal-agenda"><h3>Danh sách theo ngày (màn hình nhỏ)</h3>' + (monthVars.length ? '<ul class="clean">' + monthVars.map(function (v) {
-        return '<li>' + esc(D.formatDateTimeVN(v.scheduledAt)) + ' — <button class="linklike" data-action="editor-open" data-kind="variant" data-id="' + esc(v.id) + '">' + esc(contentTitle(v.contentItemId)) + '</button> (' + esc(v.channelLabel || labelStatus(v.platform)) + ')</li>';
-      }).join('') + '</ul>' : '<p class="sub">Tháng này chưa có nội dung nào lên lịch.</p>') + '</div>';
+      var monthPubs = pubs.filter(function (p) { return dateInTz(p.at).slice(0, 7) === monthPrefix; }).sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
+      html += '<div class="cal-agenda"><h3>Danh sách lần đăng theo ngày (màn hình nhỏ)</h3>' + (monthPubs.length ? '<ul class="clean">' + monthPubs.map(function (p) {
+        var it2 = Store.get('contentItems', p.contentItemId) || {};
+        return '<li>' + esc(D.formatDateTimeVN(p.at)) + ' — <button class="linklike" data-action="editor-open" data-kind="' + (p.variantId ? 'variant' : 'post') + '" data-id="' + esc(p.variantId || p.refId) + '">' + esc(p.title) + '</button> (' + esc(labelStatus(p.platform)) + ' · ' + esc(accountName(p.channelAccountId)) + ') ' + statusBadge(p.status) + '<br><span class="sub">Pillar: ' + esc(pillarName(contentPillarId(it2))) + ' · Campaign: ' + esc(p.campaignId ? campaignName(p.campaignId) : 'Không thuộc campaign') + '</span></li>';
+      }).join('') + '</ul>' : '<p class="sub">Tháng này chưa có lần đăng nào.</p>') + '</div>';
+      html += '<h3>Tất cả lần đăng trong tháng (' + monthPubs.length + ')</h3>' + (monthPubs.length ? tbl('<tr><th>Ngày giờ đăng</th><th>Nội dung</th><th>Kênh / Tài khoản</th><th>Pillar</th><th>Campaign của lần đăng</th><th>Trạng thái</th></tr>' + monthPubs.map(function (p) {
+        var it3 = Store.get('contentItems', p.contentItemId) || {};
+        return '<tr><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(labelStatus(p.platform)) + '<br><span class="sub">' + esc(accountName(p.channelAccountId)) + '</span></td><td>' + esc(pillarName(contentPillarId(it3))) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : 'Không thuộc campaign') + '</td><td>' + statusBadge(p.status) + '</td></tr>';
+      }).join('')) : '<p class="sub">Chưa có lần đăng nào trong tháng đang xem.</p>');
     }
     if (UI.contentTab === 'table') {
       html += '<h2>Nội dung gốc (' + items.length + ')</h2>';
-      html += items.length ? tbl('<tr><th>Nội dung</th><th>Loại</th><th>Campaign</th><th>Người phụ trách</th><th>Ngày dự kiến</th><th>Trạng thái</th><th>Thao tác</th></tr>' + items.map(function (x) {
-        return '<tr><td><strong>' + esc(x.title) + '</strong>' + (x.brief ? '<br><span class="sub">' + esc(x.brief) + '</span>' : '') + '</td><td>' + esc(labelStatus(x.type)) + '</td><td>' + esc(campaignName(x.campaignId)) + '</td><td>' + esc(memberName(x.ownerId)) + '</td><td>' + esc(D.formatDateVN(x.scheduledDate)) + '</td><td>' + statusBadge(x.editorialStatus) + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="content" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-content="' + esc(x.id) + '"' + dis(!ed) + '>+ Phiên bản kênh</button></td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có nội dung gốc nào.</div>';
+      html += items.length ? tbl(itemHead + items.map(itemRow).join('')) : '<div class="state-box">Chưa có nội dung gốc nào khớp bộ lọc.</div>';
       html += '<h2>Phiên bản theo kênh (' + variants.length + ')</h2>';
       html += variants.length ? tbl('<tr><th>Nội dung</th><th>Kênh</th><th>Caption</th><th>Lịch đăng</th><th>Trạng thái biên tập</th><th>Duyệt</th><th>Thao tác</th></tr>' + variants.map(function (v) {
         var pub = v.platform === 'tiktok' ? '<span class="badge warn">Đăng ngoài app</span>' : statusBadge(v.publishingStatus || '', v.publishingStatus ? labelStatus(v.publishingStatus) : '');
@@ -2507,7 +2848,7 @@
     }
     if (UI.contentTab === 'production') {
       var sorted = variants.slice().sort(function (a, b) { return String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')); });
-      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
+      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở bảng nội dung (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu nội dung không tự tạo task, và task sản xuất có thể chỉ gắn content, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
         return '<tr><td>' + esc(D.formatDateTimeVN(v.scheduledAt)) + '</td><td><strong>' + esc(contentTitle(v.contentItemId)) + '</strong></td><td>' + esc(v.channelLabel || labelStatus(v.platform)) + '</td><td>' + esc(memberName(v.ownerId)) + '</td><td>' + esc(memberName(v.reviewerId)) + '</td><td>' + esc(D.formatDateVN(v.productionDeadline)) + '</td><td>' + esc(D.formatDateVN(v.reviewDeadline)) + '</td><td>' + statusBadge(v.editorialStatus) + '</td><td class="row-actions">' + variantCardActions(v) + '</td></tr>';
       }).join(''));
       var tiktok = variants.filter(function (v) { return v.platform === 'tiktok'; });
@@ -2528,6 +2869,68 @@
           (metrics.length ? '<p class="sub">Số liệu đã nhập cho video này: ' + metrics.map(function (m) { return esc(m.metric) + ' = ' + fmtNum(m.value) + ' (' + esc(m.source || '') + ', ' + esc(D.formatDateTimeVN(m.observedAt)) + ')'; }).join(' · ') + '</p>' : '<p class="sub">Chưa có số liệu nào được nhập cho video này.</p>') +
           '<p>' + variantCardActions(v) + '</p></div>';
       });
+    }
+    if (UI.contentTab === 'library') {
+      var posted = pubs.filter(function (p) { return p.kind === 'post'; });
+      html += '<h2>Thư viện bài đã đăng (' + posted.length + ' lần đăng)</h2><p class="sub">Mỗi dòng là MỘT lần đăng. Đăng lại cùng nội dung tạo một dòng mới riêng — link và số liệu của lần đăng trước không bị ghi đè.</p>';
+      html += posted.length ? tbl('<tr><th>Bài đã đăng</th><th>Nội dung gốc</th><th>Kênh / Tài khoản</th><th>Ngày đăng</th><th>Pillar</th><th>Campaign của lần đăng</th><th>Link</th></tr>' + posted.map(function (p) {
+        var it4 = Store.get('contentItems', p.contentItemId) || {};
+        return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(it4.title || '—') + '</td><td>' + esc(labelStatus(p.platform)) + '<br><span class="sub">' + esc(accountName(p.channelAccountId)) + '</span></td><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td>' + esc(pillarName(contentPillarId(it4))) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : 'Không thuộc campaign') + '</td><td>' + (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">Mở bài</a>' : '—') + '</td></tr>';
+      }).join('')) : '<div class="state-box">Chưa có bài đã đăng nào khớp bộ lọc.</div>';
+    }
+    if (UI.contentTab === 'mix') {
+      var unit = UI.contentMixUnit === 'publication' ? 'publication' : 'content';
+      var mix = contentMixRows(items, pubs, unit);
+      html += '<h2>Content mix theo Pillar × Kênh</h2>' +
+        '<div class="toolbar"><span class="sub">Đơn vị đếm:</span><span>' +
+        '<button type="button" class="btn small ' + (unit === 'content' ? '' : 'secondary') + '" data-action="content-mix-unit" data-id="content">Nội dung gốc</button> ' +
+        '<button type="button" class="btn small ' + (unit === 'publication' ? '' : 'secondary') + '" data-action="content-mix-unit" data-id="publication">Lần đăng (publication)</button></span></div>' +
+        '<p class="sub">Đơn vị đếm đang chọn: <strong>' + (unit === 'publication' ? 'lần đăng (publication)' : 'nội dung gốc') + '</strong> · Mẫu số (tổng số ' + (unit === 'publication' ? 'lần đăng' : 'nội dung gốc') + ' trong kỳ/bộ lọc hiện tại): <strong>' + mix.denominator + '</strong>. Pillar chính tính đúng 1 lần cho 1 nội dung gốc ở đơn vị "nội dung gốc". Kỳ được xác định bằng bộ lọc Từ ngày/Đến ngày ở trên (để trống = toàn bộ).</p>';
+      if (!mix.denominator) html += '<div class="state-box">Chưa có dữ liệu để tính content mix trong kỳ/bộ lọc này.</div>';
+      else {
+        html += tbl('<tr><th>Pillar chính</th>' + mix.channels.map(function (c) { return '<th>' + esc(labelStatus(c)) + '</th>'; }).join('') + '<th>Tổng</th><th>Tỷ trọng</th></tr>' + mix.rows.map(function (r) {
+          return '<tr><td><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong></td>' + mix.channels.map(function (c) { return '<td>' + (r.byChannel[c] || 0) + '</td>'; }).join('') + '<td><strong>' + r.total + '</strong></td><td>' + (mix.denominator ? (Math.round(r.total / mix.denominator * 1000) / 10) + '%' : '—') + '</td></tr>';
+        }).join('') + '<tr><td><strong>Tổng (mẫu số)</strong></td>' + mix.channels.map(function (c) { return '<td></td>'; }).join('') + '<td><strong>' + mix.denominator + '</strong></td><td><strong>100%</strong></td></tr>');
+        var tagList = Object.keys(mix.tagCounts);
+        html += '<p class="sub">Tỷ trọng theo tags phụ (chỉ tham khảo): ' + (tagList.length ? tagList.map(function (t) { return esc(t) + ': ' + mix.tagCounts[t]; }).join(' · ') : '—') + '. <strong>Lưu ý: tỷ trọng theo tags KHÔNG cộng ra tổng</strong> — một nội dung có nhiều tags được tính ở mọi tag của nó, trong khi tổng chính thức chỉ tính theo pillar chính (mỗi nội dung 1 lần).</p>';
+      }
+    }
+    if (UI.contentTab === 'queue') {
+      // Hàng đợi phân loại: bài import/sync (hoặc mọi bài) THIẾU pillar.
+      // Không tự gán pillar/campaign giả. Bài đủ phân loại nhưng không
+      // thuộc campaign là HỢP LỆ và không nằm ở hàng đợi này.
+      var queueItems = items.filter(function (x) { return !contentPillarId(x); });
+      var orphanPosts = [];
+      try { orphanPosts = Store.list('externalPosts').filter(function (p) { return !p.contentItemId; }); } catch (e) { orphanPosts = []; }
+      html += '<h2>Chờ phân loại (' + queueItems.length + ' nội dung)</h2>' +
+        '<p class="sub">Bài import/đồng bộ về mà thiếu pillar nằm ở hàng đợi riêng này cho tới khi được phân loại thủ công — hệ thống không tự gán pillar và không tạo campaign giả cho chúng. Bài đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ, không phải lỗi và không nằm ở đây.</p>';
+      html += queueItems.length ? tbl(itemHead + queueItems.map(itemRow).join('')) : '<div class="state-box">Không có nội dung nào đang chờ phân loại pillar.</div>';
+      if (orphanPosts.length) {
+        html += '<h3>Bài đã đăng chưa gắn nội dung gốc (' + orphanPosts.length + ')</h3>' + tbl('<tr><th>Bài</th><th>Kênh</th><th>Ngày đăng</th><th>Thao tác</th></tr>' + orphanPosts.map(function (p) {
+          return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(labelStatus(p.platform)) + '</td><td>' + esc(D.formatDateTimeVN(p.publishedAt)) + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="post" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Gắn nội dung gốc / phân loại</button></td></tr>';
+        }).join(''));
+      }
+    }
+    if (UI.contentTab === 'manage') {
+      var pillarsAll = allPillars();
+      html += '<div class="toolbar"><strong>Quản lý Content Pillar (' + pillarsAll.length + ')</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : '') + '</span></div>' +
+        '<p class="sub">Pillar được quản lý theo brand/BU/sản phẩm, có mô tả + hướng dẫn phân loại/ví dụ để đội phân loại nhất quán. Sửa/lưu trữ pillar giữ nguyên ID và lịch sử phân loại của nội dung cũ — không xóa cứng. App không hardcode một bộ pillar cho mọi BU.</p>';
+      if (!pillarsAll.length) {
+        html += emptyState('Chưa có pillar nào', 'Tạo pillar đầu tiên cho phạm vi của đội, hoặc dùng một gợi ý mẫu bên dưới — gợi ý chỉ điền sẵn vào form, bạn xem/sửa rồi mới bấm Lưu tạo.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button></p>' : '');
+        html += '<h3>Gợi ý 4 pillar mẫu (từ đặc tả — bấm để tạo nếu muốn)</h3><div class="cards">' + PILLAR_SUGGESTIONS.map(function (s) {
+          return '<div class="card"><strong>' + esc(s.name) + '</strong><br><span class="sub">' + esc(s.description) + '</span><br>' + (ed ? '<button class="btn small" data-action="pillar-suggest" data-name="' + esc(s.name) + '">Dùng gợi ý này</button>' : '') + '</div>';
+        }).join('') + '</div>';
+      } else {
+        html += tbl('<tr><th>Pillar</th><th>Phạm vi Brand/BU</th><th>Mô tả</th><th>Hướng dẫn phân loại & ví dụ</th><th>Số nội dung</th><th>Trạng thái</th><th>Thao tác</th></tr>' + pillarsAll.map(function (p) {
+          var cnt = allItems.filter(function (x) { return contentPillarId(x) === p.id; }).length;
+          var bu = Store.list('businessUnits').find(function (b) { return b.id === (p.buProductId || p.bu_product_id); });
+          var arch = isPillarArchived(p);
+          return '<tr><td><strong>' + esc(p.name || p.title) + '</strong></td><td>' + esc(bu ? (bu.name || bu.buName) : 'Toàn workspace') + '</td><td>' + esc(p.description || '—') + '</td><td>' + esc(p.classificationGuide || p.classification_guide || '—') + '</td><td>' + cnt + '</td><td>' + (arch ? '<span class="badge grey">Đã lưu trữ</span>' : '<span class="badge ok">Đang dùng</span>') + '</td>' +
+            '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="pillar" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Sửa</button> ' + (arch
+              ? '<button class="btn small secondary" data-action="restore-item" data-coll="contentPillars" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Khôi phục</button>'
+              : '<button class="btn small secondary" data-action="archive-item" data-coll="contentPillars" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Lưu trữ</button>') + '</td></tr>';
+        }).join(''));
+      }
     }
     return html;
   }
@@ -3415,8 +3818,16 @@
     if (action === 'cal-day') {
       // Không kích hoạt khi bấm vào chip nội dung trong ô ngày
       if (ev.target.closest('[data-action="chip-variant"]')) return;
-      openEditor('content', null, { scheduledDate: id });
+      // R3.1 C.6.3: tạo từ ô ngày CHỈ điền lịch cho lần đăng đó (form phiên
+      // bản theo kênh, giờ mặc định 09:00) — không tự gán campaign/action.
+      openEditor('variant', null, { scheduledAtLocal: id + 'T09:00' });
     }
+    if (action === 'content-mix-unit') { UI.contentMixUnit = id === 'publication' ? 'publication' : 'content'; UI.contentTab = 'mix'; render(); }
+    if (action === 'pillar-suggest') {
+      var sug = PILLAR_SUGGESTIONS.find(function (s) { return s.name === t.getAttribute('data-name'); });
+      if (sug) openEditor('pillar', null, { suggestedName: sug.name, suggestedDescription: sug.description, suggestedGuide: sug.guide });
+    }
+    if (action === 'content-prod-tasks') { createProductionTasks(id); }
     if (action === 'chip-variant') { ev.stopPropagation(); openEditor('variant', id, {}); }
     if (action === 'submit-review') {
       settle(submitReviewCall(id), function () { toast('Đã gửi duyệt. Người duyệt sẽ thấy đúng bản nội dung này ở mục Duyệt nội dung.'); render(); });
@@ -3597,7 +4008,7 @@
       var bd = document.getElementById('sidebar-backdrop'); if (bd) bd.hidden = true;
     }
     if (ev.key === 'Enter' && ev.target.getAttribute && ev.target.getAttribute('data-action') === 'cal-day') {
-      openEditor('content', null, { scheduledDate: ev.target.getAttribute('data-id') });
+      openEditor('variant', null, { scheduledAtLocal: ev.target.getAttribute('data-id') + 'T09:00' });
     }
   });
 
@@ -3638,7 +4049,12 @@
     if (f.id === 'content-filter-form') {
       UI.contentFilter = {
         campaignId: String(val('campaignId') || 'all'), platform: String(val('platform') || 'all'),
-        ownerId: String(val('ownerId') || 'all'), status: String(val('status') || 'all')
+        ownerId: String(val('ownerId') || 'all'), status: String(val('status') || 'all'),
+        pillarId: (val('pillarId') === null || val('pillarId') === undefined) ? 'all' : String(val('pillarId')),
+        buProductId: String(val('buProductId') || 'all'), product: String(val('product') || 'all'),
+        format: String(val('format') || 'all'), channelAccountId: String(val('channelAccountId') || 'all'),
+        activityId: String(val('activityId') || 'all'), taskId: String(val('taskId') || 'all'),
+        from: String(val('from') || ''), to: String(val('to') || '')
       };
       render(); return;
     }

@@ -137,6 +137,12 @@
     blockers: [
       { id: 'blocker-1', taskId: 'task-b', title: 'Chưa có file nhạc có bản quyền rõ ràng', description: 'Cần xác nhận quyền dùng nhạc nền trước khi xuất bản cuối.', status: 'open', createdBy: 'member-design', createdAt: '2026-11-10T09:00:00+07:00' }
     ],
+    contentPillars: [
+      { id: 'pillar-knowledge', buProductId: 'bu-ai', name: 'Kiến thức ngành', description: 'Giải thích khái niệm, xu hướng và kiến thức nền của ngành.', classificationGuide: 'Phân loại khi bài chủ yếu giúp người đọc hiểu một chủ đề. Ví dụ: giải thích ứng dụng VR trong đào tạo.', status: 'active' },
+      { id: 'pillar-solution', buProductId: 'bu-ai', name: 'Giải pháp & sản phẩm', description: 'Giới thiệu giải pháp, tính năng và cách sản phẩm giải quyết vấn đề.', classificationGuide: 'Phân loại khi bài tập trung vào giải pháp/sản phẩm cụ thể. Ví dụ: bài mời tham gia livestream giới thiệu giải pháp.', status: 'active' },
+      { id: 'pillar-case', buProductId: 'bu-metaverse', name: 'Dự án & ứng dụng thực tế', description: 'Case study và dự án đã triển khai được phép công bố.', classificationGuide: 'Phân loại khi bài kể một dự án/ứng dụng có thật kèm kết quả.', status: 'active' },
+      { id: 'pillar-people', buProductId: 'bu-metaverse', name: 'Con người & thương hiệu', description: 'Con người, văn hóa đội ngũ và câu chuyện thương hiệu.', classificationGuide: 'Phân loại khi bài tập trung vào con người/thương hiệu thay vì sản phẩm.', status: 'active' }
+    ],
     contentItems: [
       { id: 'content-1', campaignId: 'camp-1', title: 'Video thử thách mùa lễ', type: 'video', editorialStatus: 'in_review', ownerId: 'member-content', scheduledDate: '2026-11-17' },
       { id: 'content-2', campaignId: 'camp-1', title: 'Bài giới thiệu sự kiện trong game', type: 'post', editorialStatus: 'approved', ownerId: 'member-content', scheduledDate: '2026-11-12' },
@@ -145,7 +151,22 @@
       // Fixture R3.1: 2 content item CHỈ LIÊN KẾT với action Ads — liên kết
       // này không tạo thêm chi phí (thực chi campaign vẫn 20,5tr).
       { id: 'content-live-ads-1', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Creative quảng cáo livestream — bản A', type: 'video', editorialStatus: 'approved', ownerId: 'member-content', scheduledDate: '2026-11-20' },
-      { id: 'content-live-ads-2', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Landing page đăng ký livestream', type: 'article', editorialStatus: 'in_review', ownerId: 'member-content', scheduledDate: '2026-11-19' }
+      { id: 'content-live-ads-2', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Landing page đăng ký livestream', type: 'article', editorialStatus: 'in_review', ownerId: 'member-content', scheduledDate: '2026-11-19' },
+      // Fixture R3.1 Content (a) AC24: nội dung THƯỜNG XUYÊN — có pillar +
+      // lịch đăng nhưng campaign/activity TRỐNG (campaignChoice='none'
+      // tường minh, khác "chưa chọn"). Evergreen: được dùng lại cho
+      // camp-live qua publication post-evergreen-live (ca (d) AC29).
+      { id: 'content-always-1', campaignId: null, campaignChoice: 'none', activityId: null, pillarId: 'pillar-knowledge', buProductId: 'bu-metaverse', product: 'Trải nghiệm VR mẫu', title: 'Giải thích ứng dụng VR trong đào tạo an toàn', type: 'article', editorialStatus: 'approved', ownerId: 'member-content', scheduledDate: null, alwaysOn: true, evergreen: true, tags: ['VR', 'Đào tạo'], goal: 'Xây nhu cầu tương lai: giúp quản lý đào tạo hiểu ứng dụng VR.' },
+      // Fixture R3.1 Content (b) AC26: 1 content gốc, 2 variant kênh,
+      // 3 publication (FB + LinkedIn + 1 repost FB). Tiền sản xuất ghi
+      // MỘT lần ở content gốc (productionCost) — không nhân theo lần đăng.
+      { id: 'content-multi-1', campaignId: 'camp-2', campaignChoice: 'campaign', pillarId: 'pillar-case', buProductId: 'bu-metaverse', product: 'Trải nghiệm VR mẫu', title: 'Case study: triển khai VR tại nhà máy mẫu', type: 'article', editorialStatus: 'approved', ownerId: 'member-design', scheduledDate: null, productionCost: 4000000, tags: ['Case study'] },
+      // Fixture R3.1 Content (c) AC28: 2 tags phụ + ĐÚNG 1 pillar chính —
+      // content mix tính 1 lần ở pillar-people, tags không làm tăng tổng.
+      { id: 'content-tags-1', campaignId: null, campaignChoice: 'none', pillarId: 'pillar-people', buProductId: 'bu-metaverse', product: 'Trải nghiệm VR mẫu', title: 'Hậu trường đội ngũ xây dựng trải nghiệm VR', type: 'video', editorialStatus: 'draft', ownerId: 'member-content', scheduledDate: null, alwaysOn: true, evergreen: false, tags: ['Hậu trường', 'Đội ngũ'] },
+      // Fixture R3.1 Content: bài import/sync THIẾU pillar -> Chờ phân loại;
+      // campaign trống KHÔNG bị biến thành campaign giả.
+      { id: 'content-queue-1', campaignId: null, campaignChoice: 'unset', pillarId: null, title: 'Bài đồng bộ chưa phân loại (minh họa)', type: 'post', editorialStatus: 'draft', ownerId: 'member-content', scheduledDate: null }
     ],
     variants: [
       { id: 'variant-fb-1', contentItemId: 'content-2', platform: 'facebook', channelLabel: 'Facebook', caption: 'Mùa lễ đã mở trong game! Hoàn thành thử thách mỗi ngày để nhận quà giới hạn. Bạn đã sẵn sàng chưa?', scheduledAt: '2026-11-12T09:00:00+07:00', editorialStatus: 'approved', approvalStatus: 'approved', revision: 2, publishMode: 'app' },
@@ -164,7 +185,10 @@
           { shot: 4, visual: 'Màn hình kết quả và lời mời bình luận', dialogue: 'Bình luận thời gian của bạn nhé.', onScreenText: 'Bạn mất bao lâu?', durationSec: 5 }
         ]
       },
-      { id: 'variant-ig-2', contentItemId: 'content-3', platform: 'instagram', channelLabel: 'Instagram', caption: 'KV mùa lễ sắp lộ diện…', scheduledAt: '2026-11-11T18:00:00+07:00', editorialStatus: 'draft', approvalStatus: 'draft', revision: 1, publishMode: 'app' }
+      { id: 'variant-ig-2', contentItemId: 'content-3', platform: 'instagram', channelLabel: 'Instagram', caption: 'KV mùa lễ sắp lộ diện…', scheduledAt: '2026-11-11T18:00:00+07:00', editorialStatus: 'draft', approvalStatus: 'draft', revision: 1, publishMode: 'app' },
+      { id: 'variant-always-fb', contentItemId: 'content-always-1', platform: 'facebook', channelLabel: 'Facebook', channelAccountId: 'chan-fb', caption: 'VR trong đào tạo an toàn: thử một buổi học trong không gian ảo trước khi quyết định.', scheduledAt: '2026-11-18T09:00:00+07:00', editorialStatus: 'approved', approvalStatus: 'approved', revision: 1, publishMode: 'app' },
+      { id: 'variant-multi-fb', contentItemId: 'content-multi-1', platform: 'facebook', channelLabel: 'Facebook', channelAccountId: 'chan-fb', caption: 'Case study: nhà máy mẫu rút ngắn thời gian đào tạo an toàn nhờ VR.', scheduledAt: '2026-11-10T09:00:00+07:00', editorialStatus: 'approved', approvalStatus: 'approved', revision: 1, publishMode: 'app' },
+      { id: 'variant-multi-li', contentItemId: 'content-multi-1', platform: 'linkedin', channelLabel: 'LinkedIn', caption: 'Case study (LinkedIn): triển khai VR trong đào tạo sản xuất — số liệu và bài học.', scheduledAt: '2026-11-11T09:00:00+07:00', editorialStatus: 'approved', approvalStatus: 'approved', revision: 1, publishMode: 'app' }
     ],
     publishJobs: [
       { id: 'job-1', variantId: 'variant-fb-1', status: 'scheduled', note: 'Job mẫu ở chế độ minh họa — không đăng thật.' }
@@ -193,7 +217,14 @@
     externalPosts: [
       { id: 'post-1', platform: 'facebook', channelAccountId: 'chan-fb', externalPostId: 'fb-demo-1001', title: 'Bài giới thiệu sự kiện (bản đăng tay mẫu)', url: 'https://example.com/demo-post-1', publishedAt: '2026-11-05T09:00:00+07:00', campaignId: 'camp-1' },
       { id: 'post-2', platform: 'tiktok', channelAccountId: 'chan-tiktok', externalPostId: 'tt-demo-2001', title: 'Video hậu trường (đăng ngoài app)', url: 'https://example.com/demo-tiktok-1', publishedAt: '2026-11-06T20:00:00+07:00', campaignId: 'camp-1', variantId: 'variant-tiktok-1', contentItemId: 'content-1' },
-      { id: 'post-3', platform: 'instagram', channelAccountId: 'chan-ig', externalPostId: 'ig-demo-3001', title: 'Ảnh teaser KV', url: 'https://example.com/demo-post-3', publishedAt: '2026-11-04T18:00:00+07:00', campaignId: null }
+      { id: 'post-3', platform: 'instagram', channelAccountId: 'chan-ig', externalPostId: 'ig-demo-3001', title: 'Ảnh teaser KV', url: 'https://example.com/demo-post-3', publishedAt: '2026-11-04T18:00:00+07:00', campaignId: null },
+      // 3 publication của content-multi-1 (AC26): FB lần 1, LinkedIn, FB repost.
+      { id: 'post-multi-fb-1', platform: 'facebook', channelAccountId: 'chan-fb', externalPostId: 'fb-demo-4001', title: 'Case study VR nhà máy mẫu (Facebook)', url: 'https://example.com/demo-multi-fb-1', publishedAt: '2026-11-10T09:00:00+07:00', campaignId: 'camp-2', variantId: 'variant-multi-fb', contentItemId: 'content-multi-1' },
+      { id: 'post-multi-li-1', platform: 'linkedin', channelAccountId: null, externalPostId: 'li-demo-4002', title: 'Case study VR nhà máy mẫu (LinkedIn)', url: 'https://example.com/demo-multi-li-1', publishedAt: '2026-11-11T09:00:00+07:00', campaignId: 'camp-2', variantId: 'variant-multi-li', contentItemId: 'content-multi-1' },
+      { id: 'post-multi-fb-repost', platform: 'facebook', channelAccountId: 'chan-fb', externalPostId: 'fb-demo-4003', title: 'Case study VR nhà máy mẫu (đăng lại)', url: 'https://example.com/demo-multi-fb-repost', publishedAt: '2026-11-20T09:00:00+07:00', campaignId: 'camp-2', variantId: 'variant-multi-fb', contentItemId: 'content-multi-1' },
+      // AC29: dùng lại content evergreen content-always-1 cho camp-live —
+      // campaign nằm ở LẦN ĐĂNG này; content gốc vẫn campaignId=null.
+      { id: 'post-evergreen-live', platform: 'facebook', channelAccountId: 'chan-fb', externalPostId: 'fb-demo-5001', title: 'Giải thích ứng dụng VR (dùng lại cho livestream)', url: 'https://example.com/demo-evergreen-live', publishedAt: '2026-11-25T10:00:00+07:00', campaignId: 'camp-live', variantId: 'variant-always-fb', contentItemId: 'content-always-1' }
     ],
     metricObservations: [
       { id: 'obs-1', externalPostId: 'post-1', metric: 'lifetime_views', value: 100, observedAt: '2026-11-05T10:00:00+07:00', source: 'Nhập tay (minh họa)', enteredBy: 'member-content' },
