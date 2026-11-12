@@ -1,7 +1,7 @@
 // tests/waveb4-viz2.test.mjs
 // WAVE-B4-VIZ2 — Công việc/Requests + Duyệt + Brand Hub + Kênh + Quảng cáo +
 // Team + Settings (INVENTORY #25/#26/#27/#30/#31/#34/#35):
-// [unit] helper THUẦN mới (vizDayDiff, vizTaskTimelineHtml, vizDepBadgesHtml,
+// [unit] helper THUẦN mới (vizDayDiff, vizTaskBarHtml, vizDepBadgesHtml,
 // vizCompactNum, vizFunnelHtml, vizMiniDayBarsHtml, vizAssetCatIndex,
 // vizBrandThumbHtml) chỉ làm toán trình bày trên số/ngày đã có;
 // [static] từng view dùng đúng helper/dải trực quan đã giao, không hex cứng mới,
@@ -31,7 +31,7 @@ function fmtMoneyStub(n, cur) { return (n === null || n === undefined || n === '
 const LABELS = { in_progress: 'Đang làm', pending: 'Chờ duyệt', completed: 'Hoàn thành', draft: 'Nháp', blocked: 'Bị chặn', rejected: 'Đã từ chối', open: 'Đang mở', resolved: 'Đã gỡ', new: 'Mới ghi nhận' };
 function labelStatusStub(s) { if (s === null || s === undefined || s === '') return '—'; return LABELS[String(s).toLowerCase()] || String(s); }
 const V = new Function('esc', 'fmtMoney', 'fmtNum', 'labelStatus',
-  pureSrc + '\nreturn { vizDayDiff: vizDayDiff, vizTaskTimelineHtml: vizTaskTimelineHtml, vizDepBadgesHtml: vizDepBadgesHtml, vizCompactNum: vizCompactNum, vizFunnelHtml: vizFunnelHtml, vizMiniDayBarsHtml: vizMiniDayBarsHtml, vizCatDotHtml: vizCatDotHtml, vizAssetCatIndex: vizAssetCatIndex, vizBrandThumbHtml: vizBrandThumbHtml };'
+  pureSrc + '\nreturn { vizDayDiff: vizDayDiff, vizTaskBarHtml: vizTaskBarHtml, vizDepBadgesHtml: vizDepBadgesHtml, vizCompactNum: vizCompactNum, vizFunnelHtml: vizFunnelHtml, vizMiniDayBarsHtml: vizMiniDayBarsHtml, vizCatDotHtml: vizCatDotHtml, vizAssetCatIndex: vizAssetCatIndex, vizBrandThumbHtml: vizBrandThumbHtml };'
 )(escStub, fmtMoneyStub, fmtNumStub, labelStatusStub);
 
 // ---------- [unit] helper thuần ----------
@@ -43,15 +43,15 @@ test('WAVE-B4 [unit]: vizDayDiff — chênh ngày thuần, thiếu mốc -> null
   assert.equal(V.vizDayDiff('2026-11-12', null), null);
 });
 
-test('WAVE-B4 [unit]: vizTaskTimelineHtml — đoạn start→due + vạch hôm nay ở đúng vị trí tương đối', () => {
-  const html = V.vizTaskTimelineHtml({ start: '2026-11-01', due: '2026-11-11', today: '2026-11-06', tone: 'running', startLabel: '01/11/2026', dueLabel: '11/11/2026' });
+test('WAVE-B4 [unit]: vizTaskBarHtml — đoạn start→due + vạch hôm nay ở đúng vị trí tương đối', () => {
+  const html = V.vizTaskBarHtml({ start: '2026-11-01', due: '2026-11-11', today: '2026-11-06', tone: 'running', startLabel: '01/11/2026', dueLabel: '11/11/2026' });
   assert.match(html, /data-viz="task-timeline"/);
   assert.match(html, /viz-timeline-bar st-fill-running" style="left:0%;width:100%"/);
   assert.match(html, /viz-timeline-elapsed st-fill-running" style="left:0%;width:50%"/);
   assert.match(html, /viz-timeline-today" style="left:50%"/);
   assert.match(html, /01\/11\/2026 → 11\/11\/2026/);
-  assert.equal(V.vizTaskTimelineHtml({ start: null, due: null, today: '2026-11-06' }), '');
-  const od = V.vizTaskTimelineHtml({ start: '2026-11-01', due: '2026-11-03', today: '2026-11-06', tone: 'overdue' });
+  assert.equal(V.vizTaskBarHtml({ start: null, due: null, today: '2026-11-06' }), '');
+  const od = V.vizTaskBarHtml({ start: '2026-11-01', due: '2026-11-03', today: '2026-11-06', tone: 'overdue' });
   assert.match(od, /data-viz-tone="overdue"/);
 });
 
@@ -104,7 +104,7 @@ test('WAVE-B4 [unit]: vizAssetCatIndex + vizBrandThumbHtml — ảnh dùng thumb
 // ---------- [static] điểm dùng ở từng view ----------
 test('WAVE-B4 [static]: #/tasks — timeline ở cột Thời gian, badge phụ thuộc, pill Trở ngại, dải KPI Requests', () => {
   const v = section('function viewTasks()', '// ---------- Duyệt nội dung ----------');
-  assert.match(v, /vizTaskTimelineHtml\(\{ start: t\.startDate, due: t\.dueDate, today: todayISO\(\)/);
+  assert.match(v, /vizTaskBarHtml\(\{ start: t\.startDate, due: t\.dueDate, today: todayISO\(\)/);
   assert.match(v, /vizDepBadgesHtml\(\{ waitingCount: waitingFor\.length, blockingCount: blockingOthers\.length/);
   assert.match(v, /vizStatusPillHtml\(b\.status, \{ context: 'blocker'/);
   assert.match(v, /data-viz="requests-kpi-strip"/);

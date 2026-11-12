@@ -2537,6 +2537,7 @@
           vizStatusDotHtml(p.tone || 'running') +
           '<span class="viz-tl-label">' + esc(p.label) + '<strong>' + esc(p.dateText || '—') + '</strong></span></span>';
       }).join('') + '</div>';
+  }
   // ---------- WAVE-B4-VIZ2: helper thuần bổ sung (chỉ toán trình bày) ----------
   // Chênh lệch ngày giữa hai mốc ISO (chỉ phần ngày) — toán lịch thuần.
   function vizDayDiff(fromISO, toISO) {
@@ -2550,7 +2551,7 @@
   // Mini timeline tương đối của 1 việc: đoạn start→due đặt trong cửa sổ
   // [mốc sớm nhất, mốc muộn nhất] gồm cả hôm nay; phần đã trôi qua đậm hơn,
   // vạch mảnh = hôm nay. Thiếu cả hai mốc -> chuỗi rỗng (view tự ghi chữ).
-  function vizTaskTimelineHtml(opts) {
+  function vizTaskBarHtml(opts) {
     opts = opts || {};
     var start = opts.start ? String(opts.start).slice(0, 10) : null;
     var due = opts.due ? String(opts.due).slice(0, 10) : null;
@@ -3972,7 +3973,7 @@
         var tlTone = isCompletedTask(t) ? 'done' : (isOverdue(t) ? 'overdue' : (t.startDate || t.dueDate ? 'running' : 'todo'));
         return '<tr><td style="padding-left:' + (10 + depth * 22) + 'px">' + (depth ? '↳ ' : '') + '<button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + (myBlockers.length ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn: ' + myBlockers[0].title, derived: true }) : '') + '</td>' +
           '<td>' + esc(memberName(t.assigneeId)) + '</td><td>' + esc(campaignName(t.campaignId)) + '</td>' +
-          '<td>' + ((t.startDate || t.dueDate) ? vizTaskTimelineHtml({ start: t.startDate, due: t.dueDate, today: todayISO(), tone: tlTone, startLabel: t.startDate ? D.formatDateVN(t.startDate) : '—', dueLabel: t.dueDate ? D.formatDateVN(t.dueDate) : 'Chưa xếp lịch' }) : '<span class="sub">Chưa xếp lịch</span>') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td>' +
+          '<td>' + ((t.startDate || t.dueDate) ? vizTaskBarHtml({ start: t.startDate, due: t.dueDate, today: todayISO(), tone: tlTone, startLabel: t.startDate ? D.formatDateVN(t.startDate) : '—', dueLabel: t.dueDate ? D.formatDateVN(t.dueDate) : 'Chưa xếp lịch' }) : '<span class="sub">Chưa xếp lịch</span>') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td>' +
           '<td>' + (t.effortHours ? esc(t.effortHours) + ' giờ' : '<span class="badge warn">Chưa ước tính</span>') + '</td>' +
           '<td>' + vizDepBadgesHtml({ waitingCount: waitingFor.length, blockingCount: blockingOthers.length, waitingTitles: waitingFor, blockingTitles: blockingOthers }) + (waitingFor.length ? '' : '<br>' + readinessBadge(t)) + '</td>' +
           '<td><select data-action-change="task-status" data-id="' + esc(t.id) + '"' + dis(stDisabled) + stTitle + '>' + opts + '</select></td></tr>' +
