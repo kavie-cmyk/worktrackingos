@@ -81,7 +81,7 @@
     channel_accounts: ['id', 'workspace_id', 'brand_page_id', 'platform', 'external_id', 'display_name', 'handle', 'profile_url', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     assets: ['id', 'workspace_id', 'name', 'asset_type', 'storage_bucket', 'storage_path', 'external_url', 'mime_type', 'size_bytes', 'width', 'height', 'duration_sec', 'tags', 'rights_note', 'status', 'approval_status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     asset_versions: ['id', 'workspace_id', 'asset_id', 'version_no', 'storage_bucket', 'storage_path', 'external_url', 'change_note', 'created_by', 'created_at'],
-    campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'budget_ceiling_amount', 'budget_ceiling_currency', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     phases: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'sort_order', 'start_date', 'end_date', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     activities: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'phase_id', 'name', 'description', 'sort_order', 'start_date', 'end_date', 'status', 'owner_id', 'channel', 'deliverables', 'objective', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     tasks: ['id', 'workspace_id', 'campaign_id', 'phase_id', 'activity_id', 'content_item_id', 'parent_id', 'title', 'description', 'owner_id', 'collaborators', 'approver_id', 'start_date', 'due_date', 'completed_at', 'priority', 'effort_hours', 'progress_percent', 'status', 'is_blocked', 'is_milestone', 'sort_order', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
@@ -96,7 +96,7 @@
     external_posts: ['id', 'workspace_id', 'channel_account_id', 'platform', 'external_post_id', 'external_url', 'post_type', 'caption_snapshot', 'media_snapshot', 'published_at', 'author_external_id', 'raw', 'source', 'archived_at', 'first_synced_at', 'last_synced_at', 'created_at', 'updated_at'],
     post_content_mappings: ['id', 'workspace_id', 'external_post_id', 'variant_id', 'content_item_id', 'campaign_id', 'mapping_source', 'confidence', 'created_by', 'created_at'],
     metric_observations: ['id', 'workspace_id', 'source', 'object_type', 'object_id', 'metric_code', 'value', 'period_start', 'period_end', 'period_grain', 'scope', 'dimensions', 'definition_version', 'currency', 'observed_at', 'sync_run_id', 'created_at'],
-    kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'definition', 'scope_type', 'activity_id', 'task_id', 'content_item_id', 'bu_product_id', 'pillar_id', 'aggregation_mode', 'target_version', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'definition', 'scope_type', 'activity_id', 'task_id', 'content_item_id', 'bu_product_id', 'pillar_id', 'aggregation_mode', 'target_version', 'direction', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     measurements: ['id', 'workspace_id', 'kpi_id', 'measured_at', 'period_start', 'period_end', 'value', 'source', 'note', 'created_by', 'created_at'],
     budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'activity_id', 'task_id', 'name', 'category', 'planned_amount', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     budget_commitments: ['id', 'workspace_id', 'budget_line_id', 'description', 'amount', 'currency', 'vendor', 'status', 'settled_amount', 'committed_at', 'expected_at', 'created_by', 'created_at', 'updated_at', 'archived_at'],
@@ -136,7 +136,7 @@
   // Chỉ khai báo khi tên tự động camel→snake KHÔNG ra đúng cột, hoặc ngữ nghĩa khác.
   var FIELD_ALIASES = {
     tasks: { assigneeId: 'owner_id' },
-    campaigns: { audienceInsights: 'insights', creativeDirection: 'kv_direction', risks: 'risk_note' },
+    campaigns: { audienceInsights: 'insights', creativeDirection: 'kv_direction', risks: 'risk_note', budgetCeiling: 'budget_ceiling_amount', budgetCeilingCurrency: 'budget_ceiling_currency' },
     brandPages: { title: 'name', summary: 'brand_voice' },
     brandAssets: { type: 'asset_type', url: 'external_url' },
     channelAccounts: { name: 'display_name' },
@@ -289,6 +289,17 @@
       Object.keys(stash).forEach(function (k) {
         if (stash[k] === UNSET) delete merged[camelToSnake(k)]; else merged[camelToSnake(k)] = stash[k];
       });
+      // R3.1 persist (0011): budgetCeiling/budgetCeilingCurrency của campaigns
+      // nay là CỘT THẬT — khi obj mang các field này thì xoá bản sao cũ trong
+      // custom_fields, để read không bao giờ hồi sinh giá trị stale đè cột thật.
+      if (table === 'campaigns') {
+        if (obj.budgetCeiling !== undefined || obj.budgetCeilingAmount !== undefined || obj.budget_ceiling_amount !== undefined) {
+          delete merged.budget_ceiling; delete merged.budget_ceiling_amount;
+        }
+        if (obj.budgetCeilingCurrency !== undefined || obj.budget_ceiling_currency !== undefined) {
+          delete merged.budget_ceiling_currency;
+        }
+      }
       payload.custom_fields = merged;
     }
     // R2-08 (lưới an toàn): settled_amount của commitments không bao giờ null trong payload.
@@ -324,6 +335,22 @@
         var camel = snakeToCamel(k);
         if (out[camel] === undefined) out[camel] = cf[k];
       });
+    }
+    // R3.1 persist (0011): campaigns — cột thật budget_ceiling_* ƯU TIÊN;
+    // khi cột thật null (dòng viết trước 0011 chỉ có bản sao trong
+    // custom_fields) thì rơi về bản sao đó để UI không mất hạn mức cũ.
+    // Khóa custom_fields đã lưu có thể là budget_ceiling (từ budgetCeiling)
+    // hoặc budget_ceiling_amount / dạng camel nguyên bản.
+    if (collection === 'campaigns' && cf && typeof cf === 'object') {
+      if (out.budgetCeiling == null) {
+        var bcLegacy = cf.budget_ceiling_amount != null ? cf.budget_ceiling_amount
+          : (cf.budget_ceiling != null ? cf.budget_ceiling : cf.budgetCeiling);
+        if (bcLegacy != null) { out.budgetCeiling = bcLegacy; out.budgetCeilingAmount = bcLegacy; }
+      }
+      if (out.budgetCeilingCurrency == null) {
+        var bccLegacy = cf.budget_ceiling_currency != null ? cf.budget_ceiling_currency : cf.budgetCeilingCurrency;
+        if (bccLegacy != null) out.budgetCeilingCurrency = bccLegacy;
+      }
     }
     // Chuẩn hoá ngược các enum đặc thù về giá trị frontend vẫn đang dùng.
     if ((collection === 'variants' || collection === 'externalPosts' || collection === 'channelAccounts') && out.platform) {
