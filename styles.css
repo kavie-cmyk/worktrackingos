@@ -187,6 +187,41 @@ form.inline.compact input[type="date"]{max-width:150px}
   .grid2{grid-template-columns:1fr}
   .g2-inner{min-width:640px}
 }
+/* ===== Vòng R3.1-VIZ: chart-first (SVG/CSS thuần, không thư viện ngoài) ===== */
+.viz-chart{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin:10px 0;overflow-x:auto;max-width:100%}
+.viz-scroll-inner{min-width:540px}
+.viz-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:6px}
+.viz-legend .viz-dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.viz-group{margin:10px 0 4px}
+.viz-group-title{font-weight:700;margin-bottom:2px}
+.viz-row{display:grid;grid-template-columns:minmax(100px,170px) 1fr minmax(86px,auto);gap:8px;align-items:center;margin:5px 0;min-width:0}
+.viz-label{white-space:normal;overflow-wrap:anywhere}
+.viz-track{display:block;height:12px;background:#eaedf1;border-radius:99px;overflow:hidden;min-width:60px}
+.viz-track-empty{background:repeating-linear-gradient(45deg,#f3f4f6,#f3f4f6 6px,#e5e7eb 6px,#e5e7eb 12px)}
+.viz-fill{display:block;height:100%;background:var(--accent);border-radius:99px}
+.viz-fill.is-alloc{background:var(--accent)}
+.viz-fill.is-actual{background:#0e9384}
+.viz-fill.is-commit{background:#f79009}
+.viz-fill.is-in{background:#067647}
+.viz-fill.is-out{background:#b54708}
+.viz-fill.is-warn{background:#f79009}
+.viz-fill.is-over{background:var(--bad)}
+.viz-value{font-weight:600;white-space:nowrap}
+.viz-mini{margin-top:6px;min-width:150px}
+.viz-mini .viz-track{height:9px}
+.viz-mini .sub{display:block;margin-top:2px}
+.viz-cols{display:flex;gap:16px;align-items:flex-end;min-width:480px;padding-top:6px}
+.viz-col{flex:1 1 0;min-width:84px;text-align:center}
+.viz-col-bars{display:flex;gap:5px;align-items:flex-end;justify-content:center;height:110px;border-bottom:1px solid var(--line)}
+.viz-col-bar{display:block;width:28px;border-radius:5px 5px 0 0;min-height:2px}
+.viz-col-bar.is-in{background:#067647}
+.viz-col-bar.is-out{background:#b54708}
+.viz-col-label{font-weight:700;margin-top:5px}
+@media(max-width:480px){
+  .viz-row{grid-template-columns:minmax(84px,120px) 1fr auto}
+  .viz-value{white-space:normal;text-align:right}
+  .viz-chart{padding:10px}
+}
 /* ===== Vòng R3.1: Action Plan + drawer hoạt động ===== */
 tr.group-row td{background:#f0f2f5;font-weight:700}
 .activity-backdrop{z-index:58}

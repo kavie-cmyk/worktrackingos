@@ -1926,6 +1926,7 @@
       html += '<div class="card"><strong><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></strong><p class="sub">' + esc(D.formatDateVN(c.startDate)) + ' — ' + esc(D.formatDateVN(c.endDate)) + ' · Người phụ trách: ' + esc(memberName(c.ownerId)) + '</p>' +
         '<div class="progress"><div style="width:' + p.percentage + '%"></div></div><p class="sub">Tiến độ (chỉ tính việc chi tiết, không tính việc cha): ' + p.completed + '/' + p.total + ' (' + p.percentage + '%)</p></div>';
     });
+    html += workspaceChartsHtml();
     html += '<h2>Nguy cơ trễ (kèm lý do cụ thể)</h2>';
     if (collLoadingOrError('tasks')) html += collectionBanner('tasks');
     else if (!atRisk.length) html += '<div class="state-box">Không có campaign nào có dấu hiệu trễ có căn cứ.</div>';
@@ -2086,6 +2087,248 @@
         return '<tr><td>' + esc(c.name) + '</td><td><button class="btn small" data-action="restore-item" data-coll="campaigns" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Khôi phục</button></td></tr>';
       }).join(''));
     }
+    return html;
+  }
+
+  // ---------- R3.1-VIZ: lớp trình bày chart-first (chỉ trình bày) ----------
+  // NGUYÊN TẮC: khối này KHÔNG tính lại nghiệp vụ. Mọi con số tiền/KPI đi vào
+  // chart đều lấy từ D.summarizeBudgetScope / D.rollupKpi /
+  // D.allocationShareForScope (qua các adapter summarizeCampaignBudget /
+  // summarizeActivityBudget / kpiRollupFor ở dưới) hoặc từ đúng dữ liệu Store
+  // hiện tại (content mix qua contentMixRows, Thu–Chi qua cashTransactions /
+  // Store.listCashBalances). Helper thuần trong vùng PURE chỉ làm toán
+  // TRÌNH BÀY (tỷ lệ % cho bề rộng thanh, gom nhóm tháng để vẽ cột) trên các
+  // số đã được domain chốt — không định nghĩa công thức nghiệp vụ mới.
+  // R3.1-VIZ-PURE-BEGIN
+  function vizPct(part, whole) {
+    if (part === null || part === undefined || whole === null || whole === undefined || whole === '' || isNaN(Number(part)) || isNaN(Number(whole)) || Number(whole) === 0) return null;
+    return Math.round(Number(part) / Number(whole) * 10000) / 100;
+  }
+  function vizBarWidth(pct) {
+    if (pct === null || pct === undefined || isNaN(Number(pct))) return 0;
+    return Math.max(0, Math.min(100, Math.round(Number(pct) * 100) / 100));
+  }
+  function vizBudgetRowState(row) {
+    row = row || {};
+    var used = (row.forecastUse !== null && row.forecastUse !== undefined) ? Number(row.forecastUse) : (Number(row.actualTotal) || 0) + (Number(row.openCommitments) || 0);
+    var ceiling = (row.ceiling === null || row.ceiling === undefined) ? null : Number(row.ceiling);
+    var available = (row.available === null || row.available === undefined) ? null : Number(row.available);
+    var over = ceiling !== null && ceiling > 0 && used > ceiling;
+    var warn = over || (ceiling !== null && ceiling > 0 && available !== null && available <= 0);
+    return { used: used, ceiling: ceiling, available: available, usedPct: vizPct(used, ceiling), over: over, warn: warn };
+  }
+  function vizKpiState(roll) {
+    if (!roll || roll.status === 'insufficient_data' || roll.value === null || roll.value === undefined) {
+      return { kind: 'insufficient_data', label: 'Chưa đủ dữ liệu', value: null, pct: null };
+    }
+    return { kind: 'ok', label: '', value: roll.value, pct: (roll.achievementPercent === null || roll.achievementPercent === undefined) ? null : roll.achievementPercent };
+  }
+  function vizCashMonthly(txns, currencyOf) {
+    var groups = {};
+    var order = [];
+    (txns || []).forEach(function (t) {
+      if (!t) return;
+      var rawDate = t.occurredOn || t.occurred_on || t.date || t.createdAt || '';
+      var month = /^\d{4}-\d{2}/.test(String(rawDate)) ? String(rawDate).slice(0, 7) : 'unknown';
+      var cur = t.currency || (typeof currencyOf === 'function' ? currencyOf(t.accountId) : null) || 'VND';
+      var key = month + '|' + cur;
+      if (!groups[key]) { groups[key] = { month: month, currency: cur, inTotal: 0, outTotal: 0, net: 0, count: 0 }; order.push(key); }
+      var amt = Number(t.amount) || 0;
+      if (t.direction === 'in') groups[key].inTotal += amt; else if (t.direction === 'out') groups[key].outTotal += amt; else return;
+      groups[key].net = groups[key].inTotal - groups[key].outTotal;
+      groups[key].count++;
+    });
+    return order.map(function (k) { return groups[k]; }).sort(function (a, b) { return (a.month + a.currency).localeCompare(b.month + b.currency); });
+  }
+  function vizMonthLabel(month) {
+    if (!month || month === 'unknown') return 'Chưa rõ tháng';
+    var p = String(month).split('-');
+    return 'Tháng ' + Number(p[1]) + '/' + p[0];
+  }
+  function fmtPct(p) { return (p === null || p === undefined || isNaN(Number(p))) ? '—' : fmtNum(Math.round(Number(p) * 100) / 100) + '%'; }
+  function vizBarRowHtml(label, value, max, cls, valueText) {
+    var w = (max && Number(max) > 0 && value !== null && value !== undefined && !isNaN(Number(value))) ? vizBarWidth(Number(value) / Number(max) * 100) : 0;
+    return '<div class="viz-row"><span class="viz-label">' + esc(label) + '</span><span class="viz-track"><span class="viz-fill ' + esc(cls || '') + '" style="width:' + w + '%"></span></span><span class="viz-value">' + esc(valueText) + '</span></div>';
+  }
+  function vizBudgetBars(alloc, actual, open) {
+    return [
+      { label: 'Phân bổ', value: alloc, cls: 'is-alloc' },
+      { label: 'Thực chi', value: actual, cls: 'is-actual' },
+      { label: 'Cam kết chưa trả', value: open, cls: 'is-commit' }
+    ];
+  }
+  function vizBudgetGroupsChartHtml(groups) {
+    var legend = '<div class="viz-legend"><span><span class="viz-dot" style="background:var(--accent)"></span>Phân bổ</span><span><span class="viz-dot" style="background:#0e9384"></span>Thực chi</span><span><span class="viz-dot" style="background:#f79009"></span>Cam kết chưa trả</span></div>';
+    return '<div class="viz-chart" data-viz="budget-groups-chart"><div class="viz-scroll-inner">' + legend + (groups || []).map(function (g) {
+      var max = 0;
+      (g.bars || []).forEach(function (b) { var v = Number(b.value) || 0; if (v > max) max = v; });
+      return '<div class="viz-group" data-viz-group="' + esc(g.title) + '"><div class="viz-group-title">' + esc(g.title) + '</div>' +
+        (g.bars || []).map(function (b) { return vizBarRowHtml(b.label, b.value, max, b.cls, fmtMoney(b.value, g.currency)); }).join('') + '</div>';
+    }).join('') + '</div></div>';
+  }
+  function vizKpiRowsHtml(rows) {
+    return '<div class="viz-chart" data-viz="kpi-progress-chart">' + (rows || []).map(function (r) {
+      var st = r.state || { kind: 'insufficient_data', label: 'Chưa đủ dữ liệu' };
+      if (st.kind !== 'ok') {
+        return '<div class="viz-row viz-kpi-row" data-viz-kpi-state="insufficient_data"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-track viz-track-empty"><span class="viz-fill" style="width:0%"></span></span><span class="viz-value"><span class="badge warn">' + esc(st.label || 'Chưa đủ dữ liệu') + '</span></span></div>';
+      }
+      var pctText = st.pct === null ? 'Chưa đặt mục tiêu' : fmtPct(st.pct);
+      return '<div class="viz-row viz-kpi-row" data-viz-kpi-state="ok"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(st.pct) + '%"></span></span><span class="viz-value">' + esc(r.actualText || '') + ' / ' + esc(r.targetText || '—') + ' (' + esc(pctText) + ')</span></div>';
+    }).join('') + '</div>';
+  }
+  function vizShareRowsHtml(rows, denominator, unitLabel, chartId) {
+    return '<div class="viz-chart" data-viz="' + esc(chartId || 'share-chart') + '"><p class="sub">Mẫu số: <strong>' + esc(denominator) + '</strong> ' + esc(unitLabel) + ' — tỷ trọng tính trên đúng mẫu số này.</p>' +
+      (rows || []).map(function (r) {
+        var pct = vizPct(r.total, denominator);
+        return vizBarRowHtml(r.label, r.total, denominator, 'is-alloc', fmtNum(r.total) + ' (' + fmtPct(pct) + ')');
+      }).join('') + '</div>';
+  }
+  function vizCashColumnsHtml(monthly, currency) {
+    var rows = (monthly || []).filter(function (m) { return m.currency === currency; });
+    var max = 0;
+    rows.forEach(function (m) { max = Math.max(max, Number(m.inTotal) || 0, Number(m.outTotal) || 0); });
+    return '<div class="viz-chart" data-viz="cash-columns"><div class="viz-legend"><span><span class="viz-dot" style="background:#067647"></span>Thu</span><span><span class="viz-dot" style="background:#b54708"></span>Chi</span><span class="sub">Đơn vị tiền: ' + esc(currency) + '</span></div><div class="viz-cols">' + rows.map(function (m) {
+      var hIn = max > 0 ? vizBarWidth(Number(m.inTotal) / max * 100) : 0;
+      var hOut = max > 0 ? vizBarWidth(Number(m.outTotal) / max * 100) : 0;
+      return '<div class="viz-col"><div class="viz-col-bars"><span class="viz-col-bar is-in" style="height:' + Math.max(2, hIn) + '%" title="Thu ' + esc(fmtMoney(m.inTotal, currency)) + '"></span><span class="viz-col-bar is-out" style="height:' + Math.max(2, hOut) + '%" title="Chi ' + esc(fmtMoney(m.outTotal, currency)) + '"></span></div><div class="viz-col-label">' + esc(vizMonthLabel(m.month)) + '</div><div class="sub">Thu ' + esc(fmtMoney(m.inTotal, currency)) + '<br>Chi ' + esc(fmtMoney(m.outTotal, currency)) + '<br>Ròng ' + esc(fmtMoney(m.net, currency)) + '</div></div>';
+    }).join('') + '</div></div>';
+  }
+  // R3.1-VIZ-PURE-END
+  // --- Adapter: chuẩn bị dữ liệu chart TỪ các hàm domain/Store hiện có ---
+  function vizKpiRowFor(k) {
+    var roll = kpiRollupFor(k);
+    var mode = String(k.aggregationMode || k.aggregation_mode || 'direct').toLowerCase();
+    var state = vizKpiState(roll);
+    if (!roll && state.kind !== 'ok') {
+      var d = D.kpiDisplay(k);
+      if (d.isMissing) state = { kind: 'insufficient_data', label: 'Chưa cập nhật', value: null, pct: null };
+      else state = { kind: 'ok', label: '', value: d.value, pct: vizPct(d.value, k.target) };
+    }
+    var actualText = '';
+    var targetText = fmtNum(k.target) + (k.unit ? ' ' + k.unit : '');
+    if (state.kind === 'ok') {
+      actualText = (mode === 'ratio' ? fmtNum(Math.round(state.value)) : fmtNum(state.value)) + (k.unit ? ' ' + k.unit : '');
+    }
+    return { kpi: k, name: k.name, scopeLabel: kpiScopeLabel(k), state: state, actualText: actualText, targetText: targetText, roll: roll };
+  }
+  function vizKpiProgressHtml(kpis) {
+    if (!kpis || !kpis.length) return '<p class="sub">Chưa có KPI nào để vẽ tiến độ.</p>';
+    return vizKpiRowsHtml(kpis.map(vizKpiRowFor));
+  }
+  function vizKpiTableHtml(kpis) {
+    if (!kpis || !kpis.length) return '<p class="sub">Chưa có KPI nào.</p>';
+    return tbl('<tr><th>KPI</th><th>Phạm vi</th><th>Thực đạt</th><th>Mục tiêu</th><th>Mức đạt</th><th>Trạng thái</th></tr>' + kpis.map(function (k) {
+      var r = vizKpiRowFor(k);
+      if (r.state.kind !== 'ok') return '<tr><td><strong>' + esc(k.name) + '</strong></td><td>' + esc(r.scopeLabel) + '</td><td><span class="badge warn">' + esc(r.state.label || 'Chưa đủ dữ liệu') + '</span></td><td>' + esc(r.targetText) + '</td><td>—</td><td>' + esc(r.state.label || 'Chưa đủ dữ liệu') + '</td></tr>';
+      return '<tr><td><strong>' + esc(k.name) + '</strong></td><td>' + esc(r.scopeLabel) + '</td><td>' + esc(r.actualText) + '</td><td>' + esc(r.targetText) + '</td><td>' + fmtPct(r.state.pct) + '</td><td><span class="badge ok">Đủ dữ liệu</span></td></tr>';
+    }).join(''));
+  }
+  function vizBudgetUsedBarHtml(r) {
+    var st = vizBudgetRowState(r);
+    var cls = st.over ? 'is-over' : (st.warn ? 'is-warn' : 'is-actual');
+    return '<div class="viz-mini" data-viz="budget-used-bar" data-viz-over="' + (st.over ? '1' : '0') + '" data-viz-warn="' + (st.warn ? '1' : '0') + '"><span class="viz-track"><span class="viz-fill ' + cls + '" style="width:' + vizBarWidth(st.usedPct) + '%"></span></span>' +
+      '<span class="sub">Đã dùng (thực chi + cam kết) ' + fmtMoney(st.used, r.currency) + ' / Phân bổ ' + fmtMoney(r.ceiling, r.currency) + ' (' + fmtPct(st.usedPct) + ')' + (st.over ? ' — <strong>Vượt phân bổ</strong>' : (st.warn ? ' — Đã hết hạn mức còn lại' : '')) + '</span></div>';
+  }
+  function vizBudgetActionChartHtml(c) {
+    var acts = Store.list('activities').filter(function (a) { return a.campaignId === c.id; });
+    if (!acts.length) return '<div class="state-box" data-viz="campaign-budget-chart">Chưa có hoạt động (action) nào trong Action Plan để vẽ phân bổ ngân sách.</div>';
+    var groups = [];
+    acts.forEach(function (a) {
+      summarizeActivityBudget(c, a).forEach(function (r) {
+        groups.push({ title: a.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) });
+      });
+    });
+    return '<div data-viz="campaign-budget-chart"><h4>Biểu đồ phân bổ ngân sách theo hoạt động</h4>' + vizBudgetGroupsChartHtml(groups) + '</div>';
+  }
+  function vizMixChartHtml(mix, unit) {
+    var unitLabel = unit === 'publication' ? 'lần đăng (publication)' : 'nội dung gốc';
+    var pillarRows = mix.rows.map(function (r) { return { label: r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại', total: r.total }; });
+    var chTotals = {};
+    mix.rows.forEach(function (r) { Object.keys(r.byChannel || {}).forEach(function (ch) { chTotals[ch] = (chTotals[ch] || 0) + r.byChannel[ch]; }); });
+    var channelRows = Object.keys(chTotals).map(function (ch) { return { label: labelStatus(ch), total: chTotals[ch] }; }).sort(function (a, b) { return b.total - a.total; });
+    return '<div data-viz="content-mix-chart"><h3>Tỷ trọng theo Pillar chính</h3>' + vizShareRowsHtml(pillarRows, mix.denominator, unitLabel, 'content-mix-pillar-chart') +
+      '<h3>Tỷ trọng theo kênh</h3>' + (channelRows.length ? vizShareRowsHtml(channelRows, mix.denominator, unitLabel, 'content-mix-channel-chart') : '<p class="sub">Chưa có kênh nào trong dữ liệu đang lọc.</p>') + '</div>';
+  }
+  function vizCashBalancesSync() {
+    try {
+      // Chỉ dùng kết quả ĐỒNG BỘ (demo); ở chế độ supabase hàm này trả
+      // Promise (đọc view riêng) nên bản đồng bộ tính từ state hiện tại —
+      // cùng công thức opening + ΣThu − ΣChi của Store.listCashBalances.
+      if (Store.mode !== 'supabase' && typeof Store.listCashBalances === 'function') {
+        var r = Store.listCashBalances();
+        if (r && !r.then && r.ok && Array.isArray(r.balances)) return r.balances;
+      }
+    } catch (e) { /* rơi xuống tính từ dữ liệu Store hiện tại bên dưới */ }
+    var txns = listSafe('cashTransactions');
+    return listSafe('cashAccounts').map(function (acc) {
+      var bal = Number(acc.openingBalance || acc.opening_balance || 0);
+      txns.forEach(function (t) { if (t.accountId === acc.id) bal += t.direction === 'in' ? (Number(t.amount) || 0) : -(Number(t.amount) || 0); });
+      return { accountId: acc.id, currency: acc.currency || 'VND', balance: bal };
+    });
+  }
+  function cashChartHtml() {
+    var accounts = listSafe('cashAccounts');
+    var txns = listSafe('cashTransactions');
+    var accById = {};
+    accounts.forEach(function (a) { accById[a.id] = a; });
+    function accName(id) { var a = accById[id]; return a ? (a.name || a.title || id) : '—'; }
+    function accCur(id) { var a = accById[id]; return a ? (a.currency || 'VND') : 'VND'; }
+    var head = '<div data-viz="cash-chart"><h3>Thu–Chi &amp; số dư</h3>';
+    if (!txns.length) {
+      return head + '<div class="state-box" data-viz="cash-empty">Chưa có giao dịch Thu–Chi nào — chưa có dữ liệu để vẽ biểu đồ. Khi có giao dịch, biểu đồ cột Thu/Chi theo tháng và bảng số dư sẽ hiện ở đây (không vẽ số 0 giả làm dữ liệu).</div></div>';
+    }
+    var monthly = vizCashMonthly(txns, accCur);
+    var curs = [];
+    monthly.forEach(function (m) { if (curs.indexOf(m.currency) === -1) curs.push(m.currency); });
+    var html = head + '<h4>Biểu đồ cột Thu / Chi theo tháng</h4>' + curs.map(function (cur) { return vizCashColumnsHtml(monthly, cur); }).join('');
+    var balances = vizCashBalancesSync();
+    html += '<h4>Số dư theo tài khoản</h4>' + (balances.length ? tbl('<tr><th>Tài khoản</th><th>Tiền tệ</th><th>Số dư</th></tr>' + balances.map(function (b) {
+      return '<tr><td>' + esc(accName(b.accountId)) + '</td><td>' + esc(b.currency || accCur(b.accountId)) + '</td><td>' + fmtMoney(b.balance, b.currency || accCur(b.accountId)) + '</td></tr>';
+    }).join('')) : '<p class="sub">Chưa có tài khoản Thu–Chi nào.</p>');
+    var sorted = txns.slice().sort(function (a, b) { return String(b.occurredOn || b.occurred_on || b.date || '').localeCompare(String(a.occurredOn || a.occurred_on || a.date || '')); });
+    html += '<h4>Giao dịch Thu–Chi (' + txns.length + ')</h4>' + tbl('<tr><th>Ngày</th><th>Tài khoản</th><th>Thu / Chi</th><th>Số tiền</th><th>Nội dung</th></tr>' + sorted.slice(0, 50).map(function (t) {
+      var cur = t.currency || accCur(t.accountId);
+      return '<tr><td>' + esc(D.formatDateVN(t.occurredOn || t.occurred_on || t.date)) + '</td><td>' + esc(accName(t.accountId)) + '</td><td>' + (t.direction === 'in' ? '<span class="badge ok">Thu</span>' : '<span class="badge warn">Chi</span>') + '</td><td>' + fmtMoney(t.amount, cur) + '</td><td>' + esc(t.title || t.note || t.description || '—') + '</td></tr>';
+    }).join('')) + (txns.length > 50 ? '<p class="sub">Bảng giao dịch hiển thị 50 giao dịch gần nhất trong tổng số ' + txns.length + '.</p>' : '') + '</div>';
+    return html;
+  }
+  function workspaceChartsHtml() {
+    var campaigns = visibleList('campaigns');
+    var html = '<h2>Biểu đồ tổng quan workspace</h2>';
+    // Ngân sách theo campaign (số qua summarizeBudgetScope ở summarizeCampaignBudget)
+    var groups = [];
+    var detailRows = [];
+    campaigns.forEach(function (c) {
+      summarizeCampaignBudget(c).forEach(function (r) {
+        if (r.ceiling > 0 || r.allocated > 0 || r.actualTotal > 0 || r.openCommitments > 0) {
+          groups.push({ title: c.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.allocated, r.actualTotal, r.openCommitments) });
+          detailRows.push({ id: c.id, name: c.name, r: r });
+        }
+      });
+    });
+    html += '<h3>Ngân sách theo campaign</h3>';
+    if (groups.length) {
+      html += '<div data-viz="workspace-budget-chart">' + vizBudgetGroupsChartHtml(groups) + '</div>' +
+        tbl('<tr><th>Campaign</th><th>Tiền tệ</th><th>Phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Còn có thể dùng</th></tr>' + detailRows.map(function (x) {
+          return '<tr><td><a href="#/campaigns/' + esc(x.id) + '">' + esc(x.name) + '</a></td><td>' + esc(x.r.currency) + '</td><td>' + fmtMoney(x.r.allocated, x.r.currency) + '</td><td>' + fmtMoney(x.r.actualTotal, x.r.currency) + '</td><td>' + fmtMoney(x.r.openCommitments, x.r.currency) + '</td><td>' + fmtMoney(x.r.available, x.r.currency) + '</td></tr>';
+        }).join(''));
+    } else html += '<div class="state-box" data-viz="workspace-budget-empty">Chưa có dữ liệu ngân sách ở mức workspace để vẽ biểu đồ.</div>';
+    // KPI nổi bật (số qua rollupKpi ở kpiRollupFor)
+    var allKpis = Store.list('kpis');
+    var featured = allKpis.filter(function (k) { return kpiScopeType(k) === 'campaign'; });
+    if (!featured.length) featured = allKpis;
+    featured = featured.slice(0, 6);
+    html += '<h3>Tiến độ KPI nổi bật</h3><div data-viz="workspace-kpi-chart">' + (featured.length ? vizKpiProgressHtml(featured) : '<div class="state-box">Chưa có KPI nào ở mức workspace.</div>') + '</div>';
+    // Content mix theo pillar (đúng đơn vị đếm người dùng đang chọn)
+    var mixItems = visibleList('contentItems');
+    var mixPubs = buildPublications();
+    var mixUnit = UI.contentMixUnit === 'publication' ? 'publication' : 'content';
+    var mix = contentMixRows(mixItems, mixPubs, mixUnit);
+    html += '<h3>Content mix theo Pillar</h3>';
+    if (mix.denominator) html += '<div data-viz="workspace-content-mix">' + vizMixChartHtml(mix, mixUnit) + '</div>';
+    else html += '<div class="state-box" data-viz="workspace-content-mix-empty">Chưa có nội dung nào để tính content mix ở mức workspace.</div>';
+    // Thu–Chi
+    html += cashChartHtml();
     return html;
   }
 
@@ -2286,9 +2529,12 @@
           '<td>' + esc(memberName(a.ownerId)) + '</td>' +
           '<td>' + (a.startDate ? esc(D.formatDateVN(a.startDate)) : '—') + ' – ' + (a.endDate ? esc(D.formatDateVN(a.endDate)) : '—') + '</td>' +
           '<td>' + statusBadge(a.status || '', info.label) + (info.overdue ? '<br><span class="badge bad">' + info.overdue + ' việc trễ</span>' : '') + (info.blocked ? '<br><span class="badge bad">' + info.blocked + ' việc bị chặn</span>' : '') + '</td>' +
-          '<td>' + info.done + '/' + info.total + ' task xong' + (info.overdue ? '<br><span class="sub">Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</span>' : '<br><span class="sub">Bị chặn: ' + info.blocked + '</span>') + (a.deliverables || a.deliverable ? '<br><span class="sub">' + esc(a.deliverables || a.deliverable) + '</span>' : '') + '</td>' +
+          '<td>' + info.done + '/' + info.total + ' task xong' + (info.overdue ? '<br><span class="sub">Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</span>' : '<br><span class="sub">Bị chặn: ' + info.blocked + '</span>') + (a.deliverables || a.deliverable ? '<br><span class="sub">' + esc(a.deliverables || a.deliverable) + '</span>' : '') +
+          // R3.1-VIZ 3: thanh % hoàn thành task ngay trong cột Đầu ra.
+          '<div class="viz-mini" data-viz="action-task-progress"><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(vizPct(info.done, info.total)) + '%"></span></span><span class="sub">Hoàn thành ' + fmtPct(vizPct(info.done, info.total)) + ' (' + info.done + '/' + info.total + ' task)</span></div></td>' +
           '<td>' + (kpis.length ? kpis.slice(0, 2).map(function (k) { return esc(k.name) + ': ' + kpiSummaryHtml(k); }).join('<br>') + (kpis.length > 2 ? '<br><span class="sub">+ ' + (kpis.length - 2) + ' KPI khác</span>' : '') : '—') + '</td>' +
-          '<td>' + budgetSummaryText(budgetRows) + '</td>' +
+          // R3.1-VIZ 3: thanh ngân sách đã dùng / phân bổ ngay trong cột Ngân sách.
+          '<td>' + budgetSummaryText(budgetRows) + budgetRows.map(function (r) { return vizBudgetUsedBarHtml(r); }).join('') + '</td>' +
           '<td>' + (contents.length ? contents.length + ' nội dung liên quan' : 'Không có nội dung liên quan') + '</td>' +
           '<td class="row-actions"><button class="btn small" data-action="activity-open" data-id="' + esc(a.id) + '">Mở chi tiết</button></td></tr>';
       }).join('');
@@ -2333,6 +2579,12 @@
         '<h3>Tiến độ task</h3><p>' + info.done + '/' + info.total + ' task xong · Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</p>' +
         '<h3>KPI của hoạt động</h3>' + (kpis.length ? '<ul class="clean">' + kpis.map(function (k) { return '<li>' + esc(k.name) + ': ' + kpiSummaryHtml(k) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI nào cho hoạt động này.</p>') +
         '<h3>Ngân sách của hoạt động</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
+        // R3.1-VIZ 3: mini-chart ở tab Overview của drawer — thanh ngân sách
+        // của action + thanh tiến độ KPI của action (số vẫn qua domain).
+        '<div data-viz="activity-mini-charts"><h3>Biểu đồ ngân sách của hoạt động</h3><div data-viz="activity-mini-budget">' +
+        vizBudgetGroupsChartHtml(budgetRows.map(function (r) { return { title: act.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) }; })) +
+        budgetRows.map(function (r) { return vizBudgetUsedBarHtml(r); }).join('') + '</div>' +
+        '<h3>Tiến độ KPI của hoạt động</h3><div data-viz="activity-mini-kpi">' + (kpis.length ? vizKpiProgressHtml(kpis) : '<p class="sub">Chưa có KPI nào cho hoạt động này.</p>') + '</div></div>' +
         '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + ' — ' + statusBadge(x.editorialStatus) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
     }
     if (tab === 'tasks') {
@@ -2408,16 +2660,15 @@
       // KPI kết quả chung + đếm action đúng hạn/trễ/bị chặn.
       var ovBudget = summarizeCampaignBudget(c);
       html += '<h3>Ngân sách campaign</h3>';
+      // R3.1-VIZ 1(a): chart-first — biểu đồ cột ngang phân bổ theo từng action
+      // (số qua summarizeBudgetScope ở summarizeActivityBudget), ngay trên
+      // bảng số chi tiết C.7.
+      html += vizBudgetActionChartHtml(c);
       ovBudget.forEach(function (r) {
         if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa thiết lập hạn mức campaign cho ' + esc(r.currency) + ' — các số dưới đây tạm lấy tổng phân bổ đã duyệt làm hạn mức. Đặt hạn mức trong form Sửa campaign để tách rõ "Chưa phân bổ" và "Còn có thể dùng".</div>';
-        html += '<div class="cards">' +
-          '<div class="card"><div class="big">' + fmtMoney(r.ceiling, r.currency) + '</div>Hạn mức (' + esc(r.currency) + ')</div>' +
-          '<div class="card"><div class="big">' + fmtMoney(r.allocated, r.currency) + '</div>Đã phân bổ (' + esc(r.currency) + ')</div>' +
-          '<div class="card"><div class="big">' + fmtMoney(r.unallocated, r.currency) + '</div>Chưa phân bổ (' + esc(r.currency) + ')</div>' +
-          '<div class="card"><div class="big">' + fmtMoney(r.actualTotal, r.currency) + '</div>Thực chi (' + esc(r.currency) + ')</div>' +
-          '<div class="card"><div class="big">' + fmtMoney(r.openCommitments, r.currency) + '</div>Cam kết chưa trả (' + esc(r.currency) + ')</div>' +
-          '<div class="card"><div class="big">' + fmtMoney(r.forecastUse, r.currency) + '</div>Dự kiến sử dụng (' + esc(r.currency) + ')</div>' +
-          '<div class="card"><div class="big">' + fmtMoney(r.available, r.currency) + '</div>Còn có thể dùng (' + esc(r.currency) + ')</div></div>' +
+        html += '<p class="sub" data-viz="campaign-budget-note">Hạn mức campaign (' + esc(r.currency) + '): <strong>' + fmtMoney(r.ceiling, r.currency) + '</strong> · Chưa phân bổ: <strong>' + fmtMoney(r.unallocated, r.currency) + '</strong> · Còn có thể dùng: <strong>' + fmtMoney(r.available, r.currency) + '</strong> — "Chưa phân bổ" và "Còn có thể dùng" là hai số tách biệt, không gộp.</p>';
+        html += '<h4>Bảng số chi tiết ngân sách (' + esc(r.currency) + ')</h4>' + tbl('<tr><th>Hạn mức</th><th>Đã phân bổ</th><th>Chưa phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Dự kiến sử dụng</th><th>Còn có thể dùng</th></tr>' +
+          '<tr><td>' + fmtMoney(r.ceiling, r.currency) + '</td><td>' + fmtMoney(r.allocated, r.currency) + '</td><td>' + fmtMoney(r.unallocated, r.currency) + '</td><td>' + fmtMoney(r.actualTotal, r.currency) + '</td><td>' + fmtMoney(r.openCommitments, r.currency) + '</td><td>' + fmtMoney(r.forecastUse, r.currency) + '</td><td>' + fmtMoney(r.available, r.currency) + '</td></tr>') +
           '<p class="sub">"Chưa phân bổ" = hạn mức − đã phân bổ cho các hoạt động. "Còn có thể dùng" = hạn mức − thực chi − cam kết chưa trả. Hai số này khác nhau và không cộng lẫn nhau.</p>';
       });
       var ovKpis = Store.list('kpis').filter(function (k) { return k.campaignId === c.id && kpiScopeType(k) === 'campaign'; });
@@ -2426,7 +2677,8 @@
         ovKpis.forEach(function (k) {
           if (!kpiHasValidSource(k)) html += '<div class="notice warn">KPI "' + esc(k.name) + '" chưa có nguồn/cách tổng hợp hợp lệ (chế độ ' + esc(k.aggregationMode || 'direct') + ') — chưa thể tuyên bố số tổng hợp cho KPI này.</div>';
         });
-        html += '<ul class="clean">' + ovKpis.map(function (k) { return '<li>' + esc(k.name) + ': ' + kpiSummaryHtml(k) + ' <span class="sub">(' + esc(kpiScopeLabel(k)) + ')</span></li>'; }).join('') + '</ul>';
+        // R3.1-VIZ 1(b): thanh tiến độ KPI (số qua rollupKpi) + bảng số ngay dưới.
+        html += '<div data-viz="campaign-kpi-chart">' + vizKpiProgressHtml(ovKpis) + '</div>' + vizKpiTableHtml(ovKpis);
       } else html += '<p class="sub">Chưa có KPI kết quả chung ở cấp campaign.</p>';
       var onTrack = 0, lateActs = 0, blockedActs = 0;
       acts.forEach(function (a) { var inf = activityStatusInfo(a, activityTasks(a)); if (inf.blocked > 0) blockedActs++; else if (inf.overdue > 0) lateActs++; else onTrack++; });
@@ -2498,7 +2750,7 @@
       var ckpis = Store.list('kpis').filter(function (x) { return x.campaignId === c.id; });
       var blines = visibleList('budgetLines').filter(function (b) { return b.campaignId === c.id; });
       html += '<div class="toolbar"><strong>KPI & ngân sách của campaign</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="kpi" data-campaign="' + esc(c.id) + '">+ Tạo KPI</button> <button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-campaign="' + esc(c.id) + '">+ Tạo dòng ngân sách</button>' : '') + ' <a class="btn small secondary" href="#/kpi">Mở mục KPI & Ngân sách</a></span></div>';
-      html += ckpis.length ? '<ul class="clean">' + ckpis.map(function (k) { var d = D.kpiDisplay(k); return '<li>' + esc(k.name) + ': mục tiêu ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + ' · thực đạt: ' + (d.isMissing ? 'Chưa cập nhật' : fmtNum(d.value)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI.</p>';
+      html += ckpis.length ? '<div data-viz="campaign-tab-kpi-chart">' + vizKpiProgressHtml(ckpis) + '</div>' + '<ul class="clean">' + ckpis.map(function (k) { var d = D.kpiDisplay(k); return '<li>' + esc(k.name) + ': mục tiêu ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + ' · thực đạt: ' + (d.isMissing ? 'Chưa cập nhật' : fmtNum(d.value)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI.</p>';
       html += blines.length ? '<ul class="clean">' + blines.map(function (b) {
         var rem = D.budgetRemaining(b, Store.list('commitments').filter(function (x) { return x.budgetLineId === b.id; }), Store.list('actuals').filter(function (x) { return x.budgetLineId === b.id; }));
         return '<li>' + esc(b.name) + ': đã duyệt ' + fmtMoney(b.approved, b.currency) + ' · còn lại ' + fmtMoney(rem, b.currency) + '</li>';
@@ -2888,6 +3140,9 @@
         '<p class="sub">Đơn vị đếm đang chọn: <strong>' + (unit === 'publication' ? 'lần đăng (publication)' : 'nội dung gốc') + '</strong> · Mẫu số (tổng số ' + (unit === 'publication' ? 'lần đăng' : 'nội dung gốc') + ' trong kỳ/bộ lọc hiện tại): <strong>' + mix.denominator + '</strong>. Pillar chính tính đúng 1 lần cho 1 nội dung gốc ở đơn vị "nội dung gốc". Kỳ được xác định bằng bộ lọc Từ ngày/Đến ngày ở trên (để trống = toàn bộ).</p>';
       if (!mix.denominator) html += '<div class="state-box">Chưa có dữ liệu để tính content mix trong kỳ/bộ lọc này.</div>';
       else {
+        // R3.1-VIZ 4: biểu đồ tỷ trọng theo pillar + theo kênh, dùng ĐÚNG
+        // đơn vị đếm đang chọn và in mẫu số ngay tại chart; bảng số ở dưới.
+        html += vizMixChartHtml(mix, unit);
         html += tbl('<tr><th>Pillar chính</th>' + mix.channels.map(function (c) { return '<th>' + esc(labelStatus(c)) + '</th>'; }).join('') + '<th>Tổng</th><th>Tỷ trọng</th></tr>' + mix.rows.map(function (r) {
           return '<tr><td><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong></td>' + mix.channels.map(function (c) { return '<td>' + (r.byChannel[c] || 0) + '</td>'; }).join('') + '<td><strong>' + r.total + '</strong></td><td>' + (mix.denominator ? (Math.round(r.total / mix.denominator * 1000) / 10) + '%' : '—') + '</td></tr>';
         }).join('') + '<tr><td><strong>Tổng (mẫu số)</strong></td>' + mix.channels.map(function (c) { return '<td></td>'; }).join('') + '<td><strong>' + mix.denominator + '</strong></td><td><strong>100%</strong></td></tr>');
@@ -3154,7 +3409,9 @@
     var measurements = [];
     try { measurements = Store.list('measurements'); } catch (e) { measurements = []; }
     if (!kpis.length && !collLoadingOrError('kpis')) html += emptyState('Chưa có KPI nào', 'Tạo KPI đầu tiên và cập nhật số đo kèm nguồn để theo dõi thực đạt.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button></p>' : '');
-    else html += tbl('<tr><th>KPI</th><th>Campaign</th><th>Định nghĩa / kỳ</th><th>Mục tiêu</th><th>Thực đạt</th><th>Nguồn số liệu</th><th>Cập nhật</th><th>Thao tác</th></tr>' + kpis.map(function (k) {
+    // R3.1-VIZ 5: bảng so sánh KPI dạng thanh tỉ lệ (actual vs target, số qua
+    // rollupKpi) ngay trên bảng chi tiết.
+    else html += '<h3>Biểu đồ so sánh KPI — thực đạt / mục tiêu</h3><div data-viz="kpi-page-chart">' + vizKpiProgressHtml(kpis) + '</div>' + tbl('<tr><th>KPI</th><th>Campaign</th><th>Định nghĩa / kỳ</th><th>Mục tiêu</th><th>Thực đạt</th><th>Nguồn số liệu</th><th>Cập nhật</th><th>Thao tác</th></tr>' + kpis.map(function (k) {
       var d = D.kpiDisplay(k);
       var roll = kpiRollupFor(k);
       var contribs = listSafe('kpiContributions').filter(function (x) { return x.kpiId === k.id; });
@@ -3188,6 +3445,22 @@
     if (!linesAll.length) html += emptyState('Chưa có dòng ngân sách nào', 'Tạo dòng ngân sách cho campaign, sau đó ghi cam kết và khoản chi thực tế ngay tại đây.', budgetEd ? '<p><button class="btn" data-action="editor-open" data-kind="budgetLine">+ Tạo dòng ngân sách</button></p>' : '');
     var currencies = [];
     linesAll.forEach(function (b) { if (currencies.indexOf(b.currency) === -1) currencies.push(b.currency); });
+    // R3.1-VIZ 5: biểu đồ so sánh ngân sách theo campaign VÀ theo hoạt động
+    // (số qua summarizeBudgetScope) — bảng chi tiết theo tiền tệ ở ngay dưới.
+    if (linesAll.length) {
+      var cmpGroups = [];
+      visibleList('campaigns').forEach(function (c2) {
+        summarizeCampaignBudget(c2).forEach(function (r) {
+          if (r.allocated > 0 || r.actualTotal > 0 || r.openCommitments > 0) cmpGroups.push({ title: 'Campaign: ' + c2.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.allocated, r.actualTotal, r.openCommitments) });
+        });
+        Store.list('activities').filter(function (a) { return a.campaignId === c2.id; }).forEach(function (a) {
+          summarizeActivityBudget(c2, a).forEach(function (r) {
+            if (r.ceiling > 0 || r.actualTotal > 0 || r.openCommitments > 0) cmpGroups.push({ title: 'Hoạt động: ' + a.name + ' — ' + c2.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) });
+          });
+        });
+      });
+      if (cmpGroups.length) html += '<h3>Biểu đồ so sánh ngân sách theo campaign và hoạt động</h3><div data-viz="kpi-page-budget-chart">' + vizBudgetGroupsChartHtml(cmpGroups) + '</div>';
+    }
     currencies.forEach(function (cur) {
       var lines = linesAll.filter(function (b) { return b.currency === cur; });
       // R2-25 + R2-02: summary cards theo currency — MỌI con số đều từ cùng
@@ -3244,6 +3517,9 @@
       }).join(''));
     });
     html += '<p class="sub">Phần đã thanh toán của một cam kết được tính từ các khoản thanh toán liên kết và chỉ tính một lần ở cột Đã chi.</p>';
+    // R3.1-VIZ 5: khối Thu–Chi (sổ cash, tách hẳn ngân sách campaign) —
+    // chart cột Thu/Chi theo tháng + số dư + bảng giao dịch ngay dưới.
+    html += '<h2>Thu–Chi &amp; Ngân sách (sổ quỹ)</h2>' + cashChartHtml();
     return html;
   }
 
