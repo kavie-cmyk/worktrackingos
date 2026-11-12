@@ -58,7 +58,17 @@
     manualMetricEntries: 'metric_observations',
     comments: 'comments',
     assetVersions: 'asset_versions',
-    measurements: 'measurements'
+    measurements: 'measurements',
+    contentPillars: 'content_pillars',
+    kpiTargetVersions: 'kpi_target_versions',
+    kpiContributions: 'kpi_contributions',
+    brandPageVersions: 'brand_page_versions',
+    campaignBaselines: 'campaign_baselines',
+    campaignAssets: 'campaign_assets',
+    budgetAllocations: 'budget_allocations',
+    cashAccounts: 'cash_accounts',
+    cashCategories: 'cash_categories',
+    cashTransactions: 'cash_transactions'
   };
 
   // ---------- Cột thật của từng bảng (trích từ 0001_schema.sql) ----------
@@ -67,18 +77,18 @@
     users: ['id', 'email', 'display_name', 'avatar_url', 'is_active', 'created_at', 'updated_at'],
     memberships: ['id', 'workspace_id', 'user_id', 'role', 'is_active', 'invited_by', 'created_at', 'updated_at'],
     bu_products: ['id', 'workspace_id', 'bu_name', 'name', 'description', 'status', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
-    brand_pages: ['id', 'workspace_id', 'product_id', 'name', 'brand_voice', 'guidelines', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    brand_pages: ['id', 'workspace_id', 'product_id', 'name', 'brand_voice', 'guidelines', 'owner_id', 'tags', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     channel_accounts: ['id', 'workspace_id', 'brand_page_id', 'platform', 'external_id', 'display_name', 'handle', 'profile_url', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     assets: ['id', 'workspace_id', 'name', 'asset_type', 'storage_bucket', 'storage_path', 'external_url', 'mime_type', 'size_bytes', 'width', 'height', 'duration_sec', 'tags', 'rights_note', 'status', 'approval_status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     asset_versions: ['id', 'workspace_id', 'asset_id', 'version_no', 'storage_bucket', 'storage_path', 'external_url', 'change_note', 'created_by', 'created_at'],
     campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     phases: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'sort_order', 'start_date', 'end_date', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
-    activities: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'phase_id', 'name', 'description', 'sort_order', 'start_date', 'end_date', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
-    tasks: ['id', 'workspace_id', 'campaign_id', 'phase_id', 'activity_id', 'content_item_id', 'parent_id', 'title', 'description', 'owner_id', 'collaborators', 'approver_id', 'start_date', 'due_date', 'completed_at', 'priority', 'effort_hours', 'progress_percent', 'status', 'is_blocked', 'sort_order', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    activities: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'phase_id', 'name', 'description', 'sort_order', 'start_date', 'end_date', 'status', 'owner_id', 'channel', 'deliverables', 'objective', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    tasks: ['id', 'workspace_id', 'campaign_id', 'phase_id', 'activity_id', 'content_item_id', 'parent_id', 'title', 'description', 'owner_id', 'collaborators', 'approver_id', 'start_date', 'due_date', 'completed_at', 'priority', 'effort_hours', 'progress_percent', 'status', 'is_blocked', 'is_milestone', 'sort_order', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     task_dependencies: ['id', 'workspace_id', 'predecessor_id', 'successor_id', 'type', 'lag_days', 'created_by', 'created_at'],
     blockers: ['id', 'workspace_id', 'task_id', 'description', 'reported_by', 'reported_at', 'handler_id', 'resolve_by', 'status', 'external_party', 'resolution_note', 'resolved_at', 'created_at', 'updated_at'],
-    content_items: ['id', 'workspace_id', 'campaign_id', 'task_id', 'title', 'content_type', 'brief', 'owner_id', 'status', 'planned_at', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
-    content_variants: ['id', 'workspace_id', 'content_item_id', 'channel_account_id', 'platform', 'format', 'caption', 'media_asset_ids', 'link_url', 'visibility', 'first_comment', 'editorial_status', 'approval_status', 'approved_revision_id', 'current_revision_id', 'publishing_status', 'publish_mode', 'scheduled_at', 'published_at', 'external_url', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    content_items: ['id', 'workspace_id', 'campaign_id', 'task_id', 'activity_id', 'pillar_id', 'pillar_id_at_publish', 'bu_product_id', 'series', 'source_content_id', 'title', 'content_type', 'brief', 'owner_id', 'status', 'planned_at', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    content_variants: ['id', 'workspace_id', 'content_item_id', 'channel_account_id', 'platform', 'format', 'caption', 'media_asset_ids', 'link_url', 'visibility', 'first_comment', 'editorial_status', 'approval_status', 'approved_revision_id', 'current_revision_id', 'publishing_status', 'publish_mode', 'scheduled_at', 'published_at', 'external_url', 'owner_id', 'reviewer_id', 'production_deadline', 'brief', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     content_revisions: ['id', 'workspace_id', 'variant_id', 'revision_no', 'caption', 'media_asset_ids', 'link_url', 'visibility', 'snapshot', 'change_note', 'created_by', 'created_at'],
     tiktok_scripts: ['id', 'workspace_id', 'variant_id', 'hook', 'scenes', 'cta', 'caption', 'hashtags', 'external_url', 'posted_at', 'created_by', 'created_at', 'updated_at'],
     approval_steps: ['id', 'workspace_id', 'content_item_id', 'variant_id', 'campaign_id', 'step_order', 'name', 'approver_id', 'approver_role', 'status', 'created_at', 'updated_at'],
@@ -86,11 +96,11 @@
     external_posts: ['id', 'workspace_id', 'channel_account_id', 'platform', 'external_post_id', 'external_url', 'post_type', 'caption_snapshot', 'media_snapshot', 'published_at', 'author_external_id', 'raw', 'source', 'archived_at', 'first_synced_at', 'last_synced_at', 'created_at', 'updated_at'],
     post_content_mappings: ['id', 'workspace_id', 'external_post_id', 'variant_id', 'content_item_id', 'campaign_id', 'mapping_source', 'confidence', 'created_by', 'created_at'],
     metric_observations: ['id', 'workspace_id', 'source', 'object_type', 'object_id', 'metric_code', 'value', 'period_start', 'period_end', 'period_grain', 'scope', 'dimensions', 'definition_version', 'currency', 'observed_at', 'sync_run_id', 'created_at'],
-    kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'definition', 'scope_type', 'activity_id', 'task_id', 'content_item_id', 'bu_product_id', 'pillar_id', 'aggregation_mode', 'target_version', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     measurements: ['id', 'workspace_id', 'kpi_id', 'measured_at', 'period_start', 'period_end', 'value', 'source', 'note', 'created_by', 'created_at'],
-    budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'category', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'activity_id', 'task_id', 'name', 'category', 'planned_amount', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     budget_commitments: ['id', 'workspace_id', 'budget_line_id', 'description', 'amount', 'currency', 'vendor', 'status', 'settled_amount', 'committed_at', 'expected_at', 'created_by', 'created_at', 'updated_at', 'archived_at'],
-    budget_actuals: ['id', 'workspace_id', 'budget_line_id', 'commitment_id', 'ad_spend_source_id', 'description', 'amount', 'currency', 'spent_at', 'source', 'created_by', 'created_at', 'updated_at'],
+    budget_actuals: ['id', 'workspace_id', 'budget_line_id', 'commitment_id', 'ad_spend_source_id', 'title', 'description', 'idempotency_key', 'amount', 'currency', 'spent_at', 'source', 'created_by', 'created_at', 'updated_at'],
     ad_accounts: ['id', 'workspace_id', 'platform', 'external_id', 'name', 'currency', 'timezone', 'status', 'connection_id', 'created_by', 'created_at', 'updated_at'],
     ad_campaigns: ['id', 'workspace_id', 'ad_account_id', 'campaign_id', 'external_id', 'name', 'objective', 'status', 'external_created_at', 'last_synced_at', 'raw', 'created_at', 'updated_at'],
     ad_groups: ['id', 'workspace_id', 'ad_campaign_id', 'external_id', 'name', 'status', 'targeting', 'last_synced_at', 'raw', 'created_at', 'updated_at'],
@@ -100,7 +110,19 @@
     publish_jobs: ['id', 'workspace_id', 'variant_id', 'revision_id', 'decision_id', 'channel_account_id', 'platform', 'idempotency_key', 'snapshot', 'status', 'scheduled_at', 'is_late', 'cancel_reason', 'authorized_by', 'last_error_code', 'last_error_message', 'created_by', 'created_at', 'updated_at'],
     marketing_requests: ['id', 'workspace_id', 'requester_id', 'requester_unit', 'title', 'description', 'request_type', 'product_id', 'campaign_id', 'priority', 'desired_due_date', 'status', 'assignee_id', 'rejection_reason', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     report_snapshots: ['id', 'workspace_id', 'name', 'report_type', 'scope', 'period_start', 'period_end', 'data', 'definition_versions', 'generated_by', 'generated_at', 'created_at'],
-    comments: ['id', 'workspace_id', 'entity_type', 'entity_id', 'parent_id', 'body', 'mentions', 'author_id', 'created_at', 'updated_at']
+    comments: ['id', 'workspace_id', 'entity_type', 'entity_id', 'parent_id', 'body', 'mentions', 'author_id', 'created_at', 'updated_at'],
+    content_pillars: ['id', 'workspace_id', 'bu_product_id', 'name', 'description', 'classification_guide', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    kpi_target_versions: ['id', 'workspace_id', 'kpi_id', 'version', 'target_value', 'unit', 'definition', 'aggregation_mode', 'note', 'created_by', 'created_at'],
+    kpi_contributions: ['id', 'workspace_id', 'kpi_id', 'source_kpi_id', 'source_fact_type', 'source_fact_id', 'rule', 'dedup_key_field', 'created_by', 'created_at'],
+    brand_page_versions: ['id', 'workspace_id', 'brand_page_id', 'version', 'snapshot', 'created_by', 'created_at'],
+    member_capacity: ['id', 'workspace_id', 'user_id', 'hours_per_week', 'days_off', 'effective_from', 'effective_to', 'created_by', 'created_at', 'updated_at'],
+    campaign_baselines: ['id', 'workspace_id', 'campaign_id', 'version', 'snapshot', 'approved_by', 'approved_at', 'note', 'created_by', 'created_at'],
+    campaign_assets: ['id', 'workspace_id', 'campaign_id', 'asset_id', 'role', 'note', 'created_by', 'created_at'],
+    budget_allocations: ['id', 'workspace_id', 'source_kind', 'actual_id', 'commitment_id', 'campaign_id', 'activity_id', 'amount', 'share_percent', 'effective_date', 'currency', 'created_by', 'created_at', 'updated_at'],
+    cash_accounts: ['id', 'workspace_id', 'name', 'currency', 'opening_balance', 'status', 'created_by', 'created_at', 'updated_at'],
+    cash_categories: ['id', 'workspace_id', 'name', 'kind', 'created_by', 'created_at'],
+    cash_transactions: ['id', 'workspace_id', 'account_id', 'category_id', 'direction', 'amount', 'occurred_on', 'campaign_id', 'activity_id', 'note', 'evidence_ref', 'idempotency_key', 'created_by', 'created_at', 'updated_at'],
+    cash_account_balances: ['account_id', 'workspace_id', 'currency', 'balance']
   };
 
   // Bảng có cột custom_fields → trường giao diện chưa có cột thật được gói vào đây.
@@ -108,7 +130,7 @@
   // Bảng có archived_at (xoá mềm); các bảng mapped còn lại không có nên xoá thật.
   var SOFT_DELETE_COLUMNS = { workspaces: 'archived_at' };
   // R31: entity chính có archived_at — remove = archive (không hard-delete).
-  var ARCHIVABLE_TABLES = { bu_products: true, brand_pages: true, assets: true, campaigns: true, phases: true, activities: true, tasks: true, content_items: true, content_variants: true, channel_accounts: true, kpis: true, budget_lines: true, external_posts: true, ads_change_requests: true, marketing_requests: true };
+  var ARCHIVABLE_TABLES = { bu_products: true, brand_pages: true, assets: true, campaigns: true, phases: true, activities: true, tasks: true, content_items: true, content_variants: true, channel_accounts: true, kpis: true, budget_lines: true, external_posts: true, ads_change_requests: true, marketing_requests: true, content_pillars: true };
 
   // ---------- Alias trường: tên ở frontend (camel) → cột thật (snake) ----------
   // Chỉ khai báo khi tên tự động camel→snake KHÔNG ra đúng cột, hoặc ngữ nghĩa khác.
@@ -121,9 +143,9 @@
     externalPosts: { title: 'caption_snapshot', url: 'external_url' },
     metricObservations: { metric: 'metric_code' },
     manualMetricEntries: { metric: 'metric_code' },
-    budgetLines: { approved: 'approved_amount' },
+    budgetLines: { approved: 'approved_amount', planned: 'planned_amount' },
     commitments: { title: 'description' },
-    actuals: { title: 'description', date: 'spent_at' },
+    actuals: { date: 'spent_at' },
     kpis: { target: 'target_value', periodStart: 'period_start', periodEnd: 'period_end' },
     adSets: { adCampaignId: 'ad_campaign_id' },
     ads: { adSetId: 'ad_group_id' },
