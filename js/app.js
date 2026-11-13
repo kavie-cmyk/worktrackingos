@@ -87,12 +87,12 @@
 
   var NAV_GROUPS = [
     ['Chung', [['overview', 'Overview'], ['my-work', 'Task của tôi']]],
-    ['Kế hoạch & content', [['campaigns', 'IMC & Campaigns'], ['content', 'Content'], ['tasks', 'Task'], ['approvals', 'Duyệt content']]],
+    ['Kế hoạch & content', [['campaigns', 'IMC & Campaigns'], ['timeline', 'Timeline'], ['content', 'Content'], ['tasks', 'Task'], ['approvals', 'Duyệt content']]],
     ['Thương hiệu', [['brand', 'Brand Hub']]],
     ['Hiệu quả', [['kpi', 'KPI & Ngân sách'], ['channels', 'Kênh & Post'], ['ads', 'Quảng cáo'], ['reports', 'Báo cáo']]],
     ['Tổ chức', [['team', 'Team & Workload'], ['settings', 'Thiết lập']]]
   ];
-  var ROUTES = ['overview', 'my-work', 'brand', 'campaigns', 'content', 'tasks', 'approvals', 'team', 'kpi', 'channels', 'ads', 'reports', 'settings'];
+  var ROUTES = ['overview', 'my-work', 'brand', 'campaigns', 'timeline', 'content', 'tasks', 'approvals', 'team', 'kpi', 'channels', 'ads', 'reports', 'settings'];
 
   function mondayOf(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); var diff = (x.getDay() + 6) % 7; x.setDate(x.getDate() - diff); return x; }
   function isoOf(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -125,7 +125,8 @@
     taskDraft: null,
     taskDraftConflict: false,
     taskFilter: { campaignId: 'all', ownerId: 'all', status: 'all', priority: 'all', due: 'all', blocked: 'all', unassigned: false },
-    taskTab: 'list',
+    timelineMode: 'tree',
+    timelineFilter: { campaignId: 'all', ownerId: 'all', status: 'all' },
     taskTimelineGroupBy: 'campaign',
     contentFilter: { campaignId: 'all', platform: 'all', ownerId: 'all', status: 'all', pillarId: 'all', buProductId: 'all', product: 'all', format: 'all', channelAccountId: 'all', activityId: 'all', taskId: 'all', from: '', to: '' },
     contentMixUnit: 'content',
@@ -2462,7 +2463,7 @@
     var campaigns = visibleList('campaigns');
     var ed = canEdit();
     if (ROUTE.id) return campaignDetailHtml(ROUTE.id);
-    var html = pageHead('IMC & Campaigns', 'Kế hoạch truyền thông tích hợp: biểu đồ kế hoạch tổng thể và chi tiết từng campaign.',
+    var html = pageHead('IMC & Campaigns', 'Kế hoạch truyền thông tích hợp: danh sách và chi tiết từng campaign. Xem biểu đồ chung ở mục Timeline.',
       ed ? '<button class="btn" data-action="editor-open" data-kind="campaign">+ Tạo campaign</button>' : '');
     html += readonlyNote() + collectionBanner('campaigns');
     if (!campaigns.length && !collLoadingOrError('campaigns')) {
@@ -2486,7 +2487,6 @@
         '<p>' + health3 + '</p>' +
         '<p><a class="btn small" href="#/campaigns/' + esc(c.id) + '">Mở chi tiết</a> <button class="btn small secondary" data-action="editor-open" data-kind="campaign" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="campaigns" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Lưu trữ</button></p></div>';
     }).join('') + '</div>';
-    html += '<details class="gantt-details"><summary><h2 style="display:inline">Biểu đồ kế hoạch tổng thể (mọi campaign)</h2></summary>' + ganttHtml(ganttRowsPortfolio(), Store.list('dependencies')) + '</details>';
     var archived = archivedList('campaigns');
     if (archived.length) {
       html += '<h2>Campaign đã lưu trữ</h2>' + tbl('<tr><th>Campaign</th><th>Thao tác</th></tr>' + archived.map(function (c) {
@@ -4349,17 +4349,27 @@
     return html;
   }
 
-  // ---------- Công việc ----------
-  // Timeline của màn Task: DÙNG LẠI engine ganttHtml + cùng UI.gantt*
-  // (zoom/khoảng xem/đường hôm nay/preview kéo–thả qua gantt-apply) như
-  // Gantt tổng và Gantt campaign — không engine thứ hai. Hàng/lọc/nhóm do
-  // hàm THUẦN D.buildTaskTimeline dựng từ ĐÚNG tập task đã lọc bởi
-  // UI.taskFilter ở viewTasks (và hàm thuần áp lại 3 lọc campaign/người
-  // phụ trách/trạng thái cho khớp) nên đổi bộ lọc là hàng + edges co theo.
-  // Bấm tên/thanh task mở panel chi tiết qua data-action gantt-open có sẵn;
-  // kéo–thả khoá theo canEdit() ngay trong ganttHtml như mọi Gantt khác.
-  function taskTimelineHtml(tasks, edges, blockers) {
-    var tf = UI.taskFilter;
+  // ---------- Timeline hợp nhất (view riêng, route 'timeline') ----------
+  // GỘP hai Timeline cũ làm một: Gantt tổng thể ở trang Campaigns + tab
+  // Timeline ở màn Task. View dùng LẠI engine ganttHtml + cùng UI.gantt*
+  // (zoom/khoảng xem/đường hôm nay/preview kéo–thả qua gantt-apply) — không
+  // engine thứ hai. Hai chế độ: 'tree' (Cây campaign — hàm thuần
+  // D.buildCampaignTreeTimeline, có cắt tỉa nhánh rỗng khi lọc theo
+  // người/trạng thái) và 'tasks' (Chỉ task — hàm thuần D.buildTaskTimeline,
+  // nhóm theo campaign/người phụ trách/không nhóm). MỘT bộ lọc chung
+  // UI.timelineFilter (campaign/người phụ trách/trạng thái) cho cả hai chế
+  // độ. Bấm tên/thanh mở chi tiết qua data-action gantt-open có sẵn;
+  // kéo–thả khóa theo canEdit() ngay trong ganttHtml như mọi Gantt khác.
+  function unscheduledHtml(list) {
+    var html = '<h3>Chưa xếp lịch (' + list.length + ')</h3>';
+    if (!list.length) html += '<p class="sub">Mọi task trong bộ lọc hiện tại đều đã có đủ ngày bắt đầu và mốc cần hoàn thành.</p>';
+    else html += '<ul class="clean">' + list.map(function (t) {
+      return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button> · ' + esc(memberName(t.assigneeId)) + ' · ' + esc(campaignName(t.campaignId)) + ' · ' + statusBadge(t.status) + ' <span class="sub">(thiếu ngày bắt đầu hoặc mốc cần hoàn thành)</span></li>';
+    }).join('') + '</ul>';
+    return html;
+  }
+  function taskTimelineHtml(tasks, edges, blockers, filter) {
+    var tf = filter || UI.timelineFilter;
     var tl = D.buildTaskTimeline(tasks, {
       campaigns: visibleList('campaigns'), members: Store.list('members'), blockers: blockers, dependencies: edges,
       groupBy: UI.taskTimelineGroupBy, today: todayISO(),
@@ -4373,13 +4383,43 @@
       ' <span class="sub">Đang hiển thị ' + tl.datedCount + '/' + tl.totalCount + ' task có đủ ngày để vẽ Timeline.</span></div>';
     html += ganttHtml(tl.rows, tl.edges);
     html += '</div>';
-    html += '<h3>Chưa xếp lịch (' + tl.unscheduled.length + ')</h3>';
-    if (!tl.unscheduled.length) html += '<p class="sub">Mọi task trong bộ lọc hiện tại đều đã có đủ ngày bắt đầu và mốc cần hoàn thành.</p>';
-    else html += '<ul class="clean">' + tl.unscheduled.map(function (t) {
-      return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button> · ' + esc(memberName(t.assigneeId)) + ' · ' + esc(campaignName(t.campaignId)) + ' · ' + statusBadge(t.status) + ' <span class="sub">(thiếu ngày bắt đầu hoặc mốc cần hoàn thành)</span></li>';
-    }).join('') + '</ul>';
+    html += unscheduledHtml(tl.unscheduled);
     return html;
   }
+  function viewTimeline() {
+    var edges = Store.list('dependencies');
+    var blockers = Store.list('blockers');
+    var tf = UI.timelineFilter;
+    var html = pageHead('Timeline', 'Một Timeline chung cho mọi campaign và task: xem theo cây campaign hoặc chỉ xem task, với một bộ lọc chung.');
+    html += readonlyNote() + collectionBanner('tasks');
+    var modeBtn = function (id, label) {
+      return '<button type="button" class="btn small ' + (UI.timelineMode === id ? '' : 'secondary') + '" data-action="timeline-mode" data-id="' + id + '">' + label + '</button>';
+    };
+    html += '<div class="gantt-toolbar"><span class="sub">Chế độ xem: </span>' +
+      modeBtn('tree', 'Cây campaign') + ' ' + modeBtn('tasks', 'Chỉ task') + '</div>';
+    html += '<details class="filter-details"' + ((typeof window !== 'undefined' && window.innerWidth && window.innerWidth > 820) ? ' open' : '') + '><summary class="filter-summary">Bộ lọc</summary><form class="inline filter-panel" id="timeline-filter-form"><span class="sub">Lọc Timeline:</span>' +
+      '<label>Campaign<select name="campaignId"><option value="all">Tất cả</option><option value=""' + (tf.campaignId === '' ? ' selected' : '') + '>Không thuộc campaign</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (tf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Người phụ trách<select name="ownerId"><option value="all">Tất cả</option>' + memberPairs().map(function (p) { return '<option value="' + esc(p[0]) + '"' + (tf.ownerId === p[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Trạng thái<select name="status"><option value="all">Tất cả</option>' + TASK_STATUSES.map(function (p) { return '<option value="' + p[0] + '"' + (tf.status === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
+      '<button class="btn secondary" type="submit">Lọc</button>' +
+      ((tf.campaignId !== 'all' || tf.ownerId !== 'all' || tf.status !== 'all') ? ' <button class="btn secondary" type="button" data-action="timeline-filter-clear">Xóa lọc</button>' : '') +
+      '</form></details>';
+    if (UI.timelineMode === 'tasks') {
+      html += taskTimelineHtml(visibleList('tasks'), edges, blockers, tf);
+      return html;
+    }
+    var tree = D.buildCampaignTreeTimeline(
+      { campaigns: visibleList('campaigns'), phases: Store.list('phases'), activities: Store.list('activities'), tasks: Store.list('tasks'), dependencies: edges, blockers: blockers },
+      { filter: tf, today: todayISO() }
+    );
+    html += '<div data-viz="timeline-tree"><p class="sub">Đang hiển thị ' + tree.datedCount + '/' + tree.totalCount + ' task có đủ ngày để vẽ Timeline.</p>';
+    html += ganttHtml(tree.rows, tree.edges);
+    html += '</div>';
+    html += unscheduledHtml(tree.unscheduled);
+    return html;
+  }
+
+  // ---------- Công việc ----------
   function viewTasks() {
     var allTasks = visibleList('tasks');
     var edges = Store.list('dependencies');
@@ -4404,7 +4444,7 @@
       return true;
     });
     var html = pageHead('Task', 'Một danh sách task dùng chung ở mọi màn hình. Bấm vào tên task để mở chi tiết và sửa.',
-      ed ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button>' : '');
+      '<button class="btn secondary" data-action="open-timeline">Mở Timeline</button>' + (ed ? ' <button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button>' : ''));
     html += readonlyNote() + collectionBanner('tasks');
     html += '<details class="filter-details"' + ((typeof window !== 'undefined' && window.innerWidth && window.innerWidth > 820) ? ' open' : '') + '><summary class="filter-summary">Bộ lọc</summary><form class="inline filter-panel" id="task-filter-form"><span class="sub">Lọc task:</span>' +
       '<label>Campaign<select name="campaignId"><option value="all">Tất cả</option><option value=""' + (tf.campaignId === '' ? ' selected' : '') + '>Task độc lập</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (tf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
@@ -4416,11 +4456,6 @@
       '<label><span><input type="checkbox" name="unassigned"' + (tf.unassigned ? ' checked' : '') + '> Chỉ task chưa phân công</span></label>' +
       '<button class="btn secondary" type="submit">Lọc</button></form></details>' +
       '<p class="sub">Đang hiển thị ' + tasks.length + '/' + allTasks.length + ' task.</p>';
-    html += tabsHtml([['list', 'Danh sách Task'], ['timeline', 'Timeline']], UI.taskTab, 'task-tab');
-    if (UI.taskTab === 'timeline') {
-      html += taskTimelineHtml(tasks, edges, blockers);
-      return html;
-    }
     if (!tasks.length && !collLoadingOrError('tasks')) {
       html += emptyState('Chưa có task nào', 'Tạo task đầu tiên — task có thể gắn với campaign hoặc để độc lập.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button></p>' : '');
     } else {
@@ -5285,7 +5320,7 @@
   // ---------- Router / khởi tạo ----------
   var VIEWS = {
     'overview': viewOverview, 'my-work': viewMyWork, 'brand': viewBrand, 'campaigns': viewCampaigns,
-    'content': viewContent, 'tasks': viewTasks, 'approvals': viewApprovals, 'team': viewTeam,
+    'timeline': viewTimeline, 'content': viewContent, 'tasks': viewTasks, 'approvals': viewApprovals, 'team': viewTeam,
     'kpi': viewKpi, 'channels': viewChannels, 'ads': viewAds, 'reports': viewReports, 'settings': viewSettings
   };
   function authGateView() {
@@ -5900,7 +5935,18 @@
     if (action === 'gantt-today') { UI.ganttScrollToday = true; render(); }
     if (action === 'gantt-range-clear') { UI.ganttRange = { from: '', to: '' }; render(); }
     if (action === 'approvals-tab') { UI.approvalsTab = id; render(); }
-    if (action === 'task-tab') { UI.taskTab = id; render(); }
+    if (action === 'timeline-mode') { UI.timelineMode = (id === 'tasks' ? 'tasks' : 'tree'); render(); }
+    if (action === 'timeline-filter-clear') { UI.timelineFilter = { campaignId: 'all', ownerId: 'all', status: 'all' }; render(); }
+    if (action === 'open-timeline') {
+      // Mở Timeline từ màn Task: chế độ "Chỉ task" + mang theo đúng 3 lọc
+      // campaign/người phụ trách/trạng thái hiện tại của màn Task (hàm
+      // thuần D.timelineStateFromTaskFilter — không mang các lọc phụ).
+      var tlState = D.timelineStateFromTaskFilter(UI.taskFilter);
+      UI.timelineMode = tlState.mode;
+      UI.timelineFilter = tlState.filter;
+      if (window.location.hash !== '#/timeline') window.location.hash = '#/timeline';
+      render();
+    }
     if (action === 'task-timeline-group') { UI.taskTimelineGroupBy = id; render(); }
     if (action === 'campaign-baseline') {
       // R2-28c + chốt CẢ CÂY (13/11): một lần bấm chụp mốc cho campaign +
@@ -6105,6 +6151,17 @@
         status: String(val('status') || 'all'), priority: String(val('priority') || 'all'),
         due: String(val('due') || 'all'), blocked: String(val('blocked') || 'all'),
         unassigned: !!fd.get('unassigned')
+      };
+      render(); return;
+    }
+    if (f.id === 'timeline-filter-form') {
+      // Select campaign có option value="" (Không thuộc campaign) — KHÔNG
+      // được || 'all' vì '' là giá trị lọc có nghĩa; chỉ thiếu field mới all.
+      var tlCampVal = val('campaignId');
+      UI.timelineFilter = {
+        campaignId: (tlCampVal === null || tlCampVal === undefined) ? 'all' : String(tlCampVal),
+        ownerId: String(val('ownerId') || 'all'),
+        status: String(val('status') || 'all')
       };
       render(); return;
     }

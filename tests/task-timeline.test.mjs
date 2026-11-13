@@ -1,13 +1,14 @@
 // tests/task-timeline.test.mjs
-// View Timeline trong màn Task (tab Timeline, dùng lại engine ganttHtml):
+// Builder Timeline "Chỉ task" (trước là tab Timeline của màn Task, nay là
+// chế độ 'tasks' của view Timeline hợp nhất — xem timeline-merge.test.mjs):
 // - [unit] D.buildTaskTimeline là hàm THUẦN dựng hàng/lọc/nhóm: tập hàng
 //   đúng theo dữ kiện, 3 chế độ nhóm (campaign / người phụ trách / không
 //   nhóm), lọc co hàng + edges phụ thuộc, đếm "Chưa xếp lịch".
 // - [demo] fixture demo: mọi task có đủ ngày đều có hàng, đúng 1 task
 //   chưa xếp lịch (task-f thiếu cả hai mốc).
-// - [static] màn Task có tab Timeline cùng hệ tabsHtml, gọi ganttHtml với
-//   hàng/edges của builder, mục Chưa xếp lịch (N) bấm mở được chi tiết,
-//   hai Gantt cũ giữ nguyên lời gọi.
+// - [static] chế độ Chỉ task của view Timeline gọi ganttHtml với hàng/edges
+//   của builder + bộ lọc chung UI.timelineFilter, mục Chưa xếp lịch (N) bấm
+//   mở được chi tiết; màn Task không còn tab — có nút "Mở Timeline".
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -183,21 +184,22 @@ test('TL [demo]: dữ liệu demo — 16/17 task có hàng Timeline, đúng 1 ch
 });
 
 // ---------- [static] bề mặt màn Task ----------
-test('TL [static]: màn Task có tab Timeline cùng hệ tabsHtml + state riêng, tab Danh sách giữ nguyên', () => {
-  assert.match(src, /taskTab: 'list'/);
+test('TL [static]: màn Task không còn thanh tab — một danh sách duy nhất + nút Mở Timeline ở đầu màn', () => {
+  assert.doesNotMatch(src, /taskTab: 'list'/);
+  assert.doesNotMatch(src, /data-action="task-tab"|action === 'task-tab'/);
   assert.match(src, /taskTimelineGroupBy: 'campaign'/);
   const vt = section('function viewTasks()', '// ---------- Duyệt nội dung ----------');
-  assert.match(vt, /tabsHtml\(\[\['list', 'Danh sách Task'\], \['timeline', 'Timeline'\]\], UI\.taskTab, 'task-tab'\)/);
-  assert.match(vt, /if \(UI\.taskTab === 'timeline'\) \{\s*html \+= taskTimelineHtml\(tasks, edges, blockers\);/);
-  assert.match(src, /if \(action === 'task-tab'\) \{ UI\.taskTab = id; render\(\); \}/);
-  // Nội dung cũ của tab Danh sách còn nguyên: bảng task + trở ngại + yêu cầu.
+  assert.doesNotMatch(vt, /tabsHtml\(\[\['list', 'Danh sách Task'\], \['timeline', 'Timeline'\]\]/);
+  assert.match(vt, /data-action="open-timeline">Mở Timeline<\/button>/);
+  // Nội dung danh sách cũ còn nguyên: bảng task + trở ngại + yêu cầu.
   assert.match(vt, /'tasks-main'/);
   assert.match(vt, /'tasks-blockers'/);
   assert.match(vt, /'tasks-requests'/);
 });
 
-test('TL [static]: Timeline dùng lại ganttHtml + builder thuần + bộ lọc UI.taskFilter, không engine mới', () => {
-  const tl = section('function taskTimelineHtml(tasks, edges, blockers)', 'function viewTasks()');
+test('TL [static]: chế độ Chỉ task dùng lại ganttHtml + builder thuần + bộ lọc chung UI.timelineFilter, không engine mới', () => {
+  const tl = section('function taskTimelineHtml(tasks, edges, blockers, filter)', 'function viewTimeline()');
+  assert.match(tl, /var tf = filter \|\| UI\.timelineFilter;/);
   assert.match(tl, /D\.buildTaskTimeline\(tasks, \{/);
   assert.match(tl, /filter: \{ campaignId: tf\.campaignId, ownerId: tf\.ownerId, status: tf\.status \}/);
   assert.match(tl, /ganttHtml\(tl\.rows, tl\.edges\)/);
@@ -210,13 +212,19 @@ test('TL [static]: Timeline dùng lại ganttHtml + builder thuần + bộ lọc
 });
 
 test('TL [static]: mục Chưa xếp lịch (N) ở cuối Timeline, bấm vào mở chi tiết task', () => {
-  const tl = section('function taskTimelineHtml(tasks, edges, blockers)', 'function viewTasks()');
-  assert.ok(tl.indexOf('ganttHtml(tl.rows, tl.edges)') < tl.indexOf('Chưa xếp lịch ('), 'mục chưa xếp lịch phải nằm sau biểu đồ');
-  assert.match(tl, /'<h3>Chưa xếp lịch \(' \+ tl\.unscheduled\.length \+ '\)<\/h3>'/);
-  assert.match(tl, /data-action="open-task" data-id="' \+ esc\(t\.id\)/);
+  const tl = section('function taskTimelineHtml(tasks, edges, blockers, filter)', 'function viewTimeline()');
+  assert.ok(tl.indexOf('ganttHtml(tl.rows, tl.edges)') < tl.indexOf('unscheduledHtml(tl.unscheduled)'), 'mục chưa xếp lịch phải nằm sau biểu đồ');
+  const un = section('function unscheduledHtml(list)', 'function taskTimelineHtml(');
+  assert.match(un, /'<h3>Chưa xếp lịch \(' \+ list\.length \+ '\)<\/h3>'/);
+  assert.match(un, /data-action="open-task" data-id="' \+ esc\(t\.id\)/);
 });
 
-test('TL [static]: hai Gantt hiện hữu giữ nguyên lời gọi (portfolio + chi tiết campaign)', () => {
-  assert.match(src, /ganttHtml\(ganttRowsPortfolio\(\), Store\.list\('dependencies'\)\)/);
+test('TL [static]: Gantt chi tiết campaign giữ nguyên lời gọi; trang Campaigns không còn Gantt tổng thể', () => {
   assert.match(src, /ganttHtml\(ganttRowsCampaign\(c\), Store\.list\('dependencies'\)\)/);
+  const vc = section('function viewCampaigns()', '// ---------- R3.1-VIZ:');
+  assert.doesNotMatch(vc, /Biểu đồ kế hoạch tổng thể/);
+  assert.doesNotMatch(vc, /ganttRowsPortfolio\(\)/);
+  // Builder cây cũ vẫn còn trong app cho Gantt chi tiết/đối chiếu; view
+  // Timeline chế độ cây dùng builder thuần mới D.buildCampaignTreeTimeline.
+  assert.match(src, /function ganttRowsPortfolio\(\)/);
 });

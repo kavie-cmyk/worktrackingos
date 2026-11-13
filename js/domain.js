@@ -747,6 +747,235 @@
     return { rows: rows, edges: edges, unscheduled: unscheduled, datedCount: dated.length, totalCount: list.length, groupBy: groupBy };
   }
 
+  // ---------- Timeline hợp nhất — chế độ "Cây campaign" ----------
+
+  /**
+   * Dựng tập hàng Gantt cho chế độ "Cây campaign" của view Timeline THUẦN
+   * (không đọc Store/DOM): cây campaign → phase → activity → task (task con
+   * lồng theo parentId), task độc lập (không campaignId, hoặc campaignId
+   * không còn trong danh sách campaign) gom vào nhóm CUỐI
+   * "Không thuộc campaign" (key 'grp:no-campaign').
+   *
+   * Hàng task mang đúng định dạng engine ganttHtml cần (như buildTaskTimeline:
+   * key/coll/ganttId/kind/status/checklist/baseline/completed/milestone +
+   * overdue/blocked). Task THIẾU ngày bắt đầu hoặc hạn KHÔNG thành hàng —
+   * trả riêng ở `unscheduled` đúng định nghĩa của buildTaskTimeline (đếm
+   * "Chưa xếp lịch (N)" như chế độ phẳng). edges chỉ còn cạnh mà CẢ hai đầu
+   * đều là task đang hiển thị (có ngày, qua lọc).
+   *
+   * BỘ LỌC (options.filter = {campaignId, ownerId|assigneeId, status};
+   * 'all'/thiếu = không lọc; campaignId '' = chỉ task độc lập):
+   * - campaignId thu hẹp cây: id cụ thể → chỉ cây của campaign đó (nhóm độc
+   *   lập bị loại); '' → chỉ nhóm độc lập.
+   * - ownerId/status CHỈ áp lên hàng task.
+   *
+   * ĐỊNH NGHĨA CẮT TỈA (khi có lọc task — ownerId hoặc status khác 'all'):
+   * - Hàng cấu trúc (phase / activity / nhóm "Chưa gắn phase/activity" /
+   *   nhóm "Không thuộc campaign" / campaign) chỉ được giữ khi còn ÍT NHẤT
+   *   MỘT hàng task hiển thị là hậu duệ của nó (qua chuỗi parentKey).
+   * - NGOẠI LỆ: hàng campaign được chọn TƯỜNG MINH bằng filter.campaignId
+   *   (id cụ thể) thì luôn giữ, kể cả khi không còn task hiển thị nào.
+   * - Khi KHÔNG có lọc task: không cắt tỉa — giữ nguyên cấu trúc như Gantt
+   *   tổng thể cũ (campaign/phase/activity hiện đủ kể cả khi chưa có task
+   *   có ngày bên dưới).
+   * Task có cha bị lọc mất (hoặc cha chưa xếp lịch) thì thành gốc của nhóm
+   * cấu trúc của chính nó — không task nào qua lọc bị mất khỏi cây.
+   * @param {object} data { campaigns, phases, activities, tasks,
+   *   dependencies (hoặc edges), blockers }
+   * @param {object} [options] { filter, today: 'yyyy-mm-dd' }
+   * @returns {{rows:Array, edges:Array, unscheduled:Array, datedCount:number,
+   *   totalCount:number, mode:string}} totalCount = số task qua lọc (kể cả
+   *   chưa xếp lịch); datedCount = số task thành hàng.
+   */
+  function buildCampaignTreeTimeline(data, options) {
+    data = data || {};
+    options = options || {};
+    var filter = options.filter || {};
+    var today = options.today ? String(options.today).slice(0, 10) : toISODate(new Date());
+    var fCamp = (filter.campaignId === undefined || filter.campaignId === null) ? 'all' : filter.campaignId;
+    var fOwnerRaw = filter.ownerId !== undefined ? filter.ownerId : filter.assigneeId;
+    var fOwner = (fOwnerRaw === undefined || fOwnerRaw === null) ? 'all' : fOwnerRaw;
+    var fStatus = (filter.status === undefined || filter.status === null) ? 'all' : filter.status;
+    var taskFilterActive = fOwner !== 'all' || fStatus !== 'all';
+    function isArchivedEntity(x) { return !!(x && (x.archivedAt || x.archived || normStatus(x.status) === 'archived')); }
+    var campaigns = (data.campaigns || []).filter(function (c) { return c && !isArchivedEntity(c); });
+    var campById = {};
+    campaigns.forEach(function (c) { campById[c.id] = c; });
+    var openBlocked = {};
+    (data.blockers || []).forEach(function (b) { if (b && b.status === 'open' && b.taskId) openBlocked[b.taskId] = true; });
+    function isIndependent(t) { return !t.campaignId || !campById[t.campaignId]; }
+    function passFilter(t) {
+      if (!t || isArchivedTask(t)) return false;
+      if (fCamp !== 'all') {
+        if (fCamp === '') { if (!isIndependent(t)) return false; }
+        else if ((t.campaignId || '') !== fCamp) return false;
+      }
+      if (fOwner !== 'all' && (t.assigneeId || '') !== fOwner) return false;
+      if (fStatus !== 'all' && t.status !== fStatus) return false;
+      return true;
+    }
+    var scoped = (data.tasks || []).filter(passFilter);
+    function isDated(t) { return !!(t.startDate && t.dueDate); }
+    var dated = scoped.filter(isDated);
+    var unscheduled = scoped.filter(function (t) { return !isDated(t); })
+      .slice().sort(function (a, b) { return String(a.title || '').localeCompare(String(b.title || ''), 'vi'); });
+    var datedIds = {};
+    dated.forEach(function (t) { datedIds[t.id] = true; });
+    var edges = (data.dependencies || data.edges || []).filter(function (e) {
+      return e && datedIds[e.predecessorId] && datedIds[e.successorId];
+    });
+    function treeTaskRow(t, parentKey, depth) {
+      var due = t.dueDate ? String(t.dueDate).slice(0, 10) : '';
+      return {
+        key: 'task:' + t.id, parentKey: parentKey, coll: 'tasks', id: t.id, ganttId: t.id, title: t.title,
+        kind: 'task', depth: depth, start: t.startDate, end: t.dueDate, status: t.status, checklist: t.checklist,
+        overdue: !!(due && due < today && !isCompleted(t) && normStatus(t.status) !== 'cancelled'),
+        blocked: !!t.isBlocked || !!openBlocked[t.id],
+        bStart: t.baselineStartDate, bEnd: t.baselineDueDate, completed: isCompleted(t),
+        milestone: !!t.isMilestone, hasChildren: false
+      };
+    }
+    // Đẩy cây task của một phạm vi cấu trúc vào rows: gốc là task có cha
+    // KHÔNG nằm trong tập task có ngày của phạm vi (cha bị lọc/chưa xếp
+    // lịch/thuộc phạm vi khác) — gốc nhận parentKey/depth từ hàm truyền vào.
+    function appendDatedTaskTree(rows, scopeTasks, rootKeyOf, rootDepthOf) {
+      var inScope = {};
+      scopeTasks.forEach(function (t) { inScope[t.id] = true; });
+      var byParent = {};
+      scopeTasks.forEach(function (t) {
+        var k = (t.parentId && inScope[t.parentId]) ? t.parentId : '__root';
+        (byParent[k] = byParent[k] || []).push(t);
+      });
+      var seen = {};
+      function walk(t, parentKey, depth) {
+        if (seen[t.id]) return;
+        seen[t.id] = true;
+        rows.push(treeTaskRow(t, parentKey, depth));
+        (byParent[t.id] || []).forEach(function (ch) { walk(ch, 'task:' + t.id, depth + 1); });
+      }
+      (byParent.__root || []).forEach(function (t) { walk(t, rootKeyOf(t), rootDepthOf(t)); });
+    }
+    var rows = [];
+    var scopedCampaigns = campaigns.filter(function (c) {
+      if (fCamp === 'all') return true;
+      if (fCamp === '') return false;
+      return c.id === fCamp;
+    });
+    scopedCampaigns.forEach(function (c) {
+      var campKey = 'camp:' + c.id;
+      var phases = (data.phases || []).filter(function (p) { return p && p.campaignId === c.id; });
+      var phaseIds = {};
+      phases.forEach(function (p) { phaseIds[p.id] = true; });
+      var acts = (data.activities || []).filter(function (a) { return a && a.campaignId === c.id; });
+      var actById = {};
+      acts.forEach(function (a) { actById[a.id] = a; });
+      var ctasks = dated.filter(function (t) { return t.campaignId === c.id; });
+      rows.push({
+        key: campKey, coll: 'campaigns', id: c.id, ganttId: c.id, title: c.name, kind: 'campaign',
+        status: c.status, depth: 0, start: c.startDate, end: c.endDate,
+        bStart: c.baselineStartDate, bEnd: c.baselineEndDate,
+        hasChildren: false, completed: normStatus(c.status) === 'completed'
+      });
+      phases.forEach(function (p) {
+        var pkey = 'phase:' + p.id;
+        rows.push({
+          key: pkey, parentKey: campKey, coll: 'phases', id: p.id, ganttId: p.id, title: p.name, kind: 'phase',
+          status: p.status, depth: 1, start: p.startDate, end: p.endDate,
+          bStart: p.baselineStartDate, bEnd: p.baselineEndDate, hasChildren: false
+        });
+        acts.filter(function (a) { return a.phaseId === p.id; }).forEach(function (a) {
+          rows.push({
+            key: 'act:' + a.id, parentKey: pkey, coll: 'activities', id: a.id, ganttId: a.id, title: a.name, kind: 'activity',
+            status: a.status, depth: 2, start: a.startDate || p.startDate, end: a.endDate || p.endDate,
+            bStart: a.baselineStartDate, bEnd: a.baselineEndDate, hasChildren: false
+          });
+        });
+      });
+      acts.filter(function (a) { return !a.phaseId || !phaseIds[a.phaseId]; }).forEach(function (a) {
+        rows.push({
+          key: 'act:' + a.id, parentKey: campKey, coll: 'activities', id: a.id, ganttId: a.id,
+          title: a.name + (a.channel ? ' (' + a.channel + ')' : ''), kind: 'activity',
+          status: a.status, depth: 1, start: a.startDate, end: a.endDate,
+          bStart: a.baselineStartDate, bEnd: a.baselineEndDate, hasChildren: false
+        });
+      });
+      function rootKeyOf(t) {
+        if (t.activityId && actById[t.activityId]) return 'act:' + t.activityId;
+        if (t.phaseId && phaseIds[t.phaseId]) return 'phase:' + t.phaseId;
+        return 'grp:' + c.id;
+      }
+      function rootDepthOf(t) {
+        if (t.activityId && actById[t.activityId]) {
+          var a = actById[t.activityId];
+          return (a.phaseId && phaseIds[a.phaseId]) ? 3 : 2;
+        }
+        return 2;
+      }
+      // Nhóm "Chưa gắn phase/activity" chỉ dựng khi có task GỐC rơi vào nó.
+      var inCamp = {};
+      ctasks.forEach(function (t) { inCamp[t.id] = true; });
+      var needGrp = ctasks.some(function (t) {
+        return !(t.parentId && inCamp[t.parentId]) && rootKeyOf(t) === 'grp:' + c.id;
+      });
+      if (needGrp) {
+        rows.push({ key: 'grp:' + c.id, parentKey: campKey, coll: '', id: '', ganttId: '', title: 'Chưa gắn phase/activity', kind: 'group', depth: 1, hasChildren: false });
+      }
+      appendDatedTaskTree(rows, ctasks, rootKeyOf, rootDepthOf);
+    });
+    // Nhóm cuối: task độc lập.
+    var indScoped = scoped.filter(isIndependent);
+    if (indScoped.length) {
+      rows.push({ key: 'grp:no-campaign', coll: '', id: '', ganttId: '', title: 'Không thuộc campaign', kind: 'group', depth: 0, hasChildren: false });
+      appendDatedTaskTree(rows, dated.filter(isIndependent),
+        function () { return 'grp:no-campaign'; }, function () { return 1; });
+    }
+    // Cắt tỉa nhánh rỗng khi có lọc task (định nghĩa ở đầu hàm): giữ tổ tiên
+    // của mọi hàng task hiển thị; campaign được chọn tường minh luôn giữ.
+    if (taskFilterActive) {
+      var keep = {};
+      rows.forEach(function (r) { if (r.kind === 'task') keep[r.key] = true; });
+      var changed = true;
+      while (changed) {
+        changed = false;
+        rows.forEach(function (r) {
+          if (keep[r.key] && r.parentKey && !keep[r.parentKey]) { keep[r.parentKey] = true; changed = true; }
+        });
+      }
+      if (fCamp !== 'all' && fCamp !== '') keep['camp:' + fCamp] = true;
+      rows = rows.filter(function (r) { return !!keep[r.key]; });
+      // edges chỉ còn cạnh giữa các hàng task đang hiển thị (hàng task không
+      // bị cắt tỉa nên edges giữ nguyên như đã lọc theo datedIds).
+    }
+    // hasChildren tính lại trên đúng tập hàng cuối cùng.
+    var hasChild = {};
+    rows.forEach(function (r) { if (r.parentKey) hasChild[r.parentKey] = true; });
+    rows.forEach(function (r) { r.hasChildren = !!hasChild[r.key]; });
+    return { rows: rows, edges: edges, unscheduled: unscheduled, datedCount: dated.length, totalCount: scoped.length, mode: 'tree' };
+  }
+
+  /**
+   * Trạng thái khởi tạo cho view Timeline khi mở từ nút "Mở Timeline" ở màn
+   * Task: chế độ "Chỉ task" + bộ lọc của view nhận ĐÚNG 3 lọc campaign /
+   * người phụ trách / trạng thái hiện tại của màn Task (các lọc phụ của màn
+   * Task — ưu tiên/hạn/bị chặn — không thuộc bộ lọc chung của Timeline nên
+   * không mang theo). Hàm thuần để kiểm thử ở tầng state.
+   * @param {object} taskFilter UI.taskFilter hiện tại của màn Task.
+   * @returns {{mode:string, filter:{campaignId:*, ownerId:*, status:*}}}
+   */
+  function timelineStateFromTaskFilter(taskFilter) {
+    var tf = taskFilter || {};
+    var owner = (tf.ownerId !== undefined && tf.ownerId !== null) ? tf.ownerId
+      : ((tf.assigneeId !== undefined && tf.assigneeId !== null) ? tf.assigneeId : 'all');
+    return {
+      mode: 'tasks',
+      filter: {
+        campaignId: (tf.campaignId === undefined || tf.campaignId === null) ? 'all' : tf.campaignId,
+        ownerId: owner,
+        status: (tf.status === undefined || tf.status === null) ? 'all' : tf.status
+      }
+    };
+  }
+
   // ---------- TikTok / Publish ----------
 
   /** Lấy platform đã chuẩn hoá của một variant. */
@@ -1829,6 +2058,8 @@
     campaignProgress: campaignProgress,
     checklistProgress: checklistProgress,
     buildTaskTimeline: buildTaskTimeline,
+    buildCampaignTreeTimeline: buildCampaignTreeTimeline,
+    timelineStateFromTaskFilter: timelineStateFromTaskFilter,
     tiktokCanPublish: tiktokCanPublish,
     shouldCreatePublishJob: shouldCreatePublishJob,
     formatDateVN: formatDateVN,
