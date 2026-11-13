@@ -972,7 +972,13 @@
           return o._manualEntry === true;
         });
       }));
-      return Promise.all(jobs).then(function () { return null; });
+      return Promise.all(jobs).then(function () {
+        // KPI auto: SAU khi measurements + mappings đã merge xong mới tính
+        // actual tự động (đè actual ghi tay suy từ measurements — KPI auto
+        // không có measurement hợp lệ). Chỉ sửa state, không ghi DB.
+        self.refreshKpiAutoActuals();
+        return null;
+      });
     },
 
     // ======================================================================
@@ -1341,6 +1347,23 @@
               payload.target_version = (Number(cur.targetVersion || cur.target_version) || 1) + 1;
             }
           }
+          // KPI auto: đổi CẤU HÌNH NGUỒN (definition.dataSource) cũng tăng
+          // target_version như đổi target (chỉ khi target chưa bump ở trên —
+          // đổi cả hai cùng lúc vẫn chỉ tăng 1 version, snapshot là definition mới).
+          if (cur && payload.target_version === undefined && (obj.definition !== undefined || obj.dataSource !== undefined)) {
+            var dom = this._domain ? this._domain() : null;
+            if (dom && dom.kpiDataSource) {
+              var mergedKpi = Object.assign({}, cur, obj);
+              if (obj.dataSource !== undefined) {
+                var nd = Object.assign({}, (obj.definition && typeof obj.definition === 'object') ? obj.definition : (cur.definition && typeof cur.definition === 'object' ? cur.definition : {}));
+                if (obj.dataSource) nd.dataSource = obj.dataSource; else delete nd.dataSource;
+                mergedKpi.definition = nd;
+              }
+              if (JSON.stringify(dom.kpiDataSource(cur) || null) !== JSON.stringify(dom.kpiDataSource(mergedKpi) || null)) {
+                payload.target_version = (Number(cur.targetVersion || cur.target_version) || 1) + 1;
+              }
+            }
+          }
           break;
         }
         case 'cashTransactions': {
@@ -1598,6 +1621,8 @@
         var prefs = this.getPrefs();
         this.currentUserId = prefs.demoUserId || 'member-lead';
       }
+      // KPI auto (demo): tính actual tự động ngay khi nạp xong state.
+      try { this.refreshKpiAutoActuals(); } catch (e) { /* domain chưa sẵn sàng: actual được tính ở lần refresh sau */ }
     },
     _persistDemo: function () {
       if (this.mode !== 'demo') return;
@@ -1678,6 +1703,231 @@
       }).catch(function () { return rows; });
     },
 
+    // ======================================================================
+    // KPI ↔ BỘ ĐẾM BÀI ĐÃ ĐĂNG — actual tự động từ metric_observations.
+    // Cấu hình nguồn ở kpi.definition.dataSource (domain.kpiDataSource);
+    // actual của KPI auto là STATE SUY DIỄN như measurements — KHÔNG ghi
+    // xuống DB (không tạo measurement, không update kpis.actual vì actual
+    // không phải cột DB), và MỌI đường ghi measurement cho KPI auto bị
+    // chặn ở tầng store với mã KPI_AUTO_SOURCE (demo + remote như nhau).
+    // ======================================================================
+    /** Cấu hình nguồn post_metrics đã chuẩn hoá của KPI, hoặc null khi manual. */
+    _kpiDataSource: function (kpi) {
+      var Domain = this._domain();
+      if (Domain && Domain.kpiDataSource) return Domain.kpiDataSource(kpi);
+      // Fallback khi domain chưa nạp (giữ cùng ngữ nghĩa tối thiểu).
+      if (!kpi) return null;
+      var def = kpi.definition;
+      if (typeof def === 'string') { try { def = JSON.parse(def); } catch (e) { def = null; } }
+      var ds = (def && typeof def === 'object') ? (def.dataSource || def.data_source || null) : (kpi.dataSource || null);
+      if (!ds || typeof ds !== 'object' || String(ds.type || '') !== 'post_metrics') return null;
+      var metric = ds.metric || ds.metricCode || ds.metric_code || null;
+      if (metric === null || metric === undefined || String(metric).trim() === '') return null;
+      var out = { type: 'post_metrics', metric: String(metric).trim(), mode: ds.mode === 'period_sum' ? 'period_sum' : 'latest_sum' };
+      var chan = ds.channelAccountId || ds.channel_account_id || null;
+      if (chan !== null && chan !== undefined && String(chan) !== '') out.channelAccountId = chan;
+      return out;
+    },
+    /** Lỗi chặn ghi measurement cho KPI auto (mã ổn định cho UI map). */
+    _kpiAutoSourceError: function () {
+      return { ok: false, code: 'KPI_AUTO_SOURCE', error: 'KPI này lấy số tự động từ bài đã đăng, không nhập tay được.' };
+    },
+    /** Trả lỗi KPI_AUTO_SOURCE khi kpiLike là KPI auto, ngược lại null. */
+    _kpiAutoBlocked: function (kpiLike) {
+      return this._kpiDataSource(kpiLike) ? this._kpiAutoSourceError() : null;
+    },
+    /** Pillar chính của content item: cột thật / snake / custom_fields (như contentPillarId ở app). */
+    _contentPillarId: function (ci) {
+      if (!ci) return null;
+      if (ci.pillarId || ci.pillar_id) return ci.pillarId || ci.pillar_id;
+      var cf = ci.customFields || ci.custom_fields || {};
+      return cf.pillarId || cf.pillar_id || null;
+    },
+    /** BU/product của content item: buProductId / productId (camel hoặc snake, cả custom_fields). */
+    _contentBuId: function (ci) {
+      if (!ci) return null;
+      var v = ci.buProductId || ci.bu_product_id || ci.productId || ci.product_id || null;
+      if (v) return v;
+      var cf = ci.customFields || ci.custom_fields || {};
+      return cf.buProductId || cf.bu_product_id || cf.productId || cf.product_id || null;
+    },
+    /** Content item hiệu lực của một bài đã đăng: trực tiếp, hoặc qua variant của bài. */
+    _postContentItemId: function (post) {
+      if (!post) return null;
+      if (post.contentItemId || post.content_item_id) return post.contentItemId || post.content_item_id;
+      var vid = post.variantId || post.variant_id;
+      if (vid) {
+        var v = this.get('variants', vid);
+        if (v && (v.contentItemId || v.content_item_id)) return v.contentItemId || v.content_item_id;
+      }
+      return null;
+    },
+    /**
+     * Resolve các bài đã đăng thuộc scope của KPI qua quan hệ THẬT:
+     * content → post.contentItemId; campaign → post.campaignId (campaign
+     * hiệu lực của lần đăng); pillar → contentItems có pillar đó;
+     * brand/product → contentItems có buProductId/productId đó;
+     * activity/task → contentItems liên kết activity/task đó (task còn qua
+     * task.contentItemId); channel → lọc channelAccountId từ
+     * dataSource.channelAccountId hoặc field kênh trên KPI; workspace →
+     * toàn bộ bài. Scope không resolve được quan hệ → []. Khử trùng theo id.
+     * dataSource.channelAccountId (khi có) lọc THÊM trên mọi scope.
+     */
+    kpiScopePosts: function (kpi) {
+      if (!kpi) return [];
+      var self = this;
+      var posts = this.state.externalPosts || [];
+      var scope = String(kpi.scopeType || kpi.scope_type || '').trim().toLowerCase();
+      if (!scope) {
+        if (kpi.activityId || kpi.activity_id) scope = 'activity';
+        else if (kpi.taskId || kpi.task_id) scope = 'task';
+        else if (kpi.contentItemId || kpi.content_item_id) scope = 'content';
+        else if (kpi.pillarId || kpi.pillar_id) scope = 'pillar';
+        else if (kpi.buProductId || kpi.bu_product_id || kpi.productId || kpi.product_id) scope = 'bu_product';
+        else if (kpi.channelAccountId || kpi.channel_account_id) scope = 'channel';
+        else if (kpi.campaignId || kpi.campaign_id) scope = 'campaign';
+        else scope = 'workspace';
+      }
+      function byContentIds(ids) {
+        var set = {};
+        (ids || []).forEach(function (id) { if (id !== null && id !== undefined && String(id) !== '') set[String(id)] = true; });
+        return posts.filter(function (p) {
+          var cid = self._postContentItemId(p);
+          return cid !== null && cid !== undefined && !!set[String(cid)];
+        });
+      }
+      var out;
+      switch (scope) {
+        case 'content': {
+          var cid = kpi.contentItemId || kpi.content_item_id || null;
+          out = cid ? byContentIds([cid]) : [];
+          break;
+        }
+        case 'campaign': {
+          var camp = kpi.campaignId || kpi.campaign_id || null;
+          out = camp ? posts.filter(function (p) { return String(p.campaignId || p.campaign_id || '') === String(camp); }) : [];
+          break;
+        }
+        case 'pillar': {
+          var pid = kpi.pillarId || kpi.pillar_id || null;
+          if (!pid) { out = []; break; }
+          var pIds = (this.state.contentItems || []).filter(function (ci) {
+            var cp = self._contentPillarId(ci);
+            return cp !== null && cp !== undefined && String(cp) === String(pid);
+          }).map(function (ci) { return ci.id; });
+          out = byContentIds(pIds);
+          break;
+        }
+        case 'bu_product': case 'brand': case 'brand_product': case 'product': {
+          var bu = kpi.buProductId || kpi.bu_product_id || kpi.productId || kpi.product_id || null;
+          if (!bu) { out = []; break; }
+          var bIds = (this.state.contentItems || []).filter(function (ci) {
+            var cb = self._contentBuId(ci);
+            return cb !== null && cb !== undefined && String(cb) === String(bu);
+          }).map(function (ci) { return ci.id; });
+          out = byContentIds(bIds);
+          break;
+        }
+        case 'activity': {
+          var aid = kpi.activityId || kpi.activity_id || null;
+          if (!aid) { out = []; break; }
+          var aIds = (this.state.contentItems || []).filter(function (ci) {
+            return String(ci.activityId || ci.activity_id || '') === String(aid);
+          }).map(function (ci) { return ci.id; });
+          out = byContentIds(aIds);
+          break;
+        }
+        case 'task': {
+          var tid = kpi.taskId || kpi.task_id || null;
+          if (!tid) { out = []; break; }
+          var tIds = (this.state.contentItems || []).filter(function (ci) {
+            return String(ci.taskId || ci.task_id || '') === String(tid);
+          }).map(function (ci) { return ci.id; });
+          var task = this.get('tasks', tid);
+          if (task && (task.contentItemId || task.content_item_id)) tIds.push(task.contentItemId || task.content_item_id);
+          out = byContentIds(tIds);
+          break;
+        }
+        case 'channel': {
+          out = posts.slice();
+          break;
+        }
+        case 'workspace': {
+          out = posts.slice();
+          break;
+        }
+        default: {
+          var camp2 = kpi.campaignId || kpi.campaign_id || null;
+          out = camp2 ? posts.filter(function (p) { return String(p.campaignId || p.campaign_id || '') === String(camp2); }) : [];
+          break;
+        }
+      }
+      // Lọc kênh: dataSource.channelAccountId ưu tiên, sau đó field kênh trên KPI.
+      var cfg = this._kpiDataSource(kpi);
+      var chan = (cfg && cfg.channelAccountId) || kpi.channelAccountId || kpi.channel_account_id || kpi.channelId || null;
+      if (scope === 'channel' && !chan) {
+        out = []; // scope kênh mà không xác định được tài khoản → không resolve được
+      } else if (chan) {
+        out = out.filter(function (p) { return String(p.channelAccountId || p.channel_account_id || '') === String(chan); });
+      }
+      // Khử trùng theo post id.
+      var seen = {};
+      var deduped = [];
+      out.forEach(function (p) {
+        if (!p || p.id === null || p.id === undefined) return;
+        var k = String(p.id);
+        if (seen[k]) return;
+        seen[k] = true;
+        deduped.push(p);
+      });
+      return deduped;
+    },
+    /**
+     * Actual tự động của 1 KPI: manual → null; auto →
+     * domain.postMetricActual(kpi, kpiScopePosts(kpi), observations).
+     * Observations lấy từ metricObservations + manualMetricEntries chưa có
+     * trong đó (khử trùng theo id — cùng 1 observation không tính 2 lần).
+     */
+    kpiAutoActual: function (kpi) {
+      if (!kpi) return null;
+      if (!this._kpiDataSource(kpi)) return null;
+      var Domain = this._domain();
+      if (!Domain || !Domain.postMetricActual) return null;
+      var seen = {};
+      var obs = [];
+      (this.state.metricObservations || []).concat(this.state.manualMetricEntries || []).forEach(function (o) {
+        if (!o) return;
+        if (o.id !== null && o.id !== undefined && String(o.id) !== '') {
+          var k = String(o.id);
+          if (seen[k]) return;
+          seen[k] = true;
+        }
+        obs.push(o);
+      });
+      return Domain.postMetricActual(kpi, this.kpiScopePosts(kpi), obs);
+    },
+    /**
+     * Làm tươi actual cho MỌI KPI auto trong state: kpi.actual = value và
+     * kpi.autoActual = { postCount, latestObservedAt, rows }. KPI manual
+     * không bị đụng actual (chỉ dọn autoActual cũ nếu từng là auto).
+     * Chỉ sửa STATE — không ghi DB. Trả mảng KPI auto đã làm tươi.
+     */
+    refreshKpiAutoActuals: function () {
+      var self = this;
+      var updated = [];
+      (this.state.kpis || []).forEach(function (k) {
+        var r = self.kpiAutoActual(k);
+        if (!r) {
+          if (k.autoActual) delete k.autoActual;
+          return;
+        }
+        k.actual = r.value;
+        k.autoActual = { postCount: r.postCount, latestObservedAt: r.latestObservedAt, rows: r.rows };
+        updated.push(k);
+      });
+      return updated;
+    },
+
     /**
      * Chuẩn hoá input bình luận về dạng entity chung của bảng comments:
      * {entityType, entityId, body, mentions, authorId} hoặc dạng UI gửi
@@ -1703,6 +1953,16 @@
     create: function (collection, obj) {
       if (collection === 'comments') obj = this._normalizeComment(obj || {});
       obj = this._applyScopeDerivation(collection, obj || {});
+      // KPI auto: chặn MỌI đường tạo measurement / ghi actual trực tiếp
+      // (create measurements, create kpis kèm actual) — demo + remote.
+      var createBlock = null;
+      if (collection === 'measurements') {
+        var measKpi = this.get('kpis', (obj && (obj.kpiId || obj.kpi_id)) || null);
+        if (measKpi) createBlock = this._kpiAutoBlocked(measKpi);
+      } else if (collection === 'kpis' && obj && obj.actual != null) {
+        createBlock = this._kpiAutoBlocked(obj);
+      }
+      if (createBlock) return this.mode === 'supabase' ? Promise.resolve(createBlock) : createBlock;
       if (this.mode === 'supabase') return this._createRemote(collection, obj || {});
       // Demo dùng CÙNG guard quyền + validation như real (R32/R30).
       var guard = this._guard(collection, obj || {}, 'create');
@@ -1744,11 +2004,22 @@
       if (collection === 'externalPosts' && item.campaignId) {
         this._postMappings.push({ id: uid('mapping'), external_post_id: item.id, campaign_id: item.campaignId, variant_id: item.variantId || null, content_item_id: item.contentItemId || null, mapping_source: 'manual' });
       }
+      // KPI auto: thêm observation/KPI mới → làm tươi actual suy diễn.
+      if (collection === 'metricObservations' || collection === 'manualMetricEntries' || collection === 'kpis') this.refreshKpiAutoActuals();
       this.notify();
       return { ok: true, item: item };
     },
     _createRemote: function (collection, obj) {
       var self = this;
+      // KPI auto: chặn tạo measurement / ghi actual trực tiếp (như create()).
+      var remoteCreateBlock = null;
+      if (collection === 'measurements') {
+        var rMeasKpi = this.get('kpis', (obj && (obj.kpiId || obj.kpi_id)) || null);
+        if (rMeasKpi) remoteCreateBlock = this._kpiAutoBlocked(rMeasKpi);
+      } else if (collection === 'kpis' && obj && obj.actual != null) {
+        remoteCreateBlock = this._kpiAutoBlocked(obj);
+      }
+      if (remoteCreateBlock) return Promise.resolve(remoteCreateBlock);
       if (!this.workspaceId) return Promise.resolve({ ok: false, error: 'Chưa xác định được workspace hiện hành.' });
       if (collection === 'members') {
         return Promise.resolve({ ok: false, error: 'Thành viên được thêm bằng lời mời của Owner (Supabase Auth + memberships), không tạo trực tiếp ở đây.' });
@@ -1799,6 +2070,8 @@
           self.state[collection].push(item);
           if (collection === 'metricObservations' && item._manualEntry) self.state.manualMetricEntries.push(item);
           if (collection === 'manualMetricEntries') self.state.metricObservations.push(item);
+          // KPI auto: thêm observation/KPI mới → làm tươi actual suy diễn (chỉ state).
+          if (collection === 'metricObservations' || collection === 'manualMetricEntries' || collection === 'kpis') self.refreshKpiAutoActuals();
           // Các bước phụ: lỗi → {ok:false, partial:true, failedStep} rõ ràng (R12).
           var secondary = null;
           if (collection === 'kpis' && (obj.targetValue != null || obj.target != null)) {
@@ -1937,11 +2210,39 @@
       if (guard) return guard;
       var item = existingItem;
       if (!item) return { ok: false, error: 'Không tìm thấy bản ghi ' + id };
+      // KPI auto: chặn ghi actual trực tiếp qua update kpis / sửa measurement.
+      var updateBlock = null;
+      if (collection === 'kpis' && patch && patch.actual != null) {
+        updateBlock = this._kpiAutoBlocked(Object.assign({}, item, patch));
+      } else if (collection === 'measurements') {
+        var measKpiId = (patch && (patch.kpiId || patch.kpi_id)) || item.kpiId || item.kpi_id || null;
+        var measKpi2 = measKpiId ? this.get('kpis', measKpiId) : null;
+        if (measKpi2) updateBlock = this._kpiAutoBlocked(measKpi2);
+      }
+      if (updateBlock) return updateBlock;
       var invalid = this._validate(collection, patch || {}, item);
       if (invalid) return invalid;
       // R18 demo: custom_fields merge như DB trigger — field vào custom_fields
       // (deliverable…) hoặc patch.customFields đều merge, '__UNSET__' = xoá.
       var effective = Object.assign({}, patch);
+      // KPI auto: patch.dataSource ở top-level (nếu caller gửi dạng này) được
+      // gấp vào definition.dataSource — nơi lưu cấu hình theo hợp đồng.
+      if (collection === 'kpis' && patch && patch.dataSource !== undefined) {
+        var baseDef = (patch.definition && typeof patch.definition === 'object') ? patch.definition
+          : (item.definition && typeof item.definition === 'object' ? item.definition : {});
+        var foldedDef = Object.assign({}, baseDef);
+        if (patch.dataSource) foldedDef.dataSource = patch.dataSource; else delete foldedDef.dataSource;
+        effective.definition = foldedDef;
+        delete effective.dataSource;
+      }
+      // Đổi cấu hình nguồn (definition.dataSource) được phát hiện TRƯỚC khi
+      // gán patch — dùng để push kpiTargetVersions như cơ chế đổi target.
+      var dsChanged = false;
+      if (collection === 'kpis') {
+        var oldDsCfg = this._kpiDataSource(item);
+        var newDsCfg = this._kpiDataSource(Object.assign({}, item, effective));
+        dsChanged = JSON.stringify(oldDsCfg || null) !== JSON.stringify(newDsCfg || null);
+      }
       // 0014: sửa qua đường thường không đổi được trạng thái duyệt của fact,
       // số duyệt của dòng, hạn mức/dấu duyệt của campaign (chỉ qua RPC duyệt).
       this._stripBudgetUpdatePatch(collection, effective);
@@ -1965,12 +2266,15 @@
       var oldPageVersion = collection === 'brandPages' ? (item.version || 1) : undefined;
       Object.assign(item, effective);
       // R3.1 demo: đổi target KPI → tăng target_version + ghi kpi_target_versions.
+      // KPI auto: đổi CẤU HÌNH NGUỒN (definition.dataSource) cũng push version
+      // như đổi target — snapshot là definition MỚI sau khi gán patch.
       if (collection === 'kpis') {
         var nt = patch.targetValue !== undefined ? patch.targetValue : patch.target;
-        if (nt !== undefined && nt !== null && oldTarget !== undefined && oldTarget !== null && Number(nt) !== Number(oldTarget)) {
+        var targetChanged = nt !== undefined && nt !== null && oldTarget !== undefined && oldTarget !== null && Number(nt) !== Number(oldTarget);
+        if (targetChanged || dsChanged) {
           item.targetVersion = (Number(item.targetVersion || item.target_version) || 1) + 1;
           if (!this.state.kpiTargetVersions) this.state.kpiTargetVersions = [];
-          this.state.kpiTargetVersions.push({ id: uid('kpi-ver'), kpiId: id, version: item.targetVersion, targetValue: nt, unit: item.unit || null, definition: item.definition || {}, aggregationMode: item.aggregationMode || 'direct', createdAt: new Date().toISOString() });
+          this.state.kpiTargetVersions.push({ id: uid('kpi-ver'), kpiId: id, version: item.targetVersion, targetValue: targetChanged ? nt : (item.targetValue !== undefined && item.targetValue !== null ? item.targetValue : (item.target !== undefined ? item.target : null)), unit: item.unit || null, definition: item.definition || {}, aggregationMode: item.aggregationMode || 'direct', createdAt: new Date().toISOString() });
         }
       }
       // R3.1 demo: nội dung brand page đổi → ghi brand_page_versions (version+1).
@@ -1986,6 +2290,8 @@
       // Đồng bộ các field đã gói vào customFields lên top-level như fromDbRow.
       if (item.customFields) Object.keys(item.customFields).forEach(function (k) { if (effective[k] !== undefined) item[k] = item.customFields[k]; });
       if (item.customFields) Object.keys(cfPatch || {}).forEach(function (k) { if (cfPatch[k] === '__UNSET__') delete item[k]; });
+      // KPI auto: sửa observation / sửa KPI (kể cả đổi cấu hình nguồn) → làm tươi actual.
+      if (collection === 'metricObservations' || collection === 'manualMetricEntries' || collection === 'kpis') this.refreshKpiAutoActuals();
       this.notify();
       return { ok: true, item: item };
     },
@@ -2010,6 +2316,25 @@
       if (collection === 'businessUnits') return this._updateBusinessUnit(id, patch);
       var item = this.get(collection, id);
       if (!item) return Promise.resolve({ ok: false, error: 'Không tìm thấy bản ghi ' + id });
+      // KPI auto: chặn ghi actual trực tiếp qua update kpis / sửa measurement (như demo).
+      var remoteUpdateBlock = null;
+      if (collection === 'kpis' && patch && patch.actual != null) {
+        remoteUpdateBlock = this._kpiAutoBlocked(Object.assign({}, item, patch));
+      } else if (collection === 'measurements') {
+        var rMeasKpiId = (patch && (patch.kpiId || patch.kpi_id)) || item.kpiId || item.kpi_id || null;
+        var rMeasKpi2 = rMeasKpiId ? this.get('kpis', rMeasKpiId) : null;
+        if (rMeasKpi2) remoteUpdateBlock = this._kpiAutoBlocked(rMeasKpi2);
+      }
+      if (remoteUpdateBlock) return Promise.resolve(remoteUpdateBlock);
+      // KPI auto: gấp patch.dataSource top-level vào definition.dataSource (như demo).
+      if (collection === 'kpis' && patch && patch.dataSource !== undefined) {
+        var rBaseDef = (patch.definition && typeof patch.definition === 'object') ? patch.definition
+          : (item.definition && typeof item.definition === 'object' ? item.definition : {});
+        var rFoldedDef = Object.assign({}, rBaseDef);
+        if (patch.dataSource) rFoldedDef.dataSource = patch.dataSource; else delete rFoldedDef.dataSource;
+        patch = Object.assign({}, patch, { definition: rFoldedDef });
+        delete patch.dataSource;
+      }
       var guard = this._guard(collection, patch, 'update', item);
       if (guard) return Promise.resolve(guard);
       var invalid = this._validate(collection, patch, item);
@@ -2174,6 +2499,8 @@
           if (item.actual !== undefined && fresh.actual === undefined) fresh.actual = item.actual;
           if (item.version !== undefined && fresh.version == null) fresh.version = item.version;
           self._replaceInState(collection, fresh);
+          // KPI auto: sửa observation / sửa KPI từ xa → làm tươi actual suy diễn (chỉ state).
+          if (collection === 'metricObservations' || collection === 'manualMetricEntries' || collection === 'kpis') self.refreshKpiAutoActuals();
           self.notify();
           return { ok: true, item: fresh, payloadTargetVersion: resultMeta.payloadTargetVersion, pageContentChanged: resultMeta.pageContentChanged };
         });
@@ -2646,6 +2973,8 @@
           this.state.metricObservations.push(item);
           return item;
         }.bind(this));
+        // KPI auto: observation mới qua đường TikTok cũng làm tươi actual.
+        this.refreshKpiAutoActuals();
         this.notify();
         return { ok: true, items: items, target: target };
       }
@@ -2655,6 +2984,7 @@
           if (!res.ok) return res;
           var items = (res.data || []).map(function (row) { return self._rowToItem('metricObservations', row); });
           items.forEach(function (it) { self.state.metricObservations.push(it); });
+          self.refreshKpiAutoActuals();
           self.notify();
           return { ok: true, items: items, target: target };
         });

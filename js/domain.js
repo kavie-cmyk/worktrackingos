@@ -1450,6 +1450,220 @@
     return result;
   }
 
+  // ======================================================================
+  // KPI ↔ BỘ ĐẾM BÀI ĐÃ ĐĂNG — actual tự động từ metric_observations
+  // ======================================================================
+  // Danh mục mã chỉ số của metric_observations ĐANG DÙNG THẬT trong app:
+  // - lifetime_views / views / reach / impressions: thư viện bài đã đăng +
+  //   màn hình kênh (libLatestMetric / latestMetric trong app.js) và
+  //   fixture demo (obs của post-1/post-2/post-3).
+  // - likes / comments / shares: form nhập số liệu tay của bài/TikTok
+  //   (placeholder "views, likes, comments, shares…" trong app.js).
+  // UI chọn metric cho KPI auto PHẢI lấy từ danh mục này — không chế mã mới.
+  var POST_METRIC_CODES = ['lifetime_views', 'views', 'reach', 'impressions', 'likes', 'comments', 'shares'];
+
+  /** Definition của KPI dạng object (jsonb passthrough); chuỗi JSON thì parse, còn lại → null. */
+  function _kpiDefinitionObject(kpi) {
+    if (!kpi) return null;
+    var def = kpi.definition;
+    if (typeof def === 'string') {
+      try { def = JSON.parse(def); } catch (e) { return null; }
+    }
+    if (!def || typeof def !== 'object') return null;
+    return def;
+  }
+
+  /**
+   * Cấu hình nguồn tự động của KPI, lưu ở kpi.definition.dataSource:
+   *   { type:'post_metrics', metric:'<metric_code>', mode:'latest_sum'|'period_sum',
+   *     channelAccountId? }
+   * Không có dataSource hoặc type khác 'post_metrics' → KPI manual → null.
+   * mode thiếu/lạ → chuẩn hoá về 'latest_sum' (ngữ nghĩa snapshot mới nhất).
+   * @param {object} kpi KPI cần đọc cấu hình.
+   * @returns {(object|null)} { type:'post_metrics', metric, mode, channelAccountId? } hoặc null.
+   */
+  function kpiDataSource(kpi) {
+    if (!kpi) return null;
+    var def = _kpiDefinitionObject(kpi);
+    var ds = null;
+    if (def) ds = def.dataSource || def.data_source || null;
+    if (!ds && kpi.dataSource) ds = kpi.dataSource; // fallback: cấu hình để ở top-level
+    if (!ds || typeof ds !== 'object') return null;
+    if (String(ds.type || '').trim() !== 'post_metrics') return null;
+    var metric = ds.metric || ds.metricCode || ds.metric_code || null;
+    if (metric === null || metric === undefined || String(metric).trim() === '') return null;
+    var mode = String(ds.mode || 'latest_sum').trim();
+    if (mode !== 'latest_sum' && mode !== 'period_sum') mode = 'latest_sum';
+    var out = { type: 'post_metrics', metric: String(metric).trim(), mode: mode };
+    var chan = ds.channelAccountId || ds.channel_account_id || null;
+    if (chan !== null && chan !== undefined && String(chan) !== '') out.channelAccountId = chan;
+    return out;
+  }
+
+  /** 'yyyy-mm-dd' trích từ giá trị ngày/datetime (giữ nguyên ngày như đã ghi), null nếu không hợp lệ. */
+  function _dateOnlyStr(v) {
+    if (v === null || v === undefined || v === '') return null;
+    if (v instanceof Date) return isNaN(v.getTime()) ? null : toISODate(v);
+    var s = String(v).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  }
+
+  /**
+   * Kỳ KPI dạng { start:'yyyy-mm-dd'|null, end:'yyyy-mm-dd'|null }:
+   * ưu tiên periodStart/periodEnd; chỉ có periodKey 'YYYY-MM' thì suy cả
+   * tháng đó; không có kỳ nào → null (không lọc).
+   */
+  function _kpiPeriodRange(kpi) {
+    if (!kpi) return null;
+    var start = _dateOnlyStr(kpi.periodStart || kpi.period_start);
+    var end = _dateOnlyStr(kpi.periodEnd || kpi.period_end);
+    if (!start && !end) {
+      var key = kpi.periodKey || kpi.period_key || null;
+      var m = key ? String(key).match(/^(\d{4})-(\d{2})$/) : null;
+      if (m) {
+        var mo = Number(m[2]);
+        if (mo >= 1 && mo <= 12) {
+          var last = new Date(Date.UTC(Number(m[1]), mo, 0)).getUTCDate();
+          start = m[1] + '-' + m[2] + '-01';
+          end = m[1] + '-' + m[2] + '-' + String(last).padStart(2, '0');
+        }
+      }
+    }
+    if (!start && !end) return null;
+    return { start: start, end: end };
+  }
+
+  /** Ngày (yyyy-mm-dd) có nằm trong kỳ không; kỳ trống = luôn đúng, ngày trống = sai khi có kỳ. */
+  function _dateInRange(dateStr, range) {
+    if (!range) return true;
+    if (!dateStr) return false;
+    if (range.start && dateStr < range.start) return false;
+    if (range.end && dateStr > range.end) return false;
+    return true;
+  }
+
+  /** Khoảng [aStart, aEnd] (ngày) có GIAO với kỳ KPI không. */
+  function _rangeOverlaps(aStart, aEnd, range) {
+    if (!range) return true;
+    var s = aStart || aEnd;
+    var e = aEnd || aStart;
+    if (!s && !e) return false;
+    if (range.start && e && e < range.start) return false;
+    if (range.end && s && s > range.end) return false;
+    return true;
+  }
+
+  function _pmObsMetric(o) { return o ? (o.metric || o.metricCode || o.metric_code || null) : null; }
+  function _pmObsObservedAt(o) { return o ? (o.observedAt || o.observed_at || o.date || o.capturedAt || null) : null; }
+
+  /**
+   * Observation có thuộc về post không: khớp externalPostId === post.id,
+   * hoặc objectId === post.id khi objectType là 'external_post' / 'post' /
+   * không có. objectType khác (vd 'ad', 'content_variant') KHÔNG khớp dù
+   * objectId trùng — tránh lấy nhầm số của đối tượng khác.
+   */
+  function _pmObsMatchesPost(o, post) {
+    if (!o || !post || post.id === null || post.id === undefined) return false;
+    var ep = o.externalPostId || o.external_post_id;
+    if (ep !== null && ep !== undefined && String(ep) !== '' && String(ep) === String(post.id)) return true;
+    var oid = o.objectId || o.object_id;
+    if (oid === null || oid === undefined || String(oid) === '' || String(oid) !== String(post.id)) return false;
+    var otRaw = o.objectType || o.object_type;
+    if (otRaw === null || otRaw === undefined || String(otRaw).trim() === '') return true;
+    var ot = normStatus(otRaw);
+    return ot === 'external_post' || ot === 'post';
+  }
+
+  /**
+   * Tính actual của KPI auto từ số liệu bài đã đăng — HÀM THUẦN.
+   * Chỉ xét observation khớp metric của dataSource và thuộc một post trong
+   * `posts`; khử trùng theo post id (một post đóng góp đúng 1 lần).
+   * - mode 'latest_sum': mỗi post lấy observation có observedAt MỚI NHẤT
+   *   trong kỳ KPI rồi cộng qua các post (100 → 150 tính 150, không phải 250).
+   * - mode 'period_sum': cộng mọi observation khớp mà kỳ của nó
+   *   (periodStart/periodEnd nếu có, không thì observedAt) giao kỳ KPI.
+   * Lưu ý reach: tổng này là TỔNG các snapshot mới nhất theo từng bài —
+   * kết quả KHÔNG mang nhãn unique và không có field 'unique' nào.
+   * @param {object} kpi KPI có definition.dataSource post_metrics.
+   * @param {Array<object>} posts Các bài đã đăng thuộc scope của KPI.
+   * @param {Array<object>} observations Toàn bộ metric_observations.
+   * @returns {{value:number, postCount:number, latestObservedAt:(string|null),
+   *   rows:Array<{postId:*, title:string, platform:(string|null), value:number, observedAt:(string|null)}>}}
+   *   rows chỉ gồm post có ≥1 observation khớp, sắp xếp giảm dần theo value;
+   *   postCount = rows.length; latestObservedAt = observedAt lớn nhất trong
+   *   các observation ĐÃ DÙNG. KPI không có dataSource post_metrics → kết quả rỗng.
+   */
+  function postMetricActual(kpi, posts, observations) {
+    var empty = { value: 0, postCount: 0, latestObservedAt: null, rows: [] };
+    var cfg = kpiDataSource(kpi);
+    if (!cfg) return empty;
+    // Khử trùng post theo id trước mọi phép tính.
+    var postById = {};
+    var postList = [];
+    (posts || []).forEach(function (p) {
+      if (!p || p.id === null || p.id === undefined || String(p.id) === '') return;
+      var k = String(p.id);
+      if (postById[k]) return;
+      postById[k] = p;
+      postList.push(p);
+    });
+    if (!postList.length) return empty;
+    var range = _kpiPeriodRange(kpi);
+    var perPost = {};
+    (observations || []).forEach(function (o) {
+      if (!o) return;
+      var metric = _pmObsMetric(o);
+      if (metric === null || metric === undefined || String(metric).trim() !== cfg.metric) return;
+      var value = pickNum(o, ['value', 'metricValue', 'amount', 'count']);
+      if (value === null) return;
+      var post = null;
+      for (var i = 0; i < postList.length; i++) {
+        if (_pmObsMatchesPost(o, postList[i])) { post = postList[i]; break; }
+      }
+      if (!post) return;
+      var observedRaw = _pmObsObservedAt(o);
+      if (cfg.mode === 'period_sum') {
+        var os = _dateOnlyStr(o.periodStart || o.period_start);
+        var oe = _dateOnlyStr(o.periodEnd || o.period_end);
+        if (!os && !oe) { var od = _dateOnlyStr(observedRaw); os = od; oe = od; }
+        if (!_rangeOverlaps(os, oe, range)) return;
+      } else {
+        if (!_dateInRange(_dateOnlyStr(observedRaw), range)) return;
+      }
+      var key = String(post.id);
+      var entry = perPost[key];
+      if (!entry) {
+        entry = perPost[key] = { post: post, sum: 0, latestValue: null, latestAtRaw: null, latestTime: null, maxAtRaw: null, maxTime: null };
+      }
+      entry.sum += value;
+      var t = toDate(observedRaw);
+      if (observedRaw && (!entry.maxTime || (t && t >= entry.maxTime) || (!t && !entry.maxTime))) {
+        entry.maxAtRaw = observedRaw; entry.maxTime = t;
+      }
+      if (entry.latestValue === null || (t && (!entry.latestTime || t >= entry.latestTime))) {
+        entry.latestValue = value; entry.latestAtRaw = observedRaw; entry.latestTime = t;
+      }
+    });
+    var rows = [];
+    var total = 0;
+    var latestObservedAt = null;
+    var latestTime = null;
+    postList.forEach(function (p) {
+      var e = perPost[String(p.id)];
+      if (!e || e.latestValue === null) return;
+      var v = cfg.mode === 'period_sum' ? e.sum : e.latestValue;
+      var usedRaw = cfg.mode === 'period_sum' ? e.maxAtRaw : e.latestAtRaw;
+      var usedTime = cfg.mode === 'period_sum' ? e.maxTime : e.latestTime;
+      rows.push({ postId: p.id, title: p.title || p.name || '', platform: p.platform || null, value: v, observedAt: usedRaw || null });
+      total += v;
+      if (usedRaw && (!latestObservedAt || (usedTime && latestTime && usedTime >= latestTime) || (usedTime && !latestTime))) {
+        latestObservedAt = usedRaw; latestTime = usedTime;
+      }
+    });
+    rows.sort(function (a, b) { return b.value - a.value; });
+    return { value: total, postCount: rows.length, latestObservedAt: latestObservedAt, rows: rows };
+  }
+
   var api = {
     wouldCreateCycle: wouldCreateCycle,
     taskReadiness: taskReadiness,
@@ -1486,7 +1700,10 @@
     summarizeBudgetScope: summarizeBudgetScope,
     budgetScopeSummary: summarizeBudgetScope,
     rollupKpi: rollupKpi,
-    kpiRollup: rollupKpi
+    kpiRollup: rollupKpi,
+    POST_METRIC_CODES: POST_METRIC_CODES,
+    kpiDataSource: kpiDataSource,
+    postMetricActual: postMetricActual
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
