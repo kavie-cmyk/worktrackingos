@@ -623,6 +623,130 @@
     return { done: done, total: total, progress: progress, percentage: Math.round(progress * 100) };
   }
 
+  // ---------- Timeline của màn Task (hàng cho Gantt dùng chung) ----------
+
+  /** Task đã lưu trữ hay chưa (cùng quy ước với các builder Gantt ở app). */
+  function isArchivedTask(task) {
+    return !!(task && (task.archivedAt || task.archived || normStatus(task.status) === 'archived'));
+  }
+
+  /**
+   * Dựng tập hàng Gantt cho Timeline của màn Task từ danh sách task THUẦN
+   * (không đọc Store/DOM): chỉ task có ĐỦ ngày bắt đầu (startDate) và hạn
+   * (dueDate) mới thành hàng vẽ được — đúng quy ước của engine ganttHtml
+   * (hàng thiếu một trong hai mốc không vẽ thanh được); task thiếu ngày
+   * trả riêng ở `unscheduled` để bề mặt hiển thị mục "Chưa xếp lịch (N)".
+   * Hàng task mang đúng định dạng của ganttTaskRow ở app (key/coll/ganttId/
+   * kind/status/checklist/baseline bStart-bEnd/completed/milestone +
+   * cờ overdue/blocked suy ra tại đây để test độc lập được).
+   * @param {Array<object>} tasks Mọi task ứng viên (đã qua lọc của màn Task
+   *   ở app; hàm này còn áp lại 3 lọc campaign/người phụ trách/trạng thái
+   *   nếu options.filter được truyền — 'all' = không lọc, campaignId ''
+   *   = task độc lập, khớp ngữ nghĩa UI.taskFilter).
+   * @param {object} [options] { campaigns, members, blockers, dependencies
+   *   (hoặc edges), groupBy: 'campaign'|'assignee'|'none' (mặc định
+   *   'campaign'), filter: {campaignId, ownerId|assigneeId, status},
+   *   today: 'yyyy-mm-dd' (mốc tính quá hạn; thiếu thì lấy ngày hiện tại) }
+   * @returns {{rows:Array, edges:Array, unscheduled:Array, datedCount:number,
+   *   totalCount:number, groupBy:string}} edges chỉ còn các cạnh mà CẢ hai
+   *   đầu đều là task đang hiển thị (có ngày, qua lọc) — lọc co edges.
+   */
+  function buildTaskTimeline(tasks, options) {
+    options = options || {};
+    var groupBy = ['campaign', 'assignee', 'none'].indexOf(options.groupBy) >= 0 ? options.groupBy : 'campaign';
+    var today = options.today ? String(options.today).slice(0, 10) : toISODate(new Date());
+    var campaigns = options.campaigns || [];
+    var members = options.members || [];
+    var filter = options.filter || null;
+    var openBlocked = {};
+    (options.blockers || []).forEach(function (b) { if (b && b.status === 'open' && b.taskId) openBlocked[b.taskId] = true; });
+    function passFilter(t) {
+      if (!filter) return true;
+      if (filter.campaignId !== undefined && filter.campaignId !== null && filter.campaignId !== 'all' && (t.campaignId || '') !== filter.campaignId) return false;
+      var ownerFilter = filter.ownerId !== undefined ? filter.ownerId : filter.assigneeId;
+      if (ownerFilter !== undefined && ownerFilter !== null && ownerFilter !== 'all' && (t.assigneeId || '') !== ownerFilter) return false;
+      if (filter.status !== undefined && filter.status !== null && filter.status !== 'all' && t.status !== filter.status) return false;
+      return true;
+    }
+    var list = (tasks || []).filter(function (t) { return t && !isArchivedTask(t) && passFilter(t); });
+    function isDated(t) { return !!(t.startDate && t.dueDate); }
+    var dated = list.filter(isDated);
+    var unscheduled = list.filter(function (t) { return !isDated(t); })
+      .slice().sort(function (a, b) { return String(a.title || '').localeCompare(String(b.title || ''), 'vi'); });
+    var datedIds = {};
+    dated.forEach(function (t) { datedIds[t.id] = true; });
+    var edges = (options.dependencies || options.edges || []).filter(function (e) {
+      return e && datedIds[e.predecessorId] && datedIds[e.successorId];
+    });
+    function byStart(a, b) {
+      var sa = String(a.startDate).slice(0, 10), sb = String(b.startDate).slice(0, 10);
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      var ea = String(a.dueDate).slice(0, 10), eb = String(b.dueDate).slice(0, 10);
+      if (ea !== eb) return ea < eb ? -1 : 1;
+      return String(a.title || '').localeCompare(String(b.title || ''), 'vi');
+    }
+    function taskRow(t, parentKey, depth, hasChildren) {
+      var due = t.dueDate ? String(t.dueDate).slice(0, 10) : '';
+      return {
+        key: 'task:' + t.id, parentKey: parentKey, coll: 'tasks', id: t.id, ganttId: t.id, title: t.title,
+        kind: 'task', depth: depth, start: t.startDate, end: t.dueDate, status: t.status, checklist: t.checklist,
+        overdue: !!(due && due < today && !isCompleted(t) && normStatus(t.status) !== 'cancelled'),
+        blocked: !!t.isBlocked || !!openBlocked[t.id],
+        bStart: t.baselineStartDate, bEnd: t.baselineDueDate, completed: isCompleted(t),
+        milestone: !!t.isMilestone, hasChildren: !!hasChildren
+      };
+    }
+    var rows = [];
+    if (groupBy === 'none') {
+      dated.slice().sort(byStart).forEach(function (t) { rows.push(taskRow(t, undefined, 0, false)); });
+      return { rows: rows, edges: edges, unscheduled: unscheduled, datedCount: dated.length, totalCount: list.length, groupBy: groupBy };
+    }
+    // Dựng nhóm theo chế độ: thứ tự nhóm theo danh sách campaign/member
+    // được truyền vào; nhóm "trống chủ" (độc lập / chưa phân công) luôn cuối.
+    var groups = [];
+    var groupByKey = {};
+    function groupFor(t) {
+      var key, title, order;
+      if (groupBy === 'campaign') {
+        if (!t.campaignId) { key = 'tgrp:camp:none'; title = 'Không thuộc campaign'; order = campaigns.length + 1; }
+        else {
+          var ci = campaigns.findIndex(function (c) { return c.id === t.campaignId; });
+          var camp = ci >= 0 ? campaigns[ci] : null;
+          key = 'tgrp:camp:' + t.campaignId; title = camp ? camp.name : String(t.campaignId); order = ci >= 0 ? ci : campaigns.length;
+        }
+      } else {
+        if (!t.assigneeId) { key = 'tgrp:assignee:none'; title = 'Chưa phân công'; order = members.length + 1; }
+        else {
+          var mi = members.findIndex(function (m) { return m.id === t.assigneeId; });
+          var mem = mi >= 0 ? members[mi] : null;
+          key = 'tgrp:assignee:' + t.assigneeId; title = mem ? mem.name : String(t.assigneeId); order = mi >= 0 ? mi : members.length;
+        }
+      }
+      if (!groupByKey[key]) { groupByKey[key] = { key: key, title: title, order: order, tasks: [] }; groups.push(groupByKey[key]); }
+      return groupByKey[key];
+    }
+    dated.forEach(function (t) { groupFor(t).tasks.push(t); });
+    groups.sort(function (a, b) { return a.order - b.order || String(a.title).localeCompare(String(b.title), 'vi'); });
+    groups.forEach(function (g) {
+      rows.push({ key: g.key, coll: '', id: '', ganttId: '', title: g.title, kind: 'group', depth: 0, hasChildren: true });
+      // Cây con trong CÙNG nhóm: task con có cha ở nhóm khác (hoặc cha
+      // không có ngày/không qua lọc) thì làm gốc của nhóm mình — không
+      // task nào bị mất khỏi Timeline vì quan hệ cha lệch nhóm.
+      var inGroup = {};
+      g.tasks.forEach(function (t) { inGroup[t.id] = true; });
+      var byParent = {};
+      g.tasks.forEach(function (t) { var k = (t.parentId && inGroup[t.parentId]) ? t.parentId : '__root'; (byParent[k] = byParent[k] || []).push(t); });
+      Object.keys(byParent).forEach(function (k) { byParent[k].sort(byStart); });
+      function walk(t, parentKey, depth) {
+        var children = byParent[t.id] || [];
+        rows.push(taskRow(t, parentKey, depth, children.length > 0));
+        children.forEach(function (ch) { walk(ch, 'task:' + t.id, depth + 1); });
+      }
+      (byParent.__root || []).forEach(function (t) { walk(t, g.key, 1); });
+    });
+    return { rows: rows, edges: edges, unscheduled: unscheduled, datedCount: dated.length, totalCount: list.length, groupBy: groupBy };
+  }
+
   // ---------- TikTok / Publish ----------
 
   /** Lấy platform đã chuẩn hoá của một variant. */
@@ -1704,6 +1828,7 @@
     pickLevelTotals: pickLevelTotals,
     campaignProgress: campaignProgress,
     checklistProgress: checklistProgress,
+    buildTaskTimeline: buildTaskTimeline,
     tiktokCanPublish: tiktokCanPublish,
     shouldCreatePublishJob: shouldCreatePublishJob,
     formatDateVN: formatDateVN,

@@ -125,6 +125,8 @@
     taskDraft: null,
     taskDraftConflict: false,
     taskFilter: { campaignId: 'all', ownerId: 'all', status: 'all', priority: 'all', due: 'all', blocked: 'all', unassigned: false },
+    taskTab: 'list',
+    taskTimelineGroupBy: 'campaign',
     contentFilter: { campaignId: 'all', platform: 'all', ownerId: 'all', status: 'all', pillarId: 'all', buProductId: 'all', product: 'all', format: 'all', channelAccountId: 'all', activityId: 'all', taskId: 'all', from: '', to: '' },
     contentMixUnit: 'content',
     brandFilter: { ownerId: 'all', status: 'all', type: 'all' },
@@ -4337,6 +4339,36 @@
   }
 
   // ---------- Công việc ----------
+  // Timeline của màn Task: DÙNG LẠI engine ganttHtml + cùng UI.gantt*
+  // (zoom/khoảng xem/đường hôm nay/preview kéo–thả qua gantt-apply) như
+  // Gantt tổng và Gantt campaign — không engine thứ hai. Hàng/lọc/nhóm do
+  // hàm THUẦN D.buildTaskTimeline dựng từ ĐÚNG tập task đã lọc bởi
+  // UI.taskFilter ở viewTasks (và hàm thuần áp lại 3 lọc campaign/người
+  // phụ trách/trạng thái cho khớp) nên đổi bộ lọc là hàng + edges co theo.
+  // Bấm tên/thanh task mở panel chi tiết qua data-action gantt-open có sẵn;
+  // kéo–thả khoá theo canEdit() ngay trong ganttHtml như mọi Gantt khác.
+  function taskTimelineHtml(tasks, edges, blockers) {
+    var tf = UI.taskFilter;
+    var tl = D.buildTaskTimeline(tasks, {
+      campaigns: visibleList('campaigns'), members: Store.list('members'), blockers: blockers, dependencies: edges,
+      groupBy: UI.taskTimelineGroupBy, today: todayISO(),
+      filter: { campaignId: tf.campaignId, ownerId: tf.ownerId, status: tf.status }
+    });
+    var groupBtn = function (id, label) {
+      return '<button type="button" class="btn small ' + (UI.taskTimelineGroupBy === id ? '' : 'secondary') + '" data-action="task-timeline-group" data-id="' + id + '">' + label + '</button>';
+    };
+    var html = '<div data-viz="tasks-timeline"><div class="gantt-toolbar"><span class="sub">Nhóm hàng: </span>' +
+      groupBtn('campaign', 'Theo campaign') + ' ' + groupBtn('assignee', 'Theo người phụ trách') + ' ' + groupBtn('none', 'Không nhóm') +
+      ' <span class="sub">Đang hiển thị ' + tl.datedCount + '/' + tl.totalCount + ' task có đủ ngày để vẽ Timeline.</span></div>';
+    html += ganttHtml(tl.rows, tl.edges);
+    html += '</div>';
+    html += '<h3>Chưa xếp lịch (' + tl.unscheduled.length + ')</h3>';
+    if (!tl.unscheduled.length) html += '<p class="sub">Mọi task trong bộ lọc hiện tại đều đã có đủ ngày bắt đầu và mốc cần hoàn thành.</p>';
+    else html += '<ul class="clean">' + tl.unscheduled.map(function (t) {
+      return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button> · ' + esc(memberName(t.assigneeId)) + ' · ' + esc(campaignName(t.campaignId)) + ' · ' + statusBadge(t.status) + ' <span class="sub">(thiếu ngày bắt đầu hoặc mốc cần hoàn thành)</span></li>';
+    }).join('') + '</ul>';
+    return html;
+  }
   function viewTasks() {
     var allTasks = visibleList('tasks');
     var edges = Store.list('dependencies');
@@ -4373,6 +4405,11 @@
       '<label><span><input type="checkbox" name="unassigned"' + (tf.unassigned ? ' checked' : '') + '> Chỉ task chưa phân công</span></label>' +
       '<button class="btn secondary" type="submit">Lọc</button></form>' +
       '<p class="sub">Đang hiển thị ' + tasks.length + '/' + allTasks.length + ' task.</p>';
+    html += tabsHtml([['list', 'Danh sách Task'], ['timeline', 'Timeline']], UI.taskTab, 'task-tab');
+    if (UI.taskTab === 'timeline') {
+      html += taskTimelineHtml(tasks, edges, blockers);
+      return html;
+    }
     if (!tasks.length && !collLoadingOrError('tasks')) {
       html += emptyState('Chưa có task nào', 'Tạo task đầu tiên — task có thể gắn với campaign hoặc để độc lập.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button></p>' : '');
     } else {
@@ -5849,6 +5886,8 @@
     if (action === 'gantt-today') { UI.ganttScrollToday = true; render(); }
     if (action === 'gantt-range-clear') { UI.ganttRange = { from: '', to: '' }; render(); }
     if (action === 'approvals-tab') { UI.approvalsTab = id; render(); }
+    if (action === 'task-tab') { UI.taskTab = id; render(); }
+    if (action === 'task-timeline-group') { UI.taskTimelineGroupBy = id; render(); }
     if (action === 'campaign-baseline') {
       // R2-28c + chốt CẢ CÂY (13/11): một lần bấm chụp mốc cho campaign +
       // mọi phase/activity/task thuộc campaign, mỗi thực thể nhận baseline
