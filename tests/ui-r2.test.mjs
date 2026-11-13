@@ -205,11 +205,11 @@ test('R2-27 [static]: builder Gantt đệ quy dùng chung + nhóm Chưa gắn ph
   assert.match(src, /\(byParent\[t\.id\] \|\| \[\]\)\.forEach/);
   assert.match(src, /Chưa gắn phase\/activity/);
   assert.match(src, /grp:independent/);
-  assert.match(src, /Việc độc lập/);
+  assert.match(src, /Task độc lập/);
   // Editor task có select phaseId/activityId + validate.
   assert.match(src, /F\('phaseId', 'Giai đoạn \(theo campaign\)', 'select'/);
-  assert.match(src, /F\('activityId', 'Hoạt động', 'select'/);
-  assert.match(src, /errors\.activityId = 'Hoạt động đã chọn không thuộc giai đoạn đã chọn\.'/);
+  assert.match(src, /F\('activityId', 'Activity', 'select'/);
+  assert.match(src, /errors\.activityId = 'Activity đã chọn không thuộc giai đoạn đã chọn\.'/);
 });
 
 test('R2-28b [static]: milestone từ isMilestone (không còn startDate===dueDate), mile có data-gantt-drag khóa resize', () => {

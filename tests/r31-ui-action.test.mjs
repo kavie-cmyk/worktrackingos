@@ -49,10 +49,10 @@ test('R3.1-UI [static]: drawer hoạt động có 5 tab + section Nội dung li�
   assert.match(src, /function activityDrawerHtml\(\)/);
   assert.match(src, /root\.innerHTML = editorHtml\(\) \+ taskPanelHtml\(\) \+ activityDrawerHtml\(\) \+ confirmCloseHtml\(\)/);
   const drawer = section('function activityDrawerHtml()', 'function campaignDetailHtml(id)');
-  assert.match(drawer, /\['overview', 'Tổng quan'\], \['tasks', 'Việc'\], \['kpi', 'KPI'\], \['budget', 'Ngân sách'\], \['docs', 'Tài liệu'\]/);
-  assert.match(drawer, /Nội dung liên quan/);
-  assert.match(drawer, /Không có nội dung liên quan/);
-  for (const label of ['Tạo việc', 'Thêm KPI', 'Thêm dòng ngân sách', 'Ghi cam kết', 'Ghi thanh toán']) {
+  assert.match(drawer, /\['overview', 'Overview'\], \['tasks', 'Task'\], \['kpi', 'KPI'\], \['budget', 'Ngân sách'\], \['docs', 'Tài liệu'\]/);
+  assert.match(drawer, /Content liên quan/);
+  assert.match(drawer, /Không có content liên quan/);
+  for (const label of ['Tạo task', 'Thêm KPI', 'Thêm dòng ngân sách', 'Ghi cam kết', 'Ghi thanh toán']) {
     assert.ok(drawer.includes(label), 'drawer thiếu nút: ' + label);
   }
   assert.match(drawer, /data-kind="task" data-campaign=/);
@@ -60,23 +60,23 @@ test('R3.1-UI [static]: drawer hoạt động có 5 tab + section Nội dung li�
 });
 
 // ---------- 3. Tổng quan campaign (C.7) ----------
-test('R3.1-UI [static]: tổng quan campaign tách "Chưa phân bổ" ≠ "Còn có thể dùng" + cảnh báo KPI + đếm action', () => {
+test('R3.1-UI [static]: tổng quan campaign tách "Chưa phân bổ" ≠ "Còn dùng được" + cảnh báo KPI + đếm action', () => {
   const detail = section('function campaignDetailHtml(id)', '// ---------- Nội dung (Content) ----------');
   assert.match(detail, /summarizeCampaignBudget\(c\)/);
-  for (const label of ['Hạn mức', 'Đã phân bổ', 'Chưa phân bổ', 'Thực chi', 'Cam kết chưa trả', 'Dự kiến sử dụng', 'Còn có thể dùng']) {
+  for (const label of ['Hạn mức', 'Đã phân bổ', 'Chưa phân bổ', 'Thực chi', 'Cam kết chưa trả', 'Dự kiến sử dụng', 'Còn dùng được']) {
     assert.ok(detail.includes(label), 'tổng quan thiếu chỉ tiêu: ' + label);
   }
   assert.match(detail, /Hai số này khác nhau và không cộng lẫn nhau/);
   assert.match(detail, /chưa có nguồn\/cách tổng hợp hợp lệ/);
-  assert.match(detail, /Hoạt động đúng hạn/);
-  assert.match(detail, /Hoạt động bị chặn/);
+  assert.match(detail, /Activity đúng hạn/);
+  assert.match(detail, /Activity bị chặn/);
 });
 
 // ---------- 4. Form KPI: scope selector + definition + aggregation + contributions ----------
 test('R3.1-UI [static]: form KPI có scope selector đủ 6 scope, definition, metric_code, aggregation_mode, direction, owner', () => {
   const form = section("case 'kpi': {", "case 'measurement': {");
   assert.match(form, /F\('scopeType', 'Phạm vi \(scope\)', 'select'/);
-  for (const s of ["['campaign', 'Campaign']", "['activity', 'Hoạt động']", "['task', 'Việc']", "['content', 'Nội dung']", "['pillar', 'Pillar']", "['bu_product', 'Brand / Sản phẩm']"]) {
+  for (const s of ["['campaign', 'Campaign']", "['activity', 'Activity']", "['task', 'Task']", "['content', 'Content']", "['pillar', 'Pillar']", "['bu_product', 'Brand / Sản phẩm']"]) {
     assert.ok(form.includes(s), 'thiếu scope: ' + s);
   }
   assert.match(form, /F\('metricCode', 'Mã chỉ số \(metric_code\)'/);
@@ -116,8 +116,8 @@ test('R3.1-UI [static]: form dòng ngân sách có ô Kế hoạch (planned) + k
   assert.match(form, /budgetLineApprovalBlockHtml\(b\)/);
   assert.match(form, /data-kind="budgetProposal"/);
   assert.match(form, />Đề xuất duyệt</);
-  assert.match(form, /F\('activityId', 'Hoạt động \(thuộc campaign\)', 'select'/);
-  assert.match(form, /F\('taskId', 'Việc \(thuộc campaign\)', 'select'/);
+  assert.match(form, /F\('activityId', 'Activity \(thuộc campaign\)', 'select'/);
+  assert.match(form, /F\('taskId', 'Task \(thuộc campaign\)', 'select'/);
   assert.match(form, /F\('currency', 'Tiền tệ', 'select'/);
 });
 

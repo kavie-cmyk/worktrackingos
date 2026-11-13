@@ -85,7 +85,7 @@ test('WAVE-A [static]: statusBadge là alias vizStatusPillHtml; Gantt có legend
   assert.match(src, /D\.assessTaskRisk\(t,/);
   const ov = section('function viewOverview()', '// ---------- Việc của tôi ----------');
   assert.match(ov, /vizKpiCardHtml\(\{ label: 'Campaign đang chạy'/);
-  assert.match(ov, /vizKpiCardHtml\(\{ label: 'Việc quá hạn'/);
+  assert.match(ov, /vizKpiCardHtml\(\{ label: 'Task quá hạn'/);
   assert.match(ov, /vizKpiCardHtml\(\{ label: 'Campaign nguy cơ trễ'/);
   assert.match(ov, /data-viz="overview-risk-table"/);
   assert.match(ov, /vizCellBarHtml\(\{ value: r\.affectedCount, max: r\.totalCount, tone: 'overdue'/);

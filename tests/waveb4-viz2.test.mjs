@@ -58,7 +58,7 @@ test('WAVE-B4 [unit]: vizTaskBarHtml — đoạn start→due + vạch hôm nay �
 test('WAVE-B4 [unit]: vizDepBadgesHtml — badge đếm đúng tông, chi tiết ở title', () => {
   const html = V.vizDepBadgesHtml({ waitingCount: 2, blockingCount: 1, waitingTitles: ['Việc A', 'Việc B'], blockingTitles: ['Việc C'] });
   assert.match(html, /st-blocked[^"]*" data-viz="dep-badge" data-viz-tone="blocked" title="Đang chờ: Việc A, Việc B">Đang chờ: 2</);
-  assert.match(html, /st-pending[^"]*" data-viz="dep-badge" data-viz-tone="pending" title="Việc đang chờ mình: Việc C">Chờ mình: 1</);
+  assert.match(html, /st-pending[^"]*" data-viz="dep-badge" data-viz-tone="pending" title="Task đang chờ mình: Việc C">Chờ mình: 1</);
   assert.match(V.vizDepBadgesHtml({ waitingCount: 0, blockingCount: 0 }), /Không phụ thuộc/);
 });
 

@@ -649,7 +649,7 @@ test('AC39 nhãn giao diện: có đủ nhãn mới và không còn nhãn cũ tr
   const requiredLabels = [
     'Target audiences',
     'Mục tiêu',
-    'Hoạt động & Kênh triển khai',
+    'Activity & Kênh triển khai',
     'Người phụ trách',
     'Đầu ra cần bàn giao',
     'Mốc cần hoàn thành',

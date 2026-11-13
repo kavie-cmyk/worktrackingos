@@ -3,7 +3,7 @@
 //   - Form KPI: select "Nguồn số liệu" (manual/post_metrics) + 2 trường phụ
 //     thuộc (Chỉ số từ danh mục mã bài đăng của app + Cách gộp latest_sum /
 //     period_sum); lưu MERGE vào definition.dataSource, giữ description.
-//   - Hiển thị: badge "Tự động từ bài đã đăng" + dòng "từ N bài · cập nhật …"
+//   - Hiển thị: badge "Tự động từ post" + dòng "từ N bài · cập nhật …"
 //     từ kpi.autoActual ở renderer dùng chung (progress/mini/table/summary),
 //     KPI manual không có badge; metric reach có chú thích phủ định về
 //     tính không trùng (không gắn nhãn unique cho tổng reach).
@@ -53,11 +53,11 @@ const AUTO_KPI = {
 const MANUAL_KPI = { id: 'kpi-m', name: 'KPI tay', definition: { description: 'chỉ mô tả' } };
 
 // ---------- 1. Form KPI: nguồn + 2 trường phụ thuộc ----------
-test('KPI-POST-UI [static]: form KPI có select Nguồn số liệu (Tự nhập mặc định / Tự động từ bài đã đăng) làm mới form khi đổi', () => {
+test('KPI-POST-UI [static]: form KPI có select Nguồn số liệu (Tự nhập mặc định / Tự động từ post) làm mới form khi đổi', () => {
   const form = section("case 'kpi': {", "case 'measurement': {", editorStart);
   assert.match(form, /F\('dataSourceType', 'Nguồn số liệu', 'select', kSourceType/);
   assert.match(form, /\['manual', 'Tự nhập'\]/);
-  assert.match(form, /\['post_metrics', 'Tự động từ bài đã đăng'\]/);
+  assert.match(form, /\['post_metrics', 'Tự động từ post'\]/);
   assert.match(form, /data-refresh-editor="1"/);
   // KPI manual cũ (không dataSource) phải mở lên ở 'Tự nhập'.
   assert.match(form, /ev\('dataSourceType', \(kDs0 && kDs0\.type === 'post_metrics'\) \? 'post_metrics' : 'manual'\)/);
@@ -105,11 +105,11 @@ test('KPI-POST-UI [unit]: isKpiAuto chỉ đúng với definition.dataSource.typ
 
 test('KPI-POST-UI [unit]: kpiAutoInfoHtml — badge + dòng "từ N bài · cập nhật …" từ autoActual; chưa có autoActual thì ghi chưa có dữ liệu; manual thì rỗng', () => {
   const html = H.kpiAutoInfoHtml(AUTO_KPI);
-  assert.match(html, /data-kpi-auto-badge="1">Tự động từ bài đã đăng</);
+  assert.match(html, /data-kpi-auto-badge="1">Tự động từ post</);
   assert.match(html, /từ 1 bài · cập nhật DT\(2026-11-09T10:00:00\+07:00\)/);
   const noData = H.kpiAutoInfoHtml({ id: 'k9', definition: { dataSource: { type: 'post_metrics', metric: 'views', mode: 'period_sum' } } });
-  assert.match(noData, /Tự động từ bài đã đăng/);
-  assert.match(noData, /chưa có dữ liệu bài đã đăng/);
+  assert.match(noData, /Tự động từ post/);
+  assert.match(noData, /chưa có dữ liệu post/);
   assert.equal(H.kpiAutoInfoHtml(MANUAL_KPI), '', 'KPI manual không được có badge/dòng auto');
 });
 
@@ -137,7 +137,7 @@ test('KPI-POST-UI [static]: badge/dòng auto có mặt ở renderer dùng chung 
   assert.match(summary, /kpiAutoInfoHtml\(k\)/);
   const view = section('function viewKpi()', '// ---------- Kênh & Bài đã đăng ----------');
   assert.match(view, /kpiAutoInfoHtml\(k\)/);
-  assert.match(view, /'Tự động từ bài đã đăng'/);
+  assert.match(view, /'Tự động từ post'/);
 });
 
 // ---------- 3. Drill-down ----------
@@ -160,7 +160,7 @@ test('KPI-POST-UI [unit]: drill-down render đủ rows từ autoActual (tiêu đ
   assert.match(html2, /Bài một/); assert.match(html2, /Bài hai/);
   assert.match(html2, /Tổng các bài: <strong>200<\/strong>/);
   // Chưa có rows -> ghi rõ chưa có dữ liệu bài đăng; KPI manual -> rỗng.
-  assert.match(H.kpiAutoDrillHtml({ id: 'k9', definition: { dataSource: { type: 'post_metrics', metric: 'views', mode: 'latest_sum' } } }), /chưa có dữ liệu bài đã đăng/);
+  assert.match(H.kpiAutoDrillHtml({ id: 'k9', definition: { dataSource: { type: 'post_metrics', metric: 'views', mode: 'latest_sum' } } }), /chưa có dữ liệu post/);
   assert.equal(H.kpiAutoDrillHtml(MANUAL_KPI), '');
 });
 
@@ -177,7 +177,7 @@ test('KPI-POST-UI [static]: drill-down nối theo pattern toggle sẵn có (UI.k
 test('KPI-POST-UI [static]: form số đo của KPI auto disable các ô + hiện giải thích; save bị chặn với KPI_AUTO_SOURCE; nút thêm số đo ở bảng bị disable cho KPI auto', () => {
   const form = section("case 'measurement': {", "case 'budgetLine': {", editorStart);
   assert.match(form, /isKpiAuto\(kk\)/);
-  assert.match(form, /data-kpi-auto-measurement="1">KPI này lấy số tự động từ bài đã đăng — số sẽ cập nhật khi bộ đếm của bài thay đổi\./);
+  assert.match(form, /data-kpi-auto-measurement="1">KPI này lấy số tự động từ post — số sẽ cập nhật khi bộ đếm của post thay đổi\./);
   assert.match(form, /disabled: true/);
   const save = section("case 'measurement': {", "case 'budgetLine': {", saveStart);
   assert.match(save, /isKpiAuto\(measureKpi\)/);

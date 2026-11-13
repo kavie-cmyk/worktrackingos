@@ -27,8 +27,8 @@ test('WAVE-B2 [static] #1: thẻ campaign có donut từ campaignProgress + pill
   assert.match(v, /vizDonutSvgHtml\(\{ segments: \[\{ label: 'Đã xong', value: p\.completed/);
   assert.match(v, /value: p\.total - p\.completed/);
   assert.match(v, /data-viz="campaign-health"/);
-  assert.match(v, /vizStatusPillHtml\('overdue', \{ label: seg3\.overdue \+ ' việc trễ', derived: true \}\)/);
-  assert.match(v, /vizStatusPillHtml\('blocked', \{ label: seg3\.blocked \+ ' việc bị chặn', derived: true \}\)/);
+  assert.match(v, /vizStatusPillHtml\('overdue', \{ label: seg3\.overdue \+ ' task trễ', derived: true \}\)/);
+  assert.match(v, /vizStatusPillHtml\('blocked', \{ label: seg3\.blocked \+ ' task bị chặn', derived: true \}\)/);
   // Giữ progress bar Wave A (test wavea khóa chữ ký này).
   assert.match(v, /vizProgressBarHtml\(\{ value: p\.completed, max: p\.total, pct: p\.percentage/);
 });
@@ -36,12 +36,12 @@ test('WAVE-B2 [static] #1: thẻ campaign có donut từ campaignProgress + pill
 test('WAVE-B2 [static] #2: Tổng quan campaign — KPI card sức khỏe + stacked trạng thái việc + stacked ngân sách', () => {
   const d = section('function campaignDetailHtml(id)', '// ---------- R3.1: Content Plan');
   assert.match(d, /vizBudgetStackedHtml\(ovBudget\)/);
-  assert.match(d, /vizKpiCardHtml\(\{ label: 'Hoạt động đúng hạn'/);
-  assert.match(d, /vizKpiCardHtml\(\{ label: 'Hoạt động có việc trễ'/);
-  assert.match(d, /vizKpiCardHtml\(\{ label: 'Hoạt động bị chặn'/);
+  assert.match(d, /vizKpiCardHtml\(\{ label: 'Activity đúng hạn'/);
+  assert.match(d, /vizKpiCardHtml\(\{ label: 'Activity có task trễ'/);
+  assert.match(d, /vizKpiCardHtml\(\{ label: 'Activity bị chặn'/);
   assert.match(d, /data-viz="campaign-overview-task-stacked"/);
   assert.match(d, /vizTaskStatusSegments\(ctasks\)/);
-  assert.match(d, /Hoạt động đúng hạn/); // nhãn cũ giữ nguyên (r31-ui-action khóa)
+  assert.match(d, /Activity đúng hạn/); // nhãn cũ giữ nguyên (r31-ui-action khóa)
 });
 
 test('WAVE-B2 [static] #3: Action Plan — KPI mini bar + ngân sách stacked; drawer có stacked task + bar theo dòng', () => {

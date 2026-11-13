@@ -47,10 +47,10 @@
   }
 
   var NAV_GROUPS = [
-    ['Công việc chung', [['overview', 'Tổng quan'], ['my-work', 'Việc của tôi']]],
-    ['Kế hoạch & nội dung', [['campaigns', 'IMC & Campaigns'], ['content', 'Nội dung'], ['tasks', 'Việc'], ['approvals', 'Duyệt nội dung']]],
+    ['Chung', [['overview', 'Overview'], ['my-work', 'Task của tôi']]],
+    ['Kế hoạch & content', [['campaigns', 'IMC & Campaigns'], ['content', 'Content'], ['tasks', 'Task'], ['approvals', 'Duyệt content']]],
     ['Thương hiệu', [['brand', 'Brand Hub']]],
-    ['Hiệu quả', [['kpi', 'KPI & Ngân sách'], ['channels', 'Kênh & Bài đã đăng'], ['ads', 'Quảng cáo'], ['reports', 'Báo cáo']]],
+    ['Hiệu quả', [['kpi', 'KPI & Ngân sách'], ['channels', 'Kênh & Post'], ['ads', 'Quảng cáo'], ['reports', 'Báo cáo']]],
     ['Tổ chức', [['team', 'Team & Workload'], ['settings', 'Thiết lập']]]
   ];
   var ROUTES = ['overview', 'my-work', 'brand', 'campaigns', 'content', 'tasks', 'approvals', 'team', 'kpi', 'channels', 'ads', 'reports', 'settings'];
@@ -113,7 +113,7 @@
     pending: 'Chờ duyệt', pending_approval: 'Chờ duyệt', approved: 'Đã duyệt', rejected: 'Đã từ chối',
     changes_requested: 'Yêu cầu sửa', needs_reapproval: 'Cần duyệt lại', needs_review: 'Cần duyệt lại',
     open: 'Đang mở', resolved: 'Đã gỡ', settled: 'Đã thanh toán', partial: 'Thanh toán một phần',
-    partially_actualised: 'Thanh toán một phần', converted: 'Đã chuyển thành việc',
+    partially_actualised: 'Thanh toán một phần', converted: 'Đã chuyển thành task',
     new: 'Mới ghi nhận', accepted: 'Đã tiếp nhận', final: 'Bản chốt', published: 'Đã đăng',
     archived: 'Đã lưu trữ', submitted: 'Đã gửi duyệt', executed: 'Đã áp dụng', closed: 'Đã đóng'
   };
@@ -396,7 +396,7 @@
     if (!taskPanelReadonly()) return '';
     return '<div class="notice info" role="note">Bạn đang xem ở chế độ chỉ đọc — vai trò hiện tại' +
       (Store.currentRole ? ' (' + esc(labelStatus(Store.currentRole())) + ')' : '') +
-      ' không có quyền sửa công việc, nên mọi ô nhập, mục checklist và quan hệ phụ thuộc đã bị khóa. Dữ liệu vẫn được tầng dữ liệu chặn khi lưu.</div>';
+      ' không có quyền sửa task, nên mọi ô nhập, mục checklist và quan hệ phụ thuộc đã bị khóa. Dữ liệu vẫn được tầng dữ liệu chặn khi lưu.</div>';
   }
   // Điểm vào chung cho modal sửa (formShell): kind nào là chỉ-đọc theo quyền.
   function editorReadonly(kind) {
@@ -463,7 +463,7 @@
   function submitReviewCall(variantId) {
     if (hasFn('submitReview')) return Store.submitReview(variantId);
     var v = Store.get('variants', variantId);
-    if (!v) return { ok: false, error: 'Không tìm thấy phiên bản nội dung.' };
+    if (!v) return { ok: false, error: 'Không tìm thấy phiên bản content.' };
     var created = sCreate('approvals', {
       variantId: variantId, contentItemId: v.contentItemId, revision: v.revision || 1,
       status: 'pending', statusLabel: 'Chờ duyệt', requestedBy: Store.currentUserId,
@@ -780,7 +780,7 @@
               (can('budget.propose') ? '<p style="margin:4px 0"><button type="button" class="btn small" data-action="editor-open" data-kind="budgetProposal" data-campaign="' + esc(c.id || e.id) + '" data-target-type="campaign_ceiling">Đề xuất ngân sách</button></p>' : '')) +
           '</div>' +
           (!e.id
-            ? F('template', 'Mẫu campaign', 'select', ev('template', ''), { options: [['', 'Không dùng mẫu'], ['livestream', 'Livestream — 4 hoạt động mẫu']], emptyLabel: null, help: 'Mẫu chỉ tạo hoạt động/việc/KPI gợi ý và dòng phân bổ DỰ THẢO (chưa duyệt, chưa có khoản chi/thanh toán thật). Sửa số phân bổ ngay bên dưới trước khi tạo.' }) +
+            ? F('template', 'Mẫu campaign', 'select', ev('template', ''), { options: [['', 'Không dùng mẫu'], ['livestream', 'Livestream — 4 activity mẫu']], emptyLabel: null, help: 'Mẫu chỉ tạo activity/task/KPI gợi ý và dòng phân bổ DỰ THẢO (chưa duyệt, chưa có khoản chi/thanh toán thật). Sửa số phân bổ ngay bên dưới trước khi tạo.' }) +
               '<div class="fld wide"><span>Phân bổ dự thảo của mẫu Livestream (VNĐ) — sửa được trước khi tạo</span></div>' +
               F('tplAlloc0', 'Mời khách mời — phân bổ dự thảo', 'number', ev('tplAlloc0', 8000000), { min: 0, step: 'any' }) +
               F('tplAlloc1', 'Chạy ads — phân bổ dự thảo', 'number', ev('tplAlloc1', 15000000), { min: 0, step: 'any' }) +
@@ -825,17 +825,17 @@
       case 'activity': {
         var a = editorItem('activities') || {};
         var phases = Store.list('phases').filter(function (x) { return x.campaignId === (e.context.campaignId || a.campaignId); });
-        return formShell('activity', e.id ? 'Sửa hoạt động' : 'Thêm hoạt động',
-          F('name', 'Tên hoạt động *', 'text', ev('name', a.name), { required: true, wide: true }) +
+        return formShell('activity', e.id ? 'Sửa activity' : 'Thêm activity',
+          F('name', 'Tên activity *', 'text', ev('name', a.name), { required: true, wide: true }) +
           F('phaseId', 'Giai đoạn', 'select', ev('phaseId', a.phaseId), { options: phases.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Không gắn giai đoạn —' }) +
           F('channel', 'Kênh triển khai', 'text', ev('channel', a.channel)) +
           F('ownerId', 'Người phụ trách', 'select', ev('ownerId', a.ownerId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
-          F('status', 'Trạng thái', 'select', ev('status', a.status || ''), { options: [['not_started', 'Chưa bắt đầu'], ['in_progress', 'Đang làm'], ['blocked', 'Bị chặn'], ['completed', 'Hoàn thành']], emptyLabel: '— Tự suy từ việc —' }) +
+          F('status', 'Trạng thái', 'select', ev('status', a.status || ''), { options: [['not_started', 'Chưa bắt đầu'], ['in_progress', 'Đang làm'], ['blocked', 'Bị chặn'], ['completed', 'Hoàn thành']], emptyLabel: '— Tự suy từ task —' }) +
           F('startDate', 'Ngày bắt đầu', 'date', ev('startDate', a.startDate)) +
           F('endDate', 'Ngày kết thúc', 'date', ev('endDate', a.endDate)) +
-          F('objective', 'Mục tiêu hoạt động', 'textarea', ev('objective', a.objective), { wide: true }) +
+          F('objective', 'Mục tiêu activity', 'textarea', ev('objective', a.objective), { wide: true }) +
           F('deliverables', 'Đầu ra cần bàn giao', 'textarea', ev('deliverables', a.deliverables || a.deliverable), { wide: true }),
-          'Lưu hoạt động');
+          'Lưu activity');
       }
       case 'brandPage': {
         var bp = editorItem('brandPages') || {};
@@ -869,12 +869,12 @@
           if (tPhase) return x.phaseId === tPhase;
           return true;
         });
-        return formShell('task', e.id ? 'Sửa việc' : 'Tạo việc',
-          F('title', 'Tên việc *', 'text', ev('title', t.title), { required: true, wide: true }) +
-          F('campaignId', 'Campaign (để trống = việc độc lập)', 'select', tCamp, { options: campaignPairs(), emptyLabel: '— Việc độc lập —', attrs: ' data-refresh-editor="1"' }) +
+        return formShell('task', e.id ? 'Sửa task' : 'Tạo task',
+          F('title', 'Tên task *', 'text', ev('title', t.title), { required: true, wide: true }) +
+          F('campaignId', 'Campaign (để trống = task độc lập)', 'select', tCamp, { options: campaignPairs(), emptyLabel: '— Task độc lập —', attrs: ' data-refresh-editor="1"' }) +
           F('phaseId', 'Giai đoạn (theo campaign)', 'select', tPhase, { options: taskPhases.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn giai đoạn —', attrs: ' data-refresh-editor="1"' }) +
-          F('activityId', 'Hoạt động', 'select', ev('activityId', t.activityId || e.context.activityId || ''), { options: taskActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn hoạt động —' }) +
-          F('parentId', 'Việc cha', 'select', ev('parentId', t.parentId), { options: visibleList('tasks').filter(function (x) { return x.id !== e.id; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không có —' }) +
+          F('activityId', 'Activity', 'select', ev('activityId', t.activityId || e.context.activityId || ''), { options: taskActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn activity —' }) +
+          F('parentId', 'Task cha', 'select', ev('parentId', t.parentId), { options: visibleList('tasks').filter(function (x) { return x.id !== e.id; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không có —' }) +
           F('assigneeId', 'Người phụ trách', 'select', ev('assigneeId', t.assigneeId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
           F('status', 'Trạng thái', 'select', ev('status', t.status || 'todo'), { options: TASK_STATUSES }) +
           F('priority', 'Ưu tiên', 'select', ev('priority', t.priority || 'Trung bình'), { options: PRIORITIES.map(function (x) { return [x, x]; }) }) +
@@ -884,7 +884,7 @@
           F('effortHours', 'Thời gian dự kiến (giờ)', 'number', ev('effortHours', t.effortHours), { min: 0, step: 0.5 }) +
           F('deliverable', 'Đầu ra cần bàn giao', 'text', ev('deliverable', t.deliverable), { wide: true }) +
           F('description', 'Mô tả', 'textarea', ev('description', t.description), { wide: true }),
-          e.id ? 'Lưu công việc' : 'Tạo công việc');
+          e.id ? 'Lưu task' : 'Tạo task');
       }
       case 'pillar': {
         var pl = editorItem('contentPillars') || {};
@@ -896,7 +896,7 @@
           F('buProductId', 'Phạm vi Brand / BU / sản phẩm', 'select', ev('buProductId', pl.buProductId || pl.bu_product_id || ''), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name || b.buName || b.id]; }), emptyLabel: '— Toàn workspace —', help: 'Pillar thuộc phạm vi này; mỗi BU có bộ pillar riêng, app không áp một bộ pillar cho mọi BU.' }) +
           F('description', 'Mô tả pillar', 'textarea', plDesc, { wide: true, rows: 3 }) +
           F('classificationGuide', 'Hướng dẫn phân loại & ví dụ', 'textarea', plGuide, { wide: true, rows: 4, help: 'Ghi điều kiện phân loại và ví dụ cụ thể để cả đội phân loại nhất quán.' }) +
-          F('status', 'Trạng thái', 'select', ev('status', pl.status || 'active'), { options: [['active', 'Đang dùng'], ['archived', 'Đã lưu trữ']], help: 'Lưu trữ chỉ ngừng dùng cho phân loại mới — ID và lịch sử phân loại của nội dung cũ được giữ nguyên.' }),
+          F('status', 'Trạng thái', 'select', ev('status', pl.status || 'active'), { options: [['active', 'Đang dùng'], ['archived', 'Đã lưu trữ']], help: 'Lưu trữ chỉ ngừng dùng cho phân loại mới — ID và lịch sử phân loại của content cũ được giữ nguyên.' }),
           e.id ? 'Lưu pillar' : 'Tạo pillar');
       }
       case 'content': {
@@ -909,47 +909,47 @@
         if (ciProduct && ciProducts.indexOf(ciProduct) === -1) ciProducts.push(ciProduct);
         var pillarOpts = activePillars().map(function (p) { return [p.id, p.name || p.title]; });
         if (ciPillar && !pillarOpts.some(function (p) { return p[0] === ciPillar; })) { var oldP = pillarById(ciPillar); if (oldP) pillarOpts.push([oldP.id, (oldP.name || oldP.title) + ' (đã lưu trữ)']); }
-        return formShell('content', e.id ? 'Sửa nội dung gốc' : 'Tạo nội dung',
-          F('title', 'Tiêu đề nội dung *', 'text', ev('title', ci.title), { required: true, wide: true }) +
+        return formShell('content', e.id ? 'Sửa content gốc' : 'Tạo content',
+          F('title', 'Tiêu đề content *', 'text', ev('title', ci.title), { required: true, wide: true }) +
           F('angle', 'Góc khai thác (angle)', 'text', ev('angle', cfVal(ci, 'angle') || ''), { wide: true, placeholder: 'Góc nhìn riêng của bài này so với các bài cùng chủ đề…' }) +
           F('buProductId', 'Brand / BU', 'select', ev('buProductId', ci.buProductId || ci.bu_product_id || ''), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name || b.buName || b.id]; }), emptyLabel: '— Chưa chọn brand/BU —' }) +
           F('product', 'Sản phẩm', 'select', ev('product', ciProduct), { options: ciProducts.map(function (p) { return [p, p]; }), emptyLabel: '— Chưa chọn sản phẩm —' }) +
-          F('pillarId', 'Pillar chính', 'select', ev('pillarId', ciPillar || ''), { options: pillarOpts, emptyLabel: '— Chưa chọn pillar (nằm ở Backlog) —', help: 'Một nội dung chỉ có MỘT pillar chính để tính content mix không trùng. Chưa chọn pillar vẫn lưu được ở dạng nháp/Backlog.' }) +
-          F('type', 'Định dạng (format)', 'select', ev('type', ci.type || 'post'), { options: [['post', 'Bài đăng'], ['video', 'Video'], ['image', 'Hình ảnh'], ['article', 'Bài viết'], ['other', 'Khác']] }) +
-          F('campaignChoice', 'Quan hệ với campaign', 'select', ev('campaignChoice', ciChoice), { options: [['unset', 'Chưa chọn'], ['none', 'Nội dung thường xuyên — không thuộc campaign'], ['campaign', 'Thuộc campaign — chọn campaign ở ô bên cạnh']], help: '"Nội dung thường xuyên — không thuộc campaign" là lựa chọn tường minh và hợp lệ; "Chưa chọn" nghĩa là chưa quyết định. Campaign KHÔNG bắt buộc để lưu/lên lịch nội dung.' }) +
+          F('pillarId', 'Pillar chính', 'select', ev('pillarId', ciPillar || ''), { options: pillarOpts, emptyLabel: '— Chưa chọn pillar (nằm ở Backlog) —', help: 'Một content chỉ có MỘT pillar chính để tính content mix không trùng. Chưa chọn pillar vẫn lưu được ở dạng nháp/Backlog.' }) +
+          F('type', 'Định dạng (format)', 'select', ev('type', ci.type || 'post'), { options: [['post', 'Post'], ['video', 'Video'], ['image', 'Hình ảnh'], ['article', 'Bài viết'], ['other', 'Khác']] }) +
+          F('campaignChoice', 'Quan hệ với campaign', 'select', ev('campaignChoice', ciChoice), { options: [['unset', 'Chưa chọn'], ['none', 'Content thường xuyên — không thuộc campaign'], ['campaign', 'Thuộc campaign — chọn campaign ở ô bên cạnh']], help: '"Content thường xuyên — không thuộc campaign" là lựa chọn tường minh và hợp lệ; "Chưa chọn" nghĩa là chưa quyết định. Campaign KHÔNG bắt buộc để lưu/lên lịch content.' }) +
           F('campaignId', 'Campaign (chỉ khi chọn "Thuộc campaign")', 'select', ev('campaignId', ci.campaignId || e.context.campaignId || ''), { options: campaignPairs(), emptyLabel: '— Chọn campaign —' }) +
-          F('goal', 'Mục tiêu của nội dung', 'textarea', ev('goal', cfVal(ci, 'goal') || cfVal(ci, 'objective') || ''), { wide: true, rows: 2 }) +
+          F('goal', 'Mục tiêu của content', 'textarea', ev('goal', cfVal(ci, 'goal') || cfVal(ci, 'objective') || ''), { wide: true, rows: 2 }) +
           F('ownerId', 'Người phụ trách', 'select', ev('ownerId', ci.ownerId || Store.currentUserId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
           F('productionDeadline', 'Hạn sản xuất', 'date', ev('productionDeadline', cfVal(ci, 'productionDeadline') ? String(cfVal(ci, 'productionDeadline')).slice(0, 10) : '')) +
           F('editorialStatus', 'Trạng thái', 'select', ev('editorialStatus', ci.editorialStatus || 'draft'), { options: EDITORIAL_STATUSES.concat([['published', 'Đã đăng']]) }) +
-          F('brief', 'Brief / ý tưởng nội dung', 'textarea', ev('brief', ci.brief || ci.description), { wide: true, rows: 4 }) +
+          F('brief', 'Brief / ý tưởng content', 'textarea', ev('brief', ci.brief || ci.description), { wide: true, rows: 4 }) +
           F('assetUrl', 'Link brief / asset đính kèm', 'url', ev('assetUrl', cfVal(ci, 'assetUrl') || ''), { wide: true, placeholder: 'https://…' }) +
           F('series', 'Series / chuỗi bài (tùy chọn)', 'text', ev('series', ci.series || '')) +
           F('audience', 'Đối tượng khán giả (tùy chọn)', 'text', ev('audience', cfVal(ci, 'audience') || '')) +
-          F('sourceContentId', 'Nội dung gốc được dùng lại (nguồn, tùy chọn)', 'select', ev('sourceContentId', ci.sourceContentId || ci.source_content_id || ''), { options: visibleList('contentItems').filter(function (x) { return x.id !== e.id; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không dùng lại nội dung nào —', help: 'Quan hệ dùng lại (repost/repurpose/remix): chỉ ghi nguồn, không tự đổi campaign của nội dung này.' }) +
+          F('sourceContentId', 'Content gốc được dùng lại (nguồn, tùy chọn)', 'select', ev('sourceContentId', ci.sourceContentId || ci.source_content_id || ''), { options: visibleList('contentItems').filter(function (x) { return x.id !== e.id; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không dùng lại content nào —', help: 'Quan hệ dùng lại (repost/repurpose/remix): chỉ ghi nguồn, không tự đổi campaign của content này.' }) +
           F('tags', 'Tags / chủ đề phụ (cách nhau bằng dấu phẩy)', 'text', ev('tags', contentTags(ci).join(', ')), { wide: true, help: 'Tags phụ chỉ để lọc/tìm — báo cáo theo tags KHÔNG cộng các nhóm tags ra tổng (xem Content mix).' }) +
-          '<label class="fld"><span>Vận hành</span><span><input type="checkbox" name="alwaysOn"' + (contentIsAlwaysOn(ci) ? ' checked' : '') + '> Always-on — nội dung vận hành thường xuyên</span></label>' +
-          '<label class="fld"><span>Giá trị sử dụng</span><span><input type="checkbox" name="evergreen"' + (contentIsEvergreen(ci) ? ' checked' : '') + '> Evergreen — nội dung có giá trị lâu dài</span></label>' +
-          F('expiresAt', 'Ngày hết hiệu lực (tùy chọn)', 'date', ev('expiresAt', cfVal(ci, 'expiresAt') ? String(cfVal(ci, 'expiresAt')).slice(0, 10) : ''), { help: 'Hai thuộc tính always-on và evergreen là RIÊNG BIỆT: always-on nói cách vận hành, evergreen nói giá trị lâu dài. Nội dung evergreen vẫn có thể dùng trong campaign.' }) +
-          '<div class="fld wide"><span>Việc liên quan (tùy chọn — không bắt buộc, không phải quan hệ cha)</span></div>' +
-          F('activityId', 'Hoạt động liên quan (Action Plan)', 'select', ev('activityId', ci.activityId || e.context.activityId || ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không liên kết hoạt động —' }) +
-          F('taskId', 'Việc liên quan', 'select', ev('taskId', ci.taskId || cfVal(ci, 'taskId') || e.context.taskId || ''), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không liên kết việc —', help: 'Lưu nội dung từ Content Plan là luồng bình thường — không cần qua Action Plan hay campaign. Việc sản xuất chỉ được tạo khi bạn bấm nút "Tạo việc sản xuất" ở danh sách nội dung, KHÔNG tự tạo khi Lưu.' }),
-          e.id ? 'Lưu nội dung' : 'Tạo nội dung');
+          '<label class="fld"><span>Vận hành</span><span><input type="checkbox" name="alwaysOn"' + (contentIsAlwaysOn(ci) ? ' checked' : '') + '> Always-on — content vận hành thường xuyên</span></label>' +
+          '<label class="fld"><span>Giá trị sử dụng</span><span><input type="checkbox" name="evergreen"' + (contentIsEvergreen(ci) ? ' checked' : '') + '> Evergreen — content có giá trị lâu dài</span></label>' +
+          F('expiresAt', 'Ngày hết hiệu lực (tùy chọn)', 'date', ev('expiresAt', cfVal(ci, 'expiresAt') ? String(cfVal(ci, 'expiresAt')).slice(0, 10) : ''), { help: 'Hai thuộc tính always-on và evergreen là RIÊNG BIỆT: always-on nói cách vận hành, evergreen nói giá trị lâu dài. Content evergreen vẫn có thể dùng trong campaign.' }) +
+          '<div class="fld wide"><span>Task liên quan (tùy chọn — không bắt buộc, không phải quan hệ cha)</span></div>' +
+          F('activityId', 'Activity liên quan (Action Plan)', 'select', ev('activityId', ci.activityId || e.context.activityId || ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không liên kết activity —' }) +
+          F('taskId', 'Task liên quan', 'select', ev('taskId', ci.taskId || cfVal(ci, 'taskId') || e.context.taskId || ''), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không liên kết task —', help: 'Lưu content từ Content Plan là luồng bình thường — không cần qua Action Plan hay campaign. Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở danh sách content, KHÔNG tự tạo khi Lưu.' }),
+          e.id ? 'Lưu content' : 'Tạo content');
       }
       case 'variant': {
         var vv = editorItem('variants') || {};
         var platform = ev('platform', vv.platform || 'facebook');
         var isTiktok = platform === 'tiktok';
         var scenes = e.scenes || vv.scriptScenes || [];
-        var html = F('contentItemId', 'Nội dung gốc *', 'select', ev('contentItemId', vv.contentItemId || e.context.contentItemId), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Chọn nội dung —' }) +
+        var html = F('contentItemId', 'Content gốc *', 'select', ev('contentItemId', vv.contentItemId || e.context.contentItemId), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Chọn content —' }) +
           F('platform', 'Kênh', 'select', platform, { options: PLATFORMS, attrs: ' data-editor-platform="1"' }) +
           F('channelAccountId', 'Tài khoản kênh', 'select', ev('channelAccountId', vv.channelAccountId), { options: Store.list('channelAccounts').map(function (x) { return [x.id, x.name + ' (' + labelStatus(x.platform) + ')']; }), emptyLabel: '— Chưa gắn tài khoản —' }) +
           F('ownerId', 'Người sản xuất', 'select', ev('ownerId', vv.ownerId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
           F('reviewerId', 'Người duyệt', 'select', ev('reviewerId', vv.reviewerId), { options: memberPairs(), emptyLabel: '— Chưa chọn —' }) +
           F('productionDeadline', 'Hạn sản xuất', 'date', ev('productionDeadline', vv.productionDeadline)) +
           F('reviewDeadline', 'Hạn duyệt', 'date', ev('reviewDeadline', vv.reviewDeadline)) +
-          F('scheduledAt', 'Lịch đăng dự kiến của lần đăng này', 'datetime-local', ev('scheduledAt', vv.scheduledAt ? toDatetimeLocalValue(vv.scheduledAt) : (e.context.scheduledAtLocal || ''))) +
-          F('campaignId', 'Campaign của lần đăng này', 'select', ev('campaignId', cfVal(vv, 'campaignId') || ''), { options: campaignPairs(), emptyLabel: '— Kế thừa campaign của nội dung gốc —', help: 'Chỉ điền khi lần đăng này dùng cho campaign KHÁC nội dung gốc (dùng lại nội dung) — lựa chọn lưu ở lần đăng, không đổi campaign của nội dung gốc.' }) +
+          F('scheduledAt', 'Lịch đăng dự kiến của publication này', 'datetime-local', ev('scheduledAt', vv.scheduledAt ? toDatetimeLocalValue(vv.scheduledAt) : (e.context.scheduledAtLocal || ''))) +
+          F('campaignId', 'Campaign của publication này', 'select', ev('campaignId', cfVal(vv, 'campaignId') || ''), { options: campaignPairs(), emptyLabel: '— Kế thừa campaign của content gốc —', help: 'Chỉ điền khi publication này dùng cho campaign KHÁC content gốc (dùng lại content) — lựa chọn lưu ở publication, không đổi campaign của content gốc.' }) +
           F('editorialStatus', 'Trạng thái biên tập', 'select', ev('editorialStatus', vv.editorialStatus || 'draft'), { options: EDITORIAL_STATUSES }) +
           F('caption', 'Caption', 'textarea', ev('caption', vv.caption), { wide: true, rows: 4 }) +
           F('hashtags', 'Hashtag (TikTok/mạng xã hội)', 'text', ev('hashtags', vv.hashtags), { wide: true, placeholder: '#sava #...' }) +
@@ -985,17 +985,17 @@
         var kRoll = k.id ? kpiRollupFor(k) : null;
         return formShell('kpi', e.id ? 'Sửa KPI' : 'Tạo KPI',
           F('name', 'Tên KPI *', 'text', ev('name', k.name), { required: true, wide: true }) +
-          F('scopeType', 'Phạm vi (scope)', 'select', kScope, { options: [['campaign', 'Campaign'], ['activity', 'Hoạt động'], ['task', 'Việc'], ['content', 'Nội dung'], ['pillar', 'Pillar'], ['bu_product', 'Brand / Sản phẩm']], help: 'Chọn Hoạt động thì campaign + activity được tự điền từ hoạt động đã chọn.' }) +
+          F('scopeType', 'Phạm vi (scope)', 'select', kScope, { options: [['campaign', 'Campaign'], ['activity', 'Activity'], ['task', 'Task'], ['content', 'Content'], ['pillar', 'Pillar'], ['bu_product', 'Brand / Sản phẩm']], help: 'Chọn Activity thì campaign + activity được tự điền từ activity đã chọn.' }) +
           F('campaignId', 'Campaign', 'select', ev('campaignId', k.campaignId || e.context.campaignId), { options: campaignPairs(), emptyLabel: '— Toàn workspace —' }) +
-          F('activityId', 'Hoạt động', 'select', ev('activityId', k.activityId || e.context.activityId), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không gắn hoạt động —' }) +
-          F('taskId', 'Việc', 'select', ev('taskId', k.taskId || e.context.taskId), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn việc —' }) +
-          F('contentItemId', 'Nội dung', 'select', ev('contentItemId', k.contentItemId || e.context.contentItemId), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn nội dung —' }) +
+          F('activityId', 'Activity', 'select', ev('activityId', k.activityId || e.context.activityId), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không gắn activity —' }) +
+          F('taskId', 'Task', 'select', ev('taskId', k.taskId || e.context.taskId), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn task —' }) +
+          F('contentItemId', 'Content', 'select', ev('contentItemId', k.contentItemId || e.context.contentItemId), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn content —' }) +
           F('pillarId', 'Pillar', 'select', ev('pillarId', k.pillarId), { options: listSafe('contentPillars').map(function (x) { return [x.id, x.name || x.title]; }), emptyLabel: '— Không gắn Pillar —' }) +
           F('metricCode', 'Mã chỉ số (metric_code)', 'text', ev('metricCode', k.metricCode || k.metric_code), { placeholder: 'vd: valid_registrations' }) +
           F('definition', 'Định nghĩa / cách đo (definition)', 'textarea', ev('definition', kDefText), { wide: true, help: 'Mô tả cách đo: nguồn số liệu, điều kiện hợp lệ, khóa khử trùng nếu là chỉ số unique.' }) +
-          F('dataSourceType', 'Nguồn số liệu', 'select', kSourceType, { options: [['manual', 'Tự nhập'], ['post_metrics', 'Tự động từ bài đã đăng']], attrs: ' data-refresh-editor="1"', help: 'Tự nhập: cập nhật thực đạt bằng form số đo như trước. Tự động: số thực đạt tự tính từ bộ đếm của các bài đã đăng thuộc phạm vi KPI.' }) +
+          F('dataSourceType', 'Nguồn số liệu', 'select', kSourceType, { options: [['manual', 'Tự nhập'], ['post_metrics', 'Tự động từ post']], attrs: ' data-refresh-editor="1"', help: 'Tự nhập: cập nhật thực đạt bằng form số đo như trước. Tự động: số thực đạt tự tính từ bộ đếm của các post thuộc phạm vi KPI.' }) +
           (kIsAutoForm
-            ? F('dataSourceMetric', 'Chỉ số', 'select', kDsMetric, { options: kMetricOpts, help: 'Chỉ số của bài đã đăng được dùng để tính KPI này — danh mục đúng các mã đang dùng cho số liệu bài đăng trong app.' }) +
+            ? F('dataSourceMetric', 'Chỉ số', 'select', kDsMetric, { options: kMetricOpts, help: 'Chỉ số của post được dùng để tính KPI này — danh mục đúng các mã đang dùng cho số liệu post trong app.' }) +
               F('dataSourceMode', 'Cách gộp', 'select', kDsMode, { options: [['latest_sum', 'Cộng số mới nhất của từng bài'], ['period_sum', 'Cộng theo kỳ']] })
             : '') +
           F('aggregationMode', 'Cách tổng hợp (aggregation_mode)', 'select', ev('aggregationMode', k.aggregationMode || k.aggregation_mode || 'direct'), { options: [['direct', 'Đo trực tiếp (direct)'], ['sum', 'Cộng các nguồn cùng chỉ số (sum)'], ['unique', 'Đếm không trùng theo khóa định danh (unique)'], ['ratio', 'Tỷ lệ — tính lại từ tử số/mẫu số (ratio)'], ['snapshot', 'Snapshot mới nhất theo đối tượng (snapshot)'], ['manual', 'Nhập tay có bằng chứng (manual)']] }) +
@@ -1018,7 +1018,7 @@
         var kkAuto = isKpiAuto(kk);
         if (kkAuto) {
           return formShell('measurement', 'Thêm số đo cho KPI: ' + (kk.name || ''),
-            '<div class="notice info" data-kpi-auto-measurement="1">KPI này lấy số tự động từ bài đã đăng — số sẽ cập nhật khi bộ đếm của bài thay đổi.</div>' +
+            '<div class="notice info" data-kpi-auto-measurement="1">KPI này lấy số tự động từ post — số sẽ cập nhật khi bộ đếm của post thay đổi.</div>' +
             '<div class="fld wide">' + kpiAutoInfoHtml(kk) + '</div>' +
             F('value', 'Giá trị thực đạt *', 'number', ev('value', ''), { required: true, step: 'any', disabled: true }) +
             F('source', 'Nguồn số liệu *', 'text', ev('source', ''), { required: true, placeholder: 'Ví dụ: Báo cáo nền tảng, nhập tay…', disabled: true }) +
@@ -1040,8 +1040,8 @@
         return formShell('budgetLine', e.id ? 'Sửa dòng ngân sách' : 'Tạo dòng ngân sách',
           F('name', 'Tên dòng ngân sách *', 'text', ev('name', b.name), { required: true, wide: true }) +
           F('campaignId', 'Campaign', 'select', blCamp, { options: campaignPairs(), emptyLabel: '— Chưa gắn —', attrs: ' data-refresh-editor="1"' }) +
-          F('activityId', 'Hoạt động (thuộc campaign)', 'select', blAct, { options: blActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chi trực tiếp campaign / chưa phân bổ —', attrs: ' data-refresh-editor="1"' }) +
-          F('taskId', 'Việc (thuộc campaign)', 'select', ev('taskId', b.taskId || e.context.taskId || ''), { options: blTasks.map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn việc —' }) +
+          F('activityId', 'Activity (thuộc campaign)', 'select', blAct, { options: blActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chi trực tiếp campaign / chưa phân bổ —', attrs: ' data-refresh-editor="1"' }) +
+          F('taskId', 'Task (thuộc campaign)', 'select', ev('taskId', b.taskId || e.context.taskId || ''), { options: blTasks.map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn task —' }) +
           F('planned', 'Kế hoạch (planned)', 'number', ev('planned', b.planned), { min: 0, step: 'any', help: 'Số kế hoạch — lưu độc lập, không suy từ số được duyệt.' }) +
           // 0014 (quy tắc mới của Zac): KHÔNG còn ô nhập trực tiếp "Được duyệt" —
           // số duyệt chỉ đổi qua đề xuất ngân sách được Owner duyệt. Ở đây chỉ
@@ -1082,11 +1082,11 @@
         var srcList = srcKind === 'commitment' ? Store.list('commitments') : Store.list('actuals');
         var srcItem = srcList.find(function (x) { return x.id === srcId; }) || {};
         var existingAllocs = srcId ? (hasFn('listAllocationsForSource') ? Store.listAllocationsForSource(srcKind, srcId) : listSafe('budgetAllocations').filter(function (a) { return (a.sourceKind || 'actual') === srcKind && String(srcKind === 'actual' ? (a.actualId || a.actual_id) : (a.commitmentId || a.commitment_id)) === String(srcId); })) : [];
-        return formShell('allocation', 'Phân bổ chi chung — chia một khoản cho nhiều hoạt động',
+        return formShell('allocation', 'Phân bổ chi chung — chia một khoản cho nhiều activity',
           F('sourceKind', 'Loại khoản nguồn', 'select', srcKind, { options: [['actual', 'Khoản chi thực tế (actual)'], ['commitment', 'Cam kết (commitment)']], attrs: ' data-refresh-editor="1"' }) +
           F('sourceId', 'Khoản nguồn *', 'select', srcId, { options: srcList.map(function (x) { return [x.id, (x.title || '—') + ' — ' + fmtMoney(x.amount, x.currency)]; }), emptyLabel: '— Chọn khoản nguồn —', attrs: ' data-refresh-editor="1"' }) +
           (srcId ? '<div class="fld wide"><span>Tình trạng phân bổ của khoản nguồn</span><p class="sub" style="margin:2px 0">Số tiền gốc: <strong>' + fmtMoney(srcItem.amount, srcItem.currency) + '</strong>' + (existingAllocs.length ? ' · Đã phân bổ: ' + existingAllocs.map(function (a) { var aa = Store.get('activities', a.activityId); return esc(aa ? aa.name : (a.activityId || '—')) + ' = ' + (a.amount !== null && a.amount !== undefined ? fmtMoney(a.amount, srcItem.currency) : (a.sharePercent + '%')); }).join('; ') : ' · Chưa phân bổ cho hoạt động nào.') + '</p></div>' : '') +
-          F('activityId', 'Phân bổ cho hoạt động *', 'select', ev('activityId', ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Chọn hoạt động —' }) +
+          F('activityId', 'Phân bổ cho activity *', 'select', ev('activityId', ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Chọn activity —' }) +
           F('amount', 'Số tiền phân bổ', 'number', ev('amount', ''), { min: 0, step: 'any', help: 'Điền số tiền HOẶC tỷ lệ % bên dưới — tổng phân bổ không được vượt số tiền gốc / 100%.' }) +
           F('sharePercent', 'Tỷ lệ phân bổ (%)', 'number', ev('sharePercent', ''), { min: 0, step: 'any' }) +
           F('effectiveDate', 'Ngày hiệu lực', 'date', ev('effectiveDate', todayISO())),
@@ -1149,16 +1149,16 @@
       }
       case 'post': {
         var po = editorItem('externalPosts') || {};
-        return formShell('post', e.id ? 'Sửa bài đã đăng (nhập tay)' : 'Thêm bài đã đăng (nhập tay)',
+        return formShell('post', e.id ? 'Sửa Post (nhập tay)' : 'Thêm Post (nhập tay)',
           F('platform', 'Kênh', 'select', ev('platform', po.platform || 'facebook'), { options: PLATFORMS }) +
           F('channelAccountId', 'Tài khoản kênh', 'select', ev('channelAccountId', po.channelAccountId), { options: Store.list('channelAccounts').map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chọn tài khoản —' }) +
           F('externalPostId', 'Mã bài trên nền tảng *', 'text', ev('externalPostId', po.externalPostId), { required: true }) +
           F('title', 'Tiêu đề *', 'text', ev('title', po.title), { required: true, wide: true }) +
           F('url', 'Đường dẫn bài', 'url', ev('url', po.url), { wide: true }) +
           F('publishedAt', 'Ngày đăng', 'datetime-local', ev('publishedAt', toDatetimeLocalValue(po.publishedAt))) +
-          F('contentItemId', 'Nội dung gốc của lần đăng này', 'select', ev('contentItemId', po.contentItemId || e.context.contentItemId || ''), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Chưa gắn nội dung gốc —' }) +
-          F('variantId', 'Phiên bản theo kênh của lần đăng này', 'select', ev('variantId', po.variantId || ''), { options: Store.list('variants').map(function (x) { return [x.id, contentTitle(x.contentItemId) + ' — ' + (x.channelLabel || labelStatus(x.platform))]; }), emptyLabel: '— Chưa gắn phiên bản —', help: 'Đăng lại (repost) = tạo một bài/lần đăng MỚI ở đây — không sửa đè link/số liệu của lần đăng trước.' }) +
-          F('campaignId', 'Campaign của lần đăng này', 'select', ev('campaignId', po.campaignId), { options: campaignPairs(), emptyLabel: '— Không thuộc campaign —', help: 'Campaign lưu ở LẦN ĐĂNG: khi dùng lại nội dung thường xuyên cho một campaign, chọn campaign tại đây — campaign của nội dung gốc KHÔNG bị đổi.' }),
+          F('contentItemId', 'Content gốc của publication này', 'select', ev('contentItemId', po.contentItemId || e.context.contentItemId || ''), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Chưa gắn content gốc —' }) +
+          F('variantId', 'Phiên bản theo kênh của publication này', 'select', ev('variantId', po.variantId || ''), { options: Store.list('variants').map(function (x) { return [x.id, contentTitle(x.contentItemId) + ' — ' + (x.channelLabel || labelStatus(x.platform))]; }), emptyLabel: '— Chưa gắn phiên bản —', help: 'Đăng lại (repost) = tạo một post/publication MỚI ở đây — không sửa đè link/số liệu của publication trước.' }) +
+          F('campaignId', 'Campaign của publication này', 'select', ev('campaignId', po.campaignId), { options: campaignPairs(), emptyLabel: '— Không thuộc campaign —', help: 'Campaign lưu ở PUBLICATION: khi dùng lại content thường xuyên cho một campaign, chọn campaign tại đây — campaign của content gốc KHÔNG bị đổi.' }),
           'Lưu bài');
       }
       case 'adcr': {
@@ -1190,7 +1190,7 @@
       case 'memberCap': {
         var m = Store.get('members', e.context.memberId) || {};
         return formShell('memberCap', 'Năng lực & ngày nghỉ — ' + (m.name || ''),
-          F('capacityHoursPerWeek', 'Số giờ có thể nhận việc mỗi tuần', 'number', ev('capacityHoursPerWeek', m.capacityHoursPerWeek), { min: 0, step: 1 }) +
+          F('capacityHoursPerWeek', 'Số giờ có thể nhận task mỗi tuần', 'number', ev('capacityHoursPerWeek', m.capacityHoursPerWeek), { min: 0, step: 1 }) +
           F('daysOff', 'Ngày nghỉ (yyyy-mm-dd, cách nhau bằng dấu phẩy)', 'text', ev('daysOff', (m.daysOff || []).join(', ')), { wide: true }),
           'Lưu thiết lập');
       }
@@ -1213,7 +1213,7 @@
       case 'snapshot': {
         return formShell('snapshot', 'Chốt báo cáo (snapshot)',
           F('title', 'Tên báo cáo *', 'text', ev('title', 'Báo cáo ' + D.formatDateVN(todayISO())), { required: true, wide: true }) +
-          F('summary', 'Nhận xét chính', 'textarea', ev('summary', ''), { wide: true, rows: 4, help: 'Cấu trúc gợi ý: Số liệu thay đổi → lý do đã biết/giả thuyết → việc cần làm.' }),
+          F('summary', 'Nhận xét chính', 'textarea', ev('summary', ''), { wide: true, rows: 4, help: 'Cấu trúc gợi ý: Số liệu thay đổi → lý do đã biết/giả thuyết → task cần làm.' }),
           'Chốt báo cáo');
       }
     }
@@ -1311,7 +1311,7 @@
             var newId = r && r.item ? r.item.id : null;
             if (!newId) { finishSave('Đã tạo campaign.'); return; }
             createLivestreamChildren(newId, tplAllocs, function () {
-              finishSave('Đã tạo campaign từ mẫu Livestream: 4 hoạt động kèm việc/KPI gợi ý và phân bổ dự thảo (chưa duyệt, chưa có khoản chi thật).');
+              finishSave('Đã tạo campaign từ mẫu Livestream: 4 activity kèm task/KPI gợi ý và phân bổ dự thảo (chưa duyệt, chưa có khoản chi thật).');
             });
           }, function (msg) { editorFail(msg, errors); });
         }
@@ -1326,10 +1326,10 @@
         return;
       }
       case 'activity': {
-        req('name', 'tên hoạt động'); validateDateRange(errors, data.startDate, data.endDate);
+        req('name', 'tên activity'); validateDateRange(errors, data.startDate, data.endDate);
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
         var ao = { name: data.name, phaseId: data.phaseId || null, channel: data.channel || '', ownerId: data.ownerId || null, status: data.status || null, startDate: data.startDate || null, endDate: data.endDate || null, objective: data.objective || '', deliverables: data.deliverables || '', campaignId: e.context.campaignId || (editorItem('activities') || {}).campaignId || null };
-        if (e.id) done(sUpdate('activities', e.id, ao), 'Đã lưu hoạt động.'); else done(sCreate('activities', ao), 'Đã thêm hoạt động.');
+        if (e.id) done(sUpdate('activities', e.id, ao), 'Đã lưu activity.'); else done(sCreate('activities', ao), 'Đã thêm activity.');
         return;
       }
       case 'brandPage': {
@@ -1349,17 +1349,17 @@
         return;
       }
       case 'task': {
-        req('title', 'tên việc'); validateDateRange(errors, data.startDate, data.dueDate, 'startDate', 'dueDate');
-        if (data.parentId && e.id && data.parentId === e.id) errors.parentId = 'Việc không thể là việc cha của chính nó.';
+        req('title', 'tên task'); validateDateRange(errors, data.startDate, data.dueDate, 'startDate', 'dueDate');
+        if (data.parentId && e.id && data.parentId === e.id) errors.parentId = 'Task không thể là task cha của chính nó.';
         // R2-27: validate liên kết phase/activity phải thuộc đúng campaign/phase.
         var vPhase = data.phaseId ? Store.get('phases', data.phaseId) : null;
         if (data.phaseId && (!vPhase || (data.campaignId && vPhase.campaignId !== data.campaignId))) errors.phaseId = 'Giai đoạn đã chọn không thuộc campaign này.';
         var vAct = data.activityId ? Store.get('activities', data.activityId) : null;
         if (data.activityId) {
-          if (!vAct) errors.activityId = 'Hoạt động đã chọn không tồn tại.';
+          if (!vAct) errors.activityId = 'Activity đã chọn không tồn tại.';
           else {
-            if (data.campaignId && vAct.campaignId !== data.campaignId) errors.activityId = 'Hoạt động đã chọn không thuộc campaign này.';
-            if (data.phaseId && vAct.phaseId !== data.phaseId) errors.activityId = 'Hoạt động đã chọn không thuộc giai đoạn đã chọn.';
+            if (data.campaignId && vAct.campaignId !== data.campaignId) errors.activityId = 'Activity đã chọn không thuộc campaign này.';
+            if (data.phaseId && vAct.phaseId !== data.phaseId) errors.activityId = 'Activity đã chọn không thuộc giai đoạn đã chọn.';
           }
         }
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ — xem lỗi ngay dưới từng trường.', errors);
@@ -1373,8 +1373,8 @@
           effortHours: data.effortHours ? Number(data.effortHours) : null,
           deliverable: data.deliverable || '', description: data.description || ''
         };
-        if (e.id) done(sUpdate('tasks', e.id, to), 'Đã lưu công việc.');
-        else done(sCreate('tasks', Object.assign({ checklist: [] }, to)), 'Đã tạo công việc.');
+        if (e.id) done(sUpdate('tasks', e.id, to), 'Đã lưu task.');
+        else done(sCreate('tasks', Object.assign({ checklist: [] }, to)), 'Đã tạo task.');
         return;
       }
       case 'pillar': {
@@ -1387,12 +1387,12 @@
         return;
       }
       case 'content': {
-        req('title', 'tiêu đề nội dung');
+        req('title', 'tiêu đề content');
         // R3.1: campaign là TÙY CHỌN — chỉ báo lỗi khi người dùng chọn tường
         // minh "Thuộc campaign" mà chưa chọn campaign cụ thể. Thiếu pillar
         // KHÔNG phải lỗi: nội dung nằm ở Backlog / Chờ phân loại.
         var cChoice = data.campaignChoice || (data.campaignId ? 'campaign' : 'unset');
-        if (cChoice === 'campaign' && !data.campaignId) errors.campaignId = 'Đã chọn "Thuộc campaign" — hãy chọn campaign cụ thể, hoặc đổi sang "Nội dung thường xuyên — không thuộc campaign".';
+        if (cChoice === 'campaign' && !data.campaignId) errors.campaignId = 'Đã chọn "Thuộc campaign" — hãy chọn campaign cụ thể, hoặc đổi sang "Content thường xuyên — không thuộc campaign".';
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
         var curCi = editorItem('contentItems') || {};
         var alwaysEl = form ? form.querySelector('[name="alwaysOn"]') : null;
@@ -1419,11 +1419,11 @@
           // thật thuộc TỪNG lần đăng/variant, không phải của nội dung gốc).
           scheduledDate: e.id ? (curCi.scheduledDate || null) : null
         };
-        if (e.id) done(sUpdate('contentItems', e.id, co), 'Đã lưu nội dung.'); else done(sCreate('contentItems', co), 'Đã tạo nội dung (nằm ở Backlog nếu chưa có lịch đăng).');
+        if (e.id) done(sUpdate('contentItems', e.id, co), 'Đã lưu content.'); else done(sCreate('contentItems', co), 'Đã tạo content (nằm ở Backlog nếu chưa có lịch đăng).');
         return;
       }
       case 'variant': {
-        req('contentItemId', 'nội dung gốc');
+        req('contentItemId', 'content gốc');
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
         var vo = {
           contentItemId: data.contentItemId, platform: data.platform,
@@ -1504,7 +1504,7 @@
       }
       case 'measurement': {
         var measureKpi = Store.get('kpis', e.context.kpiId) || {};
-        if (isKpiAuto(measureKpi)) return editorFail('KPI này lấy số tự động từ bài đã đăng — số sẽ cập nhật khi bộ đếm của bài thay đổi. (KPI_AUTO_SOURCE)', errors);
+        if (isKpiAuto(measureKpi)) return editorFail('KPI này lấy số tự động từ post — số sẽ cập nhật khi bộ đếm của post thay đổi. (KPI_AUTO_SOURCE)', errors);
         req('value', 'giá trị'); req('source', 'nguồn số liệu');
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
         var when = data.measuredAt ? new Date(data.measuredAt + 'T00:00:00').toISOString() : new Date().toISOString();
@@ -1539,7 +1539,7 @@
         return;
       }
       case 'allocation': {
-        req('sourceId', 'khoản nguồn'); req('activityId', 'hoạt động');
+        req('sourceId', 'khoản nguồn'); req('activityId', 'activity');
         if (!data.amount && !data.sharePercent) errors.amount = 'Điền số tiền phân bổ hoặc tỷ lệ %.';
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
         var alKind = data.sourceKind === 'commitment' ? 'commitment' : 'actual';
@@ -1615,7 +1615,7 @@
         req('externalPostId', 'mã bài'); req('title', 'tiêu đề');
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
         var poo = { platform: data.platform, channelAccountId: data.channelAccountId || null, externalPostId: data.externalPostId, title: data.title, url: data.url || '', publishedAt: data.publishedAt ? fromDatetimeLocalValue(data.publishedAt) : new Date().toISOString(), campaignId: data.campaignId || null, contentItemId: data.contentItemId || null, variantId: data.variantId || null, source: 'manual' };
-        if (e.id) done(sUpdate('externalPosts', e.id, poo), 'Đã lưu bài đã đăng.'); else done(sCreate('externalPosts', poo), 'Đã thêm bài đã đăng (nguồn: nhập tay).');
+        if (e.id) done(sUpdate('externalPosts', e.id, poo), 'Đã lưu post.'); else done(sCreate('externalPosts', poo), 'Đã thêm post (nguồn: nhập tay).');
         return;
       }
       case 'adcr': {
@@ -1757,7 +1757,7 @@
     var id = currentTaskPanelId();
     if (!id) return '';
     var t = taskById(id);
-    if (!t) return '<div class="panel-backdrop" data-action="task-close"></div><aside class="detail-panel"><div class="modal-head"><h2>Việc</h2><button class="btn secondary small" data-action="task-close">Đóng</button></div>' + emptyState('Không tìm thấy việc', 'Việc có thể đã bị lưu trữ hoặc không còn tồn tại.') + '</aside>';
+    if (!t) return '<div class="panel-backdrop" data-action="task-close"></div><aside class="detail-panel"><div class="modal-head"><h2>Task</h2><button class="btn secondary small" data-action="task-close">Đóng</button></div>' + emptyState('Không tìm thấy task', 'Task có thể đã bị lưu trữ hoặc không còn tồn tại.') + '</aside>';
     var edges = Store.list('dependencies');
     var tasks = Store.list('tasks');
     var preds = edges.filter(function (x) { return x.successorId === t.id; });
@@ -1774,18 +1774,18 @@
     var statusEd = canUpdateTaskStatus();
     var commentEd = canEdit();
     var ro = taskPanelReadonly();
-    var html = '<div class="panel-backdrop" data-action="task-close"></div><aside class="detail-panel" aria-label="Chi tiết công việc">';
+    var html = '<div class="panel-backdrop" data-action="task-close"></div><aside class="detail-panel" aria-label="Chi tiết task">';
     html += '<div class="modal-head"><div><h2>' + esc(t.title) + '</h2><p class="sub">' + esc(campaignName(t.campaignId)) + ' · ' + statusBadge(t.status) + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</p></div>' +
       '<button class="btn secondary small" data-action="task-close">Đóng ✕</button></div>';
     // R2-05: ưu tiên draft đang gõ dở khi render lại cùng một việc.
     var draft = (UI.taskDraft && UI.taskDraft.taskId === t.id) ? UI.taskDraft.values : null;
     function pv(name, fallback) { return draft && draft[name] !== undefined ? draft[name] : fallback; }
     html += taskReadonlyNote();
-    if (UI.taskDraftConflict && draft) html += '<div class="notice warn" role="alert">Việc này vừa được người khác cập nhật. Bản nháp bạn đang gõ được giữ nguyên — hãy đối chiếu trước khi bấm Lưu.</div>';
-    if (!ro && !ed && statusEd) html += '<div class="notice info" role="note">Vai trò hiện tại chỉ đổi được trạng thái công việc — các ô khác đã bị khóa.</div>';
+    if (UI.taskDraftConflict && draft) html += '<div class="notice warn" role="alert">Task này vừa được người khác cập nhật. Bản nháp bạn đang gõ được giữ nguyên — hãy đối chiếu trước khi bấm Lưu.</div>';
+    if (!ro && !ed && statusEd) html += '<div class="notice info" role="note">Vai trò hiện tại chỉ đổi được trạng thái task — các ô khác đã bị khóa.</div>';
     html += '<div class="panel-meta">' + readinessBadge(t) +
       (preds.length ? ' <span class="sub">Đang chờ: ' + esc(preds.map(function (x) { var p = taskById(x.predecessorId); return p ? p.title : x.predecessorId; }).join(', ')) + '</span>' : '') +
-      (succs.length ? '<br><span class="sub">Các việc đang chờ mình: ' + esc(succs.map(function (x) { var p = taskById(x.successorId); return p ? p.title : x.successorId; }).join(', ')) + '</span>' : '') + '</div>';
+      (succs.length ? '<br><span class="sub">Các task đang chờ mình: ' + esc(succs.map(function (x) { var p = taskById(x.successorId); return p ? p.title : x.successorId; }).join(', ')) + '</span>' : '') + '</div>';
     var panelCamp = pv('campaignId', t.campaignId || '');
     var panelPhase = pv('phaseId', t.phaseId || '');
     var panelPhases = panelCamp ? Store.list('phases').filter(function (x) { return x.campaignId === panelCamp; }) : [];
@@ -1795,12 +1795,12 @@
       return true;
     });
     html += '<form id="task-panel-form" data-task-id="' + esc(t.id) + '" class="editor-form">' +
-      F2('title', 'Tên việc *', 'text', pv('title', t.title), { disabled: !ed }) +
+      F2('title', 'Tên task *', 'text', pv('title', t.title), { disabled: !ed }) +
       F2sel('assigneeId', 'Người phụ trách', pv('assigneeId', t.assigneeId), memberPairs(), '— Chưa phân công —', { disabled: !ed }) +
-      F2sel('campaignId', 'Campaign (để trống = việc độc lập)', panelCamp, campaignPairs(), '— Việc độc lập —', { disabled: !ed }) +
+      F2sel('campaignId', 'Campaign (để trống = task độc lập)', panelCamp, campaignPairs(), '— Task độc lập —', { disabled: !ed }) +
       F2sel('phaseId', 'Giai đoạn (theo campaign)', panelPhase, panelPhases.map(function (x) { return [x.id, x.name]; }), '— Chưa gắn giai đoạn —', { disabled: !ed }) +
-      F2sel('activityId', 'Hoạt động', pv('activityId', t.activityId || ''), panelActs.map(function (x) { return [x.id, x.name]; }), '— Chưa gắn hoạt động —', { disabled: !ed }) +
-      F2sel('parentId', 'Việc cha', pv('parentId', t.parentId), tasks.filter(function (x) { return x.id !== t.id; }).map(function (x) { return [x.id, x.title]; }), '— Không có —', { disabled: !ed }) +
+      F2sel('activityId', 'Activity', pv('activityId', t.activityId || ''), panelActs.map(function (x) { return [x.id, x.name]; }), '— Chưa gắn activity —', { disabled: !ed }) +
+      F2sel('parentId', 'Task cha', pv('parentId', t.parentId), tasks.filter(function (x) { return x.id !== t.id; }).map(function (x) { return [x.id, x.title]; }), '— Không có —', { disabled: !ed }) +
       F2sel('status', 'Trạng thái', pv('status', t.status), TASK_STATUSES, null, { disabled: !statusEd }) +
       F2sel('priority', 'Ưu tiên', pv('priority', t.priority || 'Trung bình'), PRIORITIES.map(function (x) { return [x, x]; }), null, { disabled: !ed }) +
       F2('startDate', 'Ngày bắt đầu', 'date', pv('startDate', t.startDate ? String(t.startDate).slice(0, 10) : ''), { disabled: !ed }) +
@@ -1809,7 +1809,7 @@
       F2('effortHours', 'Thời gian dự kiến (giờ)', 'number', pv('effortHours', t.effortHours), { step: 0.5, min: 0, disabled: !ed }) +
       F2('deliverable', 'Đầu ra cần bàn giao', 'text', pv('deliverable', t.deliverable), { wide: true, disabled: !ed }) +
       '<label class="fld wide">Mô tả<textarea name="description" rows="3"' + dis(!ed) + '>' + esc(pv('description', t.description || '')) + '</textarea></label>' +
-      F2('availabilityNote', 'Ghi chú thời gian có thể nhận việc', 'text', pv('availabilityNote', t.availabilityNote), { wide: true, disabled: !ed }) +
+      F2('availabilityNote', 'Ghi chú thời gian có thể nhận task', 'text', pv('availabilityNote', t.availabilityNote), { wide: true, disabled: !ed }) +
       '<div class="form-actions"><button class="btn" type="submit"' + dis(ro) + noEditTitle(ro) + '>Lưu thay đổi</button></div></form>';
     // Checklist
     var panelChecklistProgress = D.checklistProgress(t);
@@ -1822,13 +1822,13 @@
     html += '<form class="inline" id="checklist-add-form" data-task-id="' + esc(t.id) + '"><label>Mục checklist mới<input type="text" name="text" required' + dis(!ed) + '></label><button class="btn small" type="submit"' + dis(!ed) + noEditTitle(!ed) + '>Thêm mục</button></form>';
     // Phụ thuộc
     html += '<h3>Quan hệ phụ thuộc</h3>';
-    html += '<p class="sub"><strong>Đang chờ:</strong> ' + (preds.length ? preds.map(function (x) { var p = taskById(x.predecessorId); return esc(p ? p.title : x.predecessorId) + ' <button class="btn small secondary" data-action="dep-remove" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Bỏ</button>'; }).join(' · ') : 'Không chờ việc nào') + '</p>';
-    html += '<p class="sub"><strong>Các việc đang chờ mình:</strong> ' + (succs.length ? succs.map(function (x) { var p = taskById(x.successorId); return esc(p ? p.title : x.successorId); }).join(' · ') : 'Chưa có việc nào chờ việc này') + '</p>';
-    html += '<form class="inline" id="dep-add-panel-form" data-task-id="' + esc(t.id) + '"><label>Việc phải xong trước việc này<select name="predecessorId"' + dis(!ed) + '>' +
+    html += '<p class="sub"><strong>Đang chờ:</strong> ' + (preds.length ? preds.map(function (x) { var p = taskById(x.predecessorId); return esc(p ? p.title : x.predecessorId) + ' <button class="btn small secondary" data-action="dep-remove" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Bỏ</button>'; }).join(' · ') : 'Không chờ task nào') + '</p>';
+    html += '<p class="sub"><strong>Các task đang chờ mình:</strong> ' + (succs.length ? succs.map(function (x) { var p = taskById(x.successorId); return esc(p ? p.title : x.successorId); }).join(' · ') : 'Chưa có task nào chờ task này') + '</p>';
+    html += '<form class="inline" id="dep-add-panel-form" data-task-id="' + esc(t.id) + '"><label>Task phải xong trước task này<select name="predecessorId"' + dis(!ed) + '>' +
       tasks.filter(function (x) { return x.id !== t.id; }).map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.title) + '</option>'; }).join('') +
       '</select></label><button class="btn small secondary" type="submit"' + dis(!ed) + noEditTitle(!ed) + '>Thêm phụ thuộc</button></form>';
     if (subtasks.length) {
-      html += '<h3>Việc con</h3><ul class="clean">' + subtasks.map(function (s) { return '<li><button class="linklike" data-action="open-task" data-id="' + esc(s.id) + '">' + esc(s.title) + '</button> — ' + statusBadge(s.status) + '</li>'; }).join('') + '</ul>';
+      html += '<h3>Task con</h3><ul class="clean">' + subtasks.map(function (s) { return '<li><button class="linklike" data-action="open-task" data-id="' + esc(s.id) + '">' + esc(s.title) + '</button> — ' + statusBadge(s.status) + '</li>'; }).join('') + '</ul>';
     }
     if (blockers.length) {
       html += '<h3>Trở ngại</h3>' + blockers.map(function (b) {
@@ -1844,8 +1844,8 @@
     // Lịch sử + lưu trữ
     html += '<h3>Lịch sử bản ghi</h3><p class="sub">Tạo: ' + esc(D.formatDateTimeVN(t.createdAt) || '—') + ' · Cập nhật: ' + esc(D.formatDateTimeVN(t.updatedAt) || '—') + (t.updatedBy ? ' · Người sửa gần nhất: ' + esc(memberName(t.updatedBy)) : '') + '</p>';
     html += '<p>' + (isArchived(t)
-      ? '<button class="btn secondary" data-action="task-restore" data-id="' + esc(t.id) + '"' + dis(!ed) + '>Khôi phục việc</button>'
-      : '<button class="btn secondary" data-action="task-archive" data-id="' + esc(t.id) + '"' + dis(!ed) + '>Lưu trữ việc</button>') + '</p>';
+      ? '<button class="btn secondary" data-action="task-restore" data-id="' + esc(t.id) + '"' + dis(!ed) + '>Khôi phục task</button>'
+      : '<button class="btn secondary" data-action="task-archive" data-id="' + esc(t.id) + '"' + dis(!ed) + '>Lưu trữ task</button>') + '</p>';
     html += '</aside>';
     return html;
   }
@@ -1903,7 +1903,7 @@
       (UI.ganttRange.from || UI.ganttRange.to ? ' <button class="btn small secondary" type="button" data-action="gantt-range-clear">Bỏ khoảng</button>' : '') + '</form>' +
       '<span class="sub">Kéo thanh để dời lịch, kéo hai đầu để đổi độ dài — thay đổi chỉ áp dụng khi bấm Lưu. Thanh mờ phía dưới là kế hoạch đã duyệt.</span></div>' +
       vizLegendHtml([
-        { label: 'Campaign', cat: 4 }, { label: 'Giai đoạn', cat: 3 }, { label: 'Hoạt động', cat: 2 }, { label: 'Việc', cat: 1 },
+        { label: 'Campaign', cat: 4 }, { label: 'Giai đoạn', cat: 3 }, { label: 'Activity', cat: 2 }, { label: 'Task', cat: 1 },
         { label: 'Hoàn thành', tone: 'done' }, { label: 'Đang chạy', tone: 'running' }, { label: 'Trễ (viền đỏ)', tone: 'overdue' }, { label: 'Bị chặn (viền tím)', tone: 'blocked' }
       ], { chartId: 'gantt-legend' });
     if (UI.ganttError) {
@@ -1912,7 +1912,7 @@
     } else if (UI.ganttPreview) {
       var pv = UI.ganttPreview;
       head += '<div class="notice warn" role="alert"><strong>Xem trước thay đổi lịch:</strong> ' + esc(pv.title) + ' → ' + esc(D.formatDateVN(pv.newStart)) + ' — ' + esc(D.formatDateVN(pv.newEnd)) + '.' +
-        (pv.impact && pv.impact.length ? '<br>Ảnh hưởng phụ thuộc: ' + pv.impact.map(function (i) { return esc(i.title) + ' (đề xuất ' + esc(D.formatDateVN(i.proposedStart)) + ' — ' + esc(D.formatDateVN(i.proposedDue)) + ')'; }).join('; ') + '. Hệ thống không tự dịch các việc này.' : '<br>Không có việc phụ thuộc nào bị ảnh hưởng.') +
+        (pv.impact && pv.impact.length ? '<br>Ảnh hưởng phụ thuộc: ' + pv.impact.map(function (i) { return esc(i.title) + ' (đề xuất ' + esc(D.formatDateVN(i.proposedStart)) + ' — ' + esc(D.formatDateVN(i.proposedDue)) + ')'; }).join('; ') + '. Hệ thống không tự dịch các task này.' : '<br>Không có task phụ thuộc nào bị ảnh hưởng.') +
         '<br><button class="btn small" data-action="gantt-apply"' + dis(UI.ganttSaving) + '>' + (UI.ganttSaving ? 'Đang lưu…' : 'Lưu thay đổi') + '</button> <button class="btn small secondary" data-action="gantt-cancel"' + dis(UI.ganttSaving) + '>Hủy (giữ lịch cũ)</button></div>';
     }
     if (!dated.length) return head + '<div class="state-box">Chưa có mục nào có đủ ngày bắt đầu và ngày kết thúc để vẽ biểu đồ kế hoạch.</div>';
@@ -2063,7 +2063,7 @@
     });
     var independent = allTasks.filter(function (t) { return !t.campaignId; });
     if (independent.length) {
-      rows.push({ key: 'grp:independent', coll: '', id: '', ganttId: '', title: 'Việc độc lập', kind: 'group', depth: 0, hasChildren: true });
+      rows.push({ key: 'grp:independent', coll: '', id: '', ganttId: '', title: 'Task độc lập', kind: 'group', depth: 0, hasChildren: true });
       appendTaskTree(rows, independent, function () { return 'grp:independent'; }, function () { return 1; });
     }
     return rows;
@@ -2168,7 +2168,7 @@
       var ct = tasks.filter(function (t) { return t.campaignId === c.id; });
       var od = ct.filter(isOverdue);
       var reasons = [];
-      if (od.length) reasons.push(od.length + ' việc quá hạn (muộn nhất: ' + od.map(function (t) { return t.title + ' — hạn ' + D.formatDateVN(t.dueDate); }).join('; ') + ')');
+      if (od.length) reasons.push(od.length + ' task quá hạn (muộn nhất: ' + od.map(function (t) { return t.title + ' — hạn ' + D.formatDateVN(t.dueDate); }).join('; ') + ')');
       var blockedReal = ct.filter(function (t) {
         if (isCompletedTask(t)) return false;
         var bl = openBlockers.some(function (b) { return b.taskId === t.id; });
@@ -2179,7 +2179,7 @@
         });
         return bl || predOverdue;
       });
-      if (blockedReal.length) reasons.push(blockedReal.length + ' việc đang bị chặn thật (có trở ngại đang mở hoặc việc trước đã quá hạn)');
+      if (blockedReal.length) reasons.push(blockedReal.length + ' task đang bị chặn thật (có trở ngại đang mở hoặc task trước đã quá hạn)');
       if (c.risks) reasons.push('Rủi ro đã ghi: ' + c.risks);
       if (reasons.length) {
         var odIds = {}; od.forEach(function (t) { odIds[t.id] = true; });
@@ -2188,17 +2188,17 @@
         atRisk.push({ campaign: c, reason: reasons.join('. '), overdueCount: od.length, blockedCount: blockedReal.length, totalCount: ct.length, affectedCount: affected });
       }
     });
-    var html = pageHead('Tổng quan', 'Tình hình Marketing tại thời điểm hiện tại' + (Store.mode === 'demo' ? ' — dữ liệu minh họa' : '') + '.',
+    var html = pageHead('Overview', 'Tình hình Marketing tại thời điểm hiện tại' + (Store.mode === 'demo' ? ' — dữ liệu minh họa' : '') + '.',
       canEdit() ? '<a class="btn" href="#/campaigns">+ Tạo campaign</a>' : '');
     html += collectionBanner('campaigns');
     if (!collLoadingOrError('campaigns') && !campaigns.length) {
-      html += emptyState('Workspace chưa có campaign nào', 'Bắt đầu bằng cách tạo campaign đầu tiên, sau đó thêm giai đoạn, công việc và nội dung ngay trong trang chi tiết campaign.',
+      html += emptyState('Workspace chưa có campaign nào', 'Bắt đầu bằng cách tạo campaign đầu tiên, sau đó thêm giai đoạn, task và content ngay trong trang chi tiết campaign.',
         '<p><a class="btn" href="#/campaigns">Tới mục IMC & Campaigns để tạo</a> <a class="btn secondary" href="#/settings">Thiết lập BU/sản phẩm trước</a></p>');
     }
     html += '<div class="cards">' +
       vizKpiCardHtml({ label: 'Campaign đang chạy', valueText: String(running.length), tone: 'running', toneLabel: 'Đang chạy', href: '#/campaigns', hrefLabel: 'Xem danh sách', progress: campaigns.length ? { value: running.length, max: campaigns.length, pct: vizPct(running.length, campaigns.length), tone: 'running', detail: running.length + '/' + campaigns.length + ' campaign (' + fmtPct(vizPct(running.length, campaigns.length)) + ')' } : null }) +
-      vizKpiCardHtml({ label: 'Nội dung chờ duyệt', valueText: String(approvals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/approvals', hrefLabel: 'Tới hộp duyệt' }) +
-      vizKpiCardHtml({ label: 'Việc quá hạn', valueText: String(overdue.length), tone: 'overdue', toneLabel: 'Quá hạn', href: '#/tasks', hrefLabel: 'Xem công việc', progress: tasks.length ? { value: overdue.length, max: tasks.length, pct: vizPct(overdue.length, tasks.length), tone: 'overdue', detail: overdue.length + '/' + tasks.length + ' việc (' + fmtPct(vizPct(overdue.length, tasks.length)) + ')' } : null }) +
+      vizKpiCardHtml({ label: 'Content chờ duyệt', valueText: String(approvals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/approvals', hrefLabel: 'Tới hộp duyệt' }) +
+      vizKpiCardHtml({ label: 'Task quá hạn', valueText: String(overdue.length), tone: 'overdue', toneLabel: 'Quá hạn', href: '#/tasks', hrefLabel: 'Xem task', progress: tasks.length ? { value: overdue.length, max: tasks.length, pct: vizPct(overdue.length, tasks.length), tone: 'overdue', detail: overdue.length + '/' + tasks.length + ' task (' + fmtPct(vizPct(overdue.length, tasks.length)) + ')' } : null }) +
       vizKpiCardHtml({ label: 'Campaign nguy cơ trễ', valueText: String(atRisk.length), tone: 'overdue', toneLabel: 'Nguy cơ trễ', sub: 'Có căn cứ thời gian/trở ngại', progress: campaigns.length ? { value: atRisk.length, max: campaigns.length, pct: vizPct(atRisk.length, campaigns.length), tone: 'overdue', detail: atRisk.length + '/' + campaigns.length + ' campaign (' + fmtPct(vizPct(atRisk.length, campaigns.length)) + ')' } : null }) +
       '</div>';
     html += '<h2>Campaign đang chạy</h2>';
@@ -2208,23 +2208,23 @@
       var p = D.campaignProgress(ctasks2);
       var tone = p.percentage >= 100 ? 'done' : (ctasks2.some(isOverdue) ? 'overdue' : 'running');
       html += '<div class="card"><strong><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></strong><p class="sub">' + esc(D.formatDateVN(c.startDate)) + ' — ' + esc(D.formatDateVN(c.endDate)) + ' · Người phụ trách: ' + esc(memberName(c.ownerId)) + '</p>' +
-        vizProgressBarHtml({ value: p.completed, max: p.total, pct: p.percentage, tone: tone, detail: 'Tiến độ (chỉ tính việc chi tiết, không tính việc cha): ' + p.completed + '/' + p.total + ' (' + p.percentage + '%)' }) + '</div>';
+        vizProgressBarHtml({ value: p.completed, max: p.total, pct: p.percentage, tone: tone, detail: 'Tiến độ (chỉ tính task chi tiết, không tính task cha): ' + p.completed + '/' + p.total + ' (' + p.percentage + '%)' }) + '</div>';
     });
     html += workspaceChartsHtml();
     html += '<h2>Nguy cơ trễ (kèm lý do cụ thể)</h2>';
     if (collLoadingOrError('tasks')) html += collectionBanner('tasks');
     else if (!atRisk.length) html += '<div class="state-box">Không có campaign nào có dấu hiệu trễ có căn cứ.</div>';
     else {
-      html += '<div data-viz="overview-risk-table">' + tbl('<tr><th>Campaign</th><th>Việc trễ</th><th>Việc bị chặn</th><th>Tỉ lệ việc trễ/bị chặn</th><th>Lý do cụ thể</th></tr>' + atRisk.map(function (r) {
+      html += '<div data-viz="overview-risk-table">' + tbl('<tr><th>Campaign</th><th>Task trễ</th><th>Task bị chặn</th><th>Tỉ lệ task trễ/bị chặn</th><th>Lý do cụ thể</th></tr>' + atRisk.map(function (r) {
         return '<tr><td><strong><a href="#/campaigns/' + esc(r.campaign.id) + '">' + esc(r.campaign.name) + '</a></strong></td><td>' + fmtNum(r.overdueCount) + '</td><td>' + fmtNum(r.blockedCount) + '</td><td>' +
-          vizCellBarHtml({ value: r.affectedCount, max: r.totalCount, tone: 'overdue', text: r.affectedCount + '/' + r.totalCount + ' việc bị ảnh hưởng (' + fmtPct(vizPct(r.affectedCount, r.totalCount)) + ')' }) +
+          vizCellBarHtml({ value: r.affectedCount, max: r.totalCount, tone: 'overdue', text: r.affectedCount + '/' + r.totalCount + ' task bị ảnh hưởng (' + fmtPct(vizPct(r.affectedCount, r.totalCount)) + ')' }) +
           '</td><td><span class="sub">' + esc(r.reason) + '</span></td></tr>';
       }).join('')) + '</div>';
     }
     html += '<h2>Chờ duyệt & quá hạn</h2><div class="grid2"><div class="panel"><h3>Chờ duyệt (' + approvals.length + ') ' + (approvals.length ? vizStatusPillHtml('pending', { label: 'Chờ duyệt' }) : '') + '</h3>' +
-      (approvals.length ? '<ul class="clean">' + approvals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> · phiên bản nội dung số ' + esc(a.revision) + ' · từ ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung chờ duyệt.</p>') + '</div>' +
+      (approvals.length ? '<ul class="clean">' + approvals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> · phiên bản content số ' + esc(a.revision) + ' · từ ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content chờ duyệt.</p>') + '</div>' +
       '<div class="panel"><h3>Quá hạn (' + overdue.length + ') ' + (overdue.length ? vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) : '') + '</h3>' +
-      (overdue.length ? '<ul class="clean">' + overdue.map(function (t) { return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '">' + esc(t.title) + '</button> — hạn ' + esc(D.formatDateVN(t.dueDate)) + ' · ' + esc(memberName(t.assigneeId)) + ' ' + statusBadge(t.status) + ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có việc quá hạn.</p>') + '</div></div>';
+      (overdue.length ? '<ul class="clean">' + overdue.map(function (t) { return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '">' + esc(t.title) + '</button> — hạn ' + esc(D.formatDateVN(t.dueDate)) + ' · ' + esc(memberName(t.assigneeId)) + ' ' + statusBadge(t.status) + ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có task quá hạn.</p>') + '</div></div>';
     return html;
   }
 
@@ -2245,7 +2245,7 @@
       ['Quá hạn', mine.filter(isOverdue)],
       ['Chưa có lịch', mine.filter(function (t) { return !t.startDate && !t.dueDate; })],
       ['Đang chờ người khác', mine.filter(function (t) { return !D.taskReadiness(t.id, tasks, edges).ready && !isCompletedTask(t); })],
-      ['Việc đang chờ mình', tasks.filter(function (t) { return !myIds[t.id] && !isCompletedTask(t) && edges.some(function (e) { return e.successorId === t.id && myIds[e.predecessorId] && !isCompletedTask(taskById(e.predecessorId) || {}); }); })]
+      ['Task đang chờ mình', tasks.filter(function (t) { return !myIds[t.id] && !isCompletedTask(t) && edges.some(function (e) { return e.successorId === t.id && myIds[e.predecessorId] && !isCompletedTask(taskById(e.predecessorId) || {}); }); })]
     ];
     // R2-30.6: "Chờ mình duyệt" = đang chờ ∧ (giao đích danh cho mình) ∨
     // (không ghi người duyệt ∧ mình có quyền quyết định duyệt).
@@ -2253,8 +2253,8 @@
     var myContent = Store.list('variants').filter(function (v2) {
       return v2.ownerId === (me && me.id) && v2.scheduledAt && dateInTz(v2.scheduledAt) >= weekStart && dateInTz(v2.scheduledAt) <= weekEnd;
     });
-    var html = pageHead('Việc của tôi', 'Việc của ' + (me ? me.name : '—') + (Store.mode === 'demo' ? ' (đổi người dùng ở thanh trên — chỉ trong Chế độ demo)' : '') + '. Bấm vào tên việc để mở chi tiết và sửa ngay tại chỗ.',
-      canEdit() ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo việc</button>' : '');
+    var html = pageHead('Task của tôi', 'Task của ' + (me ? me.name : '—') + (Store.mode === 'demo' ? ' (đổi người dùng ở thanh trên — chỉ trong Chế độ demo)' : '') + '. Bấm vào tên task để mở chi tiết và sửa ngay tại chỗ.',
+      canEdit() ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button>' : '');
     html += readonlyNote();
     // WAVE-B1-VIZ2: dải KPI đầu trang — số đếm lấy NGUYÊN từ chính các nhóm
     // mà view đã lọc ở trên (groups + myApprovals), không đếm lại ở đây.
@@ -2265,18 +2265,18 @@
     html += '<div data-viz="my-work-summary"><div class="cards">' + kpiDefs.map(function (k) {
       return vizKpiCardHtml({
         label: k.label, valueText: String(k.count), tone: k.tone, toneLabel: toneLabels[k.tone] || '',
-        sub: k.label === 'Việc đang chờ mình' ? 'Việc của người khác đang chờ việc của bạn hoàn thành trước' : (k.label === 'Chờ mình duyệt' ? 'Nội dung đang chờ bạn duyệt ở hộp duyệt' : null),
-        progress: (k.mineSubset && mine.length) ? { value: k.count, max: mine.length, pct: vizPct(k.count, mine.length), tone: k.tone, detail: k.count + '/' + mine.length + ' việc của tôi (' + fmtPct(vizPct(k.count, mine.length)) + ')' } : null
+        sub: k.label === 'Task đang chờ mình' ? 'Task của người khác đang chờ task của bạn hoàn thành trước' : (k.label === 'Chờ mình duyệt' ? 'Content đang chờ bạn duyệt ở hộp duyệt' : null),
+        progress: (k.mineSubset && mine.length) ? { value: k.count, max: mine.length, pct: vizPct(k.count, mine.length), tone: k.tone, detail: k.count + '/' + mine.length + ' task của tôi (' + fmtPct(vizPct(k.count, mine.length)) + ')' } : null
       });
     }).join('') + '</div>' +
       vizStackedBarHtml({
         segments: kpiDefs.map(function (k) { return { label: k.label, value: k.count, tone: k.tone }; }),
         total: kpiDefs.reduce(function (s, k) { return s + k.count; }, 0),
-        unitLabel: 'lượt đếm theo nhóm (một việc có thể thuộc nhiều nhóm cùng lúc)', emptyText: 'Chưa có việc nào trong các nhóm để vẽ thanh phân bổ.'
+        unitLabel: 'lượt đếm theo nhóm (một task có thể thuộc nhiều nhóm cùng lúc)', emptyText: 'Chưa có task nào trong các nhóm để vẽ thanh phân bổ.'
       }) + '</div>';
     function taskList(list, emptyText) {
       if (!list.length) return '<p class="sub">' + esc(emptyText) + '</p>';
-      return tbl('<tr><th>Việc</th><th>Campaign</th><th>Mốc cần hoàn thành</th><th>Trạng thái</th><th>Phụ thuộc</th></tr>' +
+      return tbl('<tr><th>Task</th><th>Campaign</th><th>Mốc cần hoàn thành</th><th>Trạng thái</th><th>Phụ thuộc</th></tr>' +
         list.map(function (t) {
           return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + checklistBadgeHtml(t) + '</td><td>' + esc(campaignName(t.campaignId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td><td>' + statusBadge(t.status) + '</td><td>' + readinessBadge(t) + '</td></tr>';
         }).join(''));
@@ -2288,8 +2288,8 @@
     var weekDayNames = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
     function weekTimelineHtml(list) {
       var dated = (list || []).filter(function (t) { return t.startDate || t.dueDate; });
-      if (!dated.length) return vizEmptyChartHtml('Các việc trong nhóm Tuần này chưa có ngày bắt đầu/hạn để vẽ timeline 7 ngày.');
-      var head = '<div class="viz-week-row viz-week-head"><span class="viz-week-name sub">Việc</span><span class="viz-week-days">' +
+      if (!dated.length) return vizEmptyChartHtml('Các task trong nhóm Tuần này chưa có ngày bắt đầu/hạn để vẽ timeline 7 ngày.');
+      var head = '<div class="viz-week-row viz-week-head"><span class="viz-week-name sub">Task</span><span class="viz-week-days">' +
         weekDayNames.map(function (nm, i) { var d = addDaysISO(weekStart, i); return '<span class="viz-week-day' + (d === today ? ' is-today' : '') + '">' + esc(nm) + '<br>' + esc(D.formatDateVN(d)) + '</span>'; }).join('') + '</span></div>';
       var rows = dated.map(function (t) {
         var s = String(t.startDate || t.dueDate).slice(0, 10), e = String(t.dueDate || t.startDate).slice(0, 10);
@@ -2303,13 +2303,13 @@
       return '<div class="viz-chart" data-viz="my-work-week-timeline"><h4>Timeline 7 ngày — tuần ' + esc(D.formatDateVN(weekStart)) + ' đến ' + esc(D.formatDateVN(weekEnd)) + '</h4>' + head + rows + '</div>';
     }
     groups.forEach(function (g) {
-      html += '<h2>' + esc(g[0]) + ' (' + g[1].length + ')</h2>' + taskList(g[1], 'Không có việc nào trong nhóm này.');
+      html += '<h2>' + esc(g[0]) + ' (' + g[1].length + ')</h2>' + taskList(g[1], 'Không có task nào trong nhóm này.');
       if (g[0] === 'Tuần này') html += weekTimelineHtml(g[1]);
     });
     html += '<h2>Chờ mình duyệt (' + myApprovals.length + ')</h2>';
-    html += myApprovals.length ? '<ul class="clean">' + myApprovals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> — phiên bản nội dung số ' + esc(a.revision) + ', gửi bởi ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung nào chờ bạn duyệt.</p>';
-    html += '<h2>Lịch nội dung của tôi tuần này (' + myContent.length + ')</h2>';
-    if (!myContent.length) html += '<p class="sub">Tuần này bạn không có nội dung nào tới lịch đăng.</p>';
+    html += myApprovals.length ? '<ul class="clean">' + myApprovals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> — phiên bản content số ' + esc(a.revision) + ', gửi bởi ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content nào chờ bạn duyệt.</p>';
+    html += '<h2>Lịch content của tôi tuần này (' + myContent.length + ')</h2>';
+    if (!myContent.length) html += '<p class="sub">Tuần này bạn không có content nào tới lịch đăng.</p>';
     else {
       // WAVE-B1-VIZ2: dải lịch theo ngày — gom myContent theo ngày đăng đã
       // có (dateInTz của scheduledAt), chấm màu theo tông trạng thái biến thể.
@@ -2320,7 +2320,7 @@
         items.forEach(function (v2) { var tn = vizStatusTone(v2.editorialStatus || v2.approvalStatus); byTone[tn] = (byTone[tn] || 0) + 1; });
         var dots = vizCalDotsHtml(Object.keys(byTone).map(function (tn) { return { tone: tn, count: byTone[tn] }; }));
         return '<div class="viz-cal-day' + (d === today ? ' is-today' : '') + '"><div class="viz-cal-day-head"><strong>' + esc(nm) + '</strong> <span class="sub">' + esc(D.formatDateVN(d)) + '</span></div>' +
-          '<div>' + (items.length ? dots + ' <span class="sub">' + items.length + ' nội dung</span>' : '<span class="sub">—</span>') + '</div>' +
+          '<div>' + (items.length ? dots + ' <span class="sub">' + items.length + ' content</span>' : '<span class="sub">—</span>') + '</div>' +
           (items.length ? '<ul class="clean viz-cal-items">' + items.map(function (v2) { return '<li>' + esc(D.formatDateTimeVN(v2.scheduledAt)) + ' — ' + esc(contentTitle(v2.contentItemId)) + ' (' + esc(v2.channelLabel || labelStatus(v2.platform)) + ')</li>'; }).join('') + '</ul>' : '') + '</div>';
       }).join('') + '</div>';
     }
@@ -2414,7 +2414,7 @@
     html += readonlyNote() + collectionBanner('campaigns');
     if (!campaigns.length && !collLoadingOrError('campaigns')) {
       return html + emptyState('Chưa có campaign nào — bắt đầu tại đây',
-        'Luồng bắt đầu: (1) vào Thiết lập để tạo BU/sản phẩm nếu cần → (2) tạo campaign → (3) trong trang chi tiết campaign, thêm giai đoạn, hoạt động, công việc và nội dung. Toàn bộ làm ngay trên giao diện.',
+        'Luồng bắt đầu: (1) vào Thiết lập để tạo BU/sản phẩm nếu cần → (2) tạo campaign → (3) trong trang chi tiết campaign, thêm giai đoạn, activity, task và content. Toàn bộ làm ngay trên giao diện.',
         '<p>' + (ed ? '<button class="btn" data-action="editor-open" data-kind="campaign">+ Tạo campaign đầu tiên</button> ' : '') + '<a class="btn secondary" href="#/settings">Tới Thiết lập</a></p>');
     }
     html += '<h2>Biểu đồ kế hoạch tổng thể (mọi campaign)</h2>' + ganttHtml(ganttRowsPortfolio(), Store.list('dependencies'));
@@ -2424,13 +2424,13 @@
       var tone = p.percentage >= 100 ? 'done' : (ctasks3.some(isOverdue) ? 'overdue' : 'running');
       var seg3 = vizTaskStatusSegments(ctasks3);
       var health3 = '<span class="viz-health" data-viz="campaign-health">' +
-        (seg3.overdue ? vizStatusPillHtml('overdue', { label: seg3.overdue + ' việc trễ', derived: true }) + ' ' : '') +
-        (seg3.blocked ? vizStatusPillHtml('blocked', { label: seg3.blocked + ' việc bị chặn', derived: true }) + ' ' : '') +
-        (!seg3.overdue && !seg3.blocked && p.total ? vizStatusPillHtml('done', { label: 'Không có việc trễ / bị chặn' }) : '') + '</span>';
-      var donut3 = p.total ? '<div class="viz-donut-small" data-viz="campaign-card-donut">' + vizDonutSvgHtml({ segments: [{ label: 'Đã xong', value: p.completed, tone: 'done' }, { label: 'Chưa xong', value: p.total - p.completed, tone: 'todo' }], total: p.total, centerLabel: 'việc', unitLabel: 'việc chi tiết' }) + '</div>' : '';
+        (seg3.overdue ? vizStatusPillHtml('overdue', { label: seg3.overdue + ' task trễ', derived: true }) + ' ' : '') +
+        (seg3.blocked ? vizStatusPillHtml('blocked', { label: seg3.blocked + ' task bị chặn', derived: true }) + ' ' : '') +
+        (!seg3.overdue && !seg3.blocked && p.total ? vizStatusPillHtml('done', { label: 'Không có task trễ / bị chặn' }) : '') + '</span>';
+      var donut3 = p.total ? '<div class="viz-donut-small" data-viz="campaign-card-donut">' + vizDonutSvgHtml({ segments: [{ label: 'Đã xong', value: p.completed, tone: 'done' }, { label: 'Chưa xong', value: p.total - p.completed, tone: 'todo' }], total: p.total, centerLabel: 'task', unitLabel: 'task chi tiết' }) + '</div>' : '';
       return '<div class="card"><strong><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></strong><p class="sub">' + statusBadge(c.status) + ' · ' + esc(D.formatDateVN(c.startDate)) + ' — ' + esc(D.formatDateVN(c.endDate)) + ' · ' + esc(memberName(c.ownerId)) + '</p>' +
         donut3 +
-        vizProgressBarHtml({ value: p.completed, max: p.total, pct: p.percentage, tone: tone, detail: 'Tiến độ: ' + p.completed + '/' + p.total + ' việc chi tiết (' + p.percentage + '%)' }) +
+        vizProgressBarHtml({ value: p.completed, max: p.total, pct: p.percentage, tone: tone, detail: 'Tiến độ: ' + p.completed + '/' + p.total + ' task chi tiết (' + p.percentage + '%)' }) +
         '<p>' + health3 + '</p>' +
         '<p><a class="btn small" href="#/campaigns/' + esc(c.id) + '">Mở chi tiết</a> <button class="btn small secondary" data-action="editor-open" data-kind="campaign" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="campaigns" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Lưu trữ</button></p></div>';
     }).join('') + '</div>';
@@ -2868,7 +2868,7 @@
     if (!w && !b) return '<span class="sub">Không phụ thuộc</span>';
     var out = '';
     if (w) out += '<span class="badge st-blocked" data-viz="dep-badge" data-viz-tone="blocked" title="Đang chờ: ' + esc((opts.waitingTitles || []).join(', ')) + '">Đang chờ: ' + w + '</span> ';
-    if (b) out += '<span class="badge st-pending" data-viz="dep-badge" data-viz-tone="pending" title="Việc đang chờ mình: ' + esc((opts.blockingTitles || []).join(', ')) + '">Chờ mình: ' + b + '</span>';
+    if (b) out += '<span class="badge st-pending" data-viz="dep-badge" data-viz-tone="pending" title="Task đang chờ mình: ' + esc((opts.blockingTitles || []).join(', ')) + '">Chờ mình: ' + b + '</span>';
     return out.trim();
   }
   // Số gọn kiểu Việt: 3,5 nghìn / 1,2 triệu; số nhỏ giữ nguyên fmtNum.
@@ -3018,7 +3018,7 @@
       var segs = [
         { label: 'Thực chi', value: Number(r.actualTotal) || 0, series: 'actual' },
         { label: 'Cam kết chưa trả', value: Number(r.openCommitments) || 0, series: 'commit' },
-        { label: 'Còn có thể dùng', value: avail > 0 ? avail : 0, tone: 'done' }
+        { label: 'Còn dùng được', value: avail > 0 ? avail : 0, tone: 'done' }
       ];
       var segSum = segs.reduce(function (a, x) { return a + x.value; }, 0);
       if (total <= 0 || segSum > total) total = segSum;
@@ -3075,9 +3075,9 @@
     } else if (aa && Array.isArray(aa.rows) && aa.rows.length) {
       sub = 'từ ' + aa.rows.length + ' bài' + (aa.latestObservedAt ? ' · cập nhật ' + D.formatDateTimeVN(aa.latestObservedAt) : '');
     } else {
-      sub = 'chưa có dữ liệu bài đã đăng';
+      sub = 'chưa có dữ liệu post';
     }
-    var html = '<span class="badge st-running" data-kpi-auto-badge="1">Tự động từ bài đã đăng</span>' +
+    var html = '<span class="badge st-running" data-kpi-auto-badge="1">Tự động từ post</span>' +
       '<br><span class="sub" data-kpi-auto-sub="1">' + esc(sub) + '</span>';
     if (kpiAutoMetric(k) === 'reach') {
       html += '<br><span class="sub" data-kpi-auto-reach-note="1">Tổng lượt tiếp cận theo bài — không phải số người dùng không trùng.</span>';
@@ -3091,10 +3091,10 @@
     if (!isKpiAuto(k)) return '';
     var aa = k.autoActual || k.auto_actual || null;
     var rows = (aa && Array.isArray(aa.rows)) ? aa.rows : [];
-    if (!rows.length) return '<div data-kpi-auto-drill="1"><p class="sub">chưa có dữ liệu bài đã đăng</p></div>';
+    if (!rows.length) return '<div data-kpi-auto-drill="1"><p class="sub">chưa có dữ liệu post</p></div>';
     var total = rows.reduce(function (s, r) { return s + (Number(r.value) || 0); }, 0);
     return '<div data-kpi-auto-drill="1"><strong>Bài cấu thành (' + rows.length + ')</strong>' +
-      tbl('<tr><th>Bài đã đăng</th><th>Nền tảng</th><th>Giá trị</th><th>Thời điểm đo</th></tr>' + rows.map(function (r) {
+      tbl('<tr><th>Post</th><th>Nền tảng</th><th>Giá trị</th><th>Thời điểm đo</th></tr>' + rows.map(function (r) {
         return '<tr><td>' + esc(r.title || r.postId || '—') + '</td><td>' + esc(labelStatus(r.platform || '')) + '</td><td>' + fmtNum(r.value) + '</td><td>' + (r.observedAt ? esc(D.formatDateTimeVN(r.observedAt)) : '—') + '</td></tr>';
       }).join('')) +
       '<p class="sub">Tổng các bài: <strong>' + fmtNum(total) + '</strong>' + (k.unit ? ' ' + esc(k.unit) : '') + ' — bằng số thực đạt đang hiển thị của KPI.</p></div>';
@@ -3129,7 +3129,7 @@
     var derived = vizTaskDerivedTone(t);
     var tone = derived || (isCompletedTask(t) ? 'done' : vizStatusTone(t.status || ''));
     var pct = totalDays > 0 ? vizPct(elapsed, totalDays) : (todayMs >= dueMs ? 100 : 0);
-    var text = D.formatDateVN(t.startDate) + ' → ' + D.formatDateVN(t.dueDate) + ' · Hôm nay ở ' + fmtPct(pct) + ' khoảng việc';
+    var text = D.formatDateVN(t.startDate) + ' → ' + D.formatDateVN(t.dueDate) + ' · Hôm nay ở ' + fmtPct(pct) + ' khoảng task';
     return '<div class="viz-mini viz-timeline" data-viz="task-timeline" data-viz-tone="' + esc(tone) + '"><span class="viz-track"><span class="viz-fill st-fill-' + esc(tone) + '" style="width:' + vizBarWidth(pct) + '%"></span></span><span class="sub">' + esc(text) + '</span></div>';
   }
   // Chấm màu chủ sở hữu: màu phân loại cat-* theo hàm băm trình bày của memberId
@@ -3155,7 +3155,7 @@
   // Dải lịch mini của campaign: gom lần đăng theo NGÀY, mỗi ngày 1 cụm chấm
   // tông trạng thái qua vizCalDotsHtml (tối đa 3 chấm + +N như lịch tháng).
   function vizCampaignCalStripHtml(pubs) {
-    if (!pubs || !pubs.length) return vizEmptyChartHtml('Chưa có lần đăng nào thuộc campaign để vẽ lịch mini.');
+    if (!pubs || !pubs.length) return vizEmptyChartHtml('Chưa có publication nào thuộc campaign để vẽ lịch mini.');
     var byDay = {};
     pubs.forEach(function (p) {
       var day = p.at ? String(p.at).slice(0, 10) : (p.scheduledDate ? String(p.scheduledDate).slice(0, 10) : '');
@@ -3165,8 +3165,8 @@
       byDay[day][tone] = (byDay[day][tone] || 0) + 1;
     });
     var days = Object.keys(byDay).sort();
-    if (!days.length) return vizEmptyChartHtml('Các lần đăng chưa có ngày giờ để vẽ lịch mini.');
-    return '<div class="viz-cal-strip" data-viz="campaign-cal-strip"><strong>Lịch đăng theo ngày (' + pubs.length + ' lần đăng)</strong><div class="viz-cal-days">' + days.map(function (day) {
+    if (!days.length) return vizEmptyChartHtml('Các publication chưa có ngày giờ để vẽ lịch mini.');
+    return '<div class="viz-cal-strip" data-viz="campaign-cal-strip"><strong>Lịch đăng theo ngày (' + pubs.length + ' publication)</strong><div class="viz-cal-days">' + days.map(function (day) {
       var items = Object.keys(byDay[day]).map(function (tone) { return { tone: tone, count: byDay[day][tone] }; });
       var n = items.reduce(function (a, x) { return a + x.count; }, 0);
       return '<span class="viz-cal-day"><span class="sub">' + esc(D.formatDateVN(day)) + ' · ' + n + ' lần</span>' + vizCalDotsHtml(items) + '</span>';
@@ -3196,7 +3196,7 @@
     if (autos.length) {
       html += '<div data-kpi-auto-list="1">' + autos.map(function (k) {
         return '<div data-kpi-auto-item="' + esc(k.id) + '"><strong>' + esc(k.name) + '</strong> ' + kpiAutoInfoHtml(k) +
-          ' <button type="button" class="btn small secondary" data-action="kpi-drill" data-id="' + esc(k.id) + '">' + (UI.kpiOpenId === k.id ? 'Ẩn bài cấu thành' : 'Xem bài cấu thành') + '</button>' +
+          ' <button type="button" class="btn small secondary" data-action="kpi-drill" data-id="' + esc(k.id) + '">' + (UI.kpiOpenId === k.id ? 'Ẩn post cấu thành' : 'Xem post cấu thành') + '</button>' +
           (UI.kpiOpenId === k.id ? kpiAutoDrillHtml(k) : '') + '</div>';
       }).join('') + '</div>';
     }
@@ -3218,17 +3218,17 @@
   }
   function vizBudgetActionChartHtml(c) {
     var acts = Store.list('activities').filter(function (a) { return a.campaignId === c.id; });
-    if (!acts.length) return '<div class="state-box" data-viz="campaign-budget-chart">Chưa có hoạt động (action) nào trong Action Plan để vẽ phân bổ ngân sách.</div>';
+    if (!acts.length) return '<div class="state-box" data-viz="campaign-budget-chart">Chưa có activity nào trong Action Plan để vẽ phân bổ ngân sách.</div>';
     var groups = [];
     acts.forEach(function (a) {
       summarizeActivityBudget(c, a).forEach(function (r) {
         groups.push({ title: a.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) });
       });
     });
-    return '<div data-viz="campaign-budget-chart"><h4>Biểu đồ phân bổ ngân sách theo hoạt động</h4>' + vizBudgetGroupsChartHtml(groups) + '</div>';
+    return '<div data-viz="campaign-budget-chart"><h4>Biểu đồ phân bổ ngân sách theo activity</h4>' + vizBudgetGroupsChartHtml(groups) + '</div>';
   }
   function vizMixChartHtml(mix, unit) {
-    var unitLabel = unit === 'publication' ? 'lần đăng (publication)' : 'nội dung gốc';
+    var unitLabel = unit === 'publication' ? 'publication' : 'content gốc';
     var pillarRows = mix.rows.map(function (r) { return { label: r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại', total: r.total }; });
     var chTotals = {};
     mix.rows.forEach(function (r) { Object.keys(r.byChannel || {}).forEach(function (ch) { chTotals[ch] = (chTotals[ch] || 0) + r.byChannel[ch]; }); });
@@ -3304,7 +3304,7 @@
     html += '<h3>Ngân sách theo campaign</h3>';
     if (groups.length) {
       html += '<div data-viz="workspace-budget-chart">' + vizBudgetGroupsChartHtml(groups) + '</div>' +
-        tbl('<tr><th>Campaign</th><th>Tiền tệ</th><th>Phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Còn có thể dùng</th></tr>' + detailRows.map(function (x) {
+        tbl('<tr><th>Campaign</th><th>Tiền tệ</th><th>Phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Còn dùng được</th></tr>' + detailRows.map(function (x) {
           return '<tr><td><a href="#/campaigns/' + esc(x.id) + '">' + esc(x.name) + '</a></td><td>' + esc(x.r.currency) + '</td><td>' + fmtMoney(x.r.allocated, x.r.currency) + '</td><td>' + fmtMoney(x.r.actualTotal, x.r.currency) + '</td><td>' + fmtMoney(x.r.openCommitments, x.r.currency) + '</td><td>' + fmtMoney(x.r.available, x.r.currency) + '</td></tr>';
         }).join(''));
     } else html += '<div class="state-box" data-viz="workspace-budget-empty">Chưa có dữ liệu ngân sách ở mức workspace để vẽ biểu đồ.</div>';
@@ -3321,7 +3321,7 @@
     var mix = contentMixRows(mixItems, mixPubs, mixUnit);
     html += '<h3>Content mix theo Pillar</h3>';
     if (mix.denominator) html += '<div data-viz="workspace-content-mix">' + vizMixChartHtml(mix, mixUnit) + '</div>';
-    else html += '<div class="state-box" data-viz="workspace-content-mix-empty">Chưa có nội dung nào để tính content mix ở mức workspace.</div>';
+    else html += '<div class="state-box" data-viz="workspace-content-mix-empty">Chưa có content nào để tính content mix ở mức workspace.</div>';
     // Thu–Chi
     html += cashChartHtml();
     return html;
@@ -3419,9 +3419,9 @@
   function kpiScopeType(k) { return k.scopeType || k.scope_type || (k.activityId ? 'activity' : (k.taskId ? 'task' : (k.contentItemId ? 'content' : (k.pillarId ? 'pillar' : 'campaign')))); }
   function kpiScopeLabel(k) {
     var st = kpiScopeType(k);
-    if (st === 'activity') { var a = Store.get('activities', k.activityId); return 'Hoạt động: ' + (a ? a.name : '—'); }
-    if (st === 'task') { var t = taskById(k.taskId); return 'Việc: ' + (t ? t.title : '—'); }
-    if (st === 'content') return 'Nội dung: ' + contentTitle(k.contentItemId);
+    if (st === 'activity') { var a = Store.get('activities', k.activityId); return 'Activity: ' + (a ? a.name : '—'); }
+    if (st === 'task') { var t = taskById(k.taskId); return 'Task: ' + (t ? t.title : '—'); }
+    if (st === 'content') return 'Content: ' + contentTitle(k.contentItemId);
     if (st === 'pillar') { var p = listSafe('contentPillars').find(function (x) { return x.id === k.pillarId; }); return 'Pillar: ' + (p ? (p.name || p.title) : '—'); }
     if (st === 'bu_product') return 'Brand / Sản phẩm';
     return 'Campaign: ' + campaignName(k.campaignId);
@@ -3497,12 +3497,12 @@
   function actionPlanHtml(c) {
     var acts = Store.list('activities').filter(function (a) { return a.campaignId === c.id; });
     var ed = canEdit();
-    var html = '<div class="toolbar"><strong>Action Plan — ' + acts.length + ' hoạt động</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm hoạt động</button>' : '') + '</span></div>';
-    html += '<p class="sub">Mỗi dòng là một hoạt động. Số KPI/ngân sách lấy qua đúng hàm tổng hợp dùng chung (rollup KPI, tổng ngân sách theo scope) — bấm vào tên hoạt động để mở drawer chi tiết.</p>';
+    var html = '<div class="toolbar"><strong>Action Plan — ' + acts.length + ' activity</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm activity</button>' : '') + '</span></div>';
+    html += '<p class="sub">Mỗi dòng là một activity. Số KPI/ngân sách lấy qua đúng hàm tổng hợp dùng chung (rollup KPI, tổng ngân sách theo scope) — bấm vào tên activity để mở drawer chi tiết.</p>';
     html += '<div class="toolbar"><span class="sub">Nhóm theo:</span><span>' + [['phase', 'Giai đoạn'], ['owner', 'Người phụ trách'], ['channel', 'Kênh'], ['none', 'Không nhóm']].map(function (g) {
       return '<button type="button" class="btn small ' + (UI.actionGroupBy === g[0] ? '' : 'secondary') + '" data-action="action-group" data-id="' + g[0] + '">' + g[1] + '</button>';
     }).join(' ') + '</span></div>';
-    if (!acts.length) return html + emptyState('Chưa có hoạt động nào trong Action Plan', 'Thêm hoạt động đầu tiên — mỗi hoạt động có thể có task, KPI và ngân sách riêng.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm hoạt động</button></p>' : '');
+    if (!acts.length) return html + emptyState('Chưa có activity nào trong Action Plan', 'Thêm activity đầu tiên — mỗi activity có thể có task, KPI và ngân sách riêng.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm activity</button></p>' : '');
     function groupKey(a) {
       if (UI.actionGroupBy === 'owner') return 'Người phụ trách: ' + memberName(a.ownerId);
       if (UI.actionGroupBy === 'channel') return 'Kênh: ' + (a.channel || 'Chưa rõ kênh');
@@ -3512,7 +3512,7 @@
     }
     var groups = []; var gmap = {};
     acts.forEach(function (a) { var g = groupKey(a); if (!gmap[g]) { gmap[g] = []; groups.push(g); } gmap[g].push(a); });
-    var head = '<tr><th>Hoạt động</th><th>Người phụ trách</th><th>Bắt đầu–Hạn</th><th>Trạng thái</th><th>Đầu ra</th><th>KPI</th><th>Ngân sách</th><th>Nội dung liên quan</th><th></th></tr>';
+    var head = '<tr><th>Activity</th><th>Người phụ trách</th><th>Bắt đầu–Hạn</th><th>Trạng thái</th><th>Đầu ra</th><th>KPI</th><th>Ngân sách</th><th>Content liên quan</th><th></th></tr>';
     html += tbl(head + groups.map(function (g) {
       var out = g ? '<tr class="group-row"><td colspan="9">' + esc(g) + '</td></tr>' : '';
       out += gmap[g].map(function (a) {
@@ -3524,15 +3524,15 @@
         return '<tr><td><button class="linklike" data-action="activity-open" data-id="' + esc(a.id) + '"><strong>' + esc(a.name) + '</strong></button>' + (a.channel ? '<br><span class="sub">' + esc(a.channel) + '</span>' : '') + '</td>' +
           '<td>' + esc(memberName(a.ownerId)) + '</td>' +
           '<td>' + (a.startDate ? esc(D.formatDateVN(a.startDate)) : '—') + ' – ' + (a.endDate ? esc(D.formatDateVN(a.endDate)) : '—') + '</td>' +
-          '<td>' + statusBadge(a.status || '', info.label) + (info.overdue ? '<br>' + vizStatusPillHtml('overdue', { label: info.overdue + ' việc trễ', derived: true }) : '') + (info.blocked ? '<br>' + vizStatusPillHtml('blocked', { label: info.blocked + ' việc bị chặn', derived: true }) : '') + '</td>' +
-          '<td>' + info.done + '/' + info.total + ' việc xong' + (info.overdue ? '<br><span class="sub">Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</span>' : '<br><span class="sub">Bị chặn: ' + info.blocked + '</span>') + (a.deliverables || a.deliverable ? '<br><span class="sub">' + esc(a.deliverables || a.deliverable) + '</span>' : '') +
+          '<td>' + statusBadge(a.status || '', info.label) + (info.overdue ? '<br>' + vizStatusPillHtml('overdue', { label: info.overdue + ' task trễ', derived: true }) : '') + (info.blocked ? '<br>' + vizStatusPillHtml('blocked', { label: info.blocked + ' task bị chặn', derived: true }) : '') + '</td>' +
+          '<td>' + info.done + '/' + info.total + ' task xong' + (info.overdue ? '<br><span class="sub">Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</span>' : '<br><span class="sub">Bị chặn: ' + info.blocked + '</span>') + (a.deliverables || a.deliverable ? '<br><span class="sub">' + esc(a.deliverables || a.deliverable) + '</span>' : '') +
           // R3.1-VIZ 3: thanh % hoàn thành task ngay trong cột Đầu ra.
-          '<div class="viz-mini" data-viz="action-task-progress"><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(vizPct(info.done, info.total)) + '%"></span></span><span class="sub">Hoàn thành ' + fmtPct(vizPct(info.done, info.total)) + ' (' + info.done + '/' + info.total + ' việc)</span></div></td>' +
+          '<div class="viz-mini" data-viz="action-task-progress"><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(vizPct(info.done, info.total)) + '%"></span></span><span class="sub">Hoàn thành ' + fmtPct(vizPct(info.done, info.total)) + ' (' + info.done + '/' + info.total + ' task)</span></div></td>' +
           '<td>' + (kpis.length ? kpis.slice(0, 2).map(function (k) { return vizKpiMiniHtml(k); }).join('') + (kpis.length > 2 ? '<span class="sub">+ ' + (kpis.length - 2) + ' KPI khác</span>' : '') : '—') + '</td>' +
           // R3.1-VIZ 3: thanh ngân sách đã dùng / phân bổ ngay trong cột Ngân sách.
           // WAVE-B2: thêm thanh 3 lớp thực chi / cam kết / còn dùng được.
           '<td>' + budgetSummaryText(budgetRows) + budgetRows.map(function (r) { return vizBudgetUsedBarHtml(r); }).join('') + vizBudgetStackedHtml(budgetRows) + '</td>' +
-          '<td>' + (contents.length ? contents.length + ' nội dung liên quan' : 'Không có nội dung liên quan') + '</td>' +
+          '<td>' + (contents.length ? contents.length + ' content liên quan' : 'Không có content liên quan') + '</td>' +
           '<td class="row-actions"><button class="btn small" data-action="activity-open" data-id="' + esc(a.id) + '">Mở chi tiết</button></td></tr>';
       }).join('');
       return out;
@@ -3560,45 +3560,45 @@
     var openCommit = scopedFacts.commitments.find(function (x) { return ['open', 'committed', 'planned', 'partially_actualised', 'partial'].indexOf(String(x.status || 'open').toLowerCase()) !== -1; });
     var ph = Store.get('phases', act.phaseId);
     var html = '<div class="panel-backdrop activity-backdrop" data-action="activity-close"></div>' +
-      '<div class="detail-panel activity-panel" role="dialog" aria-modal="true" aria-label="Chi tiết hoạt động">' +
+      '<div class="detail-panel activity-panel" role="dialog" aria-modal="true" aria-label="Chi tiết activity">' +
       '<div class="modal-head"><h2>' + esc(act.name) + '</h2><button type="button" class="btn secondary small" data-action="activity-close">Đóng</button></div>' +
       '<p class="sub">Campaign: ' + esc(c.name || '—') + (ph ? ' · Giai đoạn: ' + esc(ph.name) : '') + (act.channel ? ' · Kênh: ' + esc(act.channel) : '') + '<br>Người phụ trách: ' + esc(memberName(act.ownerId)) + ' · ' + (act.startDate ? esc(D.formatDateVN(act.startDate)) : '—') + ' – ' + (act.endDate ? esc(D.formatDateVN(act.endDate)) : '—') + ' · Trạng thái: ' + esc(info.label) + '</p>' +
       '<div class="drawer-actions">' +
-      (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Tạo việc</button>' : '') +
+      (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Tạo task</button>' : '') +
       (ed ? '<button class="btn small secondary" data-action="editor-open" data-kind="kpi" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Thêm KPI</button>' : '') +
       (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Thêm dòng ngân sách</button>' : '') +
       (budgetEd && firstLine ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitment" data-line="' + esc(firstLine.id) + '">Ghi cam kết</button>' : '') +
       (budgetEd && openCommit ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(openCommit.id) + '">Ghi thanh toán</button>' : '') +
       '</div>' +
-      tabsHtml([['overview', 'Tổng quan'], ['tasks', 'Việc'], ['kpi', 'KPI'], ['budget', 'Ngân sách'], ['docs', 'Tài liệu']], tab, 'activity-tab');
+      tabsHtml([['overview', 'Overview'], ['tasks', 'Task'], ['kpi', 'KPI'], ['budget', 'Ngân sách'], ['docs', 'Tài liệu']], tab, 'activity-tab');
     if (tab === 'overview') {
       html += '<h3>Mục tiêu & đầu ra</h3><p>' + esc(act.objective || '—') + '</p><p><strong>Đầu ra cần bàn giao:</strong> ' + esc(act.deliverables || act.deliverable || '—') + '</p>' +
-        '<h3>Tiến độ việc</h3><p>' + info.done + '/' + info.total + ' việc xong · Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</p>' +
-        (function () { var segD = vizTaskStatusSegments(tasks); return segD.total ? '<div data-viz="activity-task-stacked">' + vizStackedBarHtml({ segments: segD.segments, total: segD.total, unitLabel: 'việc của hoạt động' }) + '</div>' : ''; })() +
-        '<h3>KPI của hoạt động</h3>' + (kpis.length ? '<ul class="clean">' + kpis.map(function (k) { return '<li>' + esc(k.name) + ': ' + kpiSummaryHtml(k) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI nào cho hoạt động này.</p>') +
-        '<h3>Ngân sách của hoạt động</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
+        '<h3>Tiến độ task</h3><p>' + info.done + '/' + info.total + ' task xong · Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</p>' +
+        (function () { var segD = vizTaskStatusSegments(tasks); return segD.total ? '<div data-viz="activity-task-stacked">' + vizStackedBarHtml({ segments: segD.segments, total: segD.total, unitLabel: 'task của activity' }) + '</div>' : ''; })() +
+        '<h3>KPI của activity</h3>' + (kpis.length ? '<ul class="clean">' + kpis.map(function (k) { return '<li>' + esc(k.name) + ': ' + kpiSummaryHtml(k) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI nào cho activity này.</p>') +
+        '<h3>Ngân sách của activity</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
         // R3.1-VIZ 3: mini-chart ở tab Overview của drawer — thanh ngân sách
         // của action + thanh tiến độ KPI của action (số vẫn qua domain).
-        '<div data-viz="activity-mini-charts"><h3>Biểu đồ ngân sách của hoạt động</h3><div data-viz="activity-mini-budget">' +
+        '<div data-viz="activity-mini-charts"><h3>Biểu đồ ngân sách của activity</h3><div data-viz="activity-mini-budget">' +
         vizBudgetGroupsChartHtml(budgetRows.map(function (r) { return { title: act.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) }; })) +
         budgetRows.map(function (r) { return vizBudgetUsedBarHtml(r); }).join('') + '</div>' +
-        '<h3>Tiến độ KPI của hoạt động</h3><div data-viz="activity-mini-kpi">' + (kpis.length ? vizKpiProgressHtml(kpis) : '<p class="sub">Chưa có KPI nào cho hoạt động này.</p>') + '</div></div>' +
-        '<h3>Nội dung liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + ' — ' + statusBadge(x.editorialStatus) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
+        '<h3>Tiến độ KPI của activity</h3><div data-viz="activity-mini-kpi">' + (kpis.length ? vizKpiProgressHtml(kpis) : '<p class="sub">Chưa có KPI nào cho activity này.</p>') + '</div></div>' +
+        '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + ' — ' + statusBadge(x.editorialStatus) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content liên quan</p>');
     }
     if (tab === 'tasks') {
-      html += '<h3>Việc của hoạt động (' + tasks.length + ')</h3>' +
-        (tasks.length ? tbl('<tr><th>Việc</th><th>Người phụ trách</th><th>Hạn</th><th>Trạng thái</th></tr>' + tasks.map(function (t) {
+      html += '<h3>Task của activity (' + tasks.length + ')</h3>' +
+        (tasks.length ? tbl('<tr><th>Task</th><th>Người phụ trách</th><th>Hạn</th><th>Trạng thái</th></tr>' + tasks.map(function (t) {
           return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + checklistBadgeHtml(t) + '</td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : '—') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td><td>' + statusBadge(t.status) + '</td></tr>';
-        }).join('')) : '<p class="sub">Chưa có việc nào — dùng nút "Tạo việc" ở trên.</p>');
+        }).join('')) : '<p class="sub">Chưa có task nào — dùng nút "Tạo task" ở trên.</p>');
     }
     if (tab === 'kpi') {
-      html += '<h3>KPI của hoạt động (' + kpis.length + ')</h3>' +
+      html += '<h3>KPI của activity (' + kpis.length + ')</h3>' +
         (kpis.length ? tbl('<tr><th>KPI</th><th>Phạm vi</th><th>Cách tổng hợp</th><th>Kết quả</th></tr>' + kpis.map(function (k) {
           return '<tr><td><strong>' + esc(k.name) + '</strong>' + (k.definition ? '<br><span class="sub">' + esc(typeof k.definition === 'string' ? k.definition : (k.definition.description || k.definition.how || '')) + '</span>' : '') + '</td><td>' + esc(kpiScopeLabel(k)) + '</td><td>' + esc(k.aggregationMode || 'direct') + '</td><td>' + kpiSummaryHtml(k) + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có KPI nào — dùng nút "Thêm KPI" ở trên.</p>');
     }
     if (tab === 'budget') {
-      html += '<h3>Ngân sách của hoạt động</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
+      html += '<h3>Ngân sách của activity</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
         '<h3>Dòng ngân sách (' + lines.length + ')</h3>' +
         (lines.length ? tbl('<tr><th>Dòng</th><th>Kế hoạch</th><th>Được duyệt</th><th>Tỉ lệ đã dùng</th><th>Tiền tệ</th></tr>' + lines.map(function (l) {
           var lineCommits = scopedFacts.commitments.filter(function (x) { return x.budgetLineId === l.id; });
@@ -3608,7 +3608,7 @@
           var lineUsed = lineApproved - lineRem;
           var lineBar = lineApproved > 0 ? vizCellBarHtml({ value: Math.max(0, lineUsed), max: lineApproved, tone: lineRem < 0 ? 'overdue' : (lineRem === 0 ? 'pending' : 'running'), text: 'Đã dùng ' + fmtMoney(lineUsed, l.currency) + ' / Được duyệt ' + fmtMoney(lineApproved, l.currency) + ' · Còn lại ' + fmtMoney(lineRem, l.currency) }) : '<span class="sub">Chưa được duyệt ngân sách</span>';
           return '<tr><td>' + esc(l.name) + '</td><td>' + (l.planned === null || l.planned === undefined ? '—' : fmtMoney(l.planned, l.currency)) + '</td><td>' + budgetLineApprovedCellHtml(l) + '</td><td><div data-viz="activity-budget-line-bar">' + lineBar + '</div></td><td>' + esc(l.currency || 'VND') + '</td></tr>';
-        }).join('')) : '<p class="sub">Chưa có dòng ngân sách nào gắn hoạt động này.</p>') +
+        }).join('')) : '<p class="sub">Chưa có dòng ngân sách nào gắn activity này.</p>') +
         '<h3>Cam kết (' + scopedFacts.commitments.length + ')</h3>' +
         (scopedFacts.commitments.length ? tbl('<tr><th>Cam kết</th><th>Số tiền</th><th>Trạng thái</th><th>Duyệt</th><th>Thao tác</th></tr>' + scopedFacts.commitments.map(function (cm) {
           return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency) + '</td><td>' + statusBadge(cm.status) + '</td><td>' + factApprovalControlsHtml(cm, 'commitment') + '</td><td class="row-actions">' + (budgetEd ? '<button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
@@ -3623,8 +3623,8 @@
       var assetRows = links.map(function (lk) { var a = Store.get('brandAssets', lk.assetId); return a ? '<li><strong>' + esc(a.name) + '</strong>' + (lk.role ? ' — ' + esc(lk.role) : '') + '</li>' : ''; }).join('');
       var dels = tasks.filter(function (t) { return t.deliverable; });
       html += '<h3>Tài liệu</h3>' + (assetRows ? '<ul class="clean">' + assetRows + '</ul>' : '<p class="sub">Chưa có tài liệu nào được liên kết với campaign này.</p>') +
-        '<h3>Đầu ra cần bàn giao của các việc</h3>' + (dels.length ? '<ul class="clean">' + dels.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có việc nào ghi đầu ra.</p>') +
-        '<h3>Nội dung liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
+        '<h3>Đầu ra cần bàn giao của các task</h3>' + (dels.length ? '<ul class="clean">' + dels.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có task nào ghi đầu ra.</p>') +
+        '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content liên quan</p>');
     }
     return html + '</div>';
   }
@@ -3643,7 +3643,7 @@
     html += '<div class="campaign-status-block">' + statusBadge(c.status) +
       ' <span class="sub">Kế hoạch đã duyệt (baseline): ' + (c.baselineStartDate || c.baselineEndDate ? esc(D.formatDateVN(c.baselineStartDate)) + ' — ' + esc(D.formatDateVN(c.baselineEndDate)) : 'chưa chốt') + '</span>' +
       (canSetBaseline() ? ' <button class="btn small secondary" data-action="campaign-baseline" data-id="' + esc(c.id) + '">Chốt baseline theo lịch hiện tại</button>' : '') + '</div>';
-    html += '<div class="tabs" role="tablist">' + [['overview', 'Tổng quan'], ['action', 'Action Plan'], ['plan', 'Kế hoạch & Timeline'], ['tasks', 'Việc'], ['content', 'Nội dung'], ['kpi', 'KPI & Ngân sách'], ['docs', 'Tài liệu'], ['summary', 'Tổng kết']].map(function (x) {
+    html += '<div class="tabs" role="tablist">' + [['overview', 'Overview'], ['action', 'Action Plan'], ['plan', 'Kế hoạch & Timeline'], ['tasks', 'Task'], ['content', 'Content'], ['kpi', 'KPI & Ngân sách'], ['docs', 'Tài liệu'], ['summary', 'Tổng kết']].map(function (x) {
       return '<a class="tab' + (tab === x[0] ? ' active' : '') + '" href="' + base + '/' + x[0] + '" role="tab">' + esc(x[1]) + '</a>';
     }).join('') + '</div>';
     var ctasks = Store.list('tasks').filter(function (t) { return t.campaignId === c.id && !isArchived(t); });
@@ -3675,11 +3675,11 @@
       html += vizBudgetActionChartHtml(c);
       html += vizBudgetStackedHtml(ovBudget);
       ovBudget.forEach(function (r) {
-        if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa thiết lập hạn mức campaign cho ' + esc(r.currency) + ' — các số dưới đây tạm lấy tổng phân bổ đã duyệt làm hạn mức. Đặt hạn mức qua Đề xuất ngân sách ở khối hạn mức campaign phía trên (hạn mức chỉ đổi khi đề xuất được Owner duyệt) để tách rõ "Chưa phân bổ" và "Còn có thể dùng".</div>';
-        html += '<p class="sub" data-viz="campaign-budget-note">Hạn mức campaign (' + esc(r.currency) + '): <strong>' + fmtMoney(r.ceiling, r.currency) + '</strong> · Chưa phân bổ: <strong>' + fmtMoney(r.unallocated, r.currency) + '</strong> · Còn có thể dùng: <strong>' + fmtMoney(r.available, r.currency) + '</strong> — "Chưa phân bổ" và "Còn có thể dùng" là hai số tách biệt, không gộp.</p>';
-        html += '<h4>Bảng số chi tiết ngân sách (' + esc(r.currency) + ')</h4>' + tbl('<tr><th>Hạn mức</th><th>Đã phân bổ</th><th>Chưa phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Dự kiến sử dụng</th><th>Còn có thể dùng</th></tr>' +
+        if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa thiết lập hạn mức campaign cho ' + esc(r.currency) + ' — các số dưới đây tạm lấy tổng phân bổ đã duyệt làm hạn mức. Đặt hạn mức qua Đề xuất ngân sách ở khối hạn mức campaign phía trên (hạn mức chỉ đổi khi đề xuất được Owner duyệt) để tách rõ "Chưa phân bổ" và "Còn dùng được".</div>';
+        html += '<p class="sub" data-viz="campaign-budget-note">Hạn mức campaign (' + esc(r.currency) + '): <strong>' + fmtMoney(r.ceiling, r.currency) + '</strong> · Chưa phân bổ: <strong>' + fmtMoney(r.unallocated, r.currency) + '</strong> · Còn dùng được: <strong>' + fmtMoney(r.available, r.currency) + '</strong> — "Chưa phân bổ" và "Còn dùng được" là hai số tách biệt, không gộp.</p>';
+        html += '<h4>Bảng số chi tiết ngân sách (' + esc(r.currency) + ')</h4>' + tbl('<tr><th>Hạn mức</th><th>Đã phân bổ</th><th>Chưa phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Dự kiến sử dụng</th><th>Còn dùng được</th></tr>' +
           '<tr><td>' + fmtMoney(r.ceiling, r.currency) + '</td><td>' + fmtMoney(r.allocated, r.currency) + '</td><td>' + fmtMoney(r.unallocated, r.currency) + '</td><td>' + fmtMoney(r.actualTotal, r.currency) + '</td><td>' + fmtMoney(r.openCommitments, r.currency) + '</td><td>' + fmtMoney(r.forecastUse, r.currency) + '</td><td>' + fmtMoney(r.available, r.currency) + '</td></tr>') +
-          '<p class="sub">"Chưa phân bổ" = hạn mức − đã phân bổ cho các hoạt động. "Còn có thể dùng" = hạn mức − thực chi − cam kết chưa trả. Hai số này khác nhau và không cộng lẫn nhau.</p>';
+          '<p class="sub">"Chưa phân bổ" = hạn mức − đã phân bổ cho các activity. "Còn dùng được" = hạn mức − thực chi − cam kết chưa trả. Hai số này khác nhau và không cộng lẫn nhau.</p>';
       });
       var ovKpis = Store.list('kpis').filter(function (k) { return k.campaignId === c.id && kpiScopeType(k) === 'campaign'; });
       html += '<h3>KPI kết quả chung</h3>';
@@ -3694,10 +3694,10 @@
       acts.forEach(function (a) { var inf = activityStatusInfo(a, activityTasks(a)); if (inf.blocked > 0) blockedActs++; else if (inf.overdue > 0) lateActs++; else onTrack++; });
       var segOv = vizTaskStatusSegments(ctasks);
       html += '<h3>Tiến độ Action Plan</h3><div class="cards">' +
-        vizKpiCardHtml({ label: 'Hoạt động đúng hạn', valueText: String(onTrack), tone: 'done', toneLabel: 'Đúng hạn', progress: acts.length ? { value: onTrack, max: acts.length, pct: vizPct(onTrack, acts.length), tone: 'done', detail: onTrack + '/' + acts.length + ' hoạt động (' + fmtPct(vizPct(onTrack, acts.length)) + ')' } : null }) +
-        vizKpiCardHtml({ label: 'Hoạt động có việc trễ', valueText: String(lateActs), tone: 'overdue', toneLabel: 'Có việc trễ', progress: acts.length ? { value: lateActs, max: acts.length, pct: vizPct(lateActs, acts.length), tone: 'overdue', detail: lateActs + '/' + acts.length + ' hoạt động (' + fmtPct(vizPct(lateActs, acts.length)) + ')' } : null }) +
-        vizKpiCardHtml({ label: 'Hoạt động bị chặn', valueText: String(blockedActs), tone: 'blocked', toneLabel: 'Bị chặn', progress: acts.length ? { value: blockedActs, max: acts.length, pct: vizPct(blockedActs, acts.length), tone: 'blocked', detail: blockedActs + '/' + acts.length + ' hoạt động (' + fmtPct(vizPct(blockedActs, acts.length)) + ')' } : null }) + '</div>' +
-        '<h4>Phân bổ trạng thái công việc của campaign</h4><div data-viz="campaign-overview-task-stacked">' + (segOv.total ? vizStackedBarHtml({ segments: segOv.segments, total: segOv.total, unitLabel: 'việc của campaign' }) : vizEmptyChartHtml('Chưa có công việc nào trong campaign để phân bổ trạng thái.')) + '</div>';
+        vizKpiCardHtml({ label: 'Activity đúng hạn', valueText: String(onTrack), tone: 'done', toneLabel: 'Đúng hạn', progress: acts.length ? { value: onTrack, max: acts.length, pct: vizPct(onTrack, acts.length), tone: 'done', detail: onTrack + '/' + acts.length + ' activity (' + fmtPct(vizPct(onTrack, acts.length)) + ')' } : null }) +
+        vizKpiCardHtml({ label: 'Activity có task trễ', valueText: String(lateActs), tone: 'overdue', toneLabel: 'Có task trễ', progress: acts.length ? { value: lateActs, max: acts.length, pct: vizPct(lateActs, acts.length), tone: 'overdue', detail: lateActs + '/' + acts.length + ' activity (' + fmtPct(vizPct(lateActs, acts.length)) + ')' } : null }) +
+        vizKpiCardHtml({ label: 'Activity bị chặn', valueText: String(blockedActs), tone: 'blocked', toneLabel: 'Bị chặn', progress: acts.length ? { value: blockedActs, max: acts.length, pct: vizPct(blockedActs, acts.length), tone: 'blocked', detail: blockedActs + '/' + acts.length + ' activity (' + fmtPct(vizPct(blockedActs, acts.length)) + ')' } : null }) + '</div>' +
+        '<h4>Phân bổ trạng thái task của campaign</h4><div data-viz="campaign-overview-task-stacked">' + (segOv.total ? vizStackedBarHtml({ segments: segOv.segments, total: segOv.total, unitLabel: 'task của campaign' }) : vizEmptyChartHtml('Chưa có task nào trong campaign để phân bổ trạng thái.')) + '</div>';
     }
     if (tab === 'action') {
       html += actionPlanHtml(c);
@@ -3707,39 +3707,39 @@
       html += phases.length ? tbl('<tr><th>Giai đoạn</th><th>Thời gian</th><th>Trạng thái</th><th>Người phụ trách</th><th>Thao tác</th></tr>' + phases.map(function (x) {
         var phTasks = ctasks.filter(function (t) { return t.phaseId === x.id; });
         var phSeg = vizTaskStatusSegments(phTasks);
-        var phPill = x.status ? statusBadge(x.status) : (phSeg.total && phSeg.done === phSeg.total ? vizStatusPillHtml('completed', { label: 'Hoàn thành' }) : (phSeg.blocked ? vizStatusPillHtml('blocked', { label: phSeg.blocked + ' việc bị chặn', derived: true }) : (phSeg.overdue ? vizStatusPillHtml('overdue', { label: phSeg.overdue + ' việc trễ', derived: true }) : vizStatusPillHtml('in_progress', { label: phSeg.total ? 'Đang triển khai' : 'Chưa có việc' }))));
-        return '<tr><td><strong>' + esc(x.name) + '</strong>' + (phSeg.total ? '<br><span class="sub">' + phSeg.done + '/' + phSeg.total + ' việc xong</span>' : '') + '</td><td>' + esc(D.formatDateVN(x.startDate)) + ' — ' + esc(D.formatDateVN(x.endDate)) + '</td><td>' + phPill + '</td><td>' + vizOwnerDotHtml(x.ownerId) + esc(memberName(x.ownerId)) + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="phase" data-id="' + esc(x.id) + '" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="phases" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
+        var phPill = x.status ? statusBadge(x.status) : (phSeg.total && phSeg.done === phSeg.total ? vizStatusPillHtml('completed', { label: 'Hoàn thành' }) : (phSeg.blocked ? vizStatusPillHtml('blocked', { label: phSeg.blocked + ' task bị chặn', derived: true }) : (phSeg.overdue ? vizStatusPillHtml('overdue', { label: phSeg.overdue + ' task trễ', derived: true }) : vizStatusPillHtml('in_progress', { label: phSeg.total ? 'Đang triển khai' : 'Chưa có task' }))));
+        return '<tr><td><strong>' + esc(x.name) + '</strong>' + (phSeg.total ? '<br><span class="sub">' + phSeg.done + '/' + phSeg.total + ' task xong</span>' : '') + '</td><td>' + esc(D.formatDateVN(x.startDate)) + ' — ' + esc(D.formatDateVN(x.endDate)) + '</td><td>' + phPill + '</td><td>' + vizOwnerDotHtml(x.ownerId) + esc(memberName(x.ownerId)) + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="phase" data-id="' + esc(x.id) + '" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="phases" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
       }).join('')) : '<div class="state-box">Chưa có giai đoạn nào.</div>';
-      html += '<div class="toolbar"><strong>Hoạt động & Kênh triển khai (' + acts.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm hoạt động</button>' : '') + '</div>';
-      html += acts.length ? tbl('<tr><th>Hoạt động</th><th>Giai đoạn</th><th>Kênh</th><th>Trạng thái</th><th>Người phụ trách</th><th>Đầu ra</th><th>Thao tác</th></tr>' + acts.map(function (a) {
+      html += '<div class="toolbar"><strong>Activity & Kênh triển khai (' + acts.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm activity</button>' : '') + '</div>';
+      html += acts.length ? tbl('<tr><th>Activity</th><th>Giai đoạn</th><th>Kênh</th><th>Trạng thái</th><th>Người phụ trách</th><th>Đầu ra</th><th>Thao tác</th></tr>' + acts.map(function (a) {
         var ph = Store.get('phases', a.phaseId);
         var aInfo = activityStatusInfo(a, activityTasks(a));
-        return '<tr><td><strong>' + esc(a.name) + '</strong></td><td>' + esc(ph ? ph.name : '—') + '</td><td>' + esc(a.channel || '—') + '</td><td>' + statusBadge(a.status || '', aInfo.label) + (aInfo.overdue ? '<br>' + vizStatusPillHtml('overdue', { label: aInfo.overdue + ' việc trễ', derived: true }) : '') + (aInfo.blocked ? '<br>' + vizStatusPillHtml('blocked', { label: aInfo.blocked + ' việc bị chặn', derived: true }) : '') + '</td><td>' + vizOwnerDotHtml(a.ownerId) + esc(memberName(a.ownerId)) + '</td><td>' + esc(a.deliverables || a.deliverable || '—') + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="activity" data-id="' + esc(a.id) + '" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Tạo việc từ hoạt động</button> <button class="btn small secondary" data-action="archive-item" data-coll="activities" data-id="' + esc(a.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có hoạt động nào.</div>';
+        return '<tr><td><strong>' + esc(a.name) + '</strong></td><td>' + esc(ph ? ph.name : '—') + '</td><td>' + esc(a.channel || '—') + '</td><td>' + statusBadge(a.status || '', aInfo.label) + (aInfo.overdue ? '<br>' + vizStatusPillHtml('overdue', { label: aInfo.overdue + ' task trễ', derived: true }) : '') + (aInfo.blocked ? '<br>' + vizStatusPillHtml('blocked', { label: aInfo.blocked + ' task bị chặn', derived: true }) : '') + '</td><td>' + vizOwnerDotHtml(a.ownerId) + esc(memberName(a.ownerId)) + '</td><td>' + esc(a.deliverables || a.deliverable || '—') + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="activity" data-id="' + esc(a.id) + '" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Tạo task từ activity</button> <button class="btn small secondary" data-action="archive-item" data-coll="activities" data-id="' + esc(a.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
+      }).join('')) : '<div class="state-box">Chưa có activity nào.</div>';
       html += '<h3>Timeline của campaign</h3>' + ganttHtml(ganttRowsCampaign(c), Store.list('dependencies'));
       // Sửa ngày bằng biểu mẫu + xem trước ảnh hưởng
-      html += '<h3>Sửa ngày công việc bằng biểu mẫu</h3>';
+      html += '<h3>Sửa ngày task bằng biểu mẫu</h3>';
       if (ctasks.length) {
-        html += '<form class="inline" id="task-date-form"><label>Việc<select id="date-task-id">' + ctasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
+        html += '<form class="inline" id="task-date-form"><label>Task<select id="date-task-id">' + ctasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
           '<label>Ngày bắt đầu mới<input type="date" id="date-new-start" required></label>' +
           '<label>Mốc cần hoàn thành mới<input type="date" id="date-new-due" required></label>' +
           '<button class="btn secondary" type="submit">Xem trước ảnh hưởng</button></form>';
         if (UI.pendingDatePreview) {
           var p = UI.pendingDatePreview;
           html += '<div class="panel"><strong>Xem trước ảnh hưởng khi đổi lịch "' + esc((taskById(p.taskId) || {}).title || '') + '"</strong>';
-          if (!p.impact.length) html += '<p class="sub">Không có việc phụ thuộc nào bị ảnh hưởng. Chưa có lịch nào bị thay đổi cho tới khi bạn xác nhận.</p>';
-          else html += '<p class="sub">Các việc phụ thuộc có thể bị ảnh hưởng (hệ thống không tự dịch lịch của chúng):</p>' + tbl('<tr><th>Việc phụ thuộc</th><th>Quan hệ</th><th>Ngày hiện tại</th><th>Ngày đề xuất</th></tr>' + p.impact.map(function (i) {
+          if (!p.impact.length) html += '<p class="sub">Không có task phụ thuộc nào bị ảnh hưởng. Chưa có lịch nào bị thay đổi cho tới khi bạn xác nhận.</p>';
+          else html += '<p class="sub">Các task phụ thuộc có thể bị ảnh hưởng (hệ thống không tự dịch lịch của chúng):</p>' + tbl('<tr><th>Task phụ thuộc</th><th>Quan hệ</th><th>Ngày hiện tại</th><th>Ngày đề xuất</th></tr>' + p.impact.map(function (i) {
             return '<tr><td>' + esc(i.title) + '</td><td>' + (i.direct ? 'Trực tiếp' : 'Gián tiếp') + '</td><td>' + esc(D.formatDateVN(i.currentStart)) + ' — ' + esc(D.formatDateVN(i.currentDue)) + '</td><td>' + esc(D.formatDateVN(i.proposedStart)) + ' — ' + esc(D.formatDateVN(i.proposedDue)) + '</td></tr>';
           }).join(''));
-          html += '<p><button class="btn" data-action="apply-date-change">Xác nhận áp dụng cho việc gốc</button> <button class="btn secondary" data-action="cancel-date-change">Hủy xem trước</button></p></div>';
+          html += '<p><button class="btn" data-action="apply-date-change">Xác nhận áp dụng cho task gốc</button> <button class="btn secondary" data-action="cancel-date-change">Hủy xem trước</button></p></div>';
         }
-      } else html += '<p class="sub">Chưa có công việc nào trong campaign này.</p>';
+      } else html += '<p class="sub">Chưa có task nào trong campaign này.</p>';
     }
     if (tab === 'tasks') {
-      html += '<div class="toolbar"><strong>Việc của campaign (' + ctasks.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm việc</button>' : '') + '</div>';
-      html += ctasks.length ? tbl('<tr><th>Việc</th><th>Người phụ trách</th><th>Đầu ra</th><th>Thời gian</th><th>Timeline tương đối</th><th>Dự kiến</th><th>Phụ thuộc</th><th>Trạng thái</th></tr>' + ctasks.map(function (t) {
+      html += '<div class="toolbar"><strong>Task của campaign (' + ctasks.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm task</button>' : '') + '</div>';
+      html += ctasks.length ? tbl('<tr><th>Task</th><th>Người phụ trách</th><th>Đầu ra</th><th>Thời gian</th><th>Timeline tương đối</th><th>Dự kiến</th><th>Phụ thuộc</th><th>Trạng thái</th></tr>' + ctasks.map(function (t) {
         return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + checklistBadgeHtml(t) + '</td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + esc(t.deliverable || '—') + '</td><td>' + (t.startDate ? esc(D.formatDateVN(t.startDate)) : '—') + ' → ' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + '</td><td>' + vizTaskTimelineHtml(t) + '</td><td>' + (t.effortHours ? esc(t.effortHours) + ' giờ' : 'Chưa ước tính') + '</td><td>' + readinessBadge(t) + '</td><td>' + statusBadge(t.status) + (isOverdue(t) ? '<br>' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) : '') + (vizTaskIsBlocked(t) && !isCompletedTask(t) ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn', derived: true }) : '') + '</td></tr>';
-      }).join('')) : emptyState('Chưa có công việc nào', 'Thêm việc đầu tiên cho campaign này.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm việc</button></p>' : '');
+      }).join('')) : emptyState('Chưa có task nào', 'Thêm task đầu tiên cho campaign này.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm task</button></p>' : '');
     }
     if (tab === 'content') {
       // R3.1: tab này chỉ lấy content/publication GẮN campaign này — gồm cả
@@ -3753,13 +3753,13 @@
       pubsForCamp.forEach(function (p) { if (p.contentItemId && !directIds[p.contentItemId]) { var xi = Store.get('contentItems', p.contentItemId); if (xi && viaPubItems.indexOf(xi) === -1) viaPubItems.push(xi); } });
       var items = directItems.concat(viaPubItems);
       var vars = Store.list('variants').filter(function (v) { return items.some(function (x) { return x.id === v.contentItemId; }); });
-      html += '<div class="toolbar"><strong>Nội dung của campaign (' + items.length + ')</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="content" data-campaign="' + esc(c.id) + '">+ Tạo nội dung</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-campaign="' + esc(c.id) + '">+ Thêm phiên bản theo kênh</button>' : '') + ' <a class="btn small secondary" href="#/content">Mở mục Nội dung</a></span></div>';
+      html += '<div class="toolbar"><strong>Content của campaign (' + items.length + ')</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="content" data-campaign="' + esc(c.id) + '">+ Tạo content</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-campaign="' + esc(c.id) + '">+ Thêm phiên bản theo kênh</button>' : '') + ' <a class="btn small secondary" href="#/content">Mở mục Content</a></span></div>';
       html += vizCampaignCalStripHtml(pubsForCamp);
-      html += items.length ? tbl('<tr><th>Nội dung</th><th>Cách gắn campaign</th><th>Số phiên bản kênh</th><th>Lịch đăng</th><th>Trạng thái</th></tr>' + items.map(function (x) {
+      html += items.length ? tbl('<tr><th>Content</th><th>Cách gắn campaign</th><th>Số phiên bản kênh</th><th>Lịch đăng</th><th>Trạng thái</th></tr>' + items.map(function (x) {
         var vs = vars.filter(function (v) { return v.contentItemId === x.id; });
-        return '<tr><td><strong>' + esc(x.title) + '</strong></td><td>' + (directIds[x.id] ? 'Nội dung thuộc campaign' : 'Qua lần đăng dùng lại') + '</td><td>' + vizChannelChipsHtml(vs) + (vs.length ? '<br><span class="sub">' + vs.length + ' phiên bản</span>' : '') + '</td><td>' + esc(D.formatDateVN(x.scheduledDate)) + '</td><td>' + statusBadge(x.editorialStatus) + '</td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có nội dung nào thuộc campaign này.</div>';
-      if (pubsForCamp.length) html += '<h3>Lần đăng thuộc campaign (' + pubsForCamp.length + ')</h3>' + tbl('<tr><th>Ngày giờ</th><th>Nội dung</th><th>Kênh / Tài khoản</th><th>Trạng thái</th></tr>' + pubsForCamp.map(function (p) {
+        return '<tr><td><strong>' + esc(x.title) + '</strong></td><td>' + (directIds[x.id] ? 'Content thuộc campaign' : 'Qua publication dùng lại') + '</td><td>' + vizChannelChipsHtml(vs) + (vs.length ? '<br><span class="sub">' + vs.length + ' phiên bản</span>' : '') + '</td><td>' + esc(D.formatDateVN(x.scheduledDate)) + '</td><td>' + statusBadge(x.editorialStatus) + '</td></tr>';
+      }).join('')) : '<div class="state-box">Chưa có content nào thuộc campaign này.</div>';
+      if (pubsForCamp.length) html += '<h3>Publication thuộc campaign (' + pubsForCamp.length + ')</h3>' + tbl('<tr><th>Ngày giờ</th><th>Content</th><th>Kênh / Tài khoản</th><th>Trạng thái</th></tr>' + pubsForCamp.map(function (p) {
         return '<tr><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td>' + esc(p.title) + '</td><td>' + esc(labelStatus(p.platform)) + ' · ' + esc(accountName(p.channelAccountId)) + '</td><td>' + statusBadge(p.status) + '</td></tr>';
       }).join(''));
     }
@@ -3782,15 +3782,15 @@
         return '<tr><td><strong>' + esc(a.name) + '</strong></td><td>' + esc(a.type) + '</td><td>' + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">Mở / tải</a>' : '—') + '</td><td>' + esc(brandStatusInfo(a).label) + '</td></tr>';
       }).join('')) : '<div class="state-box">Chưa có tài nguyên nào trong Brand Hub.</div>';
       var deliverables = ctasks.filter(function (t) { return t.deliverable; });
-      html += '<h3>Đầu ra cần bàn giao của các việc</h3>' + (deliverables.length ? '<ul class="clean">' + deliverables.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có việc nào ghi đầu ra.</p>');
+      html += '<h3>Đầu ra cần bàn giao của các task</h3>' + (deliverables.length ? '<ul class="clean">' + deliverables.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có task nào ghi đầu ra.</p>');
     }
     if (tab === 'summary') {
       var prog = D.campaignProgress(ctasks);
       var segSum = vizTaskStatusSegments(ctasks);
       html += '<div class="panel"><h3>Kết quả tới hiện tại</h3>' +
-        (prog.total ? '<div class="viz-summary-donut" data-viz="campaign-summary-donut">' + vizDonutSvgHtml({ segments: [{ label: 'Đã xong', value: prog.completed, tone: 'done' }, { label: 'Chưa xong', value: prog.total - prog.completed, tone: 'todo' }], total: prog.total, centerLabel: 'việc', unitLabel: 'việc chi tiết của campaign' }) + '</div>' +
-          '<div data-viz="campaign-summary-task-stacked">' + vizStackedBarHtml({ segments: segSum.segments, total: segSum.total, unitLabel: 'việc của campaign' }) + '</div>' : vizEmptyChartHtml('Chưa có công việc nào trong campaign để vẽ tiến độ.')) +
-        '<p>Tiến độ công việc: ' + prog.completed + '/' + prog.total + ' (' + prog.percentage + '%).</p>' +
+        (prog.total ? '<div class="viz-summary-donut" data-viz="campaign-summary-donut">' + vizDonutSvgHtml({ segments: [{ label: 'Đã xong', value: prog.completed, tone: 'done' }, { label: 'Chưa xong', value: prog.total - prog.completed, tone: 'todo' }], total: prog.total, centerLabel: 'task', unitLabel: 'task chi tiết của campaign' }) + '</div>' +
+          '<div data-viz="campaign-summary-task-stacked">' + vizStackedBarHtml({ segments: segSum.segments, total: segSum.total, unitLabel: 'task của campaign' }) + '</div>' : vizEmptyChartHtml('Chưa có task nào trong campaign để vẽ tiến độ.')) +
+        '<p>Tiến độ task: ' + prog.completed + '/' + prog.total + ' (' + prog.percentage + '%).</p>' +
         '<h3>Rủi ro</h3><p>' + esc(c.risks || 'Chưa ghi nhận rủi ro.') + '</p>' +
         '<h3>Kết quả mong muốn</h3><p>' + esc(c.desiredOutcome || '—') + '</p>' +
         '<h3>Tổng kết & rút kinh nghiệm</h3><p>' + esc(c.lessons || 'Chưa ghi nhận — bấm Sửa campaign để bổ sung khi campaign kết thúc.') + '</p>' +
@@ -3822,7 +3822,7 @@
   function contentCampaignBadge(x) {
     var ch = contentCampaignChoice(x);
     if (ch === 'campaign') return esc(campaignName(x.campaignId));
-    if (ch === 'none') return '<span class="badge ok">Nội dung thường xuyên — không thuộc campaign</span>';
+    if (ch === 'none') return '<span class="badge ok">Content thường xuyên — không thuộc campaign</span>';
     return '<span class="badge grey">Chưa chọn campaign</span>';
   }
   function contentTags(x) {
@@ -3925,7 +3925,7 @@
   var PRODUCTION_TASK_TEMPLATES = ['Viết nội dung', 'Thiết kế / sản xuất media', 'Quay / dựng', 'Duyệt nội dung'];
   function createProductionTasks(contentId) {
     var ci = Store.get('contentItems', contentId);
-    if (!ci) { toast('Không tìm thấy nội dung.'); return; }
+    if (!ci) { toast('Không tìm thấy content.'); return; }
     // CHỈ tạo khi người dùng bấm nút này (template sản xuất) — thao tác Lưu
     // nội dung không bao giờ tự tạo task. Task chỉ gắn content là đủ:
     // campaign/activity lấy theo liên kết sẵn có của content (có thể trống).
@@ -3934,7 +3934,7 @@
     });
     (function step() {
       var job = jobs.shift();
-      if (!job) { toast('Đã tạo ' + PRODUCTION_TASK_TEMPLATES.length + ' việc sản xuất từ template cho nội dung "' + ci.title + '".'); render(); return; }
+      if (!job) { toast('Đã tạo ' + PRODUCTION_TASK_TEMPLATES.length + ' task sản xuất từ template cho content "' + ci.title + '".'); render(); return; }
       saveResult(sCreate('tasks', job), step, function (msg) { toast(msg); });
     })();
   }
@@ -4010,28 +4010,28 @@
     });
     var productsAll = [];
     Store.list('businessUnits').forEach(function (b) { (b.products || []).forEach(function (p) { if (productsAll.indexOf(p) === -1) productsAll.push(p); }); });
-    var html = pageHead('Content Plan', 'Lập kế hoạch nội dung theo Pillar, campaign (tùy chọn), kênh và lịch đăng. Tạo nội dung ngay tại đây là luồng bình thường — không cần qua Action Plan hay campaign.',
-      (ed ? '<button class="btn" data-action="editor-open" data-kind="content">+ Tạo nội dung</button> <button class="btn secondary" data-action="editor-open" data-kind="variant">+ Thêm phiên bản theo kênh</button> <button class="btn secondary" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : ''));
+    var html = pageHead('Content Plan', 'Lập kế hoạch content theo Pillar, campaign (tùy chọn), kênh và lịch đăng. Tạo content ngay tại đây là luồng bình thường — không cần qua Action Plan hay campaign.',
+      (ed ? '<button class="btn" data-action="editor-open" data-kind="content">+ Tạo content</button> <button class="btn secondary" data-action="editor-open" data-kind="variant">+ Thêm phiên bản theo kênh</button> <button class="btn secondary" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : ''));
     html += readonlyNote() + collectionBanner('variants');
     html += '<form class="inline" id="content-filter-form"><span class="sub">Lọc:</span>' +
       '<label>Brand / BU<select name="buProductId"><option value="all">Tất cả</option>' + Store.list('businessUnits').map(function (b) { return '<option value="' + esc(b.id) + '"' + (cf.buProductId === b.id ? ' selected' : '') + '>' + esc(b.name || b.buName || b.id) + '</option>'; }).join('') + '</select></label>' +
       '<label>Sản phẩm<select name="product"><option value="all">Tất cả</option>' + productsAll.map(function (p) { return '<option value="' + esc(p) + '"' + (cf.product === p ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select></label>' +
       '<label>Pillar<select name="pillarId"><option value="all">Tất cả pillar</option><option value=""' + (cf.pillarId === '' ? ' selected' : '') + '>Chưa phân loại</option>' + allPillars().map(function (p) { return '<option value="' + esc(p.id) + '"' + (cf.pillarId === p.id ? ' selected' : '') + '>' + esc(p.name || p.title) + (isPillarArchived(p) ? ' (đã lưu trữ)' : '') + '</option>'; }).join('') + '</select></label>' +
-      '<label>Campaign<select name="campaignId"><option value="all">Tất cả</option><option value="none"' + (cf.campaignId === 'none' ? ' selected' : '') + '>Không thuộc campaign (nội dung thường xuyên)</option><option value="unset"' + (cf.campaignId === 'unset' ? ' selected' : '') + '>Chưa chọn campaign</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (cf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Campaign<select name="campaignId"><option value="all">Tất cả</option><option value="none"' + (cf.campaignId === 'none' ? ' selected' : '') + '>Không thuộc campaign (content thường xuyên)</option><option value="unset"' + (cf.campaignId === 'unset' ? ' selected' : '') + '>Chưa chọn campaign</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (cf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Kênh<select name="platform"><option value="all">Tất cả kênh</option>' + PLATFORMS.map(function (p) { return '<option value="' + p[0] + '"' + (cf.platform === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Tài khoản kênh<select name="channelAccountId"><option value="all">Tất cả tài khoản</option>' + Store.list('channelAccounts').map(function (a) { return '<option value="' + esc(a.id) + '"' + (cf.channelAccountId === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
-      '<label>Định dạng<select name="format"><option value="all">Tất cả</option>' + [['post', 'Bài đăng'], ['video', 'Video'], ['image', 'Hình ảnh'], ['article', 'Bài viết'], ['other', 'Khác']].map(function (p) { return '<option value="' + p[0] + '"' + (cf.format === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
+      '<label>Định dạng<select name="format"><option value="all">Tất cả</option>' + [['post', 'Post'], ['video', 'Video'], ['image', 'Hình ảnh'], ['article', 'Bài viết'], ['other', 'Khác']].map(function (p) { return '<option value="' + p[0] + '"' + (cf.format === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Người phụ trách<select name="ownerId"><option value="all">Tất cả</option>' + memberPairs().map(function (p) { return '<option value="' + esc(p[0]) + '"' + (cf.ownerId === p[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select></label>' +
       '<label>Trạng thái<select name="status"><option value="all">Tất cả</option>' + EDITORIAL_STATUSES.map(function (p) { return '<option value="' + p[0] + '"' + (cf.status === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Từ ngày<input type="date" name="from" value="' + esc(cf.from) + '"></label>' +
       '<label>Đến ngày<input type="date" name="to" value="' + esc(cf.to) + '"></label>' +
-      '<label>Hoạt động (nâng cao)<select name="activityId"><option value="all">Tất cả</option>' + visibleList('activities').map(function (a) { return '<option value="' + esc(a.id) + '"' + (cf.activityId === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Activity (nâng cao)<select name="activityId"><option value="all">Tất cả</option>' + visibleList('activities').map(function (a) { return '<option value="' + esc(a.id) + '"' + (cf.activityId === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Task (nâng cao)<select name="taskId"><option value="all">Tất cả</option>' + visibleList('tasks').map(function (t) { return '<option value="' + esc(t.id) + '"' + (cf.taskId === t.id ? ' selected' : '') + '>' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
       '<button class="btn secondary" type="submit">Lọc</button></form>' +
-      '<p class="sub">Lọc theo Hoạt động/Việc là bộ lọc nâng cao theo liên kết việc (tùy chọn). Lọc Pillar thấy cả bài thuộc campaign lẫn bài thường xuyên; lọc Campaign chỉ thấy nội dung/lần đăng thuộc campaign đó.</p>';
-    html += tabsHtml([['backlog', 'Backlog / Ý tưởng'], ['pillars', 'Theo Pillar'], ['calendar', 'Lịch đăng'], ['table', 'Bảng nội dung'], ['board', 'Board sản xuất / duyệt'], ['production', 'Tiến độ sản xuất'], ['library', 'Thư viện đã đăng'], ['mix', 'Content mix'], ['queue', 'Chờ phân loại'], ['manage', 'Quản lý Pillar']], UI.contentTab, 'content-tab');
+      '<p class="sub">Lọc theo Activity/Task là bộ lọc nâng cao theo liên kết task (tùy chọn). Lọc Pillar thấy cả content thuộc campaign lẫn content thường xuyên; lọc Campaign chỉ thấy content/publication thuộc campaign đó.</p>';
+    html += tabsHtml([['backlog', 'Backlog / Ý tưởng'], ['pillars', 'Theo Pillar'], ['calendar', 'Lịch đăng'], ['table', 'Bảng content'], ['board', 'Board sản xuất / duyệt'], ['production', 'Tiến độ sản xuất'], ['library', 'Thư viện Post'], ['mix', 'Content mix'], ['queue', 'Chờ phân loại'], ['manage', 'Quản lý Pillar']], UI.contentTab, 'content-tab');
     function itemActions(x) {
-      return '<button class="btn small" data-action="editor-open" data-kind="content" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-content="' + esc(x.id) + '"' + dis(!ed) + '>+ Phiên bản kênh</button> <button class="btn small secondary" data-action="content-prod-tasks" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Tạo việc sản xuất</button>';
+      return '<button class="btn small" data-action="editor-open" data-kind="content" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-content="' + esc(x.id) + '"' + dis(!ed) + '>+ Phiên bản kênh</button> <button class="btn small secondary" data-action="content-prod-tasks" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Tạo task sản xuất</button>';
     }
     function itemRow(x) {
       var myPubs = pubsOfItem(x.id);
@@ -4042,10 +4042,10 @@
         '<td>' + esc(labelStatus(x.type)) + (contentTags(x).length ? '<br><span class="sub">Tags: ' + esc(contentTags(x).join(', ')) + '</span>' : '') + (x.series ? '<br><span class="sub">Series: ' + esc(x.series) + '</span>' : '') + '</td>' +
         '<td>' + esc(memberName(x.ownerId)) + '</td>' +
         '<td>' + (cfVal(x, 'productionDeadline') ? esc(D.formatDateVN(cfVal(x, 'productionDeadline'))) : '—') + '</td>' +
-        '<td>' + statusBadge(x.editorialStatus) + '<br><span class="sub">' + myPubs.length + ' lần đăng</span></td>' +
+        '<td>' + statusBadge(x.editorialStatus) + '<br><span class="sub">' + myPubs.length + ' publication</span></td>' +
         '<td class="row-actions">' + itemActions(x) + '</td></tr>';
     }
-    var itemHead = '<tr><th>Nội dung</th><th>Brand / Sản phẩm</th><th>Pillar chính</th><th>Campaign</th><th>Định dạng / Tags</th><th>Người phụ trách</th><th>Hạn sản xuất</th><th>Trạng thái</th><th>Thao tác</th></tr>';
+    var itemHead = '<tr><th>Content</th><th>Brand / Sản phẩm</th><th>Pillar chính</th><th>Campaign</th><th>Định dạng / Tags</th><th>Người phụ trách</th><th>Hạn sản xuất</th><th>Trạng thái</th><th>Thao tác</th></tr>';
     if (UI.contentTab === 'backlog') {
       // Backlog/Ý tưởng: nội dung CHƯA có lịch đăng nào — không gán ngày giả.
       var backlog = items.filter(function (x) { return !pubsOfItem(x.id).length && !x.scheduledDate; });
@@ -4057,29 +4057,29 @@
         }).filter(function (s) { return s.value > 0; });
         var blOther = backlog.length - blSegs.reduce(function (a, s) { return a + s.value; }, 0);
         if (blOther > 0) blSegs.push({ label: 'Trạng thái khác', value: blOther, tone: 'neutral' });
-        html += '<div data-viz="content-backlog-pipeline"><h3>Pipeline trạng thái của Backlog</h3>' + vizStackedBarHtml({ segments: blSegs, total: backlog.length, unitLabel: 'nội dung trong Backlog' }) + '</div>';
+        html += '<div data-viz="content-backlog-pipeline"><h3>Pipeline trạng thái của Backlog</h3>' + vizStackedBarHtml({ segments: blSegs, total: backlog.length, unitLabel: 'content trong Backlog' }) + '</div>';
       }
-      html += backlog.length ? tbl(itemHead + backlog.map(itemRow).join('')) : emptyState('Backlog đang trống', 'Mọi nội dung đang lọc đều đã có lịch đăng, hoặc chưa có nội dung nào.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="content">+ Tạo ý tưởng mới</button></p>' : '');
+      html += backlog.length ? tbl(itemHead + backlog.map(itemRow).join('')) : emptyState('Backlog đang trống', 'Mọi content đang lọc đều đã có lịch đăng, hoặc chưa có content nào.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="content">+ Tạo ý tưởng mới</button></p>' : '');
     }
     if (UI.contentTab === 'pillars') {
-      html += '<h2>Nội dung theo Pillar</h2><p class="sub">Mỗi nội dung nằm ở đúng MỘT pillar chính. Lọc pillar thấy cả bài campaign lẫn bài thường xuyên (pillar khác campaign).</p>';
+      html += '<h2>Content theo Pillar</h2><p class="sub">Mỗi content nằm ở đúng MỘT pillar chính. Lọc pillar thấy cả content campaign lẫn content thường xuyên (pillar khác campaign).</p>';
       var groups = {};
       var order = [];
       items.forEach(function (x) { var k = contentPillarId(x) || '__none'; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
-      if (!order.length) html += emptyState('Chưa có nội dung nào', 'Tạo nội dung đầu tiên cho Content Plan.', '');
+      if (!order.length) html += emptyState('Chưa có content nào', 'Tạo content đầu tiên cho Content Plan.', '');
       var pillarMix = contentMixRows(items, pubs, 'content');
       order.forEach(function (k) {
         var mixRow = pillarMix.rows.find(function (r) { return (r.pillarId || '__none') === k; });
         var shareVal = mixRow ? mixRow.total : groups[k].length;
         html += '<h3>' + esc(k === '__none' ? 'Chưa phân loại pillar' : pillarName(k)) + ' (' + groups[k].length + ')</h3>' +
-          '<div data-viz="content-pillar-share">' + vizProgressBarHtml({ value: shareVal, max: pillarMix.denominator || items.length, pct: vizPct(shareVal, pillarMix.denominator || items.length), tone: 'running', label: 'Tỉ trọng pillar trong Content mix', detail: shareVal + ' / ' + (pillarMix.denominator || items.length) + ' nội dung gốc (' + fmtPct(vizPct(shareVal, pillarMix.denominator || items.length)) + ')' }) + '</div>' +
+          '<div data-viz="content-pillar-share">' + vizProgressBarHtml({ value: shareVal, max: pillarMix.denominator || items.length, pct: vizPct(shareVal, pillarMix.denominator || items.length), tone: 'running', label: 'Tỉ trọng pillar trong Content mix', detail: shareVal + ' / ' + (pillarMix.denominator || items.length) + ' content gốc (' + fmtPct(vizPct(shareVal, pillarMix.denominator || items.length)) + ')' }) + '</div>' +
           tbl(itemHead + groups[k].map(itemRow).join(''));
       });
     }
     if (UI.contentTab === 'calendar') {
       var year = UI.calYear, month = UI.calMonth;
       html += '<form class="inline" id="cal-nav-form"><label>Tháng<input type="number" id="cal-month" min="1" max="12" value="' + (month + 1) + '"></label><label>Năm<input type="number" id="cal-year" value="' + year + '"></label><button class="btn secondary" type="submit">Xem tháng</button> <button class="btn secondary" type="button" data-action="cal-today">Về tháng hiện tại</button></form>';
-      html += '<p class="sub">Lịch hiển thị theo TỪNG LẦN ĐĂNG (publication): ngày + giờ, tài khoản, trạng thái, nhãn pillar/campaign. Bấm vào một ngày chỉ mở form phiên bản/lần đăng với lịch của ngày đó được điền sẵn — không tự gán campaign/action. Ý tưởng chưa có lịch nằm ở Backlog, không hiện ở lịch.</p>';
+      html += '<p class="sub">Lịch hiển thị theo TỪNG PUBLICATION: ngày + giờ, tài khoản, trạng thái, nhãn pillar/campaign. Bấm vào một ngày chỉ mở form phiên bản/publication với lịch của ngày đó được điền sẵn — không tự gán campaign/action. Ý tưởng chưa có lịch nằm ở Backlog, không hiện ở lịch.</p>';
       var first = new Date(year, month, 1);
       var start = D.weekStartMonday(first);
       var cells = [];
@@ -4108,20 +4108,20 @@
       }).join('') + '</div>';
       var monthPrefix = year + '-' + String(month + 1).padStart(2, '0');
       var monthPubs = pubs.filter(function (p) { return dateInTz(p.at).slice(0, 7) === monthPrefix; }).sort(function (a, b) { return String(a.at).localeCompare(String(b.at)); });
-      html += '<div class="cal-agenda"><h3>Danh sách lần đăng theo ngày (màn hình nhỏ)</h3>' + (monthPubs.length ? '<ul class="clean">' + monthPubs.map(function (p) {
+      html += '<div class="cal-agenda"><h3>Danh sách publication theo ngày (màn hình nhỏ)</h3>' + (monthPubs.length ? '<ul class="clean">' + monthPubs.map(function (p) {
         var it2 = Store.get('contentItems', p.contentItemId) || {};
         return '<li>' + vizStatusDotHtml(vizStatusTone(p.status)) + esc(D.formatDateTimeVN(p.at)) + ' — <button class="linklike" data-action="editor-open" data-kind="' + (p.variantId ? 'variant' : 'post') + '" data-id="' + esc(p.variantId || p.refId) + '">' + esc(p.title) + '</button> (' + esc(labelStatus(p.platform)) + ' · ' + esc(accountName(p.channelAccountId)) + ') ' + statusBadge(p.status) + '<br><span class="sub">Pillar: ' + esc(pillarName(contentPillarId(it2))) + ' · Campaign: ' + esc(p.campaignId ? campaignName(p.campaignId) : 'Không thuộc campaign') + '</span></li>';
-      }).join('') + '</ul>' : '<p class="sub">Tháng này chưa có lần đăng nào.</p>') + '</div>';
-      html += '<h3>Tất cả lần đăng trong tháng (' + monthPubs.length + ')</h3>' + (monthPubs.length ? tbl('<tr><th>Ngày giờ đăng</th><th>Nội dung</th><th>Kênh / Tài khoản</th><th>Pillar</th><th>Campaign của lần đăng</th><th>Trạng thái</th></tr>' + monthPubs.map(function (p) {
+      }).join('') + '</ul>' : '<p class="sub">Tháng này chưa có publication nào.</p>') + '</div>';
+      html += '<h3>Tất cả publication trong tháng (' + monthPubs.length + ')</h3>' + (monthPubs.length ? tbl('<tr><th>Ngày giờ đăng</th><th>Content</th><th>Kênh / Tài khoản</th><th>Pillar</th><th>Campaign của publication</th><th>Trạng thái</th></tr>' + monthPubs.map(function (p) {
         var it3 = Store.get('contentItems', p.contentItemId) || {};
         return '<tr><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(labelStatus(p.platform)) + '<br><span class="sub">' + esc(accountName(p.channelAccountId)) + '</span></td><td>' + esc(pillarName(contentPillarId(it3))) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : 'Không thuộc campaign') + '</td><td>' + statusBadge(p.status) + '</td></tr>';
-      }).join('')) : '<p class="sub">Chưa có lần đăng nào trong tháng đang xem.</p>');
+      }).join('')) : '<p class="sub">Chưa có publication nào trong tháng đang xem.</p>');
     }
     if (UI.contentTab === 'table') {
-      html += '<h2>Nội dung gốc (' + items.length + ')</h2>';
-      html += items.length ? tbl(itemHead + items.map(itemRow).join('')) : '<div class="state-box">Chưa có nội dung gốc nào khớp bộ lọc.</div>';
+      html += '<h2>Content gốc (' + items.length + ')</h2>';
+      html += items.length ? tbl(itemHead + items.map(itemRow).join('')) : '<div class="state-box">Chưa có content gốc nào khớp bộ lọc.</div>';
       html += '<h2>Phiên bản theo kênh (' + variants.length + ')</h2>';
-      html += variants.length ? tbl('<tr><th>Nội dung</th><th>Kênh</th><th>Caption</th><th>Lịch đăng</th><th>Trạng thái biên tập</th><th>Duyệt</th><th>Thao tác</th></tr>' + variants.map(function (v) {
+      html += variants.length ? tbl('<tr><th>Content</th><th>Kênh</th><th>Caption</th><th>Lịch đăng</th><th>Trạng thái biên tập</th><th>Duyệt</th><th>Thao tác</th></tr>' + variants.map(function (v) {
         var pub = v.platform === 'tiktok' ? '<span class="badge warn">Đăng ngoài app</span>' : statusBadge(v.publishingStatus || '', v.publishingStatus ? labelStatus(v.publishingStatus) : '');
         return '<tr><td><strong>' + esc(contentTitle(v.contentItemId)) + '</strong></td><td>' + esc(v.channelLabel || labelStatus(v.platform)) + '</td><td>' + esc(v.caption || '') + '</td><td>' + esc(D.formatDateTimeVN(v.scheduledAt)) + '</td><td>' + statusBadge(v.editorialStatus) + '<br>' + pub + '</td><td>' + statusBadge(v.approvalStatus) + '</td><td class="row-actions">' + variantCardActions(v) + '</td></tr>';
       }).join('')) : '<div class="state-box">Chưa có phiên bản theo kênh nào.</div>';
@@ -4138,7 +4138,7 @@
     }
     if (UI.contentTab === 'production') {
       var sorted = variants.slice().sort(function (a, b) { return String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')); });
-      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Việc sản xuất chỉ được tạo khi bạn bấm nút "Tạo việc sản xuất" ở bảng nội dung (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu nội dung không tự tạo việc, và việc sản xuất có thể chỉ gắn nội dung, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
+      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở bảng content (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu content không tự tạo task, và task sản xuất có thể chỉ gắn content, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
         var tlPts = [
           { label: 'Hạn sản xuất', date: v.productionDeadline ? String(v.productionDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.productionDeadline) || '—', tone: 'running' },
           { label: 'Hạn duyệt', date: v.reviewDeadline ? String(v.reviewDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.reviewDeadline) || '—', tone: 'pending' },
@@ -4149,7 +4149,7 @@
       }).join(''));
       var tiktok = variants.filter(function (v) { return v.platform === 'tiktok'; });
       html += '<h2>TikTok — sản xuất trong app, đăng ngoài app</h2>';
-      if (!tiktok.length) html += '<div class="state-box">Chưa có nội dung TikTok nào.</div>';
+      if (!tiktok.length) html += '<div class="state-box">Chưa có content TikTok nào.</div>';
       tiktok.forEach(function (v) {
         var metrics = [];
         try {
@@ -4161,14 +4161,14 @@
           '<p><strong>Caption:</strong> ' + esc(v.caption || '') + (v.hashtags ? ' <span class="sub">' + esc(v.hashtags) + '</span>' : '') + '</p>' +
           (v.scriptScenes && v.scriptScenes.length ? '<div class="table-wrap"><table class="scene-table"><tr><th>Cảnh</th><th>Hook</th><th>Hình ảnh</th><th>Lời thoại</th><th>Chữ trên màn hình</th><th>Thời lượng (giây)</th><th>CTA</th></tr>' +
             v.scriptScenes.map(function (s) { return '<tr><td>' + esc(s.shot) + '</td><td>' + esc(s.hook || '') + '</td><td>' + esc(s.visual) + '</td><td>' + esc(s.dialogue) + '</td><td>' + esc(s.onScreenText) + '</td><td>' + esc(s.durationSec) + '</td><td>' + esc(s.cta || '') + '</td></tr>'; }).join('') + '</table></div>' : '<p class="sub">Chưa có kịch bản theo cảnh — mở sửa để thêm.</p>') +
-          (v.externalUrl ? '<p>Link bài đã đăng: <a href="' + esc(v.externalUrl) + '" target="_blank" rel="noopener">' + esc(v.externalUrl) + '</a>' + (v.actualPublishedAt ? ' · Ngày đăng thực tế: ' + esc(D.formatDateTimeVN(v.actualPublishedAt)) : '') + '</p>' : '') +
+          (v.externalUrl ? '<p>Link post: <a href="' + esc(v.externalUrl) + '" target="_blank" rel="noopener">' + esc(v.externalUrl) + '</a>' + (v.actualPublishedAt ? ' · Ngày đăng thực tế: ' + esc(D.formatDateTimeVN(v.actualPublishedAt)) : '') + '</p>' : '') +
           (metrics.length ? '<div data-viz="tiktok-metrics"><p>' + metrics.map(function (m) { return '<span class="metric-chip">' + esc(m.metric) + ' = <strong>' + fmtNum(m.value) + '</strong></span>'; }).join('') + '</p>' + tbl('<tr><th>Chỉ số</th><th>Giá trị</th><th>Nguồn</th><th>Thời điểm</th></tr>' + metrics.map(function (m) { return '<tr><td>' + esc(m.metric) + '</td><td>' + fmtNum(m.value) + '</td><td>' + esc(m.source || '—') + '</td><td>' + esc(D.formatDateTimeVN(m.observedAt)) + '</td></tr>'; }).join('')) + '</div>' : '<p class="sub">Chưa có số liệu nào được nhập cho video này.</p>') +
           '<p>' + variantCardActions(v) + '</p></div>';
       });
     }
     if (UI.contentTab === 'library') {
       var posted = pubs.filter(function (p) { return p.kind === 'post'; });
-      html += '<h2>Thư viện bài đã đăng (' + posted.length + ' lần đăng)</h2><p class="sub">Mỗi dòng là MỘT lần đăng. Đăng lại cùng nội dung tạo một dòng mới riêng — link và số liệu của lần đăng trước không bị ghi đè.</p>';
+      html += '<h2>Thư viện Post (' + posted.length + ' publication)</h2><p class="sub">Mỗi dòng là MỘT publication. Đăng lại cùng content tạo một dòng mới riêng — link và số liệu của publication trước không bị ghi đè.</p>';
       // WAVE-B3: số liệu của lần đăng lấy từ metricObservations đã có trong
       // Store (khóa externalPostId = refId của lần đăng) — chỉ lấy bản ghi
       // MỚI NHẤT cho từng chỉ số; lần đăng không có quan trắc thì để trống.
@@ -4183,7 +4183,7 @@
       var libViews = posted.map(function (p) { return libLatestMetric(p.refId, ['views', 'lifetime_views']); });
       var libMaxViews = 0;
       libViews.forEach(function (v) { if (v !== null && v > libMaxViews) libMaxViews = v; });
-      html += posted.length ? tbl('<tr><th>Bài đã đăng</th><th>Nội dung gốc</th><th>Kênh / Tài khoản</th><th>Ngày đăng</th><th>Pillar</th><th>Campaign của lần đăng</th><th>Số liệu lần đăng</th><th>Link</th></tr>' + posted.map(function (p, pi) {
+      html += posted.length ? tbl('<tr><th>Post</th><th>Content gốc</th><th>Kênh / Tài khoản</th><th>Ngày đăng</th><th>Pillar</th><th>Campaign của publication</th><th>Số liệu publication</th><th>Link</th></tr>' + posted.map(function (p, pi) {
         var it4 = Store.get('contentItems', p.contentItemId) || {};
         var views = libViews[pi];
         var reach = libLatestMetric(p.refId, ['reach']);
@@ -4198,16 +4198,16 @@
           metricCell = (views !== null && libMaxViews > 0 ? vizCellBarHtml({ value: views, max: libMaxViews, tone: 'running', text: parts.join(' · ') }) : '<span class="sub">' + esc(parts.join(' · ')) + '</span>');
         }
         return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(it4.title || '—') + '</td><td>' + esc(labelStatus(p.platform)) + '<br><span class="sub">' + esc(accountName(p.channelAccountId)) + '</span></td><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td>' + esc(pillarName(contentPillarId(it4))) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : 'Không thuộc campaign') + '</td><td>' + metricCell + '</td><td>' + (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">Mở bài</a>' : '—') + '</td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có bài đã đăng nào khớp bộ lọc.</div>';
+      }).join('')) : '<div class="state-box">Chưa có post nào khớp bộ lọc.</div>';
     }
     if (UI.contentTab === 'mix') {
       var unit = UI.contentMixUnit === 'publication' ? 'publication' : 'content';
       var mix = contentMixRows(items, pubs, unit);
       html += '<h2>Content mix theo Pillar × Kênh</h2>' +
         '<div class="toolbar"><span class="sub">Đơn vị đếm:</span><span>' +
-        '<button type="button" class="btn small ' + (unit === 'content' ? '' : 'secondary') + '" data-action="content-mix-unit" data-id="content">Nội dung gốc</button> ' +
-        '<button type="button" class="btn small ' + (unit === 'publication' ? '' : 'secondary') + '" data-action="content-mix-unit" data-id="publication">Lần đăng (publication)</button></span></div>' +
-        '<p class="sub">Đơn vị đếm đang chọn: <strong>' + (unit === 'publication' ? 'lần đăng (publication)' : 'nội dung gốc') + '</strong> · Mẫu số (tổng số ' + (unit === 'publication' ? 'lần đăng' : 'nội dung gốc') + ' trong kỳ/bộ lọc hiện tại): <strong>' + mix.denominator + '</strong>. Pillar chính tính đúng 1 lần cho 1 nội dung gốc ở đơn vị "nội dung gốc". Kỳ được xác định bằng bộ lọc Từ ngày/Đến ngày ở trên (để trống = toàn bộ).</p>';
+        '<button type="button" class="btn small ' + (unit === 'content' ? '' : 'secondary') + '" data-action="content-mix-unit" data-id="content">Content gốc</button> ' +
+        '<button type="button" class="btn small ' + (unit === 'publication' ? '' : 'secondary') + '" data-action="content-mix-unit" data-id="publication">Publication</button></span></div>' +
+        '<p class="sub">Đơn vị đếm đang chọn: <strong>' + (unit === 'publication' ? 'publication' : 'content gốc') + '</strong> · Mẫu số (tổng số ' + (unit === 'publication' ? 'publication' : 'content gốc') + ' trong kỳ/bộ lọc hiện tại): <strong>' + mix.denominator + '</strong>. Pillar chính tính đúng 1 lần cho 1 content gốc ở đơn vị "content gốc". Kỳ được xác định bằng bộ lọc Từ ngày/Đến ngày ở trên (để trống = toàn bộ).</p>';
       if (!mix.denominator) html += '<div class="state-box">Chưa có dữ liệu để tính content mix trong kỳ/bộ lọc này.</div>';
       else {
         // R3.1-VIZ 4: biểu đồ tỷ trọng theo pillar + theo kênh, dùng ĐÚNG
@@ -4226,10 +4226,10 @@
         html += '<div data-viz="content-mix-stacked"><h3>Cơ cấu kênh trong từng Pillar (thanh 100%)</h3>' + mix.rows.map(function (r) {
           var segs = mix.channels.map(function (c, ci) { return { label: labelStatus(c), value: Number(r.byChannel[c]) || 0, cat: (ci % 8) + 1 }; }).filter(function (s) { return s.value > 0; });
           if (!segs.length) return '';
-          return '<p class="sub"><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong> — tổng ' + r.total + '</p>' + vizStackedBarHtml({ segments: segs, total: r.total, unitLabel: (unit === 'publication' ? 'lần đăng' : 'nội dung gốc') + ' của pillar này' });
+          return '<p class="sub"><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong> — tổng ' + r.total + '</p>' + vizStackedBarHtml({ segments: segs, total: r.total, unitLabel: (unit === 'publication' ? 'publication' : 'content gốc') + ' của pillar này' });
         }).join('') + '</div>';
         var tagList = Object.keys(mix.tagCounts);
-        html += '<p class="sub">Tỷ trọng theo tags phụ (chỉ tham khảo): ' + (tagList.length ? tagList.map(function (t) { return esc(t) + ': ' + mix.tagCounts[t]; }).join(' · ') : '—') + '. <strong>Lưu ý: tỷ trọng theo tags KHÔNG cộng ra tổng</strong> — một nội dung có nhiều tags được tính ở mọi tag của nó, trong khi tổng chính thức chỉ tính theo pillar chính (mỗi nội dung 1 lần).</p>';
+        html += '<p class="sub">Tỷ trọng theo tags phụ (chỉ tham khảo): ' + (tagList.length ? tagList.map(function (t) { return esc(t) + ': ' + mix.tagCounts[t]; }).join(' · ') : '—') + '. <strong>Lưu ý: tỷ trọng theo tags KHÔNG cộng ra tổng</strong> — một content có nhiều tags được tính ở mọi tag của nó, trong khi tổng chính thức chỉ tính theo pillar chính (mỗi content 1 lần).</p>';
       }
     }
     if (UI.contentTab === 'queue') {
@@ -4239,11 +4239,11 @@
       var queueItems = items.filter(function (x) { return !contentPillarId(x); });
       var orphanPosts = [];
       try { orphanPosts = Store.list('externalPosts').filter(function (p) { return !p.contentItemId; }); } catch (e) { orphanPosts = []; }
-      html += '<h2>Chờ phân loại (' + queueItems.length + ' nội dung)</h2>' +
-        '<p class="sub">Bài import/đồng bộ về mà thiếu pillar nằm ở hàng đợi riêng này cho tới khi được phân loại thủ công — hệ thống không tự gán pillar và không tạo campaign giả cho chúng. Bài đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ, không phải lỗi và không nằm ở đây.</p>' +
+      html += '<h2>Chờ phân loại (' + queueItems.length + ' content)</h2>' +
+        '<p class="sub">Post import/đồng bộ về mà thiếu pillar nằm ở hàng đợi riêng này cho tới khi được phân loại thủ công — hệ thống không tự gán pillar và không tạo campaign giả cho chúng. Post đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ, không phải lỗi và không nằm ở đây.</p>' +
         '<div class="cards" data-viz="content-queue-cards">' +
-        vizKpiCardHtml({ label: 'Nội dung chờ phân loại', valueText: String(queueItems.length), tone: 'pending', toneLabel: 'Chờ phân loại', sub: 'Thiếu pillar chính — cần phân loại thủ công' }) +
-        vizKpiCardHtml({ label: 'Bài đã đăng chưa gắn nội dung gốc', valueText: String(orphanPosts.length), tone: 'blocked', toneLabel: 'Chưa gắn gốc', sub: 'Bài ngoài hệ thống chưa nối về nội dung gốc' }) +
+        vizKpiCardHtml({ label: 'Content chờ phân loại', valueText: String(queueItems.length), tone: 'pending', toneLabel: 'Chờ phân loại', sub: 'Thiếu pillar chính — cần phân loại thủ công' }) +
+        vizKpiCardHtml({ label: 'Post chưa gắn content gốc', valueText: String(orphanPosts.length), tone: 'blocked', toneLabel: 'Chưa gắn gốc', sub: 'Post ngoài hệ thống chưa nối về content gốc' }) +
         vizKpiCardHtml({ label: 'Tổng cần xử lý', valueText: String(queueItems.length + orphanPosts.length), tone: 'running', toneLabel: 'Hàng đợi', sub: 'Tổng hai nhóm chờ xử lý ở tab này' }) +
         '</div>';
       if (queueItems.length) {
@@ -4257,17 +4257,17 @@
           return '<li><strong>' + esc(x.title) + '</strong> ' + badge + '</li>';
         }).join('') + '</ul>';
       }
-      html += queueItems.length ? tbl(itemHead + queueItems.map(itemRow).join('')) : '<div class="state-box">Không có nội dung nào đang chờ phân loại pillar.</div>';
+      html += queueItems.length ? tbl(itemHead + queueItems.map(itemRow).join('')) : '<div class="state-box">Không có content nào đang chờ phân loại pillar.</div>';
       if (orphanPosts.length) {
-        html += '<h3>Bài đã đăng chưa gắn nội dung gốc (' + orphanPosts.length + ')</h3>' + tbl('<tr><th>Bài</th><th>Kênh</th><th>Ngày đăng</th><th>Thao tác</th></tr>' + orphanPosts.map(function (p) {
-          return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(labelStatus(p.platform)) + '</td><td>' + esc(D.formatDateTimeVN(p.publishedAt)) + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="post" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Gắn nội dung gốc / phân loại</button></td></tr>';
+        html += '<h3>Post chưa gắn content gốc (' + orphanPosts.length + ')</h3>' + tbl('<tr><th>Post</th><th>Kênh</th><th>Ngày đăng</th><th>Thao tác</th></tr>' + orphanPosts.map(function (p) {
+          return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(labelStatus(p.platform)) + '</td><td>' + esc(D.formatDateTimeVN(p.publishedAt)) + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="post" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Gắn content gốc / phân loại</button></td></tr>';
         }).join(''));
       }
     }
     if (UI.contentTab === 'manage') {
       var pillarsAll = allPillars();
       html += '<div class="toolbar"><strong>Quản lý Content Pillar (' + pillarsAll.length + ')</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : '') + '</span></div>' +
-        '<p class="sub">Pillar được quản lý theo brand/BU/sản phẩm, có mô tả + hướng dẫn phân loại/ví dụ để đội phân loại nhất quán. Sửa/lưu trữ pillar giữ nguyên ID và lịch sử phân loại của nội dung cũ — không xóa cứng. App không hardcode một bộ pillar cho mọi BU.</p>';
+        '<p class="sub">Pillar được quản lý theo brand/BU/sản phẩm, có mô tả + hướng dẫn phân loại/ví dụ để đội phân loại nhất quán. Sửa/lưu trữ pillar giữ nguyên ID và lịch sử phân loại của content cũ — không xóa cứng. App không hardcode một bộ pillar cho mọi BU.</p>';
       if (!pillarsAll.length) {
         html += emptyState('Chưa có pillar nào', 'Tạo pillar đầu tiên cho phạm vi của đội, hoặc dùng một gợi ý mẫu bên dưới — gợi ý chỉ điền sẵn vào form, bạn xem/sửa rồi mới bấm Lưu tạo.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button></p>' : '');
         html += '<h3>Gợi ý 4 pillar mẫu (từ đặc tả — bấm để tạo nếu muốn)</h3><div class="cards">' + PILLAR_SUGGESTIONS.map(function (s) {
@@ -4276,11 +4276,11 @@
       } else {
         var pillarCounts = pillarsAll.map(function (p) { return allItems.filter(function (x) { return contentPillarId(x) === p.id; }).length; });
         var pillarMaxCnt = Math.max.apply(null, pillarCounts.concat([0]));
-        html += tbl('<tr><th>Pillar</th><th>Phạm vi Brand/BU</th><th>Mô tả</th><th>Hướng dẫn phân loại & ví dụ</th><th>Số nội dung</th><th>Trạng thái</th><th>Thao tác</th></tr>' + pillarsAll.map(function (p, pIdx) {
+        html += tbl('<tr><th>Pillar</th><th>Phạm vi Brand/BU</th><th>Mô tả</th><th>Hướng dẫn phân loại & ví dụ</th><th>Số content</th><th>Trạng thái</th><th>Thao tác</th></tr>' + pillarsAll.map(function (p, pIdx) {
           var cnt = pillarCounts[pIdx];
           var bu = Store.list('businessUnits').find(function (b) { return b.id === (p.buProductId || p.bu_product_id); });
           var arch = isPillarArchived(p);
-          return '<tr><td><strong>' + esc(p.name || p.title) + '</strong></td><td>' + esc(bu ? (bu.name || bu.buName) : 'Toàn workspace') + '</td><td>' + esc(p.description || '—') + '</td><td>' + esc(p.classificationGuide || p.classification_guide || '—') + '</td><td>' + (pillarMaxCnt > 0 ? vizCellBarHtml({ value: cnt, max: pillarMaxCnt, tone: 'running', text: fmtNum(cnt) + ' nội dung (' + fmtPct(vizPct(cnt, allItems.length)) + ' tổng số)' }) : String(cnt)) + '</td><td>' + (arch ? '<span class="badge grey">Đã lưu trữ</span>' : '<span class="badge ok">Đang dùng</span>') + '</td>' +
+          return '<tr><td><strong>' + esc(p.name || p.title) + '</strong></td><td>' + esc(bu ? (bu.name || bu.buName) : 'Toàn workspace') + '</td><td>' + esc(p.description || '—') + '</td><td>' + esc(p.classificationGuide || p.classification_guide || '—') + '</td><td>' + (pillarMaxCnt > 0 ? vizCellBarHtml({ value: cnt, max: pillarMaxCnt, tone: 'running', text: fmtNum(cnt) + ' content (' + fmtPct(vizPct(cnt, allItems.length)) + ' tổng số)' }) : String(cnt)) + '</td><td>' + (arch ? '<span class="badge grey">Đã lưu trữ</span>' : '<span class="badge ok">Đang dùng</span>') + '</td>' +
             '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="pillar" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Sửa</button> ' + (arch
               ? '<button class="btn small secondary" data-action="restore-item" data-coll="contentPillars" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Khôi phục</button>'
               : '<button class="btn small secondary" data-action="archive-item" data-coll="contentPillars" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Lưu trữ</button>') + '</td></tr>';
@@ -4314,21 +4314,21 @@
       if (tf.unassigned && t.assigneeId) return false;
       return true;
     });
-    var html = pageHead('Việc', 'Một danh sách việc dùng chung ở mọi màn hình. Bấm vào tên việc để mở chi tiết và sửa.',
-      ed ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo việc</button>' : '');
+    var html = pageHead('Task', 'Một danh sách task dùng chung ở mọi màn hình. Bấm vào tên task để mở chi tiết và sửa.',
+      ed ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button>' : '');
     html += readonlyNote() + collectionBanner('tasks');
-    html += '<form class="inline" id="task-filter-form"><span class="sub">Lọc việc:</span>' +
-      '<label>Campaign<select name="campaignId"><option value="all">Tất cả</option><option value=""' + (tf.campaignId === '' ? ' selected' : '') + '>Việc độc lập</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (tf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
+    html += '<form class="inline" id="task-filter-form"><span class="sub">Lọc task:</span>' +
+      '<label>Campaign<select name="campaignId"><option value="all">Tất cả</option><option value=""' + (tf.campaignId === '' ? ' selected' : '') + '>Task độc lập</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (tf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Người phụ trách<select name="ownerId"><option value="all">Tất cả</option>' + memberPairs().map(function (p) { return '<option value="' + esc(p[0]) + '"' + (tf.ownerId === p[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select></label>' +
       '<label>Trạng thái<select name="status"><option value="all">Tất cả</option>' + TASK_STATUSES.map(function (p) { return '<option value="' + p[0] + '"' + (tf.status === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Ưu tiên<select name="priority"><option value="all">Tất cả</option>' + PRIORITIES.map(function (p) { return '<option value="' + esc(p) + '"' + (tf.priority === p ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select></label>' +
       '<label>Hạn<select name="due"><option value="all">Tất cả</option>' + [['overdue', 'Quá hạn'], ['today', 'Đến hạn hôm nay'], ['week', 'Tuần này'], ['none', 'Chưa xếp lịch']].map(function (p) { return '<option value="' + p[0] + '"' + (tf.due === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Bị chặn<select name="blocked"><option value="all">Tất cả</option><option value="blocked"' + (tf.blocked === 'blocked' ? ' selected' : '') + '>Đang bị chặn</option><option value="unblocked"' + (tf.blocked === 'unblocked' ? ' selected' : '') + '>Không bị chặn</option></select></label>' +
-      '<label><span><input type="checkbox" name="unassigned"' + (tf.unassigned ? ' checked' : '') + '> Chỉ việc chưa phân công</span></label>' +
+      '<label><span><input type="checkbox" name="unassigned"' + (tf.unassigned ? ' checked' : '') + '> Chỉ task chưa phân công</span></label>' +
       '<button class="btn secondary" type="submit">Lọc</button></form>' +
-      '<p class="sub">Đang hiển thị ' + tasks.length + '/' + allTasks.length + ' việc.</p>';
+      '<p class="sub">Đang hiển thị ' + tasks.length + '/' + allTasks.length + ' task.</p>';
     if (!tasks.length && !collLoadingOrError('tasks')) {
-      html += emptyState('Chưa có công việc nào', 'Tạo việc đầu tiên — việc có thể gắn với campaign hoặc để độc lập.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task">+ Tạo việc</button></p>' : '');
+      html += emptyState('Chưa có task nào', 'Tạo task đầu tiên — task có thể gắn với campaign hoặc để độc lập.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button></p>' : '');
     } else {
       var roots = tasks.filter(function (t) { return !t.parentId; });
       function row(t, depth) {
@@ -4349,20 +4349,20 @@
           '<td><select data-action-change="task-status" data-id="' + esc(t.id) + '"' + dis(stDisabled) + stTitle + '>' + opts + '</select></td></tr>' +
           tasks.filter(function (x) { return x.parentId === t.id; }).map(function (ch) { return row(ch, depth + 1); }).join('');
       }
-      html += tbl('<tr><th>Việc</th><th>Người phụ trách</th><th>Campaign</th><th>Thời gian</th><th>Dự kiến</th><th>Phụ thuộc</th><th>Trạng thái</th></tr>' + roots.map(function (t) { return row(t, 0); }).join(''));
+      html += tbl('<tr><th>Task</th><th>Người phụ trách</th><th>Campaign</th><th>Thời gian</th><th>Dự kiến</th><th>Phụ thuộc</th><th>Trạng thái</th></tr>' + roots.map(function (t) { return row(t, 0); }).join(''));
     }
     html += '<h2>Thêm quan hệ phụ thuộc</h2><form class="inline" id="dep-add-form">' +
-      '<label>Việc phải xong trước<select name="predecessorId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
-      '<label>Việc đang chờ<select name="successorId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Task phải xong trước<select name="predecessorId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Task đang chờ<select name="successorId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
       '<button class="btn secondary" type="submit"' + dis(!ed) + '>Thêm phụ thuộc</button></form>' +
       '<p class="sub">Hệ thống chặn quan hệ tạo vòng phụ thuộc.</p>';
     html += '<h2>Trở ngại</h2>';
     if (!blockers.length) html += '<p class="sub">Chưa có trở ngại nào.</p>';
-    else html += tbl('<tr><th>Trở ngại</th><th>Việc</th><th>Mô tả</th><th>Trạng thái</th><th></th></tr>' + blockers.map(function (b) {
+    else html += tbl('<tr><th>Trở ngại</th><th>Task</th><th>Mô tả</th><th>Trạng thái</th><th></th></tr>' + blockers.map(function (b) {
       var t = taskById(b.taskId);
       return '<tr><td>' + esc(b.title) + (b.status === 'open' ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn', derived: true }) : '') + '</td><td>' + esc(t ? t.title : '—') + '</td><td>' + esc(b.description || '') + '</td><td>' + vizStatusPillHtml(b.status, { context: 'blocker', label: labelStatus(b.status) }) + '</td><td>' + (b.status === 'open' ? '<button class="btn small secondary" data-action="resolve-blocker" data-id="' + esc(b.id) + '">Đánh dấu đã gỡ</button>' : '') + '</td></tr>';
     }).join(''));
-    html += '<form class="inline" id="blocker-add-form"><label>Việc<select name="taskId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
+    html += '<form class="inline" id="blocker-add-form"><label>Task<select name="taskId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
       '<label>Tên trở ngại<input type="text" name="title" required></label><label>Mô tả<input type="text" name="description"></label>' +
       '<button class="btn" type="submit"' + dis(!ed) + '>Tạo trở ngại</button></form>';
     var reqs = Store.list('marketingRequests');
@@ -4391,10 +4391,10 @@
       var acts = '';
       if (ed && r.status !== 'converted' && r.status !== 'rejected') {
         acts = '<button class="btn small" data-action="request-accept" data-id="' + esc(r.id) + '">Nhận xử lý</button> ' +
-          '<button class="btn small secondary" data-action="request-convert" data-id="' + esc(r.id) + '"' + dis(!!convertedTask) + '>' + (convertedTask ? 'Đã thành việc' : 'Chuyển thành việc') + '</button> ' +
+          '<button class="btn small secondary" data-action="request-convert" data-id="' + esc(r.id) + '"' + dis(!!convertedTask) + '>' + (convertedTask ? 'Đã thành task' : 'Chuyển thành task') + '</button> ' +
           '<button class="btn small secondary" data-action="request-reject" data-id="' + esc(r.id) + '">Từ chối</button>' +
           '<form class="inline compact" data-form="request-due" data-id="' + esc(r.id) + '"><input type="date" name="dueDate" value="' + esc(r.dueDate ? String(r.dueDate).slice(0, 10) : '') + '"><button class="btn small secondary" type="submit">Đổi hạn</button></form>';
-      } else if (convertedTask) acts = '<span class="sub">Đã chuyển thành việc: ' + esc(convertedTask.title) + '</span>';
+      } else if (convertedTask) acts = '<span class="sub">Đã chuyển thành task: ' + esc(convertedTask.title) + '</span>';
       if (r.status === 'rejected' && r.rejectionReason) acts += '<span class="sub">Lý do từ chối: ' + esc(r.rejectionReason) + '</span>';
       var reqPriTone = { 'Cao': 'overdue', 'Trung bình': 'pending', 'Thấp': 'todo' }[r.priority] || 'neutral';
       return '<tr><td><strong>' + esc(r.title) + '</strong>' + (r.note ? '<br><span class="sub">' + esc(r.note) + '</span>' : '') + '</td><td>' + esc(r.requester) + '</td><td>' + (r.campaignId ? esc(campaignName(r.campaignId)) : '—') + '</td><td>' + (r.priority ? vizStatusPillHtml('', { tone: reqPriTone, label: r.priority }) : '—') + '</td><td>' + (r.dueDate ? esc(D.formatDateVN(r.dueDate)) : '—') + '</td><td>' + statusBadge(r.status, r.statusLabel) + (r.assigneeId ? '<br><span class="sub">Người xử lý: ' + esc(memberName(r.assigneeId)) + '</span>' : '') + '</td><td class="row-actions">' + acts + '</td></tr>';
@@ -4422,10 +4422,10 @@
       var val = snap[name];
       return (val === null || val === undefined || val === '') ? MISSING : val;
     }
-    var html = '<div class="snapshot-box"><p class="sub">Đây là đúng bản nội dung đang chờ duyệt — phiên bản nội dung số ' + esc(a.revision) + '. Quyết định sẽ gắn với phiên bản này.</p>';
-    if (!snap) html += '<div class="notice warn">Chưa có bản đóng băng (snapshot) cho phiên bản này — không hiển thị nội dung hiện tại để tránh duyệt nhầm bản đã sửa.</div>';
+    var html = '<div class="snapshot-box"><p class="sub">Đây là đúng bản content đang chờ duyệt — phiên bản content số ' + esc(a.revision) + '. Quyết định sẽ gắn với phiên bản này.</p>';
+    if (!snap) html += '<div class="notice warn">Chưa có bản đóng băng (snapshot) cho phiên bản này — không hiển thị content hiện tại để tránh duyệt nhầm bản đã sửa.</div>';
     if (v) {
-      html += '<p><strong>Kênh:</strong> ' + esc(v.channelLabel || labelStatus(v.platform)) + ' · <strong>Nội dung:</strong> ' + esc(contentTitle(a.contentItemId || v.contentItemId)) + '</p>';
+      html += '<p><strong>Kênh:</strong> ' + esc(v.channelLabel || labelStatus(v.platform)) + ' · <strong>Content:</strong> ' + esc(contentTitle(a.contentItemId || v.contentItemId)) + '</p>';
       html += '<p><strong>Caption:</strong> ' + esc(snapField('caption')) + '</p>';
       html += '<p><strong>Hashtag:</strong> ' + esc(snapField('hashtags')) + '</p>';
       var scenes = snap ? (snap.scriptScenes || snap.scenes || []) : [];
@@ -4437,7 +4437,7 @@
       var media = snap ? (snap.mediaUrl || snap.linkUrl || '') : '';
       html += '<p><strong>File đính kèm:</strong> ' + (media ? '<a href="' + esc(media) + '" target="_blank" rel="noopener">' + esc(media) + '</a>' : MISSING) + '</p>';
       html += '<p class="sub">Lịch đăng dự kiến: ' + esc(D.formatDateTimeVN(v.scheduledAt)) + ' · Người sản xuất: ' + esc(memberName(v.ownerId)) + '</p>';
-    } else html += '<p class="sub">Không tìm thấy phiên bản nội dung tương ứng.</p>';
+    } else html += '<p class="sub">Không tìm thấy phiên bản content tương ứng.</p>';
     return html + '</div>';
   }
   function viewApprovals() {
@@ -4448,7 +4448,7 @@
     var pending = UI.approvalsTab === 'mine' ? minePending : allPending;
     var done = approvals.filter(function (a) { return a.status !== 'pending' && a.status !== 'needs_reapproval'; });
     var ok = canApprove();
-    var html = pageHead('Duyệt nội dung', 'Hộp thư chờ mình duyệt: xem đúng bản nội dung được gửi, rồi duyệt / yêu cầu sửa / từ chối kèm nhận xét. Việc sửa nội dung làm ở mục Nội dung, không sửa tại màn duyệt.');
+    var html = pageHead('Duyệt content', 'Hộp thư chờ mình duyệt: xem đúng bản content được gửi, rồi duyệt / yêu cầu sửa / từ chối kèm nhận xét. Việc sửa content làm ở mục Content, không sửa tại màn duyệt.');
     if (!ok) html += '<div class="notice warn">Vai trò hiện tại (' + esc(labelStatus(Store.currentRole())) + ') không có quyền duyệt — các nút quyết định bị khóa.' + (Store.mode === 'demo' ? ' Đổi sang Owner/Lead ở thanh trên (Chế độ demo) để thử duyệt.' : '') + '</div>';
     html += collectionBanner('approvals');
     // WAVE-B4: dải hàng đợi — số chờ theo tab + tuổi chờ lâu nhất (từ mốc
@@ -4474,7 +4474,7 @@
     }
     html += tabsHtml([['mine', 'Chờ mình duyệt (' + minePending.length + ')'], ['all', 'Tất cả đang chờ (' + allPending.length + ')']], UI.approvalsTab, 'approvals-tab');
     html += '<h2>' + (UI.approvalsTab === 'mine' ? 'Chờ mình duyệt' : 'Tất cả đang chờ') + ' (' + pending.length + ')</h2>';
-    if (!pending.length && !collLoadingOrError('approvals')) html += '<div class="state-box">Không có nội dung nào chờ duyệt. Khi thành viên bấm "Gửi duyệt" ở mục Nội dung, bản nội dung sẽ xuất hiện tại đây.</div>';
+    if (!pending.length && !collLoadingOrError('approvals')) html += '<div class="state-box">Không có content nào chờ duyệt. Khi thành viên bấm "Gửi duyệt" ở mục Content, bản content sẽ xuất hiện tại đây.</div>';
     pending.forEach(function (a) {
       var waitDays = approvalWaitDays(a);
       html += '<div class="panel"><strong>' + esc(contentTitle(a.contentItemId)) + '</strong> — yêu cầu bởi ' + esc(memberName(a.requestedBy)) + ' lúc ' + esc(D.formatDateTimeVN(a.requestedAt)) +
@@ -4491,7 +4491,7 @@
     html += budgetProposalsQueueHtml();
     html += '<h2>Dòng thời gian quyết định (' + done.length + ')</h2>';
     if (!done.length) html += '<p class="sub">Chưa có quyết định nào.</p>';
-    else html += tbl('<tr><th>Nội dung</th><th>Phiên bản nội dung</th><th>Quyết định</th><th>Người duyệt</th><th>Thời điểm</th><th>Thời gian chờ</th><th>Nhận xét</th></tr>' + done.map(function (a) {
+    else html += tbl('<tr><th>Content</th><th>Phiên bản content</th><th>Quyết định</th><th>Người duyệt</th><th>Thời điểm</th><th>Thời gian chờ</th><th>Nhận xét</th></tr>' + done.map(function (a) {
       var waited = (a.requestedAt && a.decidedAt) ? vizDayDiff(String(a.requestedAt).slice(0, 10), String(a.decidedAt).slice(0, 10)) : null;
       return '<tr><td>' + esc(contentTitle(a.contentItemId)) + '</td><td>Số ' + esc(a.revision) + '</td><td>' + vizStatusPillHtml(a.status, { label: a.statusLabel }) + '</td><td>' + esc(memberName(a.decidedBy)) + '</td><td>' + esc(D.formatDateTimeVN(a.decidedAt)) + '</td><td>' + (waited === null ? '—' : (waited === 0 ? 'Trong ngày' : waited + ' ngày')) + '</td><td>' + esc(a.note || '') + '</td></tr>';
     }).join(''));
@@ -4505,7 +4505,7 @@
     var holidays = Store.holidays || [];
     var weekStart = UI.teamWeek, weekEnd = addDaysISO(weekStart, 6);
     var ed = canEdit();
-    var html = pageHead('Team & Workload', 'Tải công việc theo tuần đã chọn. Chỉ tính việc chi tiết (việc cha có việc con không bị tính trùng) và chỉ phần effort rơi trong tuần này.');
+    var html = pageHead('Team & Workload', 'Tải task theo tuần đã chọn. Chỉ tính task chi tiết (task cha có task con không bị tính trùng) và chỉ phần effort rơi trong tuần này.');
     html += '<form class="inline" id="team-week-form"><label>Tuần bắt đầu từ (thứ Hai)<input type="date" id="team-week-input" value="' + esc(weekStart) + '"></label><button class="btn secondary" type="submit">Xem tuần</button> <button class="btn secondary" type="button" data-action="team-week-now">Tuần hiện tại</button></form>';
     html += '<p class="sub">Tuần đang xem: ' + esc(D.formatDateVN(weekStart)) + ' — ' + esc(D.formatDateVN(weekEnd)) + '. Ngày nghỉ chung: ' + (holidays.length ? holidays.map(function (h) { return D.formatDateVN(h); }).join(', ') : '—') + '</p>';
     html += collectionBanner('members');
@@ -4540,7 +4540,7 @@
           '<td>' + (warn.length ? warn.map(function (w) { return vizStatusPillHtml('overdue', { label: w, derived: true }); }).join(' ') : vizStatusPillHtml('done', { label: 'Ổn' })) + '</td>' +
           '<td><button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Đặt năng lực / ngày nghỉ</button></td></tr>';
       }).join(''));
-    html += '<p class="sub">Việc thiếu effort hiển thị "Chưa ước tính" và không tính vào effort đã phân bổ.</p>';
+    html += '<p class="sub">Task thiếu effort hiển thị "Chưa ước tính" và không tính vào effort đã phân bổ.</p>';
     return html;
   }
 
@@ -4577,8 +4577,8 @@
       var kAuto = isKpiAuto(k);
       var kAutoAa = k.autoActual || k.auto_actual || null;
       var kUpdatedAt = kAuto && kAutoAa && kAutoAa.latestObservedAt ? kAutoAa.latestObservedAt : k.updatedAt;
-      var main = '<tr><td><strong>' + esc(k.name) + '</strong>' + (k.metricCode ? '<br><span class="sub">' + esc(k.metricCode) + ' · ' + esc(k.aggregationMode || 'direct') + '</span>' : '') + (kAuto ? '<br>' + kpiAutoInfoHtml(k) : '') + '</td><td>' + esc(campaignName(k.campaignId)) + '<br><span class="sub">' + esc(kpiScopeLabel(k)) + '</span></td><td>' + esc(defText) + (periodText ? '<br><span class="sub">Kỳ: ' + esc(periodText) + '</span>' : '') + '</td><td>' + fmtNum(k.target) + ' ' + esc(k.unit || '') + '</td><td>' + actualCell + '</td><td>' + (kAuto ? 'Tự động từ bài đã đăng' : esc(k.source || '—')) + '</td><td>' + (kUpdatedAt ? esc(D.formatDateTimeVN(kUpdatedAt)) : '—') + '</td>' +
-        '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="measurement" data-kpi="' + esc(k.id) + '"' + dis(!ed || kAuto) + (kAuto ? ' title="KPI này lấy số tự động từ bài đã đăng — số sẽ cập nhật khi bộ đếm của bài thay đổi."' : '') + '>+ Thêm số đo</button> <button class="btn small secondary" data-action="editor-open" data-kind="kpi" data-id="' + esc(k.id) + '"' + dis(!ed) + '>Sửa KPI</button>' + (kAuto ? ' <button class="btn small secondary" data-action="kpi-drill" data-id="' + esc(k.id) + '">' + (UI.kpiOpenId === k.id ? 'Ẩn bài cấu thành' : 'Xem bài cấu thành') + '</button>' : '') + '</td></tr>';
+      var main = '<tr><td><strong>' + esc(k.name) + '</strong>' + (k.metricCode ? '<br><span class="sub">' + esc(k.metricCode) + ' · ' + esc(k.aggregationMode || 'direct') + '</span>' : '') + (kAuto ? '<br>' + kpiAutoInfoHtml(k) : '') + '</td><td>' + esc(campaignName(k.campaignId)) + '<br><span class="sub">' + esc(kpiScopeLabel(k)) + '</span></td><td>' + esc(defText) + (periodText ? '<br><span class="sub">Kỳ: ' + esc(periodText) + '</span>' : '') + '</td><td>' + fmtNum(k.target) + ' ' + esc(k.unit || '') + '</td><td>' + actualCell + '</td><td>' + (kAuto ? 'Tự động từ post' : esc(k.source || '—')) + '</td><td>' + (kUpdatedAt ? esc(D.formatDateTimeVN(kUpdatedAt)) : '—') + '</td>' +
+        '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="measurement" data-kpi="' + esc(k.id) + '"' + dis(!ed || kAuto) + (kAuto ? ' title="KPI này lấy số tự động từ post — số sẽ cập nhật khi bộ đếm của post thay đổi."' : '') + '>+ Thêm số đo</button> <button class="btn small secondary" data-action="editor-open" data-kind="kpi" data-id="' + esc(k.id) + '"' + dis(!ed) + '>Sửa KPI</button>' + (kAuto ? ' <button class="btn small secondary" data-action="kpi-drill" data-id="' + esc(k.id) + '">' + (UI.kpiOpenId === k.id ? 'Ẩn post cấu thành' : 'Xem post cấu thành') + '</button>' : '') + '</td></tr>';
       if (kAuto && UI.kpiOpenId === k.id) {
         main += '<tr class="detail-row"><td colspan="8">' + kpiAutoDrillHtml(k) + '</td></tr>';
       }
@@ -4613,11 +4613,11 @@
         });
         Store.list('activities').filter(function (a) { return a.campaignId === c2.id; }).forEach(function (a) {
           summarizeActivityBudget(c2, a).forEach(function (r) {
-            if (r.ceiling > 0 || r.actualTotal > 0 || r.openCommitments > 0) cmpGroups.push({ title: 'Hoạt động: ' + a.name + ' — ' + c2.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) });
+            if (r.ceiling > 0 || r.actualTotal > 0 || r.openCommitments > 0) cmpGroups.push({ title: 'Activity: ' + a.name + ' — ' + c2.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) });
           });
         });
       });
-      if (cmpGroups.length) html += '<h3>Biểu đồ so sánh ngân sách theo campaign và hoạt động</h3><div data-viz="kpi-page-budget-chart">' + vizBudgetGroupsChartHtml(cmpGroups) + '</div>';
+      if (cmpGroups.length) html += '<h3>Biểu đồ so sánh ngân sách theo campaign và activity</h3><div data-viz="kpi-page-budget-chart">' + vizBudgetGroupsChartHtml(cmpGroups) + '</div>';
     }
     currencies.forEach(function (cur) {
       var lines = linesAll.filter(function (b) { return b.currency === cur; });
@@ -4698,8 +4698,8 @@
   function viewChannels() {
     var accounts = Store.list('channelAccounts');
     var ed = canEdit();
-    var html = pageHead('Kênh & Bài đã đăng', 'Trạng thái kết nối theo từng khả năng và thư viện bài đã đăng.',
-      ed ? '<button class="btn" data-action="editor-open" data-kind="post">+ Thêm bài đã đăng (nhập tay)</button>' : '');
+    var html = pageHead('Kênh & Post', 'Trạng thái kết nối theo từng khả năng và thư viện Post.',
+      ed ? '<button class="btn" data-action="editor-open" data-kind="post">+ Thêm Post (nhập tay)</button>' : '');
     html += readonlyNote() + collectionBanner('channelAccounts');
     html += '<h2>Kết nối kênh</h2>';
     // R2-23: hiển thị HAI trục riêng — mức triển khai code (api_implementation)
@@ -4741,12 +4741,12 @@
       }).join('')) : '<div class="state-box">Chưa có tài khoản kênh nào. Kết nối kênh cần cấp quyền ở nền tảng tương ứng; trong lúc chờ, vẫn ghi nhận bài bằng cách nhập tay.</div>';
     var posts = Store.list('externalPosts');
     var filtered = posts.filter(function (p) { return UI.channelFilter === 'all' || p.platform === UI.channelFilter; });
-    html += '<h2>Thư viện bài đã đăng (' + filtered.length + ')</h2>' +
+    html += '<h2>Thư viện Post (' + filtered.length + ')</h2>' +
       '<form class="inline" id="channel-filter-form"><label>Lọc theo kênh<select id="channel-filter"><option value="all">Tất cả kênh</option>' +
       PLATFORMS.map(function (p) { return '<option value="' + p[0] + '"' + (UI.channelFilter === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') +
       '</select></label><button class="btn secondary" type="submit">Lọc</button></form>';
-    if (!filtered.length) html += emptyState('Chưa có bài đã đăng nào ở kênh đã lọc', 'Thêm bài bằng cách nhập tay (nguồn sẽ ghi rõ là nhập tay) hoặc chờ đồng bộ khi kênh được kết nối.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="post">+ Thêm bài đã đăng</button></p>' : '');
-    else html += tbl('<tr><th>Bài</th><th>Kênh</th><th>Mã bài trên nền tảng</th><th>Ngày đăng</th><th>Lượt xem</th><th>Tiếp cận</th><th>Nguồn</th><th>Campaign đã gắn</th><th>Gắn / đổi campaign</th><th>Thao tác</th></tr>' + filtered.map(function (p) {
+    if (!filtered.length) html += emptyState('Chưa có post nào ở kênh đã lọc', 'Thêm post bằng cách nhập tay (nguồn sẽ ghi rõ là nhập tay) hoặc chờ đồng bộ khi kênh được kết nối.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="post">+ Thêm Post</button></p>' : '');
+    else html += tbl('<tr><th>Post</th><th>Kênh</th><th>Mã bài trên nền tảng</th><th>Ngày đăng</th><th>Lượt xem</th><th>Tiếp cận</th><th>Nguồn</th><th>Campaign đã gắn</th><th>Gắn / đổi campaign</th><th>Thao tác</th></tr>' + filtered.map(function (p) {
       var obs = Store.list('metricObservations').filter(function (o) { return o.externalPostId === p.id; });
       // WAVE-B4: số mới nhất của từng chỉ số lấy qua đúng helper domain cho
       // snapshot trọn đời (không cộng các lần quan sát, không tự chọn tay).
@@ -4947,9 +4947,9 @@
     var reachGuard = D.sumUniqueReachGuard(ds.obs.filter(function (o) { return o.metric === 'reach'; }));
     var missing = Store.list('kpis').some(function (k) { return D.kpiDisplay(k).isMissing; });
     var levelLabel = { account: 'Tài khoản', campaign: 'Chiến dịch quảng cáo', adset: 'Nhóm quảng cáo', ad: 'Quảng cáo' }[f.level] || f.level;
-    var html = pageHead('Báo cáo', 'Hai góc nhìn: vận hành công việc và hiệu quả marketing. Bộ lọc kỳ/tài khoản/campaign áp dụng thật vào tập dữ liệu bên dưới.',
+    var html = pageHead('Báo cáo', 'Hai góc nhìn: vận hành task và hiệu quả marketing. Bộ lọc kỳ/tài khoản/campaign áp dụng thật vào tập dữ liệu bên dưới.',
       '<button class="btn" data-action="editor-open" data-kind="snapshot">Chốt báo cáo từ dữ liệu đang lọc</button> <button class="btn secondary" data-action="export-csv">Xuất CSV dữ liệu đang lọc</button>');
-    html += tabsHtml([['perf', 'Hiệu quả marketing'], ['ops', 'Vận hành công việc']], f.view, 'report-view');
+    html += tabsHtml([['perf', 'Hiệu quả marketing'], ['ops', 'Vận hành task']], f.view, 'report-view');
     html += '<form class="inline" id="report-filter-form">' +
       '<label>Từ ngày<input type="date" name="from" value="' + esc(f.from) + '"></label>' +
       '<label>Đến ngày<input type="date" name="to" value="' + esc(f.to) + '"></label>' +
@@ -4968,9 +4968,9 @@
       // WAVE-B1-VIZ2: 4 thẻ trần -> vizKpiCardHtml (số đếm giữ nguyên như trước).
       html += '<div class="cards" data-viz="reports-ops-cards">' +
         vizKpiCardHtml({ label: 'Campaign đang chạy', valueText: String(runningCampaigns.length), tone: 'running', toneLabel: 'Đang chạy', href: '#/campaigns', hrefLabel: 'Xem danh sách', progress: allCampaigns.length ? { value: runningCampaigns.length, max: allCampaigns.length, pct: vizPct(runningCampaigns.length, allCampaigns.length), tone: 'running', detail: runningCampaigns.length + '/' + allCampaigns.length + ' campaign (' + fmtPct(vizPct(runningCampaigns.length, allCampaigns.length)) + ')' } : null }) +
-        vizKpiCardHtml({ label: 'Việc quá hạn', valueText: String(overdue.length), tone: 'overdue', toneLabel: 'Quá hạn', href: '#/tasks', hrefLabel: 'Xem công việc', progress: tasks.length ? { value: overdue.length, max: tasks.length, pct: vizPct(overdue.length, tasks.length), tone: 'overdue', detail: overdue.length + '/' + tasks.length + ' việc (' + fmtPct(vizPct(overdue.length, tasks.length)) + ')' } : null }) +
-        vizKpiCardHtml({ label: 'Nội dung chờ duyệt', valueText: String(pendingApprovals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/approvals', hrefLabel: 'Tới hộp duyệt' }) +
-        vizKpiCardHtml({ label: 'Việc đã hoàn thành', valueText: completedTasks.length + '/' + tasks.length, tone: 'done', toneLabel: 'Hoàn thành', progress: tasks.length ? { value: completedTasks.length, max: tasks.length, pct: vizPct(completedTasks.length, tasks.length), tone: 'done', detail: completedTasks.length + '/' + tasks.length + ' việc (' + fmtPct(vizPct(completedTasks.length, tasks.length)) + ')' } : null }) +
+        vizKpiCardHtml({ label: 'Task quá hạn', valueText: String(overdue.length), tone: 'overdue', toneLabel: 'Quá hạn', href: '#/tasks', hrefLabel: 'Xem task', progress: tasks.length ? { value: overdue.length, max: tasks.length, pct: vizPct(overdue.length, tasks.length), tone: 'overdue', detail: overdue.length + '/' + tasks.length + ' task (' + fmtPct(vizPct(overdue.length, tasks.length)) + ')' } : null }) +
+        vizKpiCardHtml({ label: 'Content chờ duyệt', valueText: String(pendingApprovals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/approvals', hrefLabel: 'Tới hộp duyệt' }) +
+        vizKpiCardHtml({ label: 'Task đã hoàn thành', valueText: completedTasks.length + '/' + tasks.length, tone: 'done', toneLabel: 'Hoàn thành', progress: tasks.length ? { value: completedTasks.length, max: tasks.length, pct: vizPct(completedTasks.length, tasks.length), tone: 'done', detail: completedTasks.length + '/' + tasks.length + ' task (' + fmtPct(vizPct(completedTasks.length, tasks.length)) + ')' } : null }) +
         '</div>';
       html += '<h2>Tiến độ theo campaign</h2><div data-viz="reports-ops-progress">' + tbl('<tr><th>Campaign</th><th>Tiến độ</th><th>Quá hạn</th></tr>' + allCampaigns.map(function (c) {
         var ct = tasks.filter(function (t) { return t.campaignId === c.id; });
@@ -5126,7 +5126,7 @@
     html += '<h2>Thành viên & vai trò</h2>';
     var members = Store.list('members');
     if (!members.length) html += '<div class="state-box">Chưa có thành viên (chưa kết nối dữ liệu).</div>';
-    else html += tbl('<tr><th>Thành viên</th><th>Email</th><th>Vai trò</th><th>Hoạt động</th><th>Năng lực / ngày nghỉ</th></tr>' + members.map(function (m) {
+    else html += tbl('<tr><th>Thành viên</th><th>Email</th><th>Vai trò</th><th>Activity</th><th>Năng lực / ngày nghỉ</th></tr>' + members.map(function (m) {
       var roleSel = '<select data-action-change="member-role" data-id="' + esc(m.id) + '"' + dis(!isOwner) + '>' + [['owner', 'Owner'], ['lead', 'Lead'], ['member', 'Member'], ['ceo', 'CEO (chỉ xem)']].map(function (r) { return '<option value="' + r[0] + '"' + (m.role === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select>';
       var activeSel = '<select data-action-change="member-active" data-id="' + esc(m.id) + '"' + dis(!isOwner) + '><option value="1"' + (m.isActive !== false ? ' selected' : '') + '>Đang hoạt động</option><option value="0"' + (m.isActive === false ? ' selected' : '') + '>Ngừng hoạt động</option></select>';
       return '<tr><td><strong>' + esc(m.name) + '</strong></td><td>' + esc(m.email) + '</td><td>' + (isOwner ? roleSel : esc(m.roleLabel || labelStatus(m.role))) + '</td><td>' + (isOwner ? activeSel : (m.isActive === false ? 'Ngừng hoạt động' : 'Đang hoạt động')) + '</td>' +
@@ -5595,8 +5595,8 @@
     function hit(x, fields) { return fields.some(function (f) { return String(x[f] || '').toLowerCase().indexOf(q) !== -1; }); }
     var out = [];
     visibleList('campaigns').filter(function (c) { return hit(c, ['name', 'bigIdea', 'keyMessage']); }).slice(0, 4).forEach(function (c) { out.push('<a href="#/campaigns/' + esc(c.id) + '">Campaign: ' + esc(c.name) + '</a>'); });
-    visibleList('tasks').filter(function (t) { return hit(t, ['title', 'deliverable']); }).slice(0, 4).forEach(function (t) { out.push('<button type="button" data-action="open-task" data-id="' + esc(t.id) + '">Việc: ' + esc(t.title) + '</button>'); });
-    visibleList('contentItems').filter(function (x) { return hit(x, ['title', 'brief']); }).slice(0, 4).forEach(function (x) { out.push('<a href="#/content">Nội dung: ' + esc(x.title) + '</a>'); });
+    visibleList('tasks').filter(function (t) { return hit(t, ['title', 'deliverable']); }).slice(0, 4).forEach(function (t) { out.push('<button type="button" data-action="open-task" data-id="' + esc(t.id) + '">Task: ' + esc(t.title) + '</button>'); });
+    visibleList('contentItems').filter(function (x) { return hit(x, ['title', 'brief']); }).slice(0, 4).forEach(function (x) { out.push('<a href="#/content">Content: ' + esc(x.title) + '</a>'); });
     visibleList('brandPages').filter(function (x) { return hit(x, ['title', 'summary']); }).slice(0, 3).forEach(function (x) { out.push('<a href="#/brand">Trang thương hiệu: ' + esc(x.title) + '</a>'); });
     visibleList('brandAssets').filter(function (x) { return hit(x, ['name', 'type']); }).slice(0, 3).forEach(function (x) { out.push('<a href="#/brand">Tài nguyên: ' + esc(x.name) + '</a>'); });
     box.innerHTML = out.length ? out.join('') : '<span class="sub">Không tìm thấy kết quả.</span>';
@@ -5683,8 +5683,8 @@
       var fn = action === 'archive-item' ? sArchive : sRestore;
       settle(fn(coll, id), function () { toast(action === 'archive-item' ? 'Đã lưu trữ. Có thể khôi phục ở mục đã lưu trữ.' : 'Đã khôi phục.'); if (UI.taskPanelId === id) UI.taskPanelId = null; render(); });
     }
-    if (action === 'task-archive') { settle(sArchive('tasks', id), function () { toast('Đã lưu trữ công việc.'); closeTaskPanel(); render(); }); }
-    if (action === 'task-restore') { settle(sRestore('tasks', id), function () { toast('Đã khôi phục công việc.'); render(); }); }
+    if (action === 'task-archive') { settle(sArchive('tasks', id), function () { toast('Đã lưu trữ task.'); closeTaskPanel(); render(); }); }
+    if (action === 'task-restore') { settle(sRestore('tasks', id), function () { toast('Đã khôi phục task.'); render(); }); }
     if (action === 'checklist-remove') {
       captureTaskDraft();
       var task = taskById(id); var idx = Number(t.getAttribute('data-idx'));
@@ -5719,7 +5719,7 @@
     if (action === 'content-prod-tasks') { createProductionTasks(id); }
     if (action === 'chip-variant') { ev.stopPropagation(); openEditor('variant', id, {}); }
     if (action === 'submit-review') {
-      settle(submitReviewCall(id), function () { toast('Đã gửi duyệt. Người duyệt sẽ thấy đúng bản nội dung này ở mục Duyệt nội dung.'); render(); });
+      settle(submitReviewCall(id), function () { toast('Đã gửi duyệt. Người duyệt sẽ thấy đúng bản content này ở mục Duyệt content.'); render(); });
     }
     if (action === 'publish-variant') {
       var v = Store.get('variants', id);
@@ -5735,7 +5735,7 @@
       var decision = t.getAttribute('data-decision');
       if ((decision === 'changes_requested' || decision === 'rejected') && !note) { toast('Hãy nhập nhận xét khi yêu cầu sửa hoặc từ chối, để người sản xuất biết cần sửa gì.'); if (noteEl) noteEl.focus(); return; }
       if (!a) return;
-      settle(decideCall(a, decision, note), function () { toast('Đã ghi quyết định gắn với đúng phiên bản nội dung đang hiển thị.'); render(); });
+      settle(decideCall(a, decision, note), function () { toast('Đã ghi quyết định gắn với đúng phiên bản content đang hiển thị.'); render(); });
     }
     if (action === 'budget-proposal-decide') {
       var bp = null;
@@ -5766,7 +5766,7 @@
       var p = UI.pendingDatePreview;
       UI.pendingDatePreview = null;
       settle(sUpdate('tasks', p.taskId, { startDate: p.newStart, dueDate: p.newDue }), function () {
-        toast('Đã áp dụng đổi lịch cho việc gốc. Lịch của việc phụ thuộc không bị tự dịch.');
+        toast('Đã áp dụng đổi lịch cho task gốc. Lịch của task phụ thuộc không bị tự dịch.');
         render();
       });
     }
@@ -5833,9 +5833,9 @@
       var rq2 = Store.get('marketingRequests', id);
       if (!rq2) return;
       var dup = Store.list('tasks').find(function (t) { return cfVal(t, 'marketingRequestId') === id; });
-      if (dup) { toast('Yêu cầu này đã được chuyển thành việc: ' + dup.title); return; }
+      if (dup) { toast('Yêu cầu này đã được chuyển thành task: ' + dup.title); return; }
       settle(sCreate('tasks', { title: rq2.title, campaignId: rq2.campaignId || null, assigneeId: Store.currentUserId, ownerId: Store.currentUserId, status: 'todo', priority: rq2.priority || 'Trung bình', dueDate: rq2.dueDate || null, description: rq2.note || '', checklist: [], marketingRequestId: id }), function () {
-        settle(sUpdate('marketingRequests', id, { status: 'converted', statusLabel: 'Đã chuyển thành việc' }), function () { toast('Đã chuyển yêu cầu thành công việc.'); render(); });
+        settle(sUpdate('marketingRequests', id, { status: 'converted', statusLabel: 'Đã chuyển thành task' }), function () { toast('Đã chuyển yêu cầu thành task.'); render(); });
       });
     }
     if (action === 'resolve-blocker') { captureTaskDraft(); settle(sUpdate('blockers', id, { status: 'resolved' }), function () { render(); }); }
@@ -5985,17 +5985,17 @@
       // (các ô khác đang disabled nên FormData không mang chúng theo).
       if (taskPanelReadonly()) { toast('Bạn đang xem ở chế độ chỉ đọc, không lưu được thay đổi.'); return; }
       if (!canEditTask()) {
-        settle(sUpdate('tasks', tid, { status: val('status') }), function () { UI.taskDraft = null; UI.taskDraftConflict = false; toast('Đã lưu trạng thái công việc.'); render(); });
+        settle(sUpdate('tasks', tid, { status: val('status') }), function () { UI.taskDraft = null; UI.taskDraftConflict = false; toast('Đã lưu trạng thái task.'); render(); });
         return;
       }
       var start = val('startDate'), due = val('dueDate');
       if (start && due && due < start) { toast('Mốc cần hoàn thành phải sau ngày bắt đầu.'); return; }
-      if (val('parentId') === tid) { toast('Việc không thể là việc cha của chính nó.'); return; }
+      if (val('parentId') === tid) { toast('Task không thể là task cha của chính nó.'); return; }
       // R2-27: validate phase/activity thuộc đúng campaign/phase.
       var pPhase = val('phaseId') ? Store.get('phases', val('phaseId')) : null;
       if (val('phaseId') && (!pPhase || (val('campaignId') && pPhase.campaignId !== val('campaignId')))) { toast('Giai đoạn đã chọn không thuộc campaign này.'); return; }
       var pAct = val('activityId') ? Store.get('activities', val('activityId')) : null;
-      if (val('activityId') && (!pAct || (val('campaignId') && pAct.campaignId !== val('campaignId')) || (val('phaseId') && pAct && pAct.phaseId !== val('phaseId')))) { toast('Hoạt động đã chọn không thuộc giai đoạn/campaign đã chọn.'); return; }
+      if (val('activityId') && (!pAct || (val('campaignId') && pAct.campaignId !== val('campaignId')) || (val('phaseId') && pAct && pAct.phaseId !== val('phaseId')))) { toast('Activity đã chọn không thuộc giai đoạn/campaign đã chọn.'); return; }
       var milePanel = f.querySelector('[name="isMilestone"]');
       settle(sUpdate('tasks', tid, {
         title: val('title'), assigneeId: val('assigneeId') || null, ownerId: val('assigneeId') || null,
@@ -6005,7 +6005,7 @@
         priority: val('priority'), startDate: start || null, dueDate: due || null,
         effortHours: val('effortHours') ? Number(val('effortHours')) : null,
         deliverable: val('deliverable') || '', description: val('description') || '', availabilityNote: val('availabilityNote') || ''
-      }), function () { UI.taskDraft = null; UI.taskDraftConflict = false; toast('Đã lưu công việc.'); render(); });
+      }), function () { UI.taskDraft = null; UI.taskDraftConflict = false; toast('Đã lưu task.'); render(); });
       return;
     }
     if (f.id === 'checklist-add-form') {
@@ -6107,7 +6107,7 @@
     if (formKind === 'attach-campaign') {
       // Gắn / đổi / bỏ gắn campaign cho bài qua đúng bảng nối (R15): giá trị rỗng = bỏ gắn.
       var mapResult = hasFn('setPostCampaign') ? Store.setPostCampaign(fid, val('campaignId') || null) : sUpdate('externalPosts', fid, { campaignId: val('campaignId') || null });
-      settle(mapResult, function () { toast(val('campaignId') ? 'Đã gắn campaign cho bài đã đăng.' : 'Đã bỏ gắn campaign khỏi bài.'); render(); });
+      settle(mapResult, function () { toast(val('campaignId') ? 'Đã gắn campaign cho post.' : 'Đã bỏ gắn campaign khỏi post.'); render(); });
     }
   });
 

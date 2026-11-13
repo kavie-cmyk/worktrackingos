@@ -31,7 +31,7 @@ test('R3.1-CONTENT [static]: có tab Quản lý Pillar + editor pillar (mô tả
   assert.match(form, /F\('buProductId', 'Phạm vi Brand \/ BU \/ sản phẩm', 'select'/);
   assert.match(form, /F\('description', 'Mô tả pillar', 'textarea'/);
   assert.match(form, /F\('classificationGuide', 'Hướng dẫn phân loại & ví dụ', 'textarea'/);
-  assert.match(form, /giữ nguyên ID và lịch sử phân loại|giữ ID và lịch sử phân loại|ID và lịch sử phân loại của nội dung cũ được giữ nguyên/);
+  assert.match(form, /giữ nguyên ID và lịch sử phân loại|giữ ID và lịch sử phân loại|ID và lịch sử phân loại của content cũ được giữ nguyên/);
   const save = section("case 'pillar': {", "case 'content': {", saveStart);
   assert.match(save, /sCreate\('contentPillars', plo\)/);
   assert.match(save, /sUpdate\('contentPillars', e\.id, plo\)/);
@@ -59,35 +59,35 @@ test('R3.1-CONTENT [static]: form content có pillar chính, brand/product, angl
   assert.match(form, /F\('buProductId', 'Brand \/ BU', 'select'/);
   assert.match(form, /F\('product', 'Sản phẩm', 'select'/);
   assert.match(form, /F\('angle', 'Góc khai thác \(angle\)', 'text'/);
-  assert.match(form, /F\('goal', 'Mục tiêu của nội dung', 'textarea'/);
+  assert.match(form, /F\('goal', 'Mục tiêu của content', 'textarea'/);
   assert.match(form, /F\('productionDeadline', 'Hạn sản xuất', 'date'/);
   assert.match(form, /F\('assetUrl', 'Link brief \/ asset đính kèm', 'url'/);
   assert.match(form, /F\('editorialStatus', 'Trạng thái', 'select'/);
   assert.match(form, /F\('series', 'Series \/ chuỗi bài \(tùy chọn\)', 'text'/);
   assert.match(form, /F\('audience', 'Đối tượng khán giả \(tùy chọn\)', 'text'/);
-  assert.match(form, /F\('sourceContentId', 'Nội dung gốc được dùng lại \(nguồn, tùy chọn\)', 'select'/);
+  assert.match(form, /F\('sourceContentId', 'Content gốc được dùng lại \(nguồn, tùy chọn\)', 'select'/);
 });
 
 test('R3.1-CONTENT [static]: form content phân biệt "Nội dung thường xuyên — không thuộc campaign" với "Chưa chọn"; nhóm Việc liên quan tùy chọn', () => {
   const form = section("case 'content': {", "case 'variant': {");
   assert.match(form, /F\('campaignChoice', 'Quan hệ với campaign', 'select'/);
   assert.ok(form.includes("['unset', 'Chưa chọn']"), 'thiếu lựa chọn Chưa chọn');
-  assert.ok(form.includes("['none', 'Nội dung thường xuyên — không thuộc campaign']"), 'thiếu lựa chọn tường minh không thuộc campaign');
+  assert.ok(form.includes("['none', 'Content thường xuyên — không thuộc campaign']"), 'thiếu lựa chọn tường minh không thuộc campaign');
   assert.ok(form.includes("['campaign', 'Thuộc campaign"), 'thiếu lựa chọn Thuộc campaign');
-  assert.match(form, /Việc liên quan \(tùy chọn — không bắt buộc, không phải quan hệ cha\)/);
-  assert.match(form, /F\('activityId', 'Hoạt động liên quan \(Action Plan\)', 'select'/);
-  assert.match(form, /F\('taskId', 'Việc liên quan', 'select'/);
+  assert.match(form, /Task liên quan \(tùy chọn — không bắt buộc, không phải quan hệ cha\)/);
+  assert.match(form, /F\('activityId', 'Activity liên quan \(Action Plan\)', 'select'/);
+  assert.match(form, /F\('taskId', 'Task liên quan', 'select'/);
   // Lưu từ Content Plan là luồng bình thường + task chỉ tạo khi bấm nút riêng.
-  assert.match(form, /Lưu nội dung từ Content Plan là luồng bình thường/);
+  assert.match(form, /Lưu content từ Content Plan là luồng bình thường/);
   assert.match(form, /KHÔNG tự tạo khi Lưu/);
 });
 
 test('R3.1-CONTENT [static]: always-on và evergreen là HAI thuộc tính riêng + ngày hết hiệu lực tùy chọn', () => {
   const form = section("case 'content': {", "case 'variant': {");
   assert.match(form, /name="alwaysOn"/);
-  assert.match(form, /Always-on — nội dung vận hành thường xuyên/);
+  assert.match(form, /Always-on — content vận hành thường xuyên/);
   assert.match(form, /name="evergreen"/);
-  assert.match(form, /Evergreen — nội dung có giá trị lâu dài/);
+  assert.match(form, /Evergreen — content có giá trị lâu dài/);
   assert.match(form, /F\('expiresAt', 'Ngày hết hiệu lực \(tùy chọn\)', 'date'/);
   assert.match(form, /always-on và evergreen là RIÊNG BIỆT/);
 });
@@ -107,7 +107,7 @@ test('R3.1-CONTENT [static]: lưu content gửi pillar/campaignChoice/flags/tags
 
 // ---------- 3. Các view cùng một dữ liệu (C.6.3) ----------
 test('R3.1-CONTENT [static]: Content Plan có đủ view Backlog / Theo Pillar / Lịch đăng / Bảng / Board / Thư viện / Mix / Chờ phân loại trên cùng dữ liệu', () => {
-  assert.match(src, /\['backlog', 'Backlog \/ Ý tưởng'\], \['pillars', 'Theo Pillar'\], \['calendar', 'Lịch đăng'\], \['table', 'Bảng nội dung'\], \['board', 'Board sản xuất \/ duyệt'\], \['production', 'Tiến độ sản xuất'\], \['library', 'Thư viện đã đăng'\], \['mix', 'Content mix'\], \['queue', 'Chờ phân loại'\], \['manage', 'Quản lý Pillar'\]/);
+  assert.match(src, /\['backlog', 'Backlog \/ Ý tưởng'\], \['pillars', 'Theo Pillar'\], \['calendar', 'Lịch đăng'\], \['table', 'Bảng content'\], \['board', 'Board sản xuất \/ duyệt'\], \['production', 'Tiến độ sản xuất'\], \['library', 'Thư viện Post'\], \['mix', 'Content mix'\], \['queue', 'Chờ phân loại'\], \['manage', 'Quản lý Pillar'\]/);
   // Backlog: chưa có lịch thì KHÔNG gán ngày giả.
   assert.match(src, /Ý tưởng chưa có lịch đăng chỉ nằm ở đây — hệ thống không tự gán ngày hôm nay/);
   assert.match(src, /!pubsOfItem\(x\.id\)\.length && !x\.scheduledDate/);
@@ -118,8 +118,8 @@ test('R3.1-CONTENT [static]: bộ lọc đủ chiều — brand/product, pillar,
   for (const name of ['buProductId', 'product', 'pillarId', 'campaignId', 'platform', 'channelAccountId', 'format', 'ownerId', 'status', 'from', 'to', 'activityId', 'taskId']) {
     assert.ok(view.includes('name="' + name + '"'), 'filter thiếu field: ' + name);
   }
-  assert.match(view, /Không thuộc campaign \(nội dung thường xuyên\)/);
-  assert.match(view, /Hoạt động \(nâng cao\)/);
+  assert.match(view, /Không thuộc campaign \(content thường xuyên\)/);
+  assert.match(view, /Activity \(nâng cao\)/);
   assert.match(view, /Task \(nâng cao\)/);
   const submit = section("if (f.id === 'content-filter-form')", "if (f.id === 'brand-filter-form')");
   assert.match(submit, /pillarId:/);
@@ -130,11 +130,11 @@ test('R3.1-CONTENT [static]: bộ lọc đủ chiều — brand/product, pillar,
 // ---------- 4. Content mix (C.6.3 / AC28) ----------
 test('R3.1-CONTENT [static]: content mix có chọn đơn vị đếm nội dung gốc / lần đăng và ghi rõ mẫu số; tags không cộng ra tổng', () => {
   assert.match(src, /function contentMixRows\(items, pubs, unit\)/);
-  assert.match(src, /data-action="content-mix-unit" data-id="content">Nội dung gốc</);
-  assert.match(src, /data-action="content-mix-unit" data-id="publication">Lần đăng \(publication\)</);
+  assert.match(src, /data-action="content-mix-unit" data-id="content">Content gốc</);
+  assert.match(src, /data-action="content-mix-unit" data-id="publication">Publication</);
   assert.match(src, /Mẫu số \(tổng số/);
   assert.match(src, /tỷ trọng theo tags KHÔNG cộng ra tổng/);
-  assert.match(src, /Pillar chính tính đúng 1 lần cho 1 nội dung gốc/);
+  assert.match(src, /Pillar chính tính đúng 1 lần cho 1 content gốc/);
 });
 
 // ---------- 5. Publication / lần đăng (C.6.2 / AC26 / AC29) ----------
@@ -142,7 +142,7 @@ test('R3.1-CONTENT [static]: buildPublications gộp job + external post cùng v
   assert.match(src, /function buildPublications\(\)/);
   assert.match(src, /if \(j\.variantId && variantsWithPost\[j\.variantId\]\) return; \/\/ job đã thành bài đăng: cùng 1 lần đăng/);
   assert.match(src, /if \(variantsWithPost\[v\.id\] \|\| variantsWithJob\[v\.id\]\) return;/);
-  assert.match(src, /Mỗi dòng là MỘT lần đăng\. Đăng lại cùng nội dung tạo một dòng mới riêng/);
+  assert.match(src, /Mỗi dòng là MỘT publication\. Đăng lại cùng content tạo một dòng mới riêng/);
   // Campaign hiệu lực của lần đăng: explicit của publication trước, rồi mới kế thừa content.
   assert.match(src, /function effCampaign\(explicit, variant, item\)/);
 });
@@ -151,13 +151,13 @@ test('R3.1-CONTENT [static]: tạo từ ô ngày chỉ điền lịch cho lần 
   assert.match(src, /openEditor\('variant', null, \{ scheduledAtLocal: id \+ 'T09:00' \}\)/);
   assert.match(src, /tạo từ ô ngày CHỈ điền lịch cho lần đăng đó/);
   const detail = section('function campaignDetailHtml(id)', '// ---------- Nội dung (Content) ----------');
-  assert.match(detail, /Qua lần đăng dùng lại/);
+  assert.match(detail, /Qua publication dùng lại/);
   assert.match(detail, /buildPublications\(\)\.filter\(function \(p\) \{ return p\.campaignId === c\.id; \}\)/);
   // Form bài đã đăng: campaign lưu ở LẦN ĐĂNG, không đổi content gốc.
   const postForm = section("case 'post': {", "case 'adcr': {");
-  assert.match(postForm, /F\('campaignId', 'Campaign của lần đăng này', 'select'/);
-  assert.match(postForm, /campaign của nội dung gốc KHÔNG bị đổi/);
-  assert.match(postForm, /F\('contentItemId', 'Nội dung gốc của lần đăng này', 'select'/);
+  assert.match(postForm, /F\('campaignId', 'Campaign của publication này', 'select'/);
+  assert.match(postForm, /campaign của content gốc KHÔNG bị đổi/);
+  assert.match(postForm, /F\('contentItemId', 'Content gốc của publication này', 'select'/);
 });
 
 // ---------- 6. Hàng đợi phân loại (C.6.4) ----------
@@ -165,7 +165,7 @@ test('R3.1-CONTENT [static]: hàng đợi Chờ phân loại cho bài thiếu pi
   const view = section('function viewContent()', '// ---------- Công việc ----------');
   assert.match(view, /Chờ phân loại \(/);
   assert.match(view, /hệ thống không tự gán pillar và không tạo campaign giả/);
-  assert.match(view, /Bài đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ/);
+  assert.match(view, /Post đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ/);
   assert.match(view, /queueItems = items\.filter\(function \(x\) \{ return !contentPillarId\(x\); \}\)/);
 });
 

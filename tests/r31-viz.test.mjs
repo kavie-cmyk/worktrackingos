@@ -60,16 +60,16 @@ function campaignSummary() {
 }
 
 // ---------- [static] 1. Tổng quan campaign: chart trước, bảng dưới ----------
-test('R3.1-VIZ [static]: tổng quan campaign — chart phân bổ theo action TRƯỚC bảng chi tiết C.7, hai số Chưa phân bổ / Còn có thể dùng tách biệt', () => {
+test('R3.1-VIZ [static]: tổng quan campaign — chart phân bổ theo action TRƯỚC bảng chi tiết C.7, hai số Chưa phân bổ / Còn dùng được tách biệt', () => {
   const detail = section('function campaignDetailHtml(id)', '// ---------- R3.1: Content Plan');
   assert.match(detail, /summarizeCampaignBudget\(c\)/);
   assert.match(detail, /vizBudgetActionChartHtml\(c\)/);
   assert.ok(detail.indexOf('vizBudgetActionChartHtml(c)') < detail.indexOf('Bảng số chi tiết ngân sách'), 'chart phải nằm trên bảng số chi tiết');
   assert.match(detail, /data-viz="campaign-budget-note"/);
   assert.match(detail, /Chưa phân bổ: <strong>/);
-  assert.match(detail, /Còn có thể dùng: <strong>/);
+  assert.match(detail, /Còn dùng được: <strong>/);
   assert.match(detail, /là hai số tách biệt, không gộp/);
-  for (const label of ['Hạn mức', 'Đã phân bổ', 'Chưa phân bổ', 'Thực chi', 'Cam kết chưa trả', 'Dự kiến sử dụng', 'Còn có thể dùng']) {
+  for (const label of ['Hạn mức', 'Đã phân bổ', 'Chưa phân bổ', 'Thực chi', 'Cam kết chưa trả', 'Dự kiến sử dụng', 'Còn dùng được']) {
     assert.ok(detail.includes('<th>' + label + '</th>'), 'bảng chi tiết thiếu cột: ' + label);
   }
   assert.match(detail, /Hai số này khác nhau và không cộng lẫn nhau/);

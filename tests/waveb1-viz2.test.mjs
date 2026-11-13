@@ -44,9 +44,9 @@ test('WAVE-B1 [static]: Báo cáo ops — 4 thẻ vizKpiCardHtml + tiến độ 
   const rp = section('function viewReports()', '// ---------- Thiết lập ----------');
   assert.match(rp, /data-viz="reports-ops-cards"/);
   assert.match(rp, /vizKpiCardHtml\(\{ label: 'Campaign đang chạy', valueText: String\(runningCampaigns\.length\)/);
-  assert.match(rp, /vizKpiCardHtml\(\{ label: 'Việc quá hạn', valueText: String\(overdue\.length\)/);
-  assert.match(rp, /vizKpiCardHtml\(\{ label: 'Nội dung chờ duyệt', valueText: String\(pendingApprovals\.length\)/);
-  assert.match(rp, /vizKpiCardHtml\(\{ label: 'Việc đã hoàn thành'/);
+  assert.match(rp, /vizKpiCardHtml\(\{ label: 'Task quá hạn', valueText: String\(overdue\.length\)/);
+  assert.match(rp, /vizKpiCardHtml\(\{ label: 'Content chờ duyệt', valueText: String\(pendingApprovals\.length\)/);
+  assert.match(rp, /vizKpiCardHtml\(\{ label: 'Task đã hoàn thành'/);
   assert.match(rp, /data-viz="reports-ops-progress"/);
   assert.match(rp, /vizCellBarHtml\(\{ value: p\.completed, max: p\.total, tone: pTone/);
   assert.match(rp, /odCount > 0 \? vizStatusPillHtml\('overdue', \{ label: odCount \+ ' quá hạn', derived: true \}\) : '0'/);
