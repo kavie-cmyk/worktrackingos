@@ -45,6 +45,45 @@
     var r = Store.currentRole ? Store.currentRole() : '';
     return r === 'owner' || r === 'lead' || can('campaign.edit');
   }
+  // Chốt baseline CẢ CÂY (13/11): dựng kế hoạch ghi baseline từ lịch HIỆN TẠI
+  // của campaign + mọi phase/activity/task thuộc campaign. Hàm THUẦN (nhận
+  // sẵn các danh sách đã lọc theo cây) để test độc lập được. Thực thể đủ cả
+  // hai mốc ngày mới có mục ghi; thiếu start hoặc end/due → BỎ QUA (không
+  // ghi baseline rỗng) và đếm theo loại. Campaign/phase/activity dùng
+  // startDate/endDate → baselineStartDate/baselineEndDate; task dùng
+  // startDate/dueDate → baselineStartDate/baselineDueDate (đúng trường mà
+  // Gantt và store đang đọc).
+  function baselineTreePlan(campaign, phases, activities, tasks) {
+    var plan = {
+      campaignItem: null,
+      items: [],
+      skippedByType: { campaign: 0, phase: 0, activity: 0, task: 0 },
+      skipped: 0
+    };
+    function add(type, coll, entity, start, end, endKey) {
+      if (!entity) return;
+      if (!start || !end) { plan.skippedByType[type] += 1; plan.skipped += 1; return; }
+      var patch = { baselineStartDate: start };
+      patch[endKey] = end;
+      var item = { type: type, coll: coll, id: entity.id, patch: patch };
+      if (type === 'campaign') plan.campaignItem = item; else plan.items.push(item);
+    }
+    add('campaign', 'campaigns', campaign, campaign && campaign.startDate, campaign && campaign.endDate, 'baselineEndDate');
+    (phases || []).forEach(function (p) { add('phase', 'phases', p, p.startDate, p.endDate, 'baselineEndDate'); });
+    (activities || []).forEach(function (a) { add('activity', 'activities', a, a.startDate, a.endDate, 'baselineEndDate'); });
+    (tasks || []).forEach(function (t) { add('task', 'tasks', t, t.startDate, t.dueDate, 'baselineDueDate'); });
+    return plan;
+  }
+  // Tóm tắt phạm vi của một entry baselineVersions: entry CŨ (trước đợt
+  // chốt-cả-cây) không có counts → trả '' để nơi hiển thị giữ nguyên như cũ.
+  function baselineVersionStatsText(bv) {
+    if (!bv || !bv.counts) return '';
+    var total = (bv.counts.campaign || 0) + (bv.counts.phase || 0) + (bv.counts.activity || 0) + (bv.counts.task || 0);
+    var s = 'đã chốt ' + total + ' mục';
+    if (bv.skipped) s += ' · bỏ qua ' + bv.skipped + ' mục chưa có lịch';
+    if (bv.failed) s += ' · lỗi ' + bv.failed + ' mục';
+    return s;
+  }
 
   var NAV_GROUPS = [
     ['Chung', [['overview', 'Overview'], ['my-work', 'Task của tôi']]],
@@ -797,7 +836,8 @@
             : 'Chưa chốt baseline nào.') + '</p>' +
           (baselineVersionsOf(c).length
             ? '<ul class="clean">' + baselineVersionsOf(c).map(function (bv) {
-              return '<li>Baseline v' + esc(bv.version) + ': ' + esc(D.formatDateVN(bv.startDate)) + ' — ' + esc(D.formatDateVN(bv.endDate)) + ' · chốt bởi ' + esc(memberName(bv.setBy)) + ' lúc ' + esc(D.formatDateTimeVN(bv.setAt)) + '</li>';
+              var bvStats = baselineVersionStatsText(bv);
+              return '<li>Baseline v' + esc(bv.version) + ': ' + esc(D.formatDateVN(bv.startDate)) + ' — ' + esc(D.formatDateVN(bv.endDate)) + ' · chốt bởi ' + esc(memberName(bv.setBy)) + ' lúc ' + esc(D.formatDateTimeVN(bv.setAt)) + (bvStats ? ' · ' + esc(bvStats) : '') + '</li>';
             }).join('') + '</ul>'
             : '') + '</div>' +
           F('why', 'Vì sao chạy campaign này?', 'textarea', ev('why', c.why), { wide: true }) +
@@ -2028,13 +2068,13 @@
   function appendPhaseActivityRows(rows, c, phases, acts, tasks, baseDepth, campKey) {
     phases.forEach(function (p) {
       var pkey = 'phase:' + p.id;
-      rows.push({ key: pkey, parentKey: campKey || undefined, coll: 'phases', id: p.id, ganttId: p.id, title: p.name, kind: 'phase', status: p.status, depth: baseDepth, start: p.startDate, end: p.endDate, hasChildren: acts.some(function (a) { return a.phaseId === p.id; }) || tasks.some(function (t) { return t.phaseId === p.id && !t.activityId; }) });
+      rows.push({ key: pkey, parentKey: campKey || undefined, coll: 'phases', id: p.id, ganttId: p.id, title: p.name, kind: 'phase', status: p.status, depth: baseDepth, start: p.startDate, end: p.endDate, bStart: p.baselineStartDate, bEnd: p.baselineEndDate, hasChildren: acts.some(function (a) { return a.phaseId === p.id; }) || tasks.some(function (t) { return t.phaseId === p.id && !t.activityId; }) });
       acts.filter(function (a) { return a.phaseId === p.id; }).forEach(function (a) {
-        rows.push({ key: 'act:' + a.id, parentKey: pkey, coll: 'activities', id: a.id, ganttId: a.id, title: a.name, kind: 'activity', status: a.status, depth: baseDepth + 1, start: a.startDate || p.startDate, end: a.endDate || p.endDate, hasChildren: tasks.some(function (t) { return t.activityId === a.id; }) });
+        rows.push({ key: 'act:' + a.id, parentKey: pkey, coll: 'activities', id: a.id, ganttId: a.id, title: a.name, kind: 'activity', status: a.status, depth: baseDepth + 1, start: a.startDate || p.startDate, end: a.endDate || p.endDate, bStart: a.baselineStartDate, bEnd: a.baselineEndDate, hasChildren: tasks.some(function (t) { return t.activityId === a.id; }) });
       });
     });
     acts.filter(function (a) { return !a.phaseId; }).forEach(function (a) {
-      rows.push({ key: 'act:' + a.id, parentKey: campKey || undefined, coll: 'activities', id: a.id, ganttId: a.id, title: a.name + (a.channel ? ' (' + a.channel + ')' : ''), kind: 'activity', status: a.status, depth: baseDepth, start: a.startDate, end: a.endDate, hasChildren: tasks.some(function (t) { return t.activityId === a.id; }) });
+      rows.push({ key: 'act:' + a.id, parentKey: campKey || undefined, coll: 'activities', id: a.id, ganttId: a.id, title: a.name + (a.channel ? ' (' + a.channel + ')' : ''), kind: 'activity', status: a.status, depth: baseDepth, start: a.startDate, end: a.endDate, bStart: a.baselineStartDate, bEnd: a.baselineEndDate, hasChildren: tasks.some(function (t) { return t.activityId === a.id; }) });
     });
     var unassigned = tasks.some(function (t) { return !t.parentId && !t.phaseId && !t.activityId; });
     if (unassigned) {
@@ -3640,8 +3680,10 @@
     // định) — badge trạng thái render trong block HTML riêng bên dưới.
     html += pageHead(c.name, D.formatDateVN(c.startDate) + ' — ' + D.formatDateVN(c.endDate) + ' · Người phụ trách: ' + memberName(c.ownerId),
       (ed ? '<button class="btn" data-action="editor-open" data-kind="campaign" data-id="' + esc(c.id) + '">Sửa campaign</button> <button class="btn secondary" data-action="archive-item" data-coll="campaigns" data-id="' + esc(c.id) + '">Lưu trữ</button>' : ''));
+    var campVersions = baselineVersionsOf(c);
+    var campLatestStats = campVersions.length ? baselineVersionStatsText(campVersions[campVersions.length - 1]) : '';
     html += '<div class="campaign-status-block">' + statusBadge(c.status) +
-      ' <span class="sub">Kế hoạch đã duyệt (baseline): ' + (c.baselineStartDate || c.baselineEndDate ? esc(D.formatDateVN(c.baselineStartDate)) + ' — ' + esc(D.formatDateVN(c.baselineEndDate)) : 'chưa chốt') + '</span>' +
+      ' <span class="sub">Kế hoạch đã duyệt (baseline): ' + (c.baselineStartDate || c.baselineEndDate ? esc(D.formatDateVN(c.baselineStartDate)) + ' — ' + esc(D.formatDateVN(c.baselineEndDate)) : 'chưa chốt') + (campLatestStats ? ' · v' + esc(campVersions[campVersions.length - 1].version) + ' · ' + esc(campLatestStats) : '') + '</span>' +
       (canSetBaseline() ? ' <button class="btn small secondary" data-action="campaign-baseline" data-id="' + esc(c.id) + '">Chốt baseline theo lịch hiện tại</button>' : '') + '</div>';
     html += '<div class="tabs" role="tablist">' + [['overview', 'Overview'], ['action', 'Action Plan'], ['plan', 'Kế hoạch & Timeline'], ['tasks', 'Task'], ['content', 'Content'], ['kpi', 'KPI & Ngân sách'], ['docs', 'Tài liệu'], ['summary', 'Tổng kết']].map(function (x) {
       return '<a class="tab' + (tab === x[0] ? ' active' : '') + '" href="' + base + '/' + x[0] + '" role="tab">' + esc(x[1]) + '</a>';
@@ -5804,19 +5846,66 @@
     if (action === 'gantt-range-clear') { UI.ganttRange = { from: '', to: '' }; render(); }
     if (action === 'approvals-tab') { UI.approvalsTab = id; render(); }
     if (action === 'campaign-baseline') {
-      // R2-28c: chốt baseline = thêm một version vào custom_fields.baselineVersions
-      // của campaign và đặt baseline hiện hành bằng version mới.
+      // R2-28c + chốt CẢ CÂY (13/11): một lần bấm chụp mốc cho campaign +
+      // mọi phase/activity/task thuộc campaign, mỗi thực thể nhận baseline
+      // = lịch hiện tại của chính nó; mục thiếu ngày bị bỏ qua và đếm.
+      // Ghi các mục con TRƯỚC (tuần tự, đếm kết quả thật từng mục); campaign
+      // + entry baselineVersions (kèm thống kê phạm vi) ghi CUỐI — entry
+      // chỉ tồn tại khi phần ghi campaign thành công; campaign ghi lỗi thì
+      // dừng và báo lỗi như pattern settle hiện tại. Toàn bộ là ghi phía
+      // client qua Store, KHÔNG có transaction: lỗi giữa chừng = một phần
+      // cây đã có baseline mới nhưng chưa có version mới (bấm chốt lại để
+      // đồng bộ). Sau mỗi mục còn ĐỌC LẠI để kiểm chứng baseline thật sự
+      // nằm trên bản ghi — tầng dữ liệu lặng lẽ bỏ trường (vd cột chưa có
+      // ở DB) bị tính là lỗi, không báo thành công giả.
       var bc = Store.get('campaigns', id);
       if (!bc) return;
       if (!canSetBaseline()) { toast('Chỉ Owner/Lead mới chốt được baseline.'); return; }
       if (!bc.startDate || !bc.endDate) { toast('Campaign chưa có ngày bắt đầu/kết thúc — hãy sửa campaign trước khi chốt baseline.'); return; }
-      var versions = baselineVersionsOf(bc).slice();
-      var nv = { version: versions.length + 1, startDate: bc.startDate, endDate: bc.endDate, setBy: Store.currentUserId, setAt: new Date().toISOString() };
-      versions.push(nv);
-      settle(sUpdate('campaigns', id, { baselineStartDate: nv.startDate, baselineEndDate: nv.endDate, baselineVersions: versions }), function () {
-        toast('Đã chốt baseline v' + nv.version + ' cho campaign.');
-        render();
+      var bPhases = Store.list('phases').filter(function (x) { return x.campaignId === id; });
+      var bPhaseIds = {}; bPhases.forEach(function (p) { bPhaseIds[p.id] = true; });
+      var bActs = Store.list('activities').filter(function (x) {
+        return x.campaignId === id || (!x.campaignId && x.phaseId && bPhaseIds[x.phaseId]);
       });
+      var bActIds = {}; bActs.forEach(function (a) { bActIds[a.id] = true; });
+      var bTasks = Store.list('tasks').filter(function (t) {
+        if (isArchived(t)) return false;
+        if (t.campaignId === id) return true;
+        if (t.campaignId) return false;
+        return !!((t.activityId && bActIds[t.activityId]) || (t.phaseId && bPhaseIds[t.phaseId]));
+      });
+      var bPlan = baselineTreePlan(bc, bPhases, bActs, bTasks);
+      var bDone = { phase: 0, activity: 0, task: 0 };
+      var bFailed = 0;
+      var bIdx = 0;
+      function finishBaselineTree() {
+        var versions = baselineVersionsOf(bc).slice();
+        var nv = {
+          version: versions.length + 1, startDate: bc.startDate, endDate: bc.endDate,
+          setBy: Store.currentUserId, setAt: new Date().toISOString(),
+          counts: { campaign: 1, phase: bDone.phase, activity: bDone.activity, task: bDone.task },
+          skipped: bPlan.skipped, skippedByType: bPlan.skippedByType, failed: bFailed
+        };
+        versions.push(nv);
+        settle(sUpdate('campaigns', id, { baselineStartDate: nv.startDate, baselineEndDate: nv.endDate, baselineVersions: versions }), function () {
+          var msg = 'Đã chốt baseline v' + nv.version + ': 1 campaign, ' + bDone.phase + ' phase, ' + bDone.activity + ' activity, ' + bDone.task + ' task';
+          if (bPlan.skipped) msg += ' — bỏ qua ' + bPlan.skipped + ' mục chưa có lịch';
+          if (bFailed) msg += ' — lỗi ' + bFailed + ' mục chưa ghi được, hãy thử chốt lại';
+          toast(msg);
+          render();
+        });
+      }
+      function writeBaselineNext() {
+        if (bIdx >= bPlan.items.length) { finishBaselineTree(); return; }
+        var bit = bPlan.items[bIdx++];
+        saveResult(sUpdate(bit.coll, bit.id, bit.patch), function () {
+          var cur = Store.get(bit.coll, bit.id);
+          var written = !!cur && Object.keys(bit.patch).every(function (k) { return String(cfVal(cur, k) || '') === String(bit.patch[k]); });
+          if (written) bDone[bit.type] += 1; else bFailed += 1;
+          writeBaselineNext();
+        }, function () { bFailed += 1; writeBaselineNext(); });
+      }
+      writeBaselineNext();
     }
     if (action === 'request-accept') {
       var rq = Store.get('marketingRequests', id);

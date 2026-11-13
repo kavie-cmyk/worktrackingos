@@ -999,6 +999,16 @@
           item.approvedViaProposalId = row.approved_via_proposal_id != null ? row.approved_via_proposal_id : null;
           break;
         }
+        case 'phases':
+        case 'activities': {
+          // Chốt baseline cả cây (0015): baseline jsonb {start_date, end_date}
+          // giống hệt campaigns. Hàng cũ / DB chưa áp 0015 → row.baseline
+          // undefined → baseline null (không bịa).
+          var pb = row.baseline || {};
+          item.baselineStartDate = pb.start_date || pb.startDate || null;
+          item.baselineEndDate = pb.end_date || pb.endDate || null;
+          break;
+        }
         case 'brandPages': {
           var g = row.guidelines || {};
           item.version = g.version != null ? g.version : 1;
@@ -1249,6 +1259,14 @@
           delete payload.approved_by;
           delete payload.approved_at;
           delete payload.approved_via_proposal_id;
+          break;
+        }
+        case 'phases':
+        case 'activities': {
+          // Chốt baseline cả cây (0015): ghi baseline jsonb như campaigns.
+          if (obj.baselineStartDate !== undefined || obj.baselineEndDate !== undefined) {
+            payload.baseline = { start_date: obj.baselineStartDate || null, end_date: obj.baselineEndDate || null };
+          }
           break;
         }
         case 'budgetLines': {
