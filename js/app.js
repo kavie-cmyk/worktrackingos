@@ -5069,23 +5069,36 @@
   }
 
   // ---------- Thiết lập ----------
+  // Panel "Trạng thái kết nối Supabase": phân biệt ĐÚNG 4 trạng thái theo mode.
+  // - 'supabase' + đã đăng nhập / chưa đăng nhập: giữ nguyên như trước.
+  // - 'demo': Supabase ĐÃ cấu hình — người dùng chỉ đang xem dữ liệu demo nên
+  //   app chưa dùng dữ liệu thật; TUYỆT ĐỐI không hiện "Chờ kết nối Supabase"
+  //   hay 3 bước tự cài đặt (hai thứ đó chỉ đúng cho mode 'setup').
+  // - 'setup' (mọi mode còn lại): chưa cấu hình thật → badge warn + 3 bước.
+  function supabaseConnectionHtml(mode, me, hasSupabaseUser) {
+    if (mode === 'supabase') {
+      if (me && hasSupabaseUser) return '<p><span class="badge ok">Đã đăng nhập</span> ' + esc(me.name) + ' (' + esc(me.email || '') + ') — vai trò: ' + esc(me.roleLabel || labelStatus(me.role)) + '.</p>' +
+        '<p><button class="btn secondary" data-action="sign-out">Đăng xuất</button></p>';
+      return '<p><span class="badge ok">Đã cấu hình</span> App đã có thông tin kết nối. Đăng nhập bằng email/mật khẩu để vào workspace.</p>' +
+        '<form class="inline" id="signin-form"><label>Email<input type="email" name="email" required></label><label>Mật khẩu<input type="password" name="password" required></label><button class="btn" type="submit">Đăng nhập</button></form>';
+    }
+    if (mode === 'demo') {
+      return '<p><span class="badge ok">Supabase đã cấu hình</span></p>' +
+        '<p>Bạn đang xem dữ liệu demo nên app chưa dùng dữ liệu thật. Supabase đã được cấu hình sẵn — bạn không cần tự cài đặt hay kết nối lại.</p>' +
+        '<p>Để vào workspace thật, hãy tắt chế độ demo ở panel "Chế độ demo" bên dưới rồi đăng nhập bằng email/mật khẩu.</p>';
+    }
+    return '<p><span class="badge warn">Chờ kết nối Supabase</span></p><p>Hướng dẫn 3 bước:</p><ol>' +
+      '<li>Tạo một Supabase project riêng cho Marketing Workspace.</li>' +
+      '<li>Chạy các migration trong thư mục <code>supabase/</code> theo tài liệu thiết lập đi kèm repo.</li>' +
+      '<li>Điền thông tin kết nối công khai vào file <code>config.js</code> — xem mẫu ở <code>config.example.js</code> — rồi tải lại trang.</li></ol>';
+  }
   function viewSettings() {
-    var configured = Store.mode === 'supabase';
     var ed = canEdit();
     var isOwner = canMemberManage();
     var html = pageHead('Thiết lập', 'Kết nối dữ liệu, thành viên & vai trò, BU/sản phẩm, năng lực làm việc và kết nối kênh.',
       isOwner ? '<button class="btn" data-action="editor-open" data-kind="invite">+ Mời thành viên</button>' : '');
     html += '<h2>Trạng thái kết nối Supabase</h2><div class="panel">';
-    if (configured) {
-      var me = Store.currentUser();
-      if (me && Store.supabaseUser) html += '<p><span class="badge ok">Đã đăng nhập</span> ' + esc(me.name) + ' (' + esc(me.email || '') + ') — vai trò: ' + esc(me.roleLabel || labelStatus(me.role)) + '.</p>' +
-        '<p><button class="btn secondary" data-action="sign-out">Đăng xuất</button></p>';
-      else html += '<p><span class="badge ok">Đã cấu hình</span> App đã có thông tin kết nối. Đăng nhập bằng email/mật khẩu để vào workspace.</p>' +
-        '<form class="inline" id="signin-form"><label>Email<input type="email" name="email" required></label><label>Mật khẩu<input type="password" name="password" required></label><button class="btn" type="submit">Đăng nhập</button></form>';
-    } else html += '<p><span class="badge warn">Chờ kết nối Supabase</span></p><p>Hướng dẫn 3 bước:</p><ol>' +
-      '<li>Tạo một Supabase project riêng cho Marketing Workspace.</li>' +
-      '<li>Chạy các migration trong thư mục <code>supabase/</code> theo tài liệu thiết lập đi kèm repo.</li>' +
-      '<li>Điền thông tin kết nối công khai vào file <code>config.js</code> — xem mẫu ở <code>config.example.js</code> — rồi tải lại trang.</li></ol>';
+    html += supabaseConnectionHtml(Store.mode, Store.currentUser(), !!Store.supabaseUser);
     html += '</div>';
     html += '<h2>Chế độ demo</h2><div class="panel">' +
       '<p>Trạng thái hiện tại: <strong>' + (Store.mode === 'demo' ? 'Đang bật — mọi màn hình đều có banner "Dữ liệu minh họa — không phải dữ liệu thật", và bộ đổi người dùng ở thanh trên chỉ xuất hiện trong chế độ này (ghi rõ "Chế độ demo")' : 'Đang tắt') + '</strong>.</p>' +
