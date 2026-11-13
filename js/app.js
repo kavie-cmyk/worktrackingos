@@ -48,7 +48,7 @@
 
   var NAV_GROUPS = [
     ['Công việc chung', [['overview', 'Tổng quan'], ['my-work', 'Việc của tôi']]],
-    ['Kế hoạch & nội dung', [['campaigns', 'IMC & Campaigns'], ['content', 'Nội dung'], ['tasks', 'Công việc'], ['approvals', 'Duyệt nội dung']]],
+    ['Kế hoạch & nội dung', [['campaigns', 'IMC & Campaigns'], ['content', 'Nội dung'], ['tasks', 'Việc'], ['approvals', 'Duyệt nội dung']]],
     ['Thương hiệu', [['brand', 'Brand Hub']]],
     ['Hiệu quả', [['kpi', 'KPI & Ngân sách'], ['channels', 'Kênh & Bài đã đăng'], ['ads', 'Quảng cáo'], ['reports', 'Báo cáo']]],
     ['Tổ chức', [['team', 'Team & Workload'], ['settings', 'Thiết lập']]]
@@ -396,7 +396,7 @@
     if (!taskPanelReadonly()) return '';
     return '<div class="notice info" role="note">Bạn đang xem ở chế độ chỉ đọc — vai trò hiện tại' +
       (Store.currentRole ? ' (' + esc(labelStatus(Store.currentRole())) + ')' : '') +
-      ' không có quyền sửa công việc, nên mọi ô nhập, mục kiểm tra và quan hệ phụ thuộc đã bị khóa. Dữ liệu vẫn được tầng dữ liệu chặn khi lưu.</div>';
+      ' không có quyền sửa công việc, nên mọi ô nhập, mục checklist và quan hệ phụ thuộc đã bị khóa. Dữ liệu vẫn được tầng dữ liệu chặn khi lưu.</div>';
   }
   // Điểm vào chung cho modal sửa (formShell): kind nào là chỉ-đọc theo quyền.
   function editorReadonly(kind) {
@@ -780,7 +780,7 @@
               (can('budget.propose') ? '<p style="margin:4px 0"><button type="button" class="btn small" data-action="editor-open" data-kind="budgetProposal" data-campaign="' + esc(c.id || e.id) + '" data-target-type="campaign_ceiling">Đề xuất ngân sách</button></p>' : '')) +
           '</div>' +
           (!e.id
-            ? F('template', 'Mẫu campaign', 'select', ev('template', ''), { options: [['', 'Không dùng mẫu'], ['livestream', 'Livestream — 4 hoạt động mẫu']], emptyLabel: null, help: 'Mẫu chỉ tạo hoạt động/task/KPI gợi ý và dòng phân bổ DỰ THẢO (chưa duyệt, chưa có khoản chi/thanh toán thật). Sửa số phân bổ ngay bên dưới trước khi tạo.' }) +
+            ? F('template', 'Mẫu campaign', 'select', ev('template', ''), { options: [['', 'Không dùng mẫu'], ['livestream', 'Livestream — 4 hoạt động mẫu']], emptyLabel: null, help: 'Mẫu chỉ tạo hoạt động/việc/KPI gợi ý và dòng phân bổ DỰ THẢO (chưa duyệt, chưa có khoản chi/thanh toán thật). Sửa số phân bổ ngay bên dưới trước khi tạo.' }) +
               '<div class="fld wide"><span>Phân bổ dự thảo của mẫu Livestream (VNĐ) — sửa được trước khi tạo</span></div>' +
               F('tplAlloc0', 'Mời khách mời — phân bổ dự thảo', 'number', ev('tplAlloc0', 8000000), { min: 0, step: 'any' }) +
               F('tplAlloc1', 'Chạy ads — phân bổ dự thảo', 'number', ev('tplAlloc1', 15000000), { min: 0, step: 'any' }) +
@@ -830,7 +830,7 @@
           F('phaseId', 'Giai đoạn', 'select', ev('phaseId', a.phaseId), { options: phases.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Không gắn giai đoạn —' }) +
           F('channel', 'Kênh triển khai', 'text', ev('channel', a.channel)) +
           F('ownerId', 'Người phụ trách', 'select', ev('ownerId', a.ownerId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
-          F('status', 'Trạng thái', 'select', ev('status', a.status || ''), { options: [['not_started', 'Chưa bắt đầu'], ['in_progress', 'Đang làm'], ['blocked', 'Bị chặn'], ['completed', 'Hoàn thành']], emptyLabel: '— Tự suy từ task —' }) +
+          F('status', 'Trạng thái', 'select', ev('status', a.status || ''), { options: [['not_started', 'Chưa bắt đầu'], ['in_progress', 'Đang làm'], ['blocked', 'Bị chặn'], ['completed', 'Hoàn thành']], emptyLabel: '— Tự suy từ việc —' }) +
           F('startDate', 'Ngày bắt đầu', 'date', ev('startDate', a.startDate)) +
           F('endDate', 'Ngày kết thúc', 'date', ev('endDate', a.endDate)) +
           F('objective', 'Mục tiêu hoạt động', 'textarea', ev('objective', a.objective), { wide: true }) +
@@ -869,11 +869,11 @@
           if (tPhase) return x.phaseId === tPhase;
           return true;
         });
-        return formShell('task', e.id ? 'Sửa công việc' : 'Tạo công việc',
+        return formShell('task', e.id ? 'Sửa việc' : 'Tạo việc',
           F('title', 'Tên việc *', 'text', ev('title', t.title), { required: true, wide: true }) +
           F('campaignId', 'Campaign (để trống = việc độc lập)', 'select', tCamp, { options: campaignPairs(), emptyLabel: '— Việc độc lập —', attrs: ' data-refresh-editor="1"' }) +
           F('phaseId', 'Giai đoạn (theo campaign)', 'select', tPhase, { options: taskPhases.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn giai đoạn —', attrs: ' data-refresh-editor="1"' }) +
-          F('activityId', 'Hoạt động (theo giai đoạn)', 'select', ev('activityId', t.activityId || e.context.activityId || ''), { options: taskActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn hoạt động —' }) +
+          F('activityId', 'Hoạt động', 'select', ev('activityId', t.activityId || e.context.activityId || ''), { options: taskActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chưa gắn hoạt động —' }) +
           F('parentId', 'Việc cha', 'select', ev('parentId', t.parentId), { options: visibleList('tasks').filter(function (x) { return x.id !== e.id; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không có —' }) +
           F('assigneeId', 'Người phụ trách', 'select', ev('assigneeId', t.assigneeId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
           F('status', 'Trạng thái', 'select', ev('status', t.status || 'todo'), { options: TASK_STATUSES }) +
@@ -931,9 +931,9 @@
           '<label class="fld"><span>Vận hành</span><span><input type="checkbox" name="alwaysOn"' + (contentIsAlwaysOn(ci) ? ' checked' : '') + '> Always-on — nội dung vận hành thường xuyên</span></label>' +
           '<label class="fld"><span>Giá trị sử dụng</span><span><input type="checkbox" name="evergreen"' + (contentIsEvergreen(ci) ? ' checked' : '') + '> Evergreen — nội dung có giá trị lâu dài</span></label>' +
           F('expiresAt', 'Ngày hết hiệu lực (tùy chọn)', 'date', ev('expiresAt', cfVal(ci, 'expiresAt') ? String(cfVal(ci, 'expiresAt')).slice(0, 10) : ''), { help: 'Hai thuộc tính always-on và evergreen là RIÊNG BIỆT: always-on nói cách vận hành, evergreen nói giá trị lâu dài. Nội dung evergreen vẫn có thể dùng trong campaign.' }) +
-          '<div class="fld wide"><span>Công việc liên quan (tùy chọn — không bắt buộc, không phải quan hệ cha)</span></div>' +
+          '<div class="fld wide"><span>Việc liên quan (tùy chọn — không bắt buộc, không phải quan hệ cha)</span></div>' +
           F('activityId', 'Hoạt động liên quan (Action Plan)', 'select', ev('activityId', ci.activityId || e.context.activityId || ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không liên kết hoạt động —' }) +
-          F('taskId', 'Task liên quan', 'select', ev('taskId', ci.taskId || cfVal(ci, 'taskId') || e.context.taskId || ''), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không liên kết task —', help: 'Lưu nội dung từ Content Plan là luồng bình thường — không cần qua Action Plan hay campaign. Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở danh sách nội dung, KHÔNG tự tạo khi Lưu.' }),
+          F('taskId', 'Việc liên quan', 'select', ev('taskId', ci.taskId || cfVal(ci, 'taskId') || e.context.taskId || ''), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không liên kết việc —', help: 'Lưu nội dung từ Content Plan là luồng bình thường — không cần qua Action Plan hay campaign. Việc sản xuất chỉ được tạo khi bạn bấm nút "Tạo việc sản xuất" ở danh sách nội dung, KHÔNG tự tạo khi Lưu.' }),
           e.id ? 'Lưu nội dung' : 'Tạo nội dung');
       }
       case 'variant': {
@@ -985,12 +985,12 @@
         var kRoll = k.id ? kpiRollupFor(k) : null;
         return formShell('kpi', e.id ? 'Sửa KPI' : 'Tạo KPI',
           F('name', 'Tên KPI *', 'text', ev('name', k.name), { required: true, wide: true }) +
-          F('scopeType', 'Phạm vi (scope)', 'select', kScope, { options: [['campaign', 'Campaign'], ['activity', 'Hoạt động'], ['task', 'Task'], ['content', 'Content'], ['pillar', 'Pillar'], ['bu_product', 'Brand-Product']], help: 'Chọn Hoạt động thì campaign + activity được tự điền từ hoạt động đã chọn.' }) +
+          F('scopeType', 'Phạm vi (scope)', 'select', kScope, { options: [['campaign', 'Campaign'], ['activity', 'Hoạt động'], ['task', 'Việc'], ['content', 'Nội dung'], ['pillar', 'Pillar'], ['bu_product', 'Brand / Sản phẩm']], help: 'Chọn Hoạt động thì campaign + activity được tự điền từ hoạt động đã chọn.' }) +
           F('campaignId', 'Campaign', 'select', ev('campaignId', k.campaignId || e.context.campaignId), { options: campaignPairs(), emptyLabel: '— Toàn workspace —' }) +
           F('activityId', 'Hoạt động', 'select', ev('activityId', k.activityId || e.context.activityId), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không gắn hoạt động —' }) +
-          F('taskId', 'Task', 'select', ev('taskId', k.taskId || e.context.taskId), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn task —' }) +
-          F('contentItemId', 'Content', 'select', ev('contentItemId', k.contentItemId || e.context.contentItemId), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn content —' }) +
-          F('pillarId', 'Pillar', 'select', ev('pillarId', k.pillarId), { options: listSafe('contentPillars').map(function (x) { return [x.id, x.name || x.title]; }), emptyLabel: '— Không gắn pillar —' }) +
+          F('taskId', 'Việc', 'select', ev('taskId', k.taskId || e.context.taskId), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn việc —' }) +
+          F('contentItemId', 'Nội dung', 'select', ev('contentItemId', k.contentItemId || e.context.contentItemId), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn nội dung —' }) +
+          F('pillarId', 'Pillar', 'select', ev('pillarId', k.pillarId), { options: listSafe('contentPillars').map(function (x) { return [x.id, x.name || x.title]; }), emptyLabel: '— Không gắn Pillar —' }) +
           F('metricCode', 'Mã chỉ số (metric_code)', 'text', ev('metricCode', k.metricCode || k.metric_code), { placeholder: 'vd: valid_registrations' }) +
           F('definition', 'Định nghĩa / cách đo (definition)', 'textarea', ev('definition', kDefText), { wide: true, help: 'Mô tả cách đo: nguồn số liệu, điều kiện hợp lệ, khóa khử trùng nếu là chỉ số unique.' }) +
           F('dataSourceType', 'Nguồn số liệu', 'select', kSourceType, { options: [['manual', 'Tự nhập'], ['post_metrics', 'Tự động từ bài đã đăng']], attrs: ' data-refresh-editor="1"', help: 'Tự nhập: cập nhật thực đạt bằng form số đo như trước. Tự động: số thực đạt tự tính từ bộ đếm của các bài đã đăng thuộc phạm vi KPI.' }) +
@@ -1041,7 +1041,7 @@
           F('name', 'Tên dòng ngân sách *', 'text', ev('name', b.name), { required: true, wide: true }) +
           F('campaignId', 'Campaign', 'select', blCamp, { options: campaignPairs(), emptyLabel: '— Chưa gắn —', attrs: ' data-refresh-editor="1"' }) +
           F('activityId', 'Hoạt động (thuộc campaign)', 'select', blAct, { options: blActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chi trực tiếp campaign / chưa phân bổ —', attrs: ' data-refresh-editor="1"' }) +
-          F('taskId', 'Task (thuộc campaign)', 'select', ev('taskId', b.taskId || e.context.taskId || ''), { options: blTasks.map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn task —' }) +
+          F('taskId', 'Việc (thuộc campaign)', 'select', ev('taskId', b.taskId || e.context.taskId || ''), { options: blTasks.map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn việc —' }) +
           F('planned', 'Kế hoạch (planned)', 'number', ev('planned', b.planned), { min: 0, step: 'any', help: 'Số kế hoạch — lưu độc lập, không suy từ số được duyệt.' }) +
           // 0014 (quy tắc mới của Zac): KHÔNG còn ô nhập trực tiếp "Được duyệt" —
           // số duyệt chỉ đổi qua đề xuất ngân sách được Owner duyệt. Ở đây chỉ
@@ -1311,7 +1311,7 @@
             var newId = r && r.item ? r.item.id : null;
             if (!newId) { finishSave('Đã tạo campaign.'); return; }
             createLivestreamChildren(newId, tplAllocs, function () {
-              finishSave('Đã tạo campaign từ mẫu Livestream: 4 hoạt động kèm task/KPI gợi ý và phân bổ dự thảo (chưa duyệt, chưa có khoản chi thật).');
+              finishSave('Đã tạo campaign từ mẫu Livestream: 4 hoạt động kèm việc/KPI gợi ý và phân bổ dự thảo (chưa duyệt, chưa có khoản chi thật).');
             });
           }, function (msg) { editorFail(msg, errors); });
         }
@@ -1757,7 +1757,7 @@
     var id = currentTaskPanelId();
     if (!id) return '';
     var t = taskById(id);
-    if (!t) return '<div class="panel-backdrop" data-action="task-close"></div><aside class="detail-panel"><div class="modal-head"><h2>Công việc</h2><button class="btn secondary small" data-action="task-close">Đóng</button></div>' + emptyState('Không tìm thấy công việc', 'Công việc có thể đã bị lưu trữ hoặc không còn tồn tại.') + '</aside>';
+    if (!t) return '<div class="panel-backdrop" data-action="task-close"></div><aside class="detail-panel"><div class="modal-head"><h2>Việc</h2><button class="btn secondary small" data-action="task-close">Đóng</button></div>' + emptyState('Không tìm thấy việc', 'Việc có thể đã bị lưu trữ hoặc không còn tồn tại.') + '</aside>';
     var edges = Store.list('dependencies');
     var tasks = Store.list('tasks');
     var preds = edges.filter(function (x) { return x.successorId === t.id; });
@@ -1799,7 +1799,7 @@
       F2sel('assigneeId', 'Người phụ trách', pv('assigneeId', t.assigneeId), memberPairs(), '— Chưa phân công —', { disabled: !ed }) +
       F2sel('campaignId', 'Campaign (để trống = việc độc lập)', panelCamp, campaignPairs(), '— Việc độc lập —', { disabled: !ed }) +
       F2sel('phaseId', 'Giai đoạn (theo campaign)', panelPhase, panelPhases.map(function (x) { return [x.id, x.name]; }), '— Chưa gắn giai đoạn —', { disabled: !ed }) +
-      F2sel('activityId', 'Hoạt động (theo giai đoạn)', pv('activityId', t.activityId || ''), panelActs.map(function (x) { return [x.id, x.name]; }), '— Chưa gắn hoạt động —', { disabled: !ed }) +
+      F2sel('activityId', 'Hoạt động', pv('activityId', t.activityId || ''), panelActs.map(function (x) { return [x.id, x.name]; }), '— Chưa gắn hoạt động —', { disabled: !ed }) +
       F2sel('parentId', 'Việc cha', pv('parentId', t.parentId), tasks.filter(function (x) { return x.id !== t.id; }).map(function (x) { return [x.id, x.title]; }), '— Không có —', { disabled: !ed }) +
       F2sel('status', 'Trạng thái', pv('status', t.status), TASK_STATUSES, null, { disabled: !statusEd }) +
       F2sel('priority', 'Ưu tiên', pv('priority', t.priority || 'Trung bình'), PRIORITIES.map(function (x) { return [x, x]; }), null, { disabled: !ed }) +
@@ -1813,13 +1813,13 @@
       '<div class="form-actions"><button class="btn" type="submit"' + dis(ro) + noEditTitle(ro) + '>Lưu thay đổi</button></div></form>';
     // Checklist
     var panelChecklistProgress = D.checklistProgress(t);
-    html += '<h3>Danh sách kiểm tra (' + panelChecklistProgress.done + '/' + panelChecklistProgress.total + ')</h3>';
-    if (!checklist.length) html += '<p class="sub">Chưa có mục kiểm tra nào.</p>';
+    html += '<h3>Checklist (' + panelChecklistProgress.done + '/' + panelChecklistProgress.total + ')</h3>';
+    if (!checklist.length) html += '<p class="sub">Chưa có mục checklist nào.</p>';
     else html += '<ul class="checklist">' + checklist.map(function (c, i) {
       return '<li><label><input type="checkbox" data-action-change="checklist-toggle" data-id="' + esc(t.id) + '" data-idx="' + i + '"' + (c.done ? ' checked' : '') + dis(!ed) + '> <span class="' + (c.done ? 'done-text' : '') + '">' + esc(c.text || c.title || '') + '</span></label>' +
         '<button class="btn small secondary" data-action="checklist-remove" data-id="' + esc(t.id) + '" data-idx="' + i + '"' + dis(!ed) + '>Xóa</button></li>';
     }).join('') + '</ul>';
-    html += '<form class="inline" id="checklist-add-form" data-task-id="' + esc(t.id) + '"><label>Mục kiểm tra mới<input type="text" name="text" required' + dis(!ed) + '></label><button class="btn small" type="submit"' + dis(!ed) + noEditTitle(!ed) + '>Thêm mục</button></form>';
+    html += '<form class="inline" id="checklist-add-form" data-task-id="' + esc(t.id) + '"><label>Mục checklist mới<input type="text" name="text" required' + dis(!ed) + '></label><button class="btn small" type="submit"' + dis(!ed) + noEditTitle(!ed) + '>Thêm mục</button></form>';
     // Phụ thuộc
     html += '<h3>Quan hệ phụ thuộc</h3>';
     html += '<p class="sub"><strong>Đang chờ:</strong> ' + (preds.length ? preds.map(function (x) { var p = taskById(x.predecessorId); return esc(p ? p.title : x.predecessorId) + ' <button class="btn small secondary" data-action="dep-remove" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Bỏ</button>'; }).join(' · ') : 'Không chờ việc nào') + '</p>';
@@ -3075,7 +3075,7 @@
     } else if (aa && Array.isArray(aa.rows) && aa.rows.length) {
       sub = 'từ ' + aa.rows.length + ' bài' + (aa.latestObservedAt ? ' · cập nhật ' + D.formatDateTimeVN(aa.latestObservedAt) : '');
     } else {
-      sub = 'chưa có dữ liệu bài đăng';
+      sub = 'chưa có dữ liệu bài đã đăng';
     }
     var html = '<span class="badge st-running" data-kpi-auto-badge="1">Tự động từ bài đã đăng</span>' +
       '<br><span class="sub" data-kpi-auto-sub="1">' + esc(sub) + '</span>';
@@ -3091,10 +3091,10 @@
     if (!isKpiAuto(k)) return '';
     var aa = k.autoActual || k.auto_actual || null;
     var rows = (aa && Array.isArray(aa.rows)) ? aa.rows : [];
-    if (!rows.length) return '<div data-kpi-auto-drill="1"><p class="sub">chưa có dữ liệu bài đăng</p></div>';
+    if (!rows.length) return '<div data-kpi-auto-drill="1"><p class="sub">chưa có dữ liệu bài đã đăng</p></div>';
     var total = rows.reduce(function (s, r) { return s + (Number(r.value) || 0); }, 0);
     return '<div data-kpi-auto-drill="1"><strong>Bài cấu thành (' + rows.length + ')</strong>' +
-      tbl('<tr><th>Bài đăng</th><th>Nền tảng</th><th>Giá trị</th><th>Thời điểm đo</th></tr>' + rows.map(function (r) {
+      tbl('<tr><th>Bài đã đăng</th><th>Nền tảng</th><th>Giá trị</th><th>Thời điểm đo</th></tr>' + rows.map(function (r) {
         return '<tr><td>' + esc(r.title || r.postId || '—') + '</td><td>' + esc(labelStatus(r.platform || '')) + '</td><td>' + fmtNum(r.value) + '</td><td>' + (r.observedAt ? esc(D.formatDateTimeVN(r.observedAt)) : '—') + '</td></tr>';
       }).join('')) +
       '<p class="sub">Tổng các bài: <strong>' + fmtNum(total) + '</strong>' + (k.unit ? ' ' + esc(k.unit) : '') + ' — bằng số thực đạt đang hiển thị của KPI.</p></div>';
@@ -3512,7 +3512,7 @@
     }
     var groups = []; var gmap = {};
     acts.forEach(function (a) { var g = groupKey(a); if (!gmap[g]) { gmap[g] = []; groups.push(g); } gmap[g].push(a); });
-    var head = '<tr><th>Hoạt động</th><th>Người phụ trách</th><th>Bắt đầu–Hạn</th><th>Trạng thái</th><th>Đầu ra</th><th>KPI</th><th>Ngân sách</th><th>Content liên quan</th><th></th></tr>';
+    var head = '<tr><th>Hoạt động</th><th>Người phụ trách</th><th>Bắt đầu–Hạn</th><th>Trạng thái</th><th>Đầu ra</th><th>KPI</th><th>Ngân sách</th><th>Nội dung liên quan</th><th></th></tr>';
     html += tbl(head + groups.map(function (g) {
       var out = g ? '<tr class="group-row"><td colspan="9">' + esc(g) + '</td></tr>' : '';
       out += gmap[g].map(function (a) {
@@ -3525,9 +3525,9 @@
           '<td>' + esc(memberName(a.ownerId)) + '</td>' +
           '<td>' + (a.startDate ? esc(D.formatDateVN(a.startDate)) : '—') + ' – ' + (a.endDate ? esc(D.formatDateVN(a.endDate)) : '—') + '</td>' +
           '<td>' + statusBadge(a.status || '', info.label) + (info.overdue ? '<br>' + vizStatusPillHtml('overdue', { label: info.overdue + ' việc trễ', derived: true }) : '') + (info.blocked ? '<br>' + vizStatusPillHtml('blocked', { label: info.blocked + ' việc bị chặn', derived: true }) : '') + '</td>' +
-          '<td>' + info.done + '/' + info.total + ' task xong' + (info.overdue ? '<br><span class="sub">Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</span>' : '<br><span class="sub">Bị chặn: ' + info.blocked + '</span>') + (a.deliverables || a.deliverable ? '<br><span class="sub">' + esc(a.deliverables || a.deliverable) + '</span>' : '') +
+          '<td>' + info.done + '/' + info.total + ' việc xong' + (info.overdue ? '<br><span class="sub">Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</span>' : '<br><span class="sub">Bị chặn: ' + info.blocked + '</span>') + (a.deliverables || a.deliverable ? '<br><span class="sub">' + esc(a.deliverables || a.deliverable) + '</span>' : '') +
           // R3.1-VIZ 3: thanh % hoàn thành task ngay trong cột Đầu ra.
-          '<div class="viz-mini" data-viz="action-task-progress"><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(vizPct(info.done, info.total)) + '%"></span></span><span class="sub">Hoàn thành ' + fmtPct(vizPct(info.done, info.total)) + ' (' + info.done + '/' + info.total + ' task)</span></div></td>' +
+          '<div class="viz-mini" data-viz="action-task-progress"><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(vizPct(info.done, info.total)) + '%"></span></span><span class="sub">Hoàn thành ' + fmtPct(vizPct(info.done, info.total)) + ' (' + info.done + '/' + info.total + ' việc)</span></div></td>' +
           '<td>' + (kpis.length ? kpis.slice(0, 2).map(function (k) { return vizKpiMiniHtml(k); }).join('') + (kpis.length > 2 ? '<span class="sub">+ ' + (kpis.length - 2) + ' KPI khác</span>' : '') : '—') + '</td>' +
           // R3.1-VIZ 3: thanh ngân sách đã dùng / phân bổ ngay trong cột Ngân sách.
           // WAVE-B2: thêm thanh 3 lớp thực chi / cam kết / còn dùng được.
@@ -3564,17 +3564,17 @@
       '<div class="modal-head"><h2>' + esc(act.name) + '</h2><button type="button" class="btn secondary small" data-action="activity-close">Đóng</button></div>' +
       '<p class="sub">Campaign: ' + esc(c.name || '—') + (ph ? ' · Giai đoạn: ' + esc(ph.name) : '') + (act.channel ? ' · Kênh: ' + esc(act.channel) : '') + '<br>Người phụ trách: ' + esc(memberName(act.ownerId)) + ' · ' + (act.startDate ? esc(D.formatDateVN(act.startDate)) : '—') + ' – ' + (act.endDate ? esc(D.formatDateVN(act.endDate)) : '—') + ' · Trạng thái: ' + esc(info.label) + '</p>' +
       '<div class="drawer-actions">' +
-      (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Tạo task</button>' : '') +
+      (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Tạo việc</button>' : '') +
       (ed ? '<button class="btn small secondary" data-action="editor-open" data-kind="kpi" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Thêm KPI</button>' : '') +
       (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-campaign="' + esc(c.id || '') + '" data-activity="' + esc(act.id) + '">Thêm dòng ngân sách</button>' : '') +
       (budgetEd && firstLine ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitment" data-line="' + esc(firstLine.id) + '">Ghi cam kết</button>' : '') +
       (budgetEd && openCommit ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(openCommit.id) + '">Ghi thanh toán</button>' : '') +
       '</div>' +
-      tabsHtml([['overview', 'Overview'], ['tasks', 'Tasks'], ['kpi', 'KPI'], ['budget', 'Ngân sách'], ['docs', 'Tài liệu']], tab, 'activity-tab');
+      tabsHtml([['overview', 'Tổng quan'], ['tasks', 'Việc'], ['kpi', 'KPI'], ['budget', 'Ngân sách'], ['docs', 'Tài liệu']], tab, 'activity-tab');
     if (tab === 'overview') {
       html += '<h3>Mục tiêu & đầu ra</h3><p>' + esc(act.objective || '—') + '</p><p><strong>Đầu ra cần bàn giao:</strong> ' + esc(act.deliverables || act.deliverable || '—') + '</p>' +
-        '<h3>Tiến độ task</h3><p>' + info.done + '/' + info.total + ' task xong · Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</p>' +
-        (function () { var segD = vizTaskStatusSegments(tasks); return segD.total ? '<div data-viz="activity-task-stacked">' + vizStackedBarHtml({ segments: segD.segments, total: segD.total, unitLabel: 'task của hoạt động' }) + '</div>' : ''; })() +
+        '<h3>Tiến độ việc</h3><p>' + info.done + '/' + info.total + ' việc xong · Trễ: ' + info.overdue + ' · Bị chặn: ' + info.blocked + '</p>' +
+        (function () { var segD = vizTaskStatusSegments(tasks); return segD.total ? '<div data-viz="activity-task-stacked">' + vizStackedBarHtml({ segments: segD.segments, total: segD.total, unitLabel: 'việc của hoạt động' }) + '</div>' : ''; })() +
         '<h3>KPI của hoạt động</h3>' + (kpis.length ? '<ul class="clean">' + kpis.map(function (k) { return '<li>' + esc(k.name) + ': ' + kpiSummaryHtml(k) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI nào cho hoạt động này.</p>') +
         '<h3>Ngân sách của hoạt động</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
         // R3.1-VIZ 3: mini-chart ở tab Overview của drawer — thanh ngân sách
@@ -3583,13 +3583,13 @@
         vizBudgetGroupsChartHtml(budgetRows.map(function (r) { return { title: act.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) }; })) +
         budgetRows.map(function (r) { return vizBudgetUsedBarHtml(r); }).join('') + '</div>' +
         '<h3>Tiến độ KPI của hoạt động</h3><div data-viz="activity-mini-kpi">' + (kpis.length ? vizKpiProgressHtml(kpis) : '<p class="sub">Chưa có KPI nào cho hoạt động này.</p>') + '</div></div>' +
-        '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + ' — ' + statusBadge(x.editorialStatus) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
+        '<h3>Nội dung liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + ' — ' + statusBadge(x.editorialStatus) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
     }
     if (tab === 'tasks') {
-      html += '<h3>Tasks của hoạt động (' + tasks.length + ')</h3>' +
+      html += '<h3>Việc của hoạt động (' + tasks.length + ')</h3>' +
         (tasks.length ? tbl('<tr><th>Việc</th><th>Người phụ trách</th><th>Hạn</th><th>Trạng thái</th></tr>' + tasks.map(function (t) {
           return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + checklistBadgeHtml(t) + '</td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : '—') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td><td>' + statusBadge(t.status) + '</td></tr>';
-        }).join('')) : '<p class="sub">Chưa có task nào — dùng nút "Tạo task" ở trên.</p>');
+        }).join('')) : '<p class="sub">Chưa có việc nào — dùng nút "Tạo việc" ở trên.</p>');
     }
     if (tab === 'kpi') {
       html += '<h3>KPI của hoạt động (' + kpis.length + ')</h3>' +
@@ -3623,8 +3623,8 @@
       var assetRows = links.map(function (lk) { var a = Store.get('brandAssets', lk.assetId); return a ? '<li><strong>' + esc(a.name) + '</strong>' + (lk.role ? ' — ' + esc(lk.role) : '') + '</li>' : ''; }).join('');
       var dels = tasks.filter(function (t) { return t.deliverable; });
       html += '<h3>Tài liệu</h3>' + (assetRows ? '<ul class="clean">' + assetRows + '</ul>' : '<p class="sub">Chưa có tài liệu nào được liên kết với campaign này.</p>') +
-        '<h3>Đầu ra cần bàn giao của các task</h3>' + (dels.length ? '<ul class="clean">' + dels.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có task nào ghi đầu ra.</p>') +
-        '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
+        '<h3>Đầu ra cần bàn giao của các việc</h3>' + (dels.length ? '<ul class="clean">' + dels.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có việc nào ghi đầu ra.</p>') +
+        '<h3>Nội dung liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có nội dung liên quan</p>');
     }
     return html + '</div>';
   }
@@ -3643,7 +3643,7 @@
     html += '<div class="campaign-status-block">' + statusBadge(c.status) +
       ' <span class="sub">Kế hoạch đã duyệt (baseline): ' + (c.baselineStartDate || c.baselineEndDate ? esc(D.formatDateVN(c.baselineStartDate)) + ' — ' + esc(D.formatDateVN(c.baselineEndDate)) : 'chưa chốt') + '</span>' +
       (canSetBaseline() ? ' <button class="btn small secondary" data-action="campaign-baseline" data-id="' + esc(c.id) + '">Chốt baseline theo lịch hiện tại</button>' : '') + '</div>';
-    html += '<div class="tabs" role="tablist">' + [['overview', 'Tổng quan'], ['action', 'Action Plan'], ['plan', 'Kế hoạch & Timeline'], ['tasks', 'Công việc'], ['content', 'Nội dung'], ['kpi', 'KPI & Ngân sách'], ['docs', 'Tài liệu'], ['summary', 'Tổng kết']].map(function (x) {
+    html += '<div class="tabs" role="tablist">' + [['overview', 'Tổng quan'], ['action', 'Action Plan'], ['plan', 'Kế hoạch & Timeline'], ['tasks', 'Việc'], ['content', 'Nội dung'], ['kpi', 'KPI & Ngân sách'], ['docs', 'Tài liệu'], ['summary', 'Tổng kết']].map(function (x) {
       return '<a class="tab' + (tab === x[0] ? ' active' : '') + '" href="' + base + '/' + x[0] + '" role="tab">' + esc(x[1]) + '</a>';
     }).join('') + '</div>';
     var ctasks = Store.list('tasks').filter(function (t) { return t.campaignId === c.id && !isArchived(t); });
@@ -3736,7 +3736,7 @@
       } else html += '<p class="sub">Chưa có công việc nào trong campaign này.</p>';
     }
     if (tab === 'tasks') {
-      html += '<div class="toolbar"><strong>Công việc của campaign (' + ctasks.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm việc</button>' : '') + '</div>';
+      html += '<div class="toolbar"><strong>Việc của campaign (' + ctasks.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm việc</button>' : '') + '</div>';
       html += ctasks.length ? tbl('<tr><th>Việc</th><th>Người phụ trách</th><th>Đầu ra</th><th>Thời gian</th><th>Timeline tương đối</th><th>Dự kiến</th><th>Phụ thuộc</th><th>Trạng thái</th></tr>' + ctasks.map(function (t) {
         return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + checklistBadgeHtml(t) + '</td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + esc(t.deliverable || '—') + '</td><td>' + (t.startDate ? esc(D.formatDateVN(t.startDate)) : '—') + ' → ' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + '</td><td>' + vizTaskTimelineHtml(t) + '</td><td>' + (t.effortHours ? esc(t.effortHours) + ' giờ' : 'Chưa ước tính') + '</td><td>' + readinessBadge(t) + '</td><td>' + statusBadge(t.status) + (isOverdue(t) ? '<br>' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) : '') + (vizTaskIsBlocked(t) && !isCompletedTask(t) ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn', derived: true }) : '') + '</td></tr>';
       }).join('')) : emptyState('Chưa có công việc nào', 'Thêm việc đầu tiên cho campaign này.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm việc</button></p>' : '');
@@ -3934,7 +3934,7 @@
     });
     (function step() {
       var job = jobs.shift();
-      if (!job) { toast('Đã tạo ' + PRODUCTION_TASK_TEMPLATES.length + ' task sản xuất từ template cho nội dung "' + ci.title + '".'); render(); return; }
+      if (!job) { toast('Đã tạo ' + PRODUCTION_TASK_TEMPLATES.length + ' việc sản xuất từ template cho nội dung "' + ci.title + '".'); render(); return; }
       saveResult(sCreate('tasks', job), step, function (msg) { toast(msg); });
     })();
   }
@@ -4028,10 +4028,10 @@
       '<label>Hoạt động (nâng cao)<select name="activityId"><option value="all">Tất cả</option>' + visibleList('activities').map(function (a) { return '<option value="' + esc(a.id) + '"' + (cf.activityId === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Task (nâng cao)<select name="taskId"><option value="all">Tất cả</option>' + visibleList('tasks').map(function (t) { return '<option value="' + esc(t.id) + '"' + (cf.taskId === t.id ? ' selected' : '') + '>' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
       '<button class="btn secondary" type="submit">Lọc</button></form>' +
-      '<p class="sub">Lọc theo Hoạt động/Task là bộ lọc nâng cao theo liên kết công việc (tùy chọn). Lọc Pillar thấy cả bài thuộc campaign lẫn bài thường xuyên; lọc Campaign chỉ thấy nội dung/lần đăng thuộc campaign đó.</p>';
+      '<p class="sub">Lọc theo Hoạt động/Việc là bộ lọc nâng cao theo liên kết việc (tùy chọn). Lọc Pillar thấy cả bài thuộc campaign lẫn bài thường xuyên; lọc Campaign chỉ thấy nội dung/lần đăng thuộc campaign đó.</p>';
     html += tabsHtml([['backlog', 'Backlog / Ý tưởng'], ['pillars', 'Theo Pillar'], ['calendar', 'Lịch đăng'], ['table', 'Bảng nội dung'], ['board', 'Board sản xuất / duyệt'], ['production', 'Tiến độ sản xuất'], ['library', 'Thư viện đã đăng'], ['mix', 'Content mix'], ['queue', 'Chờ phân loại'], ['manage', 'Quản lý Pillar']], UI.contentTab, 'content-tab');
     function itemActions(x) {
-      return '<button class="btn small" data-action="editor-open" data-kind="content" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-content="' + esc(x.id) + '"' + dis(!ed) + '>+ Phiên bản kênh</button> <button class="btn small secondary" data-action="content-prod-tasks" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Tạo task sản xuất</button>';
+      return '<button class="btn small" data-action="editor-open" data-kind="content" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-content="' + esc(x.id) + '"' + dis(!ed) + '>+ Phiên bản kênh</button> <button class="btn small secondary" data-action="content-prod-tasks" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Tạo việc sản xuất</button>';
     }
     function itemRow(x) {
       var myPubs = pubsOfItem(x.id);
@@ -4138,7 +4138,7 @@
     }
     if (UI.contentTab === 'production') {
       var sorted = variants.slice().sort(function (a, b) { return String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')); });
-      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở bảng nội dung (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu nội dung không tự tạo task, và task sản xuất có thể chỉ gắn content, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
+      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Việc sản xuất chỉ được tạo khi bạn bấm nút "Tạo việc sản xuất" ở bảng nội dung (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu nội dung không tự tạo việc, và việc sản xuất có thể chỉ gắn nội dung, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
         var tlPts = [
           { label: 'Hạn sản xuất', date: v.productionDeadline ? String(v.productionDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.productionDeadline) || '—', tone: 'running' },
           { label: 'Hạn duyệt', date: v.reviewDeadline ? String(v.reviewDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.reviewDeadline) || '—', tone: 'pending' },
@@ -4314,7 +4314,7 @@
       if (tf.unassigned && t.assigneeId) return false;
       return true;
     });
-    var html = pageHead('Công việc', 'Một danh sách việc dùng chung ở mọi màn hình. Bấm vào tên việc để mở chi tiết và sửa.',
+    var html = pageHead('Việc', 'Một danh sách việc dùng chung ở mọi màn hình. Bấm vào tên việc để mở chi tiết và sửa.',
       ed ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo việc</button>' : '');
     html += readonlyNote() + collectionBanner('tasks');
     html += '<form class="inline" id="task-filter-form"><span class="sub">Lọc việc:</span>' +
@@ -5896,7 +5896,7 @@
     }
     if (kind === 'checklist-toggle') {
       captureTaskDraft();
-      if (!canEditTask()) { toast('Bạn đang xem ở chế độ chỉ đọc, không sửa được danh sách kiểm tra.'); render(); return; }
+      if (!canEditTask()) { toast('Bạn đang xem ở chế độ chỉ đọc, không sửa được checklist.'); render(); return; }
       var task = taskById(t.getAttribute('data-id'));
       var idx = Number(t.getAttribute('data-idx'));
       if (task) { var cl = (task.checklist || []).map(function (c, i) { return i === idx ? Object.assign({}, c, { done: t.checked }) : c; }); settle(sUpdate('tasks', task.id, { checklist: cl }), function () { render(); }); }
@@ -6010,7 +6010,7 @@
     }
     if (f.id === 'checklist-add-form') {
       captureTaskDraft();
-      if (!canEditTask()) { toast('Bạn đang xem ở chế độ chỉ đọc, không thêm được mục kiểm tra.'); return; }
+      if (!canEditTask()) { toast('Bạn đang xem ở chế độ chỉ đọc, không thêm được mục checklist.'); return; }
       var tid2 = f.getAttribute('data-task-id');
       var task2 = taskById(tid2);
       if (task2) settle(sUpdate('tasks', tid2, { checklist: (task2.checklist || []).concat([{ text: String(val('text')), done: false }]) }), function () { render(); });

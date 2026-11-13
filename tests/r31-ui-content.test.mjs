@@ -68,15 +68,15 @@ test('R3.1-CONTENT [static]: form content có pillar chính, brand/product, angl
   assert.match(form, /F\('sourceContentId', 'Nội dung gốc được dùng lại \(nguồn, tùy chọn\)', 'select'/);
 });
 
-test('R3.1-CONTENT [static]: form content phân biệt "Nội dung thường xuyên — không thuộc campaign" với "Chưa chọn"; nhóm Công việc liên quan tùy chọn', () => {
+test('R3.1-CONTENT [static]: form content phân biệt "Nội dung thường xuyên — không thuộc campaign" với "Chưa chọn"; nhóm Việc liên quan tùy chọn', () => {
   const form = section("case 'content': {", "case 'variant': {");
   assert.match(form, /F\('campaignChoice', 'Quan hệ với campaign', 'select'/);
   assert.ok(form.includes("['unset', 'Chưa chọn']"), 'thiếu lựa chọn Chưa chọn');
   assert.ok(form.includes("['none', 'Nội dung thường xuyên — không thuộc campaign']"), 'thiếu lựa chọn tường minh không thuộc campaign');
   assert.ok(form.includes("['campaign', 'Thuộc campaign"), 'thiếu lựa chọn Thuộc campaign');
-  assert.match(form, /Công việc liên quan \(tùy chọn — không bắt buộc, không phải quan hệ cha\)/);
+  assert.match(form, /Việc liên quan \(tùy chọn — không bắt buộc, không phải quan hệ cha\)/);
   assert.match(form, /F\('activityId', 'Hoạt động liên quan \(Action Plan\)', 'select'/);
-  assert.match(form, /F\('taskId', 'Task liên quan', 'select'/);
+  assert.match(form, /F\('taskId', 'Việc liên quan', 'select'/);
   // Lưu từ Content Plan là luồng bình thường + task chỉ tạo khi bấm nút riêng.
   assert.match(form, /Lưu nội dung từ Content Plan là luồng bình thường/);
   assert.match(form, /KHÔNG tự tạo khi Lưu/);
@@ -169,8 +169,8 @@ test('R3.1-CONTENT [static]: hàng đợi Chờ phân loại cho bài thiếu pi
   assert.match(view, /queueItems = items\.filter\(function \(x\) \{ return !contentPillarId\(x\); \}\)/);
 });
 
-// ---------- 7. Tạo task sản xuất theo template — chỉ khi bấm (C.6.4) ----------
-test('R3.1-CONTENT [static]: nút Tạo task sản xuất theo template 4 bước, task chỉ gắn content (campaign/activity có thể trống)', () => {
+// ---------- 7. Tạo việc sản xuất theo template — chỉ khi bấm (C.6.4) ----------
+test('R3.1-CONTENT [static]: nút Tạo việc sản xuất theo template 4 bước, việc chỉ gắn nội dung (campaign/activity có thể trống)', () => {
   assert.match(src, /var PRODUCTION_TASK_TEMPLATES = \['Viết nội dung', 'Thiết kế \/ sản xuất media', 'Quay \/ dựng', 'Duyệt nội dung'\]/);
   assert.match(src, /data-action="content-prod-tasks"/);
   assert.match(src, /if \(action === 'content-prod-tasks'\) \{ createProductionTasks\(id\); \}/);

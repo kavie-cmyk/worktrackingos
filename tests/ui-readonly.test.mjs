@@ -61,7 +61,7 @@ test('P2 [unit/static]: form thêm checklist / thêm phụ thuộc / bình luậ
 
 test('P2 [unit/static]: handler submit/change có phòng thủ cùng cơ chế quyền (không chỉ dựa vào disabled)', () => {
   assert.match(src, /if \(taskPanelReadonly\(\)\) \{ toast\('Bạn đang xem ở chế độ chỉ đọc, không lưu được thay đổi\.'\); return; \}/);
-  assert.match(src, /if \(!canEditTask\(\)\) \{ toast\('Bạn đang xem ở chế độ chỉ đọc, không thêm được mục kiểm tra\.'\); return; \}/);
+  assert.match(src, /if \(!canEditTask\(\)\) \{ toast\('Bạn đang xem ở chế độ chỉ đọc, không thêm được mục checklist\.'\); return; \}/);
   assert.match(src, /if \(!canEditTask\(\)\) \{ toast\('Bạn đang xem ở chế độ chỉ đọc, không thêm được phụ thuộc\.'\); return; \}/);
   assert.match(src, /kind === 'checklist-toggle'[\s\S]*?if \(!canEditTask\(\)\)/);
 });

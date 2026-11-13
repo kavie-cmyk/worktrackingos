@@ -208,7 +208,7 @@ test('R2-27 [static]: builder Gantt đệ quy dùng chung + nhóm Chưa gắn ph
   assert.match(src, /Việc độc lập/);
   // Editor task có select phaseId/activityId + validate.
   assert.match(src, /F\('phaseId', 'Giai đoạn \(theo campaign\)', 'select'/);
-  assert.match(src, /F\('activityId', 'Hoạt động \(theo giai đoạn\)', 'select'/);
+  assert.match(src, /F\('activityId', 'Hoạt động', 'select'/);
   assert.match(src, /errors\.activityId = 'Hoạt động đã chọn không thuộc giai đoạn đã chọn\.'/);
 });
 

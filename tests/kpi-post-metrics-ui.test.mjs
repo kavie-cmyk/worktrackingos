@@ -109,7 +109,7 @@ test('KPI-POST-UI [unit]: kpiAutoInfoHtml — badge + dòng "từ N bài · cậ
   assert.match(html, /từ 1 bài · cập nhật DT\(2026-11-09T10:00:00\+07:00\)/);
   const noData = H.kpiAutoInfoHtml({ id: 'k9', definition: { dataSource: { type: 'post_metrics', metric: 'views', mode: 'period_sum' } } });
   assert.match(noData, /Tự động từ bài đã đăng/);
-  assert.match(noData, /chưa có dữ liệu bài đăng/);
+  assert.match(noData, /chưa có dữ liệu bài đã đăng/);
   assert.equal(H.kpiAutoInfoHtml(MANUAL_KPI), '', 'KPI manual không được có badge/dòng auto');
 });
 
@@ -160,7 +160,7 @@ test('KPI-POST-UI [unit]: drill-down render đủ rows từ autoActual (tiêu đ
   assert.match(html2, /Bài một/); assert.match(html2, /Bài hai/);
   assert.match(html2, /Tổng các bài: <strong>200<\/strong>/);
   // Chưa có rows -> ghi rõ chưa có dữ liệu bài đăng; KPI manual -> rỗng.
-  assert.match(H.kpiAutoDrillHtml({ id: 'k9', definition: { dataSource: { type: 'post_metrics', metric: 'views', mode: 'latest_sum' } } }), /chưa có dữ liệu bài đăng/);
+  assert.match(H.kpiAutoDrillHtml({ id: 'k9', definition: { dataSource: { type: 'post_metrics', metric: 'views', mode: 'latest_sum' } } }), /chưa có dữ liệu bài đã đăng/);
   assert.equal(H.kpiAutoDrillHtml(MANUAL_KPI), '');
 });
 
