@@ -220,6 +220,73 @@ test('TM [static]: nút Mở Timeline ở màn Task mang lọc qua handler dùng
   assert.match(src, /window\.location\.hash = '#\/timeline'/);
 });
 
+// ---------- Vá lỗi: task-filter-form nuốt '' thành 'all' ----------
+// Handler cũ: String(val('campaignId') || 'all') — '' (Task độc lập)
+// bị nuốt thành 'all'. Handler timeline-filter-form đã đúng mẫu:
+// chỉ null/undefined mới thay 'all'. Các test dưới khóa cả 3 tầng:
+// [static] mã nguồn handler, [unit] ngữ nghĩa giữ '' + lọc danh sách
+// Task (đúng predicate của viewTasks), [demo] số đếm demo 1/17 → 1/1.
+function resolveTaskFilterCampaignId(raw) {
+  // Hàm mô phỏng ĐÚNG biểu thức trong handler sau vá (khóa bằng test
+  // [static] bên dưới để hai nơi không lệch nhau).
+  return (raw === null || raw === undefined) ? 'all' : String(raw);
+}
+function applyTaskListFilter(tasks, tf) {
+  // Predicate trích đúng từ viewTasks: campaignId !== 'all' thì so
+  // (t.campaignId || '') === tf.campaignId — '' chỉ khớp task độc lập.
+  return tasks.filter((t) => {
+    if (tf.campaignId !== 'all' && (t.campaignId || '') !== tf.campaignId) return false;
+    if (tf.ownerId !== 'all' && t.assigneeId !== tf.ownerId) return false;
+    if (tf.status !== 'all' && t.status !== tf.status) return false;
+    return true;
+  });
+}
+
+test('TM [static] FIX-TF: handler task-filter-form giữ nguyên campaignId "" — không còn || \'all\' cho field này', () => {
+  const h = section("if (f.id === 'task-filter-form')", "if (f.id === 'timeline-filter-form')");
+  assert.doesNotMatch(h, /campaignId: String\(val\('campaignId'\) \|\| 'all'\)/, 'không được nuốt "" thành all');
+  assert.match(h, /var tfCampVal = val\('campaignId'\);/);
+  assert.match(h, /campaignId: \(tfCampVal === null \|\| tfCampVal === undefined\) \? 'all' : String\(tfCampVal\)/);
+  // Các field khác giữ nguyên cách cũ.
+  assert.match(h, /ownerId: String\(val\('ownerId'\) \|\| 'all'\)/);
+  assert.match(h, /status: String\(val\('status'\) \|\| 'all'\)/);
+});
+
+test('TM [unit] FIX-TF: submit lọc Task với campaignId="" → UI.taskFilter.campaignId === "" và chỉ còn task độc lập', () => {
+  const campaignId = resolveTaskFilterCampaignId('');
+  assert.equal(campaignId, '');
+  assert.equal(resolveTaskFilterCampaignId(null), 'all', 'thiếu field mới rơi về all');
+  assert.equal(resolveTaskFilterCampaignId(undefined), 'all');
+  assert.equal(resolveTaskFilterCampaignId('cA'), 'cA');
+  assert.equal(resolveTaskFilterCampaignId('all'), 'all');
+  const tf = { campaignId, ownerId: 'all', status: 'all', priority: 'all', due: 'all', blocked: 'all', unassigned: false };
+  const filtered = applyTaskListFilter(DATA.tasks, tf);
+  assert.deepEqual(filtered.map((t) => t.id), ['tS1', 'tS2'], 'chỉ task độc lập (campaignId null) qua lọc');
+  // Mở Timeline kế thừa đúng '': không biến thành 'all' ở tầng state/builder.
+  const st = domain.timelineStateFromTaskFilter(tf);
+  assert.equal(st.filter.campaignId, '');
+  const tl = domain.buildTaskTimeline(DATA.tasks, { ...OPTS, campaigns: DATA.campaigns, filter: st.filter });
+  assert.equal(tl.totalCount, 2);
+  assert.deepEqual(tl.rows.filter((x) => x.kind === 'task').map((x) => x.id), ['tS1']);
+});
+
+test('TM [demo] FIX-TF: demo lọc Task độc lập = 1/17 và Timeline Chỉ task giữ "" = 1/1', () => {
+  const tf = { campaignId: resolveTaskFilterCampaignId(''), ownerId: 'all', status: 'all', priority: 'all', due: 'all', blocked: 'all', unassigned: false };
+  const filtered = applyTaskListFilter(demo.tasks, tf);
+  assert.equal(demo.tasks.length, 17);
+  assert.deepEqual(filtered.map((t) => t.id), ['task-solo-1'], 'demo kỳ vọng đúng 1 task độc lập');
+  const st = domain.timelineStateFromTaskFilter(tf);
+  assert.equal(st.mode, 'tasks');
+  assert.equal(st.filter.campaignId, '');
+  const tl = domain.buildTaskTimeline(demo.tasks, {
+    campaigns: demo.campaigns, members: demo.members, blockers: demo.blockers,
+    dependencies: demo.dependencies, filter: st.filter, today: '2026-11-13'
+  });
+  assert.equal(tl.totalCount, 1);
+  assert.equal(tl.datedCount, 1);
+  assert.deepEqual(tl.rows.filter((x) => x.kind === 'task').map((x) => x.id), ['task-solo-1']);
+});
+
 test('TM [static]: bề mặt giữ nguyên — Timeline trong chi tiết campaign + dải 7 ngày ở Task của tôi', () => {
   assert.match(src, /<h3>Timeline của campaign<\/h3>' \+ ganttHtml\(ganttRowsCampaign\(c\), Store\.list\('dependencies'\)\)/);
   const mw = section('function viewMyWork()', '// ---------- Brand Hub ----------');

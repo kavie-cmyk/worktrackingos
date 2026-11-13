@@ -6146,8 +6146,12 @@
       render(); return;
     }
     if (f.id === 'task-filter-form') {
+      // Select campaign có option value="" (Task độc lập / Không thuộc
+      // campaign) — KHÔNG được || 'all' vì '' là giá trị lọc có nghĩa;
+      // chỉ thiếu field mới all (cùng mẫu handler timeline-filter-form).
+      var tfCampVal = val('campaignId');
       UI.taskFilter = {
-        campaignId: String(val('campaignId') || 'all'), ownerId: String(val('ownerId') || 'all'),
+        campaignId: (tfCampVal === null || tfCampVal === undefined) ? 'all' : String(tfCampVal), ownerId: String(val('ownerId') || 'all'),
         status: String(val('status') || 'all'), priority: String(val('priority') || 'all'),
         due: String(val('due') || 'all'), blocked: String(val('blocked') || 'all'),
         unassigned: !!fd.get('unassigned')
