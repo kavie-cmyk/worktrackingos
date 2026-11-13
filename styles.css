@@ -344,10 +344,10 @@ td.heat-4{background:color-mix(in srgb,var(--series-alloc) 52%,transparent);font
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
 }
 /* ===== REDESIGN UI/UX 2026-11-13 (branch redesign/ui-ux-2026-11-13) =====
-   Token 3 tang theo DESIGN_SYSTEM_PROPOSAL §4. Giu nguyen cac token khoa
-   o :root goc (st-*/series/cat/track/accent dung hex cu); chi THEM token moi
-   va bien the chu pill --st-*-text (ngoai le D5/V-02: chu dam hon cung ho mau,
-   chi cho TEXT pill; fill/dot/vien van dung hex goc). */
+   Token 3 tang theo DESIGN_SYSTEM_PROPOSAL muc 4. Giu nguyen cac token khoa
+   o :root goc (nhom st, series, cat, track, accent dung hex cu); chi THEM token moi
+   va bien the chu pill dang --st-ten-text (ngoai le D5 va V-02: chu dam hon cung ho mau,
+   chi cho TEXT pill; fill, dot, vien van dung hex goc). */
 :root{
   --slate-50:#f8fafc; --slate-100:#f1f5f9; --slate-200:#dde3ec; --slate-300:#b6c0cf;
   --color-bg:#f8fafc; --color-surface:#fff; --color-surface-raised:#fff;
