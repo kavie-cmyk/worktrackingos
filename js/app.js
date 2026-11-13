@@ -231,7 +231,11 @@
     return '<div class="page-head"><div><h1>' + esc(title) + '</h1>' + (sub ? '<p class="sub">' + esc(sub) + '</p>' : '') + '</div>' +
       (actions ? '<div class="page-actions">' + actions + '</div>' : '') + '</div>';
   }
-  function tbl(inner) { return '<div class="table-wrap"><table>' + inner + '</table></div>'; }
+  // tbl(inner, key): key (tuỳ chọn) là định danh bảng cho tính năng kéo
+  // rộng cột kiểu Excel (js/col-resize.js) — có key mới được resize, mọi
+  // bảng không truyền key giữ nguyên hành vi cũ. Điểm chạm DUY NHẤT của
+  // tính năng đó vào helper chung này.
+  function tbl(inner, key) { return '<div class="table-wrap"><table' + (key ? ' data-table-key="' + esc(key) + '"' : '') + '>' + inner + '</table></div>'; }
   function tabsHtml(list, active, action) {
     return '<div class="tabs" role="tablist">' + list.map(function (x) {
       return '<button type="button" class="tab' + (x[0] === active ? ' active' : '') + '" data-action="' + action + '" data-id="' + esc(x[0]) + '" role="tab">' + esc(x[1]) + '</button>';
@@ -2259,7 +2263,7 @@
         return '<tr><td><strong><a href="#/campaigns/' + esc(r.campaign.id) + '">' + esc(r.campaign.name) + '</a></strong></td><td>' + fmtNum(r.overdueCount) + '</td><td>' + fmtNum(r.blockedCount) + '</td><td>' +
           vizCellBarHtml({ value: r.affectedCount, max: r.totalCount, tone: 'overdue', text: r.affectedCount + '/' + r.totalCount + ' task bị ảnh hưởng (' + fmtPct(vizPct(r.affectedCount, r.totalCount)) + ')' }) +
           '</td><td><span class="sub">' + esc(r.reason) + '</span></td></tr>';
-      }).join('')) + '</div>';
+      }).join(''), 'overview-risk') + '</div>';
     }
     html += '<h2>Chờ duyệt & quá hạn</h2><div class="grid2"><div class="panel"><h3>Chờ duyệt (' + approvals.length + ') ' + (approvals.length ? vizStatusPillHtml('pending', { label: 'Chờ duyệt' }) : '') + '</h3>' +
       (approvals.length ? '<ul class="clean">' + approvals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> · phiên bản content số ' + esc(a.revision) + ' · từ ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content chờ duyệt.</p>') + '</div>' +
@@ -2319,7 +2323,7 @@
       return tbl('<tr><th>Task</th><th>Campaign</th><th>Mốc cần hoàn thành</th><th>Trạng thái</th><th>Phụ thuộc</th></tr>' +
         list.map(function (t) {
           return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + checklistBadgeHtml(t) + '</td><td>' + esc(campaignName(t.campaignId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td><td>' + statusBadge(t.status) + '</td><td>' + readinessBadge(t) + '</td></tr>';
-        }).join(''));
+        }).join(''), 'my-work-tasks');
     }
     // WAVE-B1-VIZ2: mini timeline 7 ngày cho nhóm "Tuần này" — chỉ dùng
     // startDate/dueDate ĐÃ CÓ của task (kẹp vào tuần hiện tại); việc không
@@ -2420,7 +2424,7 @@
             '<h3>Lịch sử phiên bản</h3>' + versionHistoryHtml('brandPages', p) + '</td></tr>';
         }
         return row;
-      }).join(''));
+      }).join(''), 'brand-pages');
     }
     if (UI.brandTab === 'assets') {
       if (!assets.length && !collLoadingOrError('brandAssets')) html += emptyState('Chưa có tài nguyên thương hiệu nào', 'Thêm logo, KV, hướng dẫn, file nguồn… kèm đường dẫn để cả đội dùng đúng bản đã duyệt.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="brandAsset">+ Thêm tài nguyên</button></p>' : '');
@@ -2432,14 +2436,14 @@
           '<td class="row-actions"><button class="btn small secondary" data-action="brand-open" data-id="' + esc(a.id) + '">Chi tiết</button> <button class="btn small" data-action="editor-open" data-kind="brandAsset" data-id="' + esc(a.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="brandAssets" data-id="' + esc(a.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
         if (UI.brandOpenId === a.id) row += '<tr class="detail-row"><td colspan="8"><h3>Lịch sử phiên bản</h3>' + versionHistoryHtml('brandAssets', a) + (Array.isArray(a.tags) && a.tags.length ? '<p class="sub">Thẻ: ' + esc(a.tags.join(', ')) + '</p>' : '') + '</td></tr>';
         return row;
-      }).join(''));
+      }).join(''), 'brand-assets');
     }
     if (UI.brandTab === 'archived') {
       var all = archPages.map(function (x) { return { x: x, coll: 'brandPages', label: x.title }; }).concat(archAssets.map(function (x) { return { x: x, coll: 'brandAssets', label: x.name }; }));
       if (!all.length) html += '<div class="state-box">Chưa có mục nào bị lưu trữ.</div>';
       else html += tbl('<tr><th>Mục đã lưu trữ</th><th>Loại</th><th>Trạng thái</th><th>Thao tác</th></tr>' + all.map(function (r) {
         return '<tr><td>' + esc(r.label) + '</td><td>' + (r.coll === 'brandPages' ? 'Trang thương hiệu' : 'Tài nguyên') + '</td><td>' + vizStatusPillHtml('cancelled', { label: 'Đã lưu trữ' }) + '</td><td><button class="btn small" data-action="restore-item" data-coll="' + r.coll + '" data-id="' + esc(r.x.id) + '"' + dis(!ed) + '>Khôi phục</button></td></tr>';
-      }).join(''));
+      }).join(''), 'brand-archived');
     }
     return html;
   }
@@ -2478,7 +2482,7 @@
     if (archived.length) {
       html += '<h2>Campaign đã lưu trữ</h2>' + tbl('<tr><th>Campaign</th><th>Thao tác</th></tr>' + archived.map(function (c) {
         return '<tr><td>' + esc(c.name) + '</td><td><button class="btn small" data-action="restore-item" data-coll="campaigns" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Khôi phục</button></td></tr>';
-      }).join(''));
+      }).join(''), 'campaigns-archived');
     }
     return html;
   }
@@ -3248,7 +3252,7 @@
       var r = vizKpiRowFor(k);
       if (r.state.kind !== 'ok') return '<tr><td><strong>' + esc(k.name) + '</strong>' + kpiAutoInfoHtml(k) + '</td><td>' + esc(r.scopeLabel) + '</td><td><span class="badge warn">' + esc(r.state.label || 'Chưa đủ dữ liệu') + '</span></td><td>' + esc(r.targetText) + '</td><td>—</td><td>' + esc(r.state.label || 'Chưa đủ dữ liệu') + '</td></tr>';
       return '<tr><td><strong>' + esc(k.name) + '</strong>' + kpiAutoInfoHtml(k) + '</td><td>' + esc(r.scopeLabel) + '</td><td>' + esc(r.actualText) + '</td><td>' + esc(r.targetText) + '</td><td>' + fmtPct(r.state.pct) + '</td><td><span class="badge ok">Đủ dữ liệu</span></td></tr>';
-    }).join(''));
+    }).join(''), 'kpi-summary');
   }
   function vizBudgetUsedBarHtml(r) {
     var st = vizBudgetRowState(r);
@@ -3319,12 +3323,12 @@
     var balances = vizCashBalancesSync();
     html += '<h4>Số dư theo tài khoản</h4>' + (balances.length ? tbl('<tr><th>Tài khoản</th><th>Tiền tệ</th><th>Số dư</th></tr>' + balances.map(function (b) {
       return '<tr><td>' + esc(accName(b.accountId)) + '</td><td>' + esc(b.currency || accCur(b.accountId)) + '</td><td>' + fmtMoney(b.balance, b.currency || accCur(b.accountId)) + '</td></tr>';
-    }).join('')) : '<p class="sub">Chưa có tài khoản Thu–Chi nào.</p>');
+    }).join(''), 'cash-balances') : '<p class="sub">Chưa có tài khoản Thu–Chi nào.</p>');
     var sorted = txns.slice().sort(function (a, b) { return String(b.occurredOn || b.occurred_on || b.date || '').localeCompare(String(a.occurredOn || a.occurred_on || a.date || '')); });
     html += '<h4>Giao dịch Thu–Chi (' + txns.length + ')</h4>' + tbl('<tr><th>Ngày</th><th>Tài khoản</th><th>Thu / Chi</th><th>Số tiền</th><th>Nội dung</th></tr>' + sorted.slice(0, 50).map(function (t) {
       var cur = t.currency || accCur(t.accountId);
       return '<tr><td>' + esc(D.formatDateVN(t.occurredOn || t.occurred_on || t.date)) + '</td><td>' + esc(accName(t.accountId)) + '</td><td>' + (t.direction === 'in' ? '<span class="badge pill-series-in" data-viz="cash-pill">Thu</span>' : '<span class="badge pill-series-out" data-viz="cash-pill">Chi</span>') + '</td><td>' + fmtMoney(t.amount, cur) + '</td><td>' + esc(t.title || t.note || t.description || '—') + '</td></tr>';
-    }).join('')) + (txns.length > 50 ? '<p class="sub">Bảng giao dịch hiển thị 50 giao dịch gần nhất trong tổng số ' + txns.length + '.</p>' : '') + '</div>';
+    }).join(''), 'cash-transactions') + (txns.length > 50 ? '<p class="sub">Bảng giao dịch hiển thị 50 giao dịch gần nhất trong tổng số ' + txns.length + '.</p>' : '') + '</div>';
     return html;
   }
   function workspaceChartsHtml() {
@@ -3346,7 +3350,7 @@
       html += '<div data-viz="workspace-budget-chart">' + vizBudgetGroupsChartHtml(groups) + '</div>' +
         tbl('<tr><th>Campaign</th><th>Tiền tệ</th><th>Phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Còn dùng được</th></tr>' + detailRows.map(function (x) {
           return '<tr><td><a href="#/campaigns/' + esc(x.id) + '">' + esc(x.name) + '</a></td><td>' + esc(x.r.currency) + '</td><td>' + fmtMoney(x.r.allocated, x.r.currency) + '</td><td>' + fmtMoney(x.r.actualTotal, x.r.currency) + '</td><td>' + fmtMoney(x.r.openCommitments, x.r.currency) + '</td><td>' + fmtMoney(x.r.available, x.r.currency) + '</td></tr>';
-        }).join(''));
+        }).join(''), 'budget-by-campaign', 'campaign-action-plan');
     } else html += '<div class="state-box" data-viz="workspace-budget-empty">Chưa có dữ liệu ngân sách ở mức workspace để vẽ biểu đồ.</div>';
     // KPI nổi bật (số qua rollupKpi ở kpiRollupFor)
     var allKpis = Store.list('kpis');
@@ -3720,7 +3724,7 @@
         if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa thiết lập hạn mức campaign cho ' + esc(r.currency) + ' — các số dưới đây tạm lấy tổng phân bổ đã duyệt làm hạn mức. Đặt hạn mức qua Đề xuất ngân sách ở khối hạn mức campaign phía trên (hạn mức chỉ đổi khi đề xuất được Owner duyệt) để tách rõ "Chưa phân bổ" và "Còn dùng được".</div>';
         html += '<p class="sub" data-viz="campaign-budget-note">Hạn mức campaign (' + esc(r.currency) + '): <strong>' + fmtMoney(r.ceiling, r.currency) + '</strong> · Chưa phân bổ: <strong>' + fmtMoney(r.unallocated, r.currency) + '</strong> · Còn dùng được: <strong>' + fmtMoney(r.available, r.currency) + '</strong> — "Chưa phân bổ" và "Còn dùng được" là hai số tách biệt, không gộp.</p>';
         html += '<h4>Bảng số chi tiết ngân sách (' + esc(r.currency) + ')</h4>' + tbl('<tr><th>Hạn mức</th><th>Đã phân bổ</th><th>Chưa phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Dự kiến sử dụng</th><th>Còn dùng được</th></tr>' +
-          '<tr><td>' + fmtMoney(r.ceiling, r.currency) + '</td><td>' + fmtMoney(r.allocated, r.currency) + '</td><td>' + fmtMoney(r.unallocated, r.currency) + '</td><td>' + fmtMoney(r.actualTotal, r.currency) + '</td><td>' + fmtMoney(r.openCommitments, r.currency) + '</td><td>' + fmtMoney(r.forecastUse, r.currency) + '</td><td>' + fmtMoney(r.available, r.currency) + '</td></tr>') +
+          '<tr><td>' + fmtMoney(r.ceiling, r.currency) + '</td><td>' + fmtMoney(r.allocated, r.currency) + '</td><td>' + fmtMoney(r.unallocated, r.currency) + '</td><td>' + fmtMoney(r.actualTotal, r.currency) + '</td><td>' + fmtMoney(r.openCommitments, r.currency) + '</td><td>' + fmtMoney(r.forecastUse, r.currency) + '</td><td>' + fmtMoney(r.available, r.currency) + '</td></tr>', 'campaign-budget-detail') +
           '<p class="sub">"Chưa phân bổ" = hạn mức − đã phân bổ cho các activity. "Còn dùng được" = hạn mức − thực chi − cam kết chưa trả. Hai số này khác nhau và không cộng lẫn nhau.</p>';
       });
       var ovKpis = Store.list('kpis').filter(function (k) { return k.campaignId === c.id && kpiScopeType(k) === 'campaign'; });
@@ -3751,13 +3755,13 @@
         var phSeg = vizTaskStatusSegments(phTasks);
         var phPill = x.status ? statusBadge(x.status) : (phSeg.total && phSeg.done === phSeg.total ? vizStatusPillHtml('completed', { label: 'Hoàn thành' }) : (phSeg.blocked ? vizStatusPillHtml('blocked', { label: phSeg.blocked + ' task bị chặn', derived: true }) : (phSeg.overdue ? vizStatusPillHtml('overdue', { label: phSeg.overdue + ' task trễ', derived: true }) : vizStatusPillHtml('in_progress', { label: phSeg.total ? 'Đang triển khai' : 'Chưa có task' }))));
         return '<tr><td><strong>' + esc(x.name) + '</strong>' + (phSeg.total ? '<br><span class="sub">' + phSeg.done + '/' + phSeg.total + ' task xong</span>' : '') + '</td><td>' + esc(D.formatDateVN(x.startDate)) + ' — ' + esc(D.formatDateVN(x.endDate)) + '</td><td>' + phPill + '</td><td>' + vizOwnerDotHtml(x.ownerId) + esc(memberName(x.ownerId)) + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="phase" data-id="' + esc(x.id) + '" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="phases" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có giai đoạn nào.</div>';
+      }).join(''), 'campaign-phases') : '<div class="state-box">Chưa có giai đoạn nào.</div>';
       html += '<div class="toolbar"><strong>Activity & Kênh triển khai (' + acts.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm activity</button>' : '') + '</div>';
       html += acts.length ? tbl('<tr><th>Activity</th><th>Giai đoạn</th><th>Kênh</th><th>Trạng thái</th><th>Người phụ trách</th><th>Đầu ra</th><th>Thao tác</th></tr>' + acts.map(function (a) {
         var ph = Store.get('phases', a.phaseId);
         var aInfo = activityStatusInfo(a, activityTasks(a));
         return '<tr><td><strong>' + esc(a.name) + '</strong></td><td>' + esc(ph ? ph.name : '—') + '</td><td>' + esc(a.channel || '—') + '</td><td>' + statusBadge(a.status || '', aInfo.label) + (aInfo.overdue ? '<br>' + vizStatusPillHtml('overdue', { label: aInfo.overdue + ' task trễ', derived: true }) : '') + (aInfo.blocked ? '<br>' + vizStatusPillHtml('blocked', { label: aInfo.blocked + ' task bị chặn', derived: true }) : '') + '</td><td>' + vizOwnerDotHtml(a.ownerId) + esc(memberName(a.ownerId)) + '</td><td>' + esc(a.deliverables || a.deliverable || '—') + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="activity" data-id="' + esc(a.id) + '" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '"' + dis(!ed) + '>Tạo task từ activity</button> <button class="btn small secondary" data-action="archive-item" data-coll="activities" data-id="' + esc(a.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có activity nào.</div>';
+      }).join(''), 'campaign-activities') : '<div class="state-box">Chưa có activity nào.</div>';
       html += '<h3>Timeline của campaign</h3>' + ganttHtml(ganttRowsCampaign(c), Store.list('dependencies'));
       // Sửa ngày bằng biểu mẫu + xem trước ảnh hưởng
       html += '<h3>Sửa ngày task bằng biểu mẫu</h3>';
@@ -3781,7 +3785,7 @@
       html += '<div class="toolbar"><strong>Task của campaign (' + ctasks.length + ')</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm task</button>' : '') + '</div>';
       html += ctasks.length ? tbl('<tr><th>Task</th><th>Người phụ trách</th><th>Đầu ra</th><th>Thời gian</th><th>Timeline tương đối</th><th>Dự kiến</th><th>Phụ thuộc</th><th>Trạng thái</th></tr>' + ctasks.map(function (t) {
         return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + checklistBadgeHtml(t) + '</td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + esc(t.deliverable || '—') + '</td><td>' + (t.startDate ? esc(D.formatDateVN(t.startDate)) : '—') + ' → ' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : 'Chưa xếp lịch') + '</td><td>' + vizTaskTimelineHtml(t) + '</td><td>' + (t.effortHours ? esc(t.effortHours) + ' giờ' : 'Chưa ước tính') + '</td><td>' + readinessBadge(t) + '</td><td>' + statusBadge(t.status) + (isOverdue(t) ? '<br>' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) : '') + (vizTaskIsBlocked(t) && !isCompletedTask(t) ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn', derived: true }) : '') + '</td></tr>';
-      }).join('')) : emptyState('Chưa có task nào', 'Thêm task đầu tiên cho campaign này.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm task</button></p>' : '');
+      }).join(''), 'campaign-tasks') : emptyState('Chưa có task nào', 'Thêm task đầu tiên cho campaign này.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="task" data-campaign="' + esc(c.id) + '">+ Thêm task</button></p>' : '');
     }
     if (tab === 'content') {
       // R3.1: tab này chỉ lấy content/publication GẮN campaign này — gồm cả
@@ -3800,10 +3804,10 @@
       html += items.length ? tbl('<tr><th>Content</th><th>Cách gắn campaign</th><th>Số phiên bản kênh</th><th>Lịch đăng</th><th>Trạng thái</th></tr>' + items.map(function (x) {
         var vs = vars.filter(function (v) { return v.contentItemId === x.id; });
         return '<tr><td><strong>' + esc(x.title) + '</strong></td><td>' + (directIds[x.id] ? 'Content thuộc campaign' : 'Qua publication dùng lại') + '</td><td>' + vizChannelChipsHtml(vs) + (vs.length ? '<br><span class="sub">' + vs.length + ' phiên bản</span>' : '') + '</td><td>' + esc(D.formatDateVN(x.scheduledDate)) + '</td><td>' + statusBadge(x.editorialStatus) + '</td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có content nào thuộc campaign này.</div>';
+      }).join(''), 'campaign-content') : '<div class="state-box">Chưa có content nào thuộc campaign này.</div>';
       if (pubsForCamp.length) html += '<h3>Publication thuộc campaign (' + pubsForCamp.length + ')</h3>' + tbl('<tr><th>Ngày giờ</th><th>Content</th><th>Kênh / Tài khoản</th><th>Trạng thái</th></tr>' + pubsForCamp.map(function (p) {
         return '<tr><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td>' + esc(p.title) + '</td><td>' + esc(labelStatus(p.platform)) + ' · ' + esc(accountName(p.channelAccountId)) + '</td><td>' + statusBadge(p.status) + '</td></tr>';
-      }).join(''));
+      }).join(''), 'campaign-publications');
     }
     if (tab === 'kpi') {
       var ckpis = Store.list('kpis').filter(function (x) { return x.campaignId === c.id; });
@@ -3822,7 +3826,7 @@
       html += assets.length ? tbl('<tr><th>Tài nguyên</th><th>Loại</th><th>Đường dẫn</th><th>Trạng thái bản</th></tr>' + assets.map(function (a) {
         var url = a.externalUrl || a.url || a.fileUrl || '';
         return '<tr><td><strong>' + esc(a.name) + '</strong></td><td>' + esc(a.type) + '</td><td>' + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">Mở / tải</a>' : '—') + '</td><td>' + esc(brandStatusInfo(a).label) + '</td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có tài nguyên nào trong Brand Hub.</div>';
+      }).join(''), 'campaign-assets', 'content-backlog') : '<div class="state-box">Chưa có tài nguyên nào trong Brand Hub.</div>';
       var deliverables = ctasks.filter(function (t) { return t.deliverable; });
       html += '<h3>Đầu ra cần bàn giao của các task</h3>' + (deliverables.length ? '<ul class="clean">' + deliverables.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có task nào ghi đầu ra.</p>');
     }
@@ -4101,7 +4105,7 @@
         if (blOther > 0) blSegs.push({ label: 'Trạng thái khác', value: blOther, tone: 'neutral' });
         html += '<div data-viz="content-backlog-pipeline"><h3>Pipeline trạng thái của Backlog</h3>' + vizStackedBarHtml({ segments: blSegs, total: backlog.length, unitLabel: 'content trong Backlog' }) + '</div>';
       }
-      html += backlog.length ? tbl(itemHead + backlog.map(itemRow).join('')) : emptyState('Backlog đang trống', 'Mọi content đang lọc đều đã có lịch đăng, hoặc chưa có content nào.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="content">+ Tạo ý tưởng mới</button></p>' : '');
+      html += backlog.length ? tbl(itemHead + backlog.map(itemRow).join(''), 'content-grouped') : emptyState('Backlog đang trống', 'Mọi content đang lọc đều đã có lịch đăng, hoặc chưa có content nào.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="content">+ Tạo ý tưởng mới</button></p>' : '');
     }
     if (UI.contentTab === 'pillars') {
       html += '<h2>Content theo Pillar</h2><p class="sub">Mỗi content nằm ở đúng MỘT pillar chính. Lọc pillar thấy cả content campaign lẫn content thường xuyên (pillar khác campaign).</p>';
@@ -4157,7 +4161,7 @@
       html += '<h3>Tất cả publication trong tháng (' + monthPubs.length + ')</h3>' + (monthPubs.length ? tbl('<tr><th>Ngày giờ đăng</th><th>Content</th><th>Kênh / Tài khoản</th><th>Pillar</th><th>Campaign của publication</th><th>Trạng thái</th></tr>' + monthPubs.map(function (p) {
         var it3 = Store.get('contentItems', p.contentItemId) || {};
         return '<tr><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(labelStatus(p.platform)) + '<br><span class="sub">' + esc(accountName(p.channelAccountId)) + '</span></td><td>' + esc(pillarName(contentPillarId(it3))) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : 'Không thuộc campaign') + '</td><td>' + statusBadge(p.status) + '</td></tr>';
-      }).join('')) : '<p class="sub">Chưa có publication nào trong tháng đang xem.</p>');
+      }).join(''), 'content-month-publications', 'content-items') : '<p class="sub">Chưa có publication nào trong tháng đang xem.</p>');
     }
     if (UI.contentTab === 'table') {
       html += '<h2>Content gốc (' + items.length + ')</h2>';
@@ -4166,7 +4170,7 @@
       html += variants.length ? tbl('<tr><th>Content</th><th>Kênh</th><th>Caption</th><th>Lịch đăng</th><th>Trạng thái biên tập</th><th>Duyệt</th><th>Thao tác</th></tr>' + variants.map(function (v) {
         var pub = v.platform === 'tiktok' ? '<span class="badge warn">Đăng ngoài app</span>' : statusBadge(v.publishingStatus || '', v.publishingStatus ? labelStatus(v.publishingStatus) : '');
         return '<tr><td><strong>' + esc(contentTitle(v.contentItemId)) + '</strong></td><td>' + esc(v.channelLabel || labelStatus(v.platform)) + '</td><td>' + esc(v.caption || '') + '</td><td>' + esc(D.formatDateTimeVN(v.scheduledAt)) + '</td><td>' + statusBadge(v.editorialStatus) + '<br>' + pub + '</td><td>' + statusBadge(v.approvalStatus) + '</td><td class="row-actions">' + variantCardActions(v) + '</td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có phiên bản theo kênh nào.</div>';
+      }).join(''), 'content-variants') : '<div class="state-box">Chưa có phiên bản theo kênh nào.</div>';
     }
     if (UI.contentTab === 'board') {
       html += '<div class="kanban">';
@@ -4188,7 +4192,7 @@
         ];
         var tlHave = tlPts.filter(function (p) { return p.date; }).length;
         return '<tr><td>' + esc(D.formatDateTimeVN(v.scheduledAt)) + '</td><td><strong>' + esc(contentTitle(v.contentItemId)) + '</strong></td><td>' + esc(v.channelLabel || labelStatus(v.platform)) + '</td><td>' + esc(memberName(v.ownerId)) + '</td><td>' + esc(memberName(v.reviewerId)) + '</td><td>' + esc(D.formatDateVN(v.productionDeadline)) + '</td><td>' + esc(D.formatDateVN(v.reviewDeadline)) + '</td><td>' + (tlHave >= 2 ? vizTimelineHtml(tlPts) : '<span class="sub">Chưa đủ mốc ngày để vẽ timeline</span>') + '</td><td>' + statusBadge(v.editorialStatus) + '</td><td class="row-actions">' + variantCardActions(v) + '</td></tr>';
-      }).join(''));
+      }).join(''), 'content-production');
       var tiktok = variants.filter(function (v) { return v.platform === 'tiktok'; });
       html += '<h2>TikTok — sản xuất trong app, đăng ngoài app</h2>';
       if (!tiktok.length) html += '<div class="state-box">Chưa có content TikTok nào.</div>';
@@ -4240,7 +4244,7 @@
           metricCell = (views !== null && libMaxViews > 0 ? vizCellBarHtml({ value: views, max: libMaxViews, tone: 'running', text: parts.join(' · ') }) : '<span class="sub">' + esc(parts.join(' · ')) + '</span>');
         }
         return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(it4.title || '—') + '</td><td>' + esc(labelStatus(p.platform)) + '<br><span class="sub">' + esc(accountName(p.channelAccountId)) + '</span></td><td>' + esc(D.formatDateTimeVN(p.at)) + '</td><td>' + esc(pillarName(contentPillarId(it4))) + '</td><td>' + (p.campaignId ? esc(campaignName(p.campaignId)) : 'Không thuộc campaign') + '</td><td>' + metricCell + '</td><td>' + (p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener">Mở bài</a>' : '—') + '</td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có post nào khớp bộ lọc.</div>';
+      }).join(''), 'content-library', 'content-mix-matrix') : '<div class="state-box">Chưa có post nào khớp bộ lọc.</div>';
     }
     if (UI.contentTab === 'mix') {
       var unit = UI.contentMixUnit === 'publication' ? 'publication' : 'content';
@@ -4264,7 +4268,7 @@
             var heatCls = v === 0 ? 'heat-0' : (ratio <= 0.25 ? 'heat-1' : (ratio <= 0.5 ? 'heat-2' : (ratio <= 0.75 ? 'heat-3' : 'heat-4')));
             return '<td class="' + heatCls + '" title="' + esc(labelStatus(c)) + ': ' + v + ' / ô đậm nhất ' + heatMax + '">' + v + '</td>';
           }).join('') + '<td><strong>' + r.total + '</strong></td><td>' + (mix.denominator ? (Math.round(r.total / mix.denominator * 1000) / 10) + '%' : '—') + '</td></tr>';
-        }).join('') + '<tr><td><strong>Tổng (mẫu số)</strong></td>' + mix.channels.map(function (c) { return '<td></td>'; }).join('') + '<td><strong>' + mix.denominator + '</strong></td><td><strong>100%</strong></td></tr>') + '</div>';
+        }).join('') + '<tr><td><strong>Tổng (mẫu số)</strong></td>' + mix.channels.map(function (c) { return '<td></td>'; }).join('') + '<td><strong>' + mix.denominator + '</strong></td><td><strong>100%</strong></td></tr>', 'content-queue') + '</div>';
         html += '<div data-viz="content-mix-stacked"><h3>Cơ cấu kênh trong từng Pillar (thanh 100%)</h3>' + mix.rows.map(function (r) {
           var segs = mix.channels.map(function (c, ci) { return { label: labelStatus(c), value: Number(r.byChannel[c]) || 0, cat: (ci % 8) + 1 }; }).filter(function (s) { return s.value > 0; });
           if (!segs.length) return '';
@@ -4303,7 +4307,7 @@
       if (orphanPosts.length) {
         html += '<h3>Post chưa gắn content gốc (' + orphanPosts.length + ')</h3>' + tbl('<tr><th>Post</th><th>Kênh</th><th>Ngày đăng</th><th>Thao tác</th></tr>' + orphanPosts.map(function (p) {
           return '<tr><td><strong>' + esc(p.title) + '</strong></td><td>' + esc(labelStatus(p.platform)) + '</td><td>' + esc(D.formatDateTimeVN(p.publishedAt)) + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="post" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Gắn content gốc / phân loại</button></td></tr>';
-        }).join(''));
+        }).join(''), 'content-orphan-posts');
       }
     }
     if (UI.contentTab === 'manage') {
@@ -4326,7 +4330,7 @@
             '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="pillar" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Sửa</button> ' + (arch
               ? '<button class="btn small secondary" data-action="restore-item" data-coll="contentPillars" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Khôi phục</button>'
               : '<button class="btn small secondary" data-action="archive-item" data-coll="contentPillars" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Lưu trữ</button>') + '</td></tr>';
-        }).join(''));
+        }).join(''), 'content-pillars');
       }
     }
     return html;
@@ -4391,7 +4395,7 @@
           '<td><select data-action-change="task-status" data-id="' + esc(t.id) + '"' + dis(stDisabled) + stTitle + '>' + opts + '</select></td></tr>' +
           tasks.filter(function (x) { return x.parentId === t.id; }).map(function (ch) { return row(ch, depth + 1); }).join('');
       }
-      html += tbl('<tr><th>Task</th><th>Người phụ trách</th><th>Campaign</th><th>Thời gian</th><th>Dự kiến</th><th>Phụ thuộc</th><th>Trạng thái</th></tr>' + roots.map(function (t) { return row(t, 0); }).join(''));
+      html += tbl('<tr><th>Task</th><th>Người phụ trách</th><th>Campaign</th><th>Thời gian</th><th>Dự kiến</th><th>Phụ thuộc</th><th>Trạng thái</th></tr>' + roots.map(function (t) { return row(t, 0); }).join(''), 'tasks-main');
     }
     html += '<h2>Thêm quan hệ phụ thuộc</h2><form class="inline" id="dep-add-form">' +
       '<label>Task phải xong trước<select name="predecessorId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
@@ -4403,7 +4407,7 @@
     else html += tbl('<tr><th>Trở ngại</th><th>Task</th><th>Mô tả</th><th>Trạng thái</th><th></th></tr>' + blockers.map(function (b) {
       var t = taskById(b.taskId);
       return '<tr><td>' + esc(b.title) + (b.status === 'open' ? '<br>' + vizStatusPillHtml('blocked', { label: 'Bị chặn', derived: true }) : '') + '</td><td>' + esc(t ? t.title : '—') + '</td><td>' + esc(b.description || '') + '</td><td>' + vizStatusPillHtml(b.status, { context: 'blocker', label: labelStatus(b.status) }) + '</td><td>' + (b.status === 'open' ? '<button class="btn small secondary" data-action="resolve-blocker" data-id="' + esc(b.id) + '">Đánh dấu đã gỡ</button>' : '') + '</td></tr>';
-    }).join(''));
+    }).join(''), 'tasks-blockers');
     html += '<form class="inline" id="blocker-add-form"><label>Task<select name="taskId">' + tasks.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
       '<label>Tên trở ngại<input type="text" name="title" required></label><label>Mô tả<input type="text" name="description"></label>' +
       '<button class="btn" type="submit"' + dis(!ed) + '>Tạo trở ngại</button></form>';
@@ -4440,7 +4444,7 @@
       if (r.status === 'rejected' && r.rejectionReason) acts += '<span class="sub">Lý do từ chối: ' + esc(r.rejectionReason) + '</span>';
       var reqPriTone = { 'Cao': 'overdue', 'Trung bình': 'pending', 'Thấp': 'todo' }[r.priority] || 'neutral';
       return '<tr><td><strong>' + esc(r.title) + '</strong>' + (r.note ? '<br><span class="sub">' + esc(r.note) + '</span>' : '') + '</td><td>' + esc(r.requester) + '</td><td>' + (r.campaignId ? esc(campaignName(r.campaignId)) : '—') + '</td><td>' + (r.priority ? vizStatusPillHtml('', { tone: reqPriTone, label: r.priority }) : '—') + '</td><td>' + (r.dueDate ? esc(D.formatDateVN(r.dueDate)) : '—') + '</td><td>' + statusBadge(r.status, r.statusLabel) + (r.assigneeId ? '<br><span class="sub">Người xử lý: ' + esc(memberName(r.assigneeId)) + '</span>' : '') + '</td><td class="row-actions">' + acts + '</td></tr>';
-    }).join(''));
+    }).join(''), 'tasks-requests');
     html += '<form class="inline" id="request-add-form"><label>Tiêu đề yêu cầu<input type="text" name="title" required></label>' +
       '<label>Người / đội yêu cầu<input type="text" name="requester" required></label>' +
       '<label>Campaign<select name="campaignId"><option value="">— Chưa gắn —</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '">' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
@@ -4536,7 +4540,7 @@
     else html += tbl('<tr><th>Content</th><th>Phiên bản content</th><th>Quyết định</th><th>Người duyệt</th><th>Thời điểm</th><th>Thời gian chờ</th><th>Nhận xét</th></tr>' + done.map(function (a) {
       var waited = (a.requestedAt && a.decidedAt) ? vizDayDiff(String(a.requestedAt).slice(0, 10), String(a.decidedAt).slice(0, 10)) : null;
       return '<tr><td>' + esc(contentTitle(a.contentItemId)) + '</td><td>Số ' + esc(a.revision) + '</td><td>' + vizStatusPillHtml(a.status, { label: a.statusLabel }) + '</td><td>' + esc(memberName(a.decidedBy)) + '</td><td>' + esc(D.formatDateTimeVN(a.decidedAt)) + '</td><td>' + (waited === null ? '—' : (waited === 0 ? 'Trong ngày' : waited + ' ngày')) + '</td><td>' + esc(a.note || '') + '</td></tr>';
-    }).join(''));
+    }).join(''), 'approvals-decisions');
     return html;
   }
 
@@ -4581,7 +4585,7 @@
           '<td>' + (Object.keys(perDay).length ? vizMiniDayBarsHtml({ days: Object.keys(perDay).sort().map(function (date) { return { label: String(D.formatDateVN(date)).slice(0, 5), hours: perDay[date], title: D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + ' giờ' }; }) }) + '<span class="sub">' + Object.keys(perDay).sort().map(function (date) { return D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + 'h'; }).join(' · ') + '</span>' : '<span class="sub">—</span>') + '</td>' +
           '<td>' + (warn.length ? warn.map(function (w) { return vizStatusPillHtml('overdue', { label: w, derived: true }); }).join(' ') : vizStatusPillHtml('done', { label: 'Ổn' })) + '</td>' +
           '<td><button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Đặt năng lực / ngày nghỉ</button></td></tr>';
-      }).join(''));
+      }).join(''), 'team-workload');
     html += '<p class="sub">Task thiếu effort hiển thị "Chưa ước tính" và không tính vào effort đã phân bổ.</p>';
     return html;
   }
@@ -4629,7 +4633,7 @@
       }
       if (hist.length) main += '<tr class="detail-row"><td colspan="8"><strong>Lịch sử số đo:</strong> ' + hist.map(function (m) { return fmtNum(m.value) + ' (' + esc(m.source || '—') + ', ' + esc(D.formatDateTimeVN(m.measuredAt || m.measured_at)) + ')'; }).join(' · ') + '</td></tr>';
       return main;
-    }).join(''));
+    }).join(''), 'kpi-main');
     html += '<h2>Ngân sách theo từng tiền tệ (không cộng khác tiền tệ)</h2>';
     // R2-30.5: vai không có quyền xem ngân sách (vd CEO) → ẨN hẳn khối số
     // ngân sách chi tiết, chỉ hiện thông báo.
@@ -4712,14 +4716,14 @@
           var cmOpen = String(cm.status).toLowerCase() === 'cancelled' ? 0 : Math.max(0, Number(cm.amount || 0) - paid);
           return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency || cur) + '</td><td>' + fmtMoney(paid, cm.currency || cur) + '</td><td>' + fmtMoney(cmOpen, cm.currency || cur) + '</td><td>' + statusBadge(cm.status) + '</td><td>' + factApprovalControlsHtml(cm, 'commitment') + '</td>' +
             '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitment" data-id="' + esc(cm.id) + '">Sửa cam kết</button> <button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
-        }).join('')) : '<p class="sub">Chưa có cam kết nào.</p>';
+        }).join(''), 'budget-commitments') : '<p class="sub">Chưa có cam kết nào.</p>';
         var actRows = acts.length ? tbl('<tr><th>Khoản chi</th><th>Số tiền</th><th>Ngày chi</th><th>Nguồn</th><th>Ghi chú / chứng từ</th><th>Duyệt</th><th>Thao tác</th></tr>' + acts.map(function (a) {
           var srcLabel = { manual: 'Nhập tay', invoice: 'Hóa đơn', import: 'Nhập từ file' }[a.source] || a.source || 'Nhập tay';
           var aAllocs = hasFn('listAllocationsForSource') ? Store.listAllocationsForSource('actual', a.id) : [];
           var allocText = aAllocs.length ? '<br><span class="sub">Phân bổ: ' + aAllocs.map(function (al) { var aa = Store.get('activities', al.activityId); return esc(aa ? aa.name : (al.activityId || '—')) + ' = ' + (al.amount !== null && al.amount !== undefined ? fmtMoney(al.amount, a.currency || cur) : (al.sharePercent + '%')); }).join('; ') + '</span>' : '';
           return '<tr><td>' + esc(a.title) + allocText + '</td><td>' + fmtMoney(a.amount, a.currency || cur) + '</td><td>' + esc(D.formatDateVN(a.date)) + '</td><td>' + esc(srcLabel) + '</td><td>' + esc(a.description || '') + '</td><td>' + factApprovalControlsHtml(a, 'actual') + '</td>' +
             '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="actual" data-id="' + esc(a.id) + '">Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="actual" data-source-id="' + esc(a.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
-        }).join('')) : '<p class="sub">Chưa có khoản chi nào.</p>';
+        }).join(''), 'budget-actuals') : '<p class="sub">Chưa có khoản chi nào.</p>';
         var detail = '<tr class="detail-row"><td colspan="9">' +
           '<strong>Cam kết (' + commits.length + ')</strong>' + (budgetEd ? ' <button class="btn small" data-action="editor-open" data-kind="commitment" data-line="' + esc(b.id) + '">+ Thêm cam kết</button>' : '') + commitRows +
           '<strong>Thực chi (' + acts.length + ')</strong>' + (budgetEd ? ' <button class="btn small" data-action="editor-open" data-kind="actual" data-line="' + esc(b.id) + '">+ Ghi khoản chi</button>' : '') + actRows +
@@ -4727,7 +4731,7 @@
         var lineUsed = actualTotal + openCommit;
         return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc(campaignName(b.campaignId)) + '</td><td>' + fmtMoney(b.planned, cur) + '</td><td>' + budgetLineApprovedCellHtml(b) + '</td><td>' + fmtMoney(openCommit, cur) + '</td><td>' + fmtMoney(actualTotal, cur) + '</td><td>' + fmtMoney(rem, cur) + (Number(b.approved) > 0 ? vizCellBarHtml({ value: lineUsed, max: Number(b.approved), tone: rem < 0 ? 'overdue' : (rem === 0 ? 'pending' : 'running'), text: 'Đã dùng ' + fmtMoney(lineUsed, cur) + ' / hạn mức dòng ' + fmtMoney(b.approved, cur) + ' (' + fmtPct(vizPct(lineUsed, Number(b.approved))) + ')' }) : '') + '</td><td>' + (rem < 0 ? vizStatusPillHtml('overdue', { label: 'Vượt ngân sách ' + fmtMoney(-rem, cur), derived: true }) : vizStatusPillHtml('done', { label: 'Trong ngân sách' })) + '</td>' +
           '<td class="row-actions"><button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-id="' + esc(b.id) + '"' + dis(!budgetEd) + '>Sửa dòng</button></td></tr>' + detail;
-      }).join(''));
+      }).join(''), 'budget-lines');
     });
     html += '<p class="sub">Phần đã thanh toán của một cam kết được tính từ các khoản thanh toán liên kết và chỉ tính một lần ở cột Đã chi.</p>';
     // R3.1-VIZ 5: khối Thu–Chi (sổ cash, tách hẳn ngân sách campaign) —
@@ -4780,7 +4784,7 @@
           '<td>' + vizStatusPillHtml('', { tone: accTone, label: a.status || 'Chờ kết nối' }) + '</td>' +
           '<td><span class="viz-dot-group">' + implParts.map(function (p) { return dotCell(implTone(p[1]), p[0], API_IMPL_LABELS[p[1]] || 'Chưa triển khai'); }).join('') + '</span><br><span class="sub">' + implParts.map(function (p) { return esc(p[0] + ': ' + (API_IMPL_LABELS[p[1]] || 'Chưa triển khai')); }).join(' · ') + '</span></td>' +
           '<td><span class="viz-dot-group">' + capParts.map(function (p) { return dotCell(capTone(p[1]), p[0], p[1] || 'Chờ kết nối'); }).join('') + '</span><br><span class="sub">' + capParts.map(function (p) { return esc(p[0] + ': ' + (p[1] || 'Chờ kết nối')); }).join(' · ') + '</span></td></tr>';
-      }).join('')) : '<div class="state-box">Chưa có tài khoản kênh nào. Kết nối kênh cần cấp quyền ở nền tảng tương ứng; trong lúc chờ, vẫn ghi nhận bài bằng cách nhập tay.</div>';
+      }).join(''), 'channels-accounts') : '<div class="state-box">Chưa có tài khoản kênh nào. Kết nối kênh cần cấp quyền ở nền tảng tương ứng; trong lúc chờ, vẫn ghi nhận bài bằng cách nhập tay.</div>';
     var posts = Store.list('externalPosts');
     var filtered = posts.filter(function (p) { return UI.channelFilter === 'all' || p.platform === UI.channelFilter; });
     html += '<h2>Thư viện Post (' + filtered.length + ')</h2>' +
@@ -4811,7 +4815,7 @@
         main += '<tr class="detail-row"><td colspan="10"><strong>Số liệu của bài:</strong> ' + (obs.length ? obs.map(function (o) { return esc(o.metric) + ' = ' + fmtNum(o.value) + ' (' + esc(o.source || '—') + ', ' + esc(D.formatDateTimeVN(o.observedAt)) + ')'; }).join(' · ') : 'Chưa có số liệu nào cho bài này.') + '</td></tr>';
       }
       return main;
-    }).join(''));
+    }).join(''), 'channels-posts', 'ads-main');
     html += '<p class="sub">Mỗi bài chỉ ghi nhận một lần theo kênh, tài khoản và mã bài — thêm trùng sẽ được báo lại.</p>';
     return html;
   }
@@ -4889,7 +4893,7 @@
       if (isCeo) actions = '<span class="sub">Chỉ xem</span>';
       var accName = (Store.get('adAccounts', r.adAccountId) || {}).name || '—';
       return '<tr><td>' + esc(r.title) + '</td><td>' + esc(accName) + '<br>' + esc(r.target) + '</td><td>' + esc(labelStatus(r.changeType || 'other')) + '</td><td>' + esc(r.beforeState || r.before || '—') + ' → ' + esc(r.afterState || r.after || '—') + '</td><td>' + (r.amount != null ? fmtMoney(r.amount, r.currency) : '—') + '</td><td>' + (r.scheduledAt ? esc(D.formatDateTimeVN(r.scheduledAt)) : '—') + '</td><td>' + esc(r.reason || '—') + '</td><td>' + statusBadge(r.status, r.statusLabel) + '</td><td>' + esc(memberName(r.requestedBy)) + '</td><td>' + actions + '</td></tr>';
-    }).join(''));
+    }).join(''), 'ads-change-requests');
     return html;
   }
 
@@ -5022,7 +5026,7 @@
         return '<tr><td><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></td><td>' +
           vizCellBarHtml({ value: p.completed, max: p.total, tone: pTone, text: p.completed + '/' + p.total + ' (' + p.percentage + '%)' }) +
           '</td><td>' + (odCount > 0 ? vizStatusPillHtml('overdue', { label: odCount + ' quá hạn', derived: true }) : '0') + '</td></tr>';
-      }).join('')) + '</div>';
+      }).join(''), 'reports-campaign-progress') + '</div>';
       return html;
     }
     // R2-06: không có insight trong scope → nói rõ không đủ dữ liệu, TUYỆT
@@ -5089,7 +5093,7 @@
       }
       html += '<h2>Chi tiết cấp ' + esc(levelLabel) + '</h2>' + tbl('<tr><th>Tên</th><th>Tiền tệ</th><th>Chi tiêu</th><th>Hiển thị</th><th>Nhấp</th><th>Kết quả</th><th>Giá trị chuyển đổi</th></tr>' + groupedRows.map(function (r) {
         return '<tr><td>' + esc(r.name) + '</td><td>' + esc(currencyLabel(r.currency)) + '</td><td>' + fmtMoney(r.spend, r.currency || '') + '</td><td>' + fmtNum(r.impressions) + '</td><td>' + fmtNum(r.clicks) + '</td><td>' + fmtNum(r.results) + '</td><td>' + fmtNum(r.conversionValue) + '</td></tr>';
-      }).join(''));
+      }).join(''), 'reports-detail');
     }
     html += '<div class="cards">' +
       vizKpiCardHtml({ label: 'Lượt xem trọn đời — tổng của bản mới nhất từng bài', valueText: (lifetimeTotal === null ? '—' : fmtNum(lifetimeTotal)), tone: 'neutral', sub: 'Đơn vị: lượt · Mỗi bài chỉ lấy lần quan sát mới nhất, không cộng dồn các lần quan sát' }) + '</div>';
@@ -5097,7 +5101,7 @@
       var post = Store.get('externalPosts', r.postId);
       return '<tr><td>' + esc(post ? post.title : r.postId) + '</td><td>' + fmtNum(r.value) + '</td><td>' +
         ((lifetimeTotal && r.value !== null && r.value !== undefined) ? vizCellBarHtml({ value: r.value, max: lifetimeTotal, tone: 'running', text: fmtNum(r.value) + ' (' + fmtPct(vizPct(r.value, lifetimeTotal)) + ')' }) : '—') + '</td></tr>';
-    }).join('')) + '</div>';
+    }).join(''), 'reports-lifetime') + '</div>';
     if (!reachGuard.summable && ds.obs.length) html += '<div class="notice warn"><strong>Reach không cộng dồn:</strong> ' + esc(reachGuard.reason) + '</div>';
     if (missing) html += '<div class="notice warn">Có KPI chưa có giá trị thực đạt — hiển thị "Chưa cập nhật", không thay bằng 0.</div>';
     html += '<h2>Báo cáo đã chốt</h2>';
@@ -5173,7 +5177,7 @@
       var activeSel = '<select data-action-change="member-active" data-id="' + esc(m.id) + '"' + dis(!isOwner) + '><option value="1"' + (m.isActive !== false ? ' selected' : '') + '>Đang hoạt động</option><option value="0"' + (m.isActive === false ? ' selected' : '') + '>Ngừng hoạt động</option></select>';
       return '<tr><td><strong>' + esc(m.name) + '</strong></td><td>' + esc(m.email) + '</td><td>' + (isOwner ? roleSel : esc(m.roleLabel || labelStatus(m.role))) + '</td><td>' + (isOwner ? activeSel : (m.isActive === false ? 'Ngừng hoạt động' : 'Đang hoạt động')) + '</td>' +
         '<td>' + (m.capacityHoursPerWeek !== null && m.capacityHoursPerWeek !== undefined ? esc(m.capacityHoursPerWeek) + ' giờ/tuần' : 'Chưa cấu hình') + ((m.daysOff || []).length ? '<br><span class="sub">Nghỉ: ' + m.daysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') + '</span>' : '') + ' <button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Sửa</button></td></tr>';
-    }).join(''));
+    }).join(''), 'settings-members');
     if (!isOwner) html += '<p class="sub">Chỉ Owner mới đổi vai trò / trạng thái hoạt động của thành viên và gửi lời mời.</p>';
     html += '<h3>Ma trận quyền (4 vai)</h3>';
     var permKeys = Object.keys(Store.PERMISSION_LABELS || {});
@@ -5184,12 +5188,12 @@
           : '<td class="perm-cell"><span class="perm-no" title="Không có quyền">—</span></td>';
       }
       return '<tr><td>' + esc(Store.PERMISSION_LABELS[k]) + '</td>' + cell('owner') + cell('lead') + cell('member') + cell('ceo') + '</tr>';
-    }).join(''));
+    }).join(''), 'settings-permissions');
     html += '<div class="toolbar"><h2 style="margin:0">BU / sản phẩm</h2>' + (canSettings() ? '<button class="btn small" data-action="editor-open" data-kind="bu">+ Thêm BU</button>' : '<span class="sub">Chỉ Owner quản lý BU/sản phẩm.</span>') + '</div>';
     html += Store.list('businessUnits').length
       ? tbl('<tr><th>BU</th><th>Sản phẩm</th><th>Mô tả</th><th>Thao tác</th></tr>' + Store.list('businessUnits').map(function (b) {
         return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc((b.products || []).join(', ')) + '</td><td>' + esc(b.description || '—') + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="bu" data-id="' + esc(b.id) + '"' + dis(!canSettings()) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="businessUnits" data-id="' + esc(b.id) + '"' + dis(!canSettings()) + '>Lưu trữ</button></td></tr>';
-      }).join(''))
+      }).join(''), 'settings-bu')
       : '<div class="state-box">Chưa cấu hình BU/sản phẩm.</div>';
     html += '<h2>Danh sách kết nối kênh</h2>' + (Store.list('channelAccounts').length
       ? '<ul class="clean">' + Store.list('channelAccounts').map(function (a) { return '<li>' + esc(a.name) + ' (' + esc(labelStatus(a.platform)) + ') — ' + esc(a.status) + '</li>'; }).join('') + '</ul>'

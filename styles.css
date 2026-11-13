@@ -394,3 +394,17 @@ td.perm-cell{text-align:center;font-size:15px}
 .task-checklist-track{min-width:44px;width:44px;height:7px;flex:0 0 44px}
 .g2-cl-badge{flex:0 0 auto;font-size:11px;font-weight:700;color:var(--st-neutral);background:var(--st-neutral-bg);border-radius:99px;padding:1px 6px;white-space:nowrap}
 .g2-cl-fill{position:absolute;left:0;bottom:0;height:5px;background:rgba(255,255,255,.55);border-radius:0 0 5px 5px;pointer-events:none}
+
+/* ===== Kéo rộng cột kiểu Excel (js/col-resize.js — khối CÔ LẬP, tiền tố col-resize) ===== */
+/* Chỉ áp cho bảng có data-table-key đã được col-resize.js gắn tay nắm.   */
+/* Bảng có >=1 cột chỉnh tay: .col-resized bật table-layout:fixed +      */
+/* <colgroup> do JS dựng; bảng chưa chỉnh không có class này -> như cũ.  */
+table.col-resized{table-layout:fixed}
+th.col-resize-th{position:relative}
+.col-resize-handle{position:absolute;top:0;right:-5px;width:11px;height:100%;cursor:col-resize;touch-action:none;z-index:3;background:transparent}
+.col-resize-handle::after{content:"";position:absolute;top:15%;bottom:15%;left:5px;width:1px;background:transparent}
+th.col-resize-th:hover .col-resize-handle::after{background:var(--accent)}
+body.col-resize-dragging{cursor:col-resize;user-select:none}
+body.col-resize-dragging *{cursor:col-resize!important}
+table.col-resize-measuring{width:auto!important}
+table.col-resize-measuring th,table.col-resize-measuring td{white-space:nowrap!important}
