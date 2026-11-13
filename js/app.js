@@ -69,6 +69,7 @@
     brandQuery: '',
     brandOpenId: null,
     postOpenId: null,
+    kpiOpenId: null,
     calYear: NOW.getFullYear(),
     calMonth: NOW.getMonth(),
     channelFilter: 'all',
@@ -971,6 +972,14 @@
         var k = editorItem('kpis') || {};
         var kScope = ev('scopeType', k.scopeType || k.scope_type || (e.context.activityId ? 'activity' : (e.context.taskId ? 'task' : (e.context.contentItemId ? 'content' : 'campaign'))));
         var kDefText = (k.definition === null || k.definition === undefined) ? '' : (typeof k.definition === 'string' ? k.definition : (k.definition.description || k.definition.how || ''));
+        var kDefObj = kpiDefinitionObject(k);
+        var kDs0 = kDefObj.dataSource || kDefObj.data_source || null;
+        var kSourceType = ev('dataSourceType', (kDs0 && kDs0.type === 'post_metrics') ? 'post_metrics' : 'manual');
+        var kIsAutoForm = kSourceType === 'post_metrics';
+        var kDsMetric = ev('dataSourceMetric', (kDs0 && kDs0.metric) || 'lifetime_views');
+        var kDsMode = ev('dataSourceMode', (kDs0 && kDs0.mode) || 'latest_sum');
+        var kMetricOpts = POST_METRIC_OPTIONS.slice();
+        if (kDsMetric && !kMetricOpts.some(function (p) { return p[0] === kDsMetric; })) kMetricOpts.push([kDsMetric, kDsMetric]);
         var kContribIds = listSafe('kpiContributions').filter(function (x) { return x.kpiId === k.id; }).map(function (x) { return x.sourceKpiId; });
         var kSourcePairs = visibleList('kpis').filter(function (x) { return x.id !== k.id; }).map(function (x) { return [x.id, x.name + (x.metricCode ? ' (' + x.metricCode + ')' : '')]; });
         var kRoll = k.id ? kpiRollupFor(k) : null;
@@ -984,6 +993,11 @@
           F('pillarId', 'Pillar', 'select', ev('pillarId', k.pillarId), { options: listSafe('contentPillars').map(function (x) { return [x.id, x.name || x.title]; }), emptyLabel: '— Không gắn pillar —' }) +
           F('metricCode', 'Mã chỉ số (metric_code)', 'text', ev('metricCode', k.metricCode || k.metric_code), { placeholder: 'vd: valid_registrations' }) +
           F('definition', 'Định nghĩa / cách đo (definition)', 'textarea', ev('definition', kDefText), { wide: true, help: 'Mô tả cách đo: nguồn số liệu, điều kiện hợp lệ, khóa khử trùng nếu là chỉ số unique.' }) +
+          F('dataSourceType', 'Nguồn số liệu', 'select', kSourceType, { options: [['manual', 'Tự nhập'], ['post_metrics', 'Tự động từ bài đã đăng']], attrs: ' data-refresh-editor="1"', help: 'Tự nhập: cập nhật thực đạt bằng form số đo như trước. Tự động: số thực đạt tự tính từ bộ đếm của các bài đã đăng thuộc phạm vi KPI.' }) +
+          (kIsAutoForm
+            ? F('dataSourceMetric', 'Chỉ số', 'select', kDsMetric, { options: kMetricOpts, help: 'Chỉ số của bài đã đăng được dùng để tính KPI này — danh mục đúng các mã đang dùng cho số liệu bài đăng trong app.' }) +
+              F('dataSourceMode', 'Cách gộp', 'select', kDsMode, { options: [['latest_sum', 'Cộng số mới nhất của từng bài'], ['period_sum', 'Cộng theo kỳ']] })
+            : '') +
           F('aggregationMode', 'Cách tổng hợp (aggregation_mode)', 'select', ev('aggregationMode', k.aggregationMode || k.aggregation_mode || 'direct'), { options: [['direct', 'Đo trực tiếp (direct)'], ['sum', 'Cộng các nguồn cùng chỉ số (sum)'], ['unique', 'Đếm không trùng theo khóa định danh (unique)'], ['ratio', 'Tỷ lệ — tính lại từ tử số/mẫu số (ratio)'], ['snapshot', 'Snapshot mới nhất theo đối tượng (snapshot)'], ['manual', 'Nhập tay có bằng chứng (manual)']] }) +
           F('numerator', 'Tử số (chỉ khi aggregation_mode = ratio)', 'number', ev('numerator', (k.numerator !== null && k.numerator !== undefined) ? k.numerator : k.numeratorValue), { step: 'any', help: 'Vd KPI kiểu CPL: tử số là tổng chi phí của đúng scope đã khai (chi ads / chi toàn campaign).' }) +
           F('denominator', 'Mẫu số (chỉ khi aggregation_mode = ratio)', 'number', ev('denominator', (k.denominator !== null && k.denominator !== undefined) ? k.denominator : k.denominatorValue), { step: 'any', help: 'Vd CPL: mẫu số là số kết quả hợp lệ của cùng scope (đăng ký hợp lệ). rollupKpi tính lại tỷ lệ = tử số / mẫu số, không lấy trung bình các tỷ lệ con.' }) +
@@ -1001,6 +1015,16 @@
       }
       case 'measurement': {
         var kk = Store.get('kpis', e.context.kpiId) || {};
+        var kkAuto = isKpiAuto(kk);
+        if (kkAuto) {
+          return formShell('measurement', 'Thêm số đo cho KPI: ' + (kk.name || ''),
+            '<div class="notice info" data-kpi-auto-measurement="1">KPI này lấy số tự động từ bài đã đăng — số sẽ cập nhật khi bộ đếm của bài thay đổi.</div>' +
+            '<div class="fld wide">' + kpiAutoInfoHtml(kk) + '</div>' +
+            F('value', 'Giá trị thực đạt *', 'number', ev('value', ''), { required: true, step: 'any', disabled: true }) +
+            F('source', 'Nguồn số liệu *', 'text', ev('source', ''), { required: true, placeholder: 'Ví dụ: Báo cáo nền tảng, nhập tay…', disabled: true }) +
+            F('measuredAt', 'Ngày đo', 'date', ev('measuredAt', todayISO()), { disabled: true }),
+            'Lưu số đo');
+        }
         return formShell('measurement', 'Thêm số đo cho KPI: ' + (kk.name || ''),
           F('value', 'Giá trị thực đạt *', 'number', ev('value', ''), { required: true, step: 'any' }) +
           F('source', 'Nguồn số liệu *', 'text', ev('source', ''), { required: true, placeholder: 'Ví dụ: Báo cáo nền tảng, nhập tay…' }) +
@@ -1438,18 +1462,30 @@
         if (scopeType === 'activity' && koActivity) { var kAct = Store.get('activities', koActivity); if (kAct && kAct.campaignId) koCampaign = kAct.campaignId; }
         var koTask = scopeType === 'task' ? (data.taskId || null) : null;
         if (koTask) { var kTask = taskById(koTask); if (kTask) { if (kTask.campaignId) koCampaign = kTask.campaignId; if (kTask.activityId) koActivity = kTask.activityId; } }
+        // definition: MERGE vào definition hiện có (giữ các field khác +
+        // description) rồi đặt/gỡ dataSource theo "Nguồn số liệu" đã chọn —
+        // không ghi đè mất field cũ khi bật/tắt nguồn tự động.
+        var existingKpiForDef = e.id ? (Store.get('kpis', e.id) || {}) : {};
+        var koDefinition = Object.assign({}, kpiDefinitionObject(existingKpiForDef));
+        if (data.definition) koDefinition.description = data.definition;
+        var koIsAuto = data.dataSourceType === 'post_metrics';
+        if (koIsAuto) {
+          koDefinition.dataSource = { type: 'post_metrics', metric: data.dataSourceMetric || 'lifetime_views', mode: data.dataSourceMode || 'latest_sum' };
+        } else {
+          delete koDefinition.dataSource;
+        }
         var ko = {
           name: data.name, scopeType: scopeType,
           campaignId: koCampaign, activityId: koActivity, taskId: koTask,
           contentItemId: scopeType === 'content' ? (data.contentItemId || null) : null,
           pillarId: scopeType === 'pillar' ? (data.pillarId || null) : null,
-          metricCode: data.metricCode || null,
+          metricCode: data.metricCode || (koIsAuto ? (data.dataSourceMetric || null) : null),
           aggregationMode: data.aggregationMode || 'direct',
           numerator: (data.numerator === '' || data.numerator === null || data.numerator === undefined) ? null : Number(data.numerator),
           denominator: (data.denominator === '' || data.denominator === null || data.denominator === undefined) ? null : Number(data.denominator),
           target: data.target ? Number(data.target) : null, unit: data.unit || '',
           direction: data.direction || 'increase',
-          definition: data.definition ? { description: data.definition } : {},
+          definition: koDefinition,
           period: periodLabel, periodStart: data.periodStart || null, periodEnd: data.periodEnd || null,
           ownerId: data.ownerId || null
         };
@@ -1467,6 +1503,8 @@
         return;
       }
       case 'measurement': {
+        var measureKpi = Store.get('kpis', e.context.kpiId) || {};
+        if (isKpiAuto(measureKpi)) return editorFail('KPI này lấy số tự động từ bài đã đăng — số sẽ cập nhật khi bộ đếm của bài thay đổi. (KPI_AUTO_SOURCE)', errors);
         req('value', 'giá trị'); req('source', 'nguồn số liệu');
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
         var when = data.measuredAt ? new Date(data.measuredAt + 'T00:00:00').toISOString() : new Date().toISOString();
@@ -2972,6 +3010,77 @@
     });
     return out ? '<div data-viz="budget-stacked">' + out + '</div>' : '';
   }
+  // ---------- KPI tự động từ bài đã đăng (post_metrics) ----------
+  // Danh mục mã chỉ số của bài đã đăng: lấy NGUYÊN các mã app đang dùng cho
+  // số liệu bài đăng — thư viện bài đăng / kênh đọc lifetime_views, views,
+  // reach, impressions (libLatestMetric / latestMetric) và form nhập số liệu
+  // TikTok gợi ý views, likes, comments, shares. Không chế mã mới ở đây.
+  var POST_METRIC_OPTIONS = [
+    ['lifetime_views', 'Lượt xem lũy kế'],
+    ['views', 'Lượt xem'],
+    ['reach', 'Tiếp cận'],
+    ['impressions', 'Hiển thị'],
+    ['likes', 'Lượt thích'],
+    ['comments', 'Bình luận'],
+    ['shares', 'Lượt chia sẻ']
+  ];
+  function postMetricLabel(code) {
+    var hit = POST_METRIC_OPTIONS.find(function (p) { return p[0] === code; });
+    return hit ? hit[1] : String(code || '—');
+  }
+  function kpiDefinitionObject(k) {
+    if (!k || k.definition === null || k.definition === undefined) return {};
+    if (typeof k.definition === 'object') return k.definition;
+    if (typeof k.definition === 'string') {
+      try { var parsed = JSON.parse(k.definition); return (parsed && typeof parsed === 'object') ? parsed : {}; } catch (e) { return {}; }
+    }
+    return {};
+  }
+  function kpiDataSource(k) {
+    var ds = kpiDefinitionObject(k).dataSource || kpiDefinitionObject(k).data_source || null;
+    return (ds && ds.type === 'post_metrics') ? ds : null;
+  }
+  function isKpiAuto(k) { return !!kpiDataSource(k); }
+  function kpiAutoMetric(k) {
+    var ds = kpiDataSource(k);
+    return ds ? (ds.metric || ds.metricCode || ds.metric_code || '') : '';
+  }
+  // Badge + dòng phụ cho KPI auto: "từ N bài · cập nhật <thời điểm>" đọc từ
+  // kpi.autoActual do store tự tính; chưa có autoActual -> ghi rõ chưa có
+  // dữ liệu bài đăng, không bịa số bài/thời điểm.
+  function kpiAutoInfoHtml(k) {
+    if (!isKpiAuto(k)) return '';
+    var aa = k.autoActual || k.auto_actual || null;
+    var sub;
+    if (aa && (aa.postCount !== null && aa.postCount !== undefined)) {
+      sub = 'từ ' + aa.postCount + ' bài' + (aa.latestObservedAt ? ' · cập nhật ' + D.formatDateTimeVN(aa.latestObservedAt) : '');
+    } else if (aa && Array.isArray(aa.rows) && aa.rows.length) {
+      sub = 'từ ' + aa.rows.length + ' bài' + (aa.latestObservedAt ? ' · cập nhật ' + D.formatDateTimeVN(aa.latestObservedAt) : '');
+    } else {
+      sub = 'chưa có dữ liệu bài đăng';
+    }
+    var html = '<span class="badge st-running" data-kpi-auto-badge="1">Tự động từ bài đã đăng</span>' +
+      '<br><span class="sub" data-kpi-auto-sub="1">' + esc(sub) + '</span>';
+    if (kpiAutoMetric(k) === 'reach') {
+      html += '<br><span class="sub" data-kpi-auto-reach-note="1">Tổng lượt tiếp cận theo bài — không phải số người dùng không trùng.</span>';
+    }
+    return html;
+  }
+  // Drill-down các bài cấu thành KPI auto: đọc NGUYÊN kpi.autoActual.rows
+  // (postId/title/platform/value/observedAt) do store cung cấp — tổng các
+  // giá trị trong bảng này phải bằng actual đang hiển thị của KPI.
+  function kpiAutoDrillHtml(k) {
+    if (!isKpiAuto(k)) return '';
+    var aa = k.autoActual || k.auto_actual || null;
+    var rows = (aa && Array.isArray(aa.rows)) ? aa.rows : [];
+    if (!rows.length) return '<div data-kpi-auto-drill="1"><p class="sub">chưa có dữ liệu bài đăng</p></div>';
+    var total = rows.reduce(function (s, r) { return s + (Number(r.value) || 0); }, 0);
+    return '<div data-kpi-auto-drill="1"><strong>Bài cấu thành (' + rows.length + ')</strong>' +
+      tbl('<tr><th>Bài đăng</th><th>Nền tảng</th><th>Giá trị</th><th>Thời điểm đo</th></tr>' + rows.map(function (r) {
+        return '<tr><td>' + esc(r.title || r.postId || '—') + '</td><td>' + esc(labelStatus(r.platform || '')) + '</td><td>' + fmtNum(r.value) + '</td><td>' + (r.observedAt ? esc(D.formatDateTimeVN(r.observedAt)) : '—') + '</td></tr>';
+      }).join('')) +
+      '<p class="sub">Tổng các bài: <strong>' + fmtNum(total) + '</strong>' + (k.unit ? ' ' + esc(k.unit) : '') + ' — bằng số thực đạt đang hiển thị của KPI.</p></div>';
+  }
   // Mini tiến độ cho 1 KPI ở bảng Action Plan: số qua kpiRollupFor (rollupKpi).
   // KPI tỉ lệ (ratio) giữ dạng chữ vì mục tiêu của tỉ lệ không phải thang 0–100%
   // tiến độ; KPI thiếu dữ liệu giữ pill cảnh báo như kpiSummaryHtml.
@@ -2985,7 +3094,7 @@
     var pct = row.state.pct;
     var tone = (pct !== null && pct !== undefined && pct >= 100) ? 'done' : 'running';
     var text = fmtNum(row.state.value) + ' / ' + fmtNum(k.target) + (k.unit ? ' ' + k.unit : '') + ' (' + fmtPct(pct) + ')';
-    return '<div class="viz-kpi-mini" data-viz="kpi-mini"><strong>' + esc(k.name) + '</strong>' + vizCellBarHtml({ value: row.state.value, max: Number(k.target), tone: tone, text: text }) + '</div>';
+    return '<div class="viz-kpi-mini" data-viz="kpi-mini"><strong>' + esc(k.name) + '</strong>' + vizCellBarHtml({ value: row.state.value, max: Number(k.target), tone: tone, text: text }) + kpiAutoInfoHtml(k) + '</div>';
   }
   // Thanh timeline tương đối của 1 việc: vị trí "hôm nay" trong khoảng
   // startDate → dueDate (toán trình bày theo ngày, không phải công thức nghiệp vụ).
@@ -3064,14 +3173,23 @@
   }
   function vizKpiProgressHtml(kpis) {
     if (!kpis || !kpis.length) return '<p class="sub">Chưa có KPI nào để vẽ tiến độ.</p>';
-    return vizKpiRowsHtml(kpis.map(vizKpiRowFor));
+    var html = vizKpiRowsHtml(kpis.map(vizKpiRowFor));
+    var autos = kpis.filter(function (k) { return isKpiAuto(k); });
+    if (autos.length) {
+      html += '<div data-kpi-auto-list="1">' + autos.map(function (k) {
+        return '<div data-kpi-auto-item="' + esc(k.id) + '"><strong>' + esc(k.name) + '</strong> ' + kpiAutoInfoHtml(k) +
+          ' <button type="button" class="btn small secondary" data-action="kpi-drill" data-id="' + esc(k.id) + '">' + (UI.kpiOpenId === k.id ? 'Ẩn bài cấu thành' : 'Xem bài cấu thành') + '</button>' +
+          (UI.kpiOpenId === k.id ? kpiAutoDrillHtml(k) : '') + '</div>';
+      }).join('') + '</div>';
+    }
+    return html;
   }
   function vizKpiTableHtml(kpis) {
     if (!kpis || !kpis.length) return '<p class="sub">Chưa có KPI nào.</p>';
     return tbl('<tr><th>KPI</th><th>Phạm vi</th><th>Thực đạt</th><th>Mục tiêu</th><th>Mức đạt</th><th>Trạng thái</th></tr>' + kpis.map(function (k) {
       var r = vizKpiRowFor(k);
-      if (r.state.kind !== 'ok') return '<tr><td><strong>' + esc(k.name) + '</strong></td><td>' + esc(r.scopeLabel) + '</td><td><span class="badge warn">' + esc(r.state.label || 'Chưa đủ dữ liệu') + '</span></td><td>' + esc(r.targetText) + '</td><td>—</td><td>' + esc(r.state.label || 'Chưa đủ dữ liệu') + '</td></tr>';
-      return '<tr><td><strong>' + esc(k.name) + '</strong></td><td>' + esc(r.scopeLabel) + '</td><td>' + esc(r.actualText) + '</td><td>' + esc(r.targetText) + '</td><td>' + fmtPct(r.state.pct) + '</td><td><span class="badge ok">Đủ dữ liệu</span></td></tr>';
+      if (r.state.kind !== 'ok') return '<tr><td><strong>' + esc(k.name) + '</strong>' + kpiAutoInfoHtml(k) + '</td><td>' + esc(r.scopeLabel) + '</td><td><span class="badge warn">' + esc(r.state.label || 'Chưa đủ dữ liệu') + '</span></td><td>' + esc(r.targetText) + '</td><td>—</td><td>' + esc(r.state.label || 'Chưa đủ dữ liệu') + '</td></tr>';
+      return '<tr><td><strong>' + esc(k.name) + '</strong>' + kpiAutoInfoHtml(k) + '</td><td>' + esc(r.scopeLabel) + '</td><td>' + esc(r.actualText) + '</td><td>' + esc(r.targetText) + '</td><td>' + fmtPct(r.state.pct) + '</td><td><span class="badge ok">Đủ dữ liệu</span></td></tr>';
     }).join(''));
   }
   function vizBudgetUsedBarHtml(r) {
@@ -3330,13 +3448,14 @@
   function kpiSummaryHtml(k) {
     var r = kpiRollupFor(k);
     var mode = String(k.aggregationMode || 'direct').toLowerCase();
-    if (r && r.status === 'insufficient_data') return '<span class="badge warn">Chưa đủ dữ liệu</span>';
+    var autoHtml = kpiAutoInfoHtml(k);
+    if (r && r.status === 'insufficient_data') return '<span class="badge warn">Chưa đủ dữ liệu</span>' + autoHtml;
     if (r && r.value !== null && r.value !== undefined) {
-      if (mode === 'ratio') return fmtNum(Math.round(r.value)) + ' ' + esc(k.unit || '') + ' <span class="sub">(phạm vi: ' + esc(kpiScopeLabel(k)) + ')</span>';
-      return fmtNum(r.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + (r.achievementPercent !== null && r.achievementPercent !== undefined ? ' (' + fmtNum(r.achievementPercent) + '%)' : '');
+      if (mode === 'ratio') return fmtNum(Math.round(r.value)) + ' ' + esc(k.unit || '') + ' <span class="sub">(phạm vi: ' + esc(kpiScopeLabel(k)) + ')</span>' + autoHtml;
+      return fmtNum(r.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + (r.achievementPercent !== null && r.achievementPercent !== undefined ? ' (' + fmtNum(r.achievementPercent) + '%)' : '') + autoHtml;
     }
     var d = D.kpiDisplay(k);
-    return d.isMissing ? '<span class="badge warn">Chưa cập nhật</span>' : fmtNum(d.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '');
+    return (d.isMissing ? '<span class="badge warn">Chưa cập nhật</span>' : fmtNum(d.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '')) + autoHtml;
   }
   function activityTasks(act) { return Store.list('tasks').filter(function (t) { return t.activityId === act.id && !isArchived(t); }); }
   function activityStatusInfo(act, tasks) {
@@ -3630,7 +3749,7 @@
       var ckpis = Store.list('kpis').filter(function (x) { return x.campaignId === c.id; });
       var blines = visibleList('budgetLines').filter(function (b) { return b.campaignId === c.id; });
       html += '<div class="toolbar"><strong>KPI & ngân sách của campaign</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="kpi" data-campaign="' + esc(c.id) + '">+ Tạo KPI</button> <button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-campaign="' + esc(c.id) + '">+ Tạo dòng ngân sách</button>' : '') + (can('budget.propose') ? ' <button type="button" class="btn small secondary" data-action="editor-open" data-kind="budgetProposal" data-campaign="' + esc(c.id) + '" data-target-type="campaign_ceiling">Đề xuất ngân sách</button>' : '') + ' <a class="btn small secondary" href="#/kpi">Mở mục KPI & Ngân sách</a></span></div>';
-      html += ckpis.length ? '<div data-viz="campaign-tab-kpi-chart">' + vizKpiProgressHtml(ckpis) + '</div>' + '<ul class="clean">' + ckpis.map(function (k) { var d = D.kpiDisplay(k); return '<li>' + esc(k.name) + ': mục tiêu ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + ' · thực đạt: ' + (d.isMissing ? 'Chưa cập nhật' : fmtNum(d.value)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI.</p>';
+      html += ckpis.length ? '<div data-viz="campaign-tab-kpi-chart">' + vizKpiProgressHtml(ckpis) + '</div>' + '<ul class="clean">' + ckpis.map(function (k) { var d = D.kpiDisplay(k); return '<li>' + esc(k.name) + kpiAutoInfoHtml(k) + ': mục tiêu ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + ' · thực đạt: ' + (d.isMissing ? 'Chưa cập nhật' : fmtNum(d.value)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI.</p>';
       html += blines.length ? '<ul class="clean">' + blines.map(function (b) {
         var rem = D.budgetRemaining(b, Store.list('commitments').filter(function (x) { return x.budgetLineId === b.id; }), Store.list('actuals').filter(function (x) { return x.budgetLineId === b.id; }));
         return '<li>' + esc(b.name) + ': đã duyệt ' + fmtMoney(b.approved, b.currency) + ' · còn lại ' + fmtMoney(rem, b.currency) + '<br>' + approvalStampLineHtml(b) + '</li>';
@@ -4437,8 +4556,14 @@
       if (roll && roll.status === 'insufficient_data') actualCell = '<span class="badge warn">Chưa đủ dữ liệu</span>';
       else if (roll && roll.value !== null && roll.value !== undefined) actualCell = fmtNum(String(k.aggregationMode || '').toLowerCase() === 'ratio' ? Math.round(roll.value) : roll.value) + ' ' + esc(k.unit || '') + (roll.achievementPercent !== null && roll.achievementPercent !== undefined ? '<br><span class="sub">Mức đạt: ' + fmtNum(roll.achievementPercent) + '%</span>' : '');
       else actualCell = d.isMissing ? '<span class="badge warn">Chưa cập nhật</span>' : fmtNum(d.value) + ' ' + esc(k.unit || '');
-      var main = '<tr><td><strong>' + esc(k.name) + '</strong>' + (k.metricCode ? '<br><span class="sub">' + esc(k.metricCode) + ' · ' + esc(k.aggregationMode || 'direct') + '</span>' : '') + '</td><td>' + esc(campaignName(k.campaignId)) + '<br><span class="sub">' + esc(kpiScopeLabel(k)) + '</span></td><td>' + esc(defText) + (periodText ? '<br><span class="sub">Kỳ: ' + esc(periodText) + '</span>' : '') + '</td><td>' + fmtNum(k.target) + ' ' + esc(k.unit || '') + '</td><td>' + actualCell + '</td><td>' + esc(k.source || '—') + '</td><td>' + (k.updatedAt ? esc(D.formatDateTimeVN(k.updatedAt)) : '—') + '</td>' +
-        '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="measurement" data-kpi="' + esc(k.id) + '"' + dis(!ed) + '>+ Thêm số đo</button> <button class="btn small secondary" data-action="editor-open" data-kind="kpi" data-id="' + esc(k.id) + '"' + dis(!ed) + '>Sửa KPI</button></td></tr>';
+      var kAuto = isKpiAuto(k);
+      var kAutoAa = k.autoActual || k.auto_actual || null;
+      var kUpdatedAt = kAuto && kAutoAa && kAutoAa.latestObservedAt ? kAutoAa.latestObservedAt : k.updatedAt;
+      var main = '<tr><td><strong>' + esc(k.name) + '</strong>' + (k.metricCode ? '<br><span class="sub">' + esc(k.metricCode) + ' · ' + esc(k.aggregationMode || 'direct') + '</span>' : '') + (kAuto ? '<br>' + kpiAutoInfoHtml(k) : '') + '</td><td>' + esc(campaignName(k.campaignId)) + '<br><span class="sub">' + esc(kpiScopeLabel(k)) + '</span></td><td>' + esc(defText) + (periodText ? '<br><span class="sub">Kỳ: ' + esc(periodText) + '</span>' : '') + '</td><td>' + fmtNum(k.target) + ' ' + esc(k.unit || '') + '</td><td>' + actualCell + '</td><td>' + (kAuto ? 'Tự động từ bài đã đăng' : esc(k.source || '—')) + '</td><td>' + (kUpdatedAt ? esc(D.formatDateTimeVN(kUpdatedAt)) : '—') + '</td>' +
+        '<td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="measurement" data-kpi="' + esc(k.id) + '"' + dis(!ed || kAuto) + (kAuto ? ' title="KPI này lấy số tự động từ bài đã đăng — số sẽ cập nhật khi bộ đếm của bài thay đổi."' : '') + '>+ Thêm số đo</button> <button class="btn small secondary" data-action="editor-open" data-kind="kpi" data-id="' + esc(k.id) + '"' + dis(!ed) + '>Sửa KPI</button>' + (kAuto ? ' <button class="btn small secondary" data-action="kpi-drill" data-id="' + esc(k.id) + '">' + (UI.kpiOpenId === k.id ? 'Ẩn bài cấu thành' : 'Xem bài cấu thành') + '</button>' : '') + '</td></tr>';
+      if (kAuto && UI.kpiOpenId === k.id) {
+        main += '<tr class="detail-row"><td colspan="8">' + kpiAutoDrillHtml(k) + '</td></tr>';
+      }
       if (contribs.length) {
         main += '<tr class="detail-row"><td colspan="8"><strong>Roll-up từ ' + contribs.length + ' KPI nguồn</strong> (phạm vi: ' + esc(kpiScopeLabel(k)) + '): ' + (roll && roll.status === 'insufficient_data' ? '<span class="badge warn">Chưa đủ dữ liệu</span> — thiếu khóa định danh/nguồn hợp lệ nên không tuyên bố tổng đã khử trùng.' : 'giá trị ' + fmtNum(roll ? roll.value : null) + ' ' + esc(k.unit || '') + (roll && roll.achievementPercent !== null && roll.achievementPercent !== undefined ? ' · mức đạt ' + fmtNum(roll.achievementPercent) + '%' : '')) + '</td></tr>';
       }
@@ -5539,6 +5664,7 @@
     if (action === 'brand-open') { UI.brandOpenId = UI.brandOpenId === id ? null : id; render(); }
     if (action === 'brand-clear') { UI.brandQuery = ''; render(); }
     if (action === 'post-metrics') { UI.postOpenId = UI.postOpenId === id ? null : id; render(); }
+    if (action === 'kpi-drill') { UI.kpiOpenId = UI.kpiOpenId === id ? null : id; render(); }
     if (action === 'content-tab') { UI.contentTab = id; render(); }
     if (action === 'activity-open') { UI.activityDrawerId = id; UI.activityTab = 'overview'; renderOverlay(); }
     if (action === 'activity-close') { UI.activityDrawerId = null; renderOverlay(); }

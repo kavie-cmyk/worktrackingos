@@ -270,6 +270,10 @@
       { id: 'kpi-1', campaignId: 'camp-1', name: 'Lượt cài đặt mới', target: 10000, actual: 6200, unit: 'lượt', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },
       { id: 'kpi-2', campaignId: 'camp-1', name: 'Lượt xem video thử thách', target: 100000, actual: null, unit: 'lượt xem', source: 'Chưa có nguồn số liệu', updatedAt: null },
       { id: 'kpi-3', campaignId: 'camp-2', name: 'Lịch hẹn trải nghiệm thử', target: 30, actual: 0, unit: 'lịch hẹn', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },
+      // KPI tự động từ bài đã đăng (post_metrics): post-1 thuộc camp-1 có
+      // lifetime_views 100 -> 150 -> 200 nên actual store tự tính phải là
+      // 200 (số mới nhất), postCount 1 — KHÔNG đặt actual cứng ở đây.
+      { id: 'kpi-auto-post-views', campaignId: 'camp-1', scopeType: 'campaign', name: 'Lượt xem lũy kế từ bài đã đăng — Campaign mẫu 1', metricCode: 'lifetime_views', aggregationMode: 'sum', target: 500, actual: null, unit: 'lượt xem', periodKey: '2026-11', definition: { description: 'Tự tính từ bộ đếm lifetime_views của các bài đã đăng thuộc campaign — cộng số mới nhất của từng bài.', dataSource: { type: 'post_metrics', metric: 'lifetime_views', mode: 'latest_sum' } }, source: 'Tự động từ bài đã đăng', updatedAt: null },
       // Fixture R3.1 D.2: đăng ký ads 100 (target 120), seeding 60 (target 80),
       // trùng 20 khóa → campaign unique 140/150 = 93,33%.
       { id: 'kpi-live-ads-reg', campaignId: 'camp-live', activityId: 'act-live-ads', scopeType: 'activity', name: 'Đăng ký hợp lệ từ ads', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 120, actual: 100, unit: 'người', periodKey: '2026-11', identityKeys: ADS_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ ads theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
