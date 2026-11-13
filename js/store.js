@@ -58,7 +58,7 @@
     'kpis', 'measurements', 'adAccounts', 'adCampaigns', 'adSets', 'ads', 'adInsights', 'adChangeRequests', 'marketingRequests',
     'reportSnapshots', 'manualMetricEntries', 'comments',
     'contentPillars', 'kpiTargetVersions', 'kpiContributions', 'brandPageVersions',
-    'campaignBaselines', 'campaignAssets', 'budgetAllocations',
+    'campaignBaselines', 'campaignAssets', 'budgetAllocations', 'budgetProposals',
     'cashAccounts', 'cashCategories', 'cashTransactions'];
 
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -85,6 +85,10 @@
     // R3.1: lỗi backend có mã R31_SCOPE / R31_ALLOC (và 409 idempotency) phải
     // truyền NGUYÊN VẸN lên caller — không dịch, không nuốt thành lỗi chung.
     if (/R31_(SCOPE|ALLOC)/.test(msg)) return msg;
+    // 0014: lỗi RPC chuỗi duyệt ngân sách bắt đầu bằng tiền tố ổn định
+    // (FORBIDDEN_ROLE / ALREADY_DECIDED / …) — GIỮ NGUYÊN tiền tố để UI map
+    // sang tiếng Việt theo tiền tố.
+    if (/^(FORBIDDEN_ROLE|ALREADY_DECIDED|SELF_APPROVAL|BUDGET_NOT_APPROVED|BUDGET_LIMIT_EXCEEDED|STALE_REVISION|CURRENCY_MISMATCH)\b/.test(msg)) return msg;
     if (/duplicate key|already exists/i.test(msg)) return 'Bản ghi đã tồn tại (trùng khóa duy nhất trên server).';
     if (/row-level security|permission denied|RLS/i.test(msg)) return 'Vai trò hiện tại không có quyền thực hiện thao tác này trên server.';
     if (/violates check constraint|check constraint/i.test(msg)) return 'Giá trị không hợp lệ với ràng buộc dữ liệu trên server: ' + msg;
@@ -204,6 +208,7 @@
         case 'brandPages': case 'brandAssets': case 'assetVersions': return 'asset.edit';
         case 'budgetLines': case 'commitments': case 'actuals': case 'budgetAllocations':
         case 'cashAccounts': case 'cashCategories': case 'cashTransactions': return 'budget.edit';
+        case 'budgetProposals': return op === 'create' ? 'budget.propose' : 'budget.decide';
         case 'kpis': case 'measurements': case 'kpiContributions': case 'kpiTargetVersions': return 'kpi.edit';
         case 'campaignBaselines': case 'campaignAssets': return 'campaign.edit';
         case 'contentPillars': return 'content.edit';
@@ -335,6 +340,62 @@
         return { ok: false, code: 'R31_ALLOC', error: 'R31_ALLOC: tổng phân bổ (' + v.totalAllocated + ') vượt số tiền của khoản nguồn (' + v.amount + ') — ' + v.errors.join(', ') + '.' };
       }
       return null;
+    },
+    // ======================================================================
+    // 0014 — Sanitize chuỗi duyệt ngân sách ở tầng state demo (đường remote
+    // sanitize ở _toPayload): fact mới = 'pending'; số duyệt/hạn mức/dấu
+    // duyệt KHÔNG bao giờ được đặt qua create/update thường.
+    // ======================================================================
+    /** Áp quy tắc tạo mới lên item demo (sửa tại chỗ, trả item). */
+    _sanitizeBudgetCreate: function (collection, item) {
+      if (!item) return item;
+      if (collection === 'commitments' || collection === 'actuals') {
+        item.approvalStatus = 'pending';
+        item.approvedBy = null;
+        item.approvedAt = null;
+        item.approvalNote = null;
+        delete item.approval_status; delete item.approved_by;
+        delete item.approved_at; delete item.approval_note;
+      } else if (collection === 'budgetLines') {
+        // DB: approved_amount NOT NULL DEFAULT 0 + dấu duyệt NULL khi mới tạo.
+        item.approved = 0;
+        item.approvedAmount = 0;
+        item.approvedBy = null;
+        item.approvedAt = null;
+        item.approvedViaProposalId = null;
+        delete item.approved_amount; delete item.approved_by;
+        delete item.approved_at; delete item.approved_via_proposal_id;
+      } else if (collection === 'campaigns') {
+        item.budgetCeiling = null;
+        item.budgetCeilingAmount = null;
+        item.budgetCeilingCurrency = null;
+        item.approvedBy = null;
+        item.approvedAt = null;
+        item.approvedViaProposalId = null;
+        delete item.budget_ceiling_amount; delete item.budget_ceiling_currency;
+        delete item.approved_by; delete item.approved_at; delete item.approved_via_proposal_id;
+      }
+      return item;
+    },
+    /** Xoá khỏi patch demo mọi field chỉ-đổi-qua-RPC-duyệt (sửa tại chỗ). */
+    _stripBudgetUpdatePatch: function (collection, patch) {
+      if (!patch) return patch;
+      if (collection === 'commitments' || collection === 'actuals') {
+        delete patch.approvalStatus; delete patch.approvedBy;
+        delete patch.approvedAt; delete patch.approvalNote;
+        delete patch.approval_status; delete patch.approved_by;
+        delete patch.approved_at; delete patch.approval_note;
+      } else if (collection === 'budgetLines') {
+        delete patch.approved; delete patch.approvedAmount; delete patch.approved_amount;
+        delete patch.approvedBy; delete patch.approvedAt; delete patch.approvedViaProposalId;
+        delete patch.approved_by; delete patch.approved_at; delete patch.approved_via_proposal_id;
+      } else if (collection === 'campaigns') {
+        delete patch.budgetCeiling; delete patch.budgetCeilingAmount; delete patch.budgetCeilingCurrency;
+        delete patch.budget_ceiling_amount; delete patch.budget_ceiling_currency;
+        delete patch.approvedBy; delete patch.approvedAt; delete patch.approvedViaProposalId;
+        delete patch.approved_by; delete patch.approved_at; delete patch.approved_via_proposal_id;
+      }
+      return patch;
     },
     /** Sinh idempotency_key ổn định cho 1 lần tạo payment/giao dịch/cam kết (AC09). */
     _newIdempotencyKey: function (prefix, seedObj) {
@@ -926,6 +987,10 @@
           item.baselineStartDate = b.start_date || b.startDate || null;
           item.baselineEndDate = b.end_date || b.endDate || null;
           if (item.why === undefined && row.objectives) item.why = row.objectives;
+          // 0014: dấu duyệt HẠN MỨC của campaign (đủ 3 cột).
+          item.approvedBy = row.approved_by != null ? row.approved_by : null;
+          item.approvedAt = row.approved_at != null ? row.approved_at : null;
+          item.approvedViaProposalId = row.approved_via_proposal_id != null ? row.approved_via_proposal_id : null;
           break;
         }
         case 'brandPages': {
@@ -986,6 +1051,19 @@
           item.planned = row.planned_amount != null ? Number(row.planned_amount) : null;
           item.plannedAmount = item.planned;
           if (row.approved_amount != null) item.approved = Number(row.approved_amount);
+          // 0014: dấu duyệt của dòng (đủ 3 cột).
+          item.approvedBy = row.approved_by != null ? row.approved_by : null;
+          item.approvedAt = row.approved_at != null ? row.approved_at : null;
+          item.approvedViaProposalId = row.approved_via_proposal_id != null ? row.approved_via_proposal_id : null;
+          break;
+        }
+        case 'commitments':
+        case 'actuals': {
+          // 0014: dòng cũ / mock thiếu approval_status → normalize 'approved'
+          // (khớp default DB của 0014 cho dữ liệu cũ).
+          if (item.approvalStatus === undefined || item.approvalStatus === null || item.approvalStatus === '') {
+            item.approvalStatus = 'approved';
+          }
           break;
         }
         case 'adChangeRequests': {
@@ -1157,6 +1235,26 @@
           if (obj.baselineStartDate !== undefined || obj.baselineEndDate !== undefined) {
             payload.baseline = { start_date: obj.baselineStartDate || null, end_date: obj.baselineEndDate || null };
           }
+          // 0014: hạn mức campaign (amount + currency) và dấu duyệt hạn mức
+          // CHỈ đổi qua RPC decide_budget_proposal — create KHÔNG gửi
+          // budget_ceiling_amount, update KHÔNG gửi ceiling (giữ giá trị DB).
+          delete payload.budget_ceiling_amount;
+          delete payload.budget_ceiling_currency;
+          delete payload.approved_by;
+          delete payload.approved_at;
+          delete payload.approved_via_proposal_id;
+          break;
+        }
+        case 'budgetLines': {
+          // 0014: số duyệt + dấu duyệt của dòng CHỈ đổi qua RPC
+          // decide_budget_proposal — create/update qua REST thường KHÔNG
+          // gửi approved_amount / approved_by / approved_at /
+          // approved_via_proposal_id (guard DB sẽ chặn 42501). planned và
+          // các field khác giữ nguyên.
+          delete payload.approved_amount;
+          delete payload.approved_by;
+          delete payload.approved_at;
+          delete payload.approved_via_proposal_id;
           break;
         }
         case 'brandPages': {
@@ -1302,6 +1400,20 @@
               || this._newIdempotencyKey('cmt', { line: payload.budget_line_id, amount: payload.amount, title: payload.description || obj.title || null });
           }
           if (collection === 'commitments' && !options.forInsert) delete payload.idempotency_key;
+          // 0014: fact MỚI luôn ở trạng thái chờ duyệt (DB guard cũng ép
+          // 'pending' + xoá dấu quyết định ở INSERT); UPDATE qua đường
+          // thường KHÔNG được đổi 4 cột approval_* (chỉ RPC duyệt mới đổi).
+          if (options.forInsert) {
+            payload.approval_status = 'pending';
+            payload.approved_by = null;
+            payload.approved_at = null;
+            payload.approval_note = null;
+          } else {
+            delete payload.approval_status;
+            delete payload.approved_by;
+            delete payload.approved_at;
+            delete payload.approval_note;
+          }
           break;
         }
         case 'reportSnapshots': {
@@ -1599,6 +1711,9 @@
       if (invalid) return invalid;
       if (!this.state[collection]) this.state[collection] = [];
       var item = Object.assign({}, obj);
+      // 0014: áp quy tắc chuỗi duyệt khi tạo mới ở demo (fact → pending;
+      // dòng/campaign không mang số duyệt/hạn mức/dấu duyệt khi mới tạo).
+      this._sanitizeBudgetCreate(collection, item);
       if (!item.id) item.id = uid(collection.replace(/s$/, ''));
       // AC09 (demo/mock): payment/giao dịch thu–chi/cam kết có
       // idempotency_key — key do caller cấp được GIỮ; thiếu thì sinh 1 key
@@ -1827,6 +1942,9 @@
       // R18 demo: custom_fields merge như DB trigger — field vào custom_fields
       // (deliverable…) hoặc patch.customFields đều merge, '__UNSET__' = xoá.
       var effective = Object.assign({}, patch);
+      // 0014: sửa qua đường thường không đổi được trạng thái duyệt của fact,
+      // số duyệt của dòng, hạn mức/dấu duyệt của campaign (chỉ qua RPC duyệt).
+      this._stripBudgetUpdatePatch(collection, effective);
       if (Core && Core.CUSTOM_FIELDS_TABLES[Core.COLLECTION_TO_TABLE[collection]]) {
         var cfPatch = {};
         Object.keys(effective).forEach(function (k) {
@@ -2540,6 +2658,257 @@
           self.notify();
           return { ok: true, items: items, target: target };
         });
+    },
+
+    // ======================================================================
+    // 0014 — Chuỗi duyệt ngân sách: ĐỀ XUẤT (budget.propose) → Owner quyết
+    // định đề xuất (budget.decide, RPC decide_budget_proposal) → cam kết /
+    // khoản chi chờ duyệt được lead/owner quyết (RPC
+    // decide_commitment_approval / decide_payment_approval). Demo thực thi
+    // ĐÚNG quy tắc RPC trong JS. Mọi lỗi nghiệp vụ giữ NGUYÊN tiền tố ổn
+    // định của 0014 (FORBIDDEN_ROLE / ALREADY_DECIDED / SELF_APPROVAL /
+    // BUDGET_NOT_APPROVED / BUDGET_LIMIT_EXCEEDED / STALE_REVISION /
+    // CURRENCY_MISMATCH) trong trường `error` của kết quả trả về.
+    // ======================================================================
+    /**
+     * Tạo đề xuất duyệt ngân sách: {targetType:'campaign_ceiling'|'budget_line',
+     * campaignId?, budgetLineId?, amount (hoặc proposedAmount), currency?, reason?}.
+     * Cần quyền 'budget.propose'. Đề xuất tạo ra ở trạng thái 'pending',
+     * revision 1, proposer = người dùng hiện tại. target 'budget_line' thì
+     * campaignId được suy từ dòng khi caller không truyền.
+     */
+    createBudgetProposal: function (input) {
+      input = input || {};
+      var self = this;
+      function fail(error, extra) {
+        var r = Object.assign({ ok: false, error: error }, extra || {});
+        return self.mode === 'supabase' ? Promise.resolve(r) : r;
+      }
+      if (!this.can('budget.propose')) {
+        return fail('Vai trò hiện tại (' + this.currentRole() + ') không có quyền "budget.propose".', { action: 'budget.propose' });
+      }
+      var targetType = input.targetType || input.target_type || null;
+      if (targetType !== 'campaign_ceiling' && targetType !== 'budget_line') {
+        return fail('targetType phải là "campaign_ceiling" hoặc "budget_line".');
+      }
+      var budgetLineId = input.budgetLineId || input.budget_line_id || null;
+      var campaignId = input.campaignId || input.campaign_id || null;
+      var line = null;
+      if (targetType === 'budget_line') {
+        if (!budgetLineId) return fail('Đề xuất cho dòng ngân sách phải có budgetLineId.');
+        line = this.get('budgetLines', budgetLineId);
+        if (!line) return fail('Không tìm thấy dòng ngân sách ' + budgetLineId);
+        if (!campaignId) campaignId = line.campaignId || null;
+        if (campaignId && line.campaignId && String(campaignId) !== String(line.campaignId)) {
+          return fail('R31_SCOPE: campaignId (' + campaignId + ') mâu thuẫn với campaign của dòng ngân sách (' + line.campaignId + ').', { code: 'R31_SCOPE' });
+        }
+        if (!campaignId) return fail('Không suy ra được campaignId từ dòng ngân sách ' + budgetLineId);
+      }
+      if (!campaignId) return fail('Đề xuất phải có campaignId.');
+      var amount = input.amount !== undefined && input.amount !== null ? input.amount
+        : (input.proposedAmount !== undefined && input.proposedAmount !== null ? input.proposedAmount
+        : (input.proposed_amount !== undefined ? input.proposed_amount : null));
+      if (amount === null || isNaN(Number(amount)) || Number(amount) < 0) {
+        return fail('Số tiền đề xuất (amount) phải là số ≥ 0.');
+      }
+      var camp = this.get('campaigns', campaignId);
+      var currency = input.currency || (line && line.currency)
+        || (camp && (camp.budgetCeilingCurrency || camp.budget_ceiling_currency)) || 'VND';
+      var proposal = {
+        targetType: targetType,
+        campaignId: campaignId,
+        budgetLineId: targetType === 'budget_line' ? budgetLineId : null,
+        proposedAmount: Number(amount),
+        currency: currency,
+        reason: input.reason || null,
+        proposerId: this.currentUserId,
+        status: 'pending',
+        revision: 1
+      };
+      if (input.id) proposal.id = input.id;
+      return this.create('budgetProposals', proposal);
+    },
+    /**
+     * Owner quyết định một đề xuất ngân sách. revision (tuỳ chọn) là revision
+     * người duyệt đang xem — lệch với revision hiện tại → STALE_REVISION
+     * (đường remote luôn gửi revision đang giữ trong state cho RPC).
+     */
+    decideBudgetProposal: function (id, decision, note, revision) {
+      var p = this.get('budgetProposals', id);
+      if (!p) {
+        var nf = { ok: false, error: 'Không tìm thấy đề xuất ngân sách ' + id };
+        return this.mode === 'supabase' ? Promise.resolve(nf) : nf;
+      }
+      if (this.mode === 'supabase') return this._decideBudgetProposalRemote(p, decision, note);
+      return this._decideBudgetProposalDemo(p, decision, note, revision);
+    },
+    _decideBudgetProposalRemote: function (p, decision, note) {
+      var self = this;
+      return this._rpc('decide_budget_proposal', {
+        p_proposal_id: p.id,
+        p_revision: p.revision != null ? p.revision : 1,
+        p_decision: decision,
+        p_note: note || null
+      }).then(function (r) {
+        if (!r.ok) return r;
+        var item = r.data ? self._rowToItem('budgetProposals', r.data) : null;
+        if (item) self._replaceInState('budgetProposals', item);
+        // RPC chỉ trả proposal — đối tượng đích (dòng/campaign) đã đổi
+        // approved/ceiling + dấu duyệt ở DB: đọc lại đúng 1 dòng đích.
+        var targetCollection = p.targetType === 'budget_line' ? 'budgetLines' : 'campaigns';
+        var targetId = p.targetType === 'budget_line' ? (p.budgetLineId || p.budget_line_id) : p.campaignId;
+        function done() {
+          self.notify();
+          return { ok: true, item: item || p, target: targetId ? self.get(targetCollection, targetId) : null };
+        }
+        if (!targetId) return done();
+        return self._reloadOne(targetCollection, targetId).then(done);
+      });
+    },
+    _decideBudgetProposalDemo: function (p, decision, note, revision) {
+      if (decision !== 'approved' && decision !== 'rejected') {
+        return { ok: false, error: 'Quyết định phải là "approved" hoặc "rejected".' };
+      }
+      // Thứ tự kiểm bám RPC 0014: ALREADY_DECIDED → STALE_REVISION → FORBIDDEN_ROLE.
+      if (p.status !== 'pending') {
+        return { ok: false, error: 'ALREADY_DECIDED: proposal đã ở trạng thái ' + p.status };
+      }
+      var currentRev = p.revision != null ? Number(p.revision) : 1;
+      var seenRev = revision != null ? Number(revision) : currentRev;
+      if (seenRev !== currentRev) {
+        return { ok: false, error: 'STALE_REVISION: revision đề xuất hiện tại là ' + currentRev + ', người duyệt đang xem ' + seenRev };
+      }
+      if (!this.can('budget.decide')) {
+        return { ok: false, error: 'FORBIDDEN_ROLE: chỉ owner mới được quyết định đề xuất ngân sách (vai hiện tại: ' + this.currentRole() + ')', action: 'budget.decide' };
+      }
+      var now = new Date().toISOString();
+      var target = null;
+      if (decision === 'approved') {
+        if (p.targetType === 'budget_line') {
+          target = this.get('budgetLines', p.budgetLineId || p.budget_line_id);
+          if (!target) return { ok: false, error: 'Không tìm thấy dòng ngân sách ' + (p.budgetLineId || p.budget_line_id) };
+          target.approved = Number(p.proposedAmount);
+          target.approvedAmount = Number(p.proposedAmount);
+          target.approvedBy = this.currentUserId;
+          target.approvedAt = now;
+          target.approvedViaProposalId = p.id;
+        } else {
+          target = this.get('campaigns', p.campaignId);
+          if (!target) return { ok: false, error: 'Không tìm thấy campaign ' + p.campaignId };
+          target.budgetCeiling = Number(p.proposedAmount);
+          target.budgetCeilingAmount = Number(p.proposedAmount);
+          target.budgetCeilingCurrency = p.currency || target.budgetCeilingCurrency || null;
+          target.approvedBy = this.currentUserId;
+          target.approvedAt = now;
+          target.approvedViaProposalId = p.id;
+        }
+      }
+      p.status = decision;
+      p.decidedBy = this.currentUserId;
+      p.decidedAt = now;
+      p.decisionNote = note || null;
+      this.notify();
+      return { ok: true, item: p, target: target };
+    },
+    /** Lead/Owner quyết định duyệt một CAM KẾT đang chờ duyệt. */
+    decideCommitmentApproval: function (id, decision, note) {
+      return this._decideFactApproval('commitments', 'decide_commitment_approval', 'p_commitment_id', id, decision, note);
+    },
+    /** Lead/Owner quyết định duyệt một KHOẢN CHI (actual / "Ghi thanh toán") đang chờ duyệt. */
+    decidePaymentApproval: function (id, decision, note) {
+      return this._decideFactApproval('actuals', 'decide_payment_approval', 'p_actual_id', id, decision, note);
+    },
+    _decideFactApproval: function (collection, rpcName, idArg, id, decision, note) {
+      var fact = this.get(collection, id);
+      if (!fact) {
+        var nf = { ok: false, error: 'Không tìm thấy bản ghi ' + id };
+        return this.mode === 'supabase' ? Promise.resolve(nf) : nf;
+      }
+      if (this.mode === 'supabase') {
+        var self = this;
+        var args = {};
+        args[idArg] = id;
+        args.p_decision = decision;
+        args.p_note = note || null;
+        return this._rpc(rpcName, args).then(function (r) {
+          if (!r.ok) return r;
+          var item = r.data ? self._rowToItem(collection, r.data) : null;
+          if (item) self._replaceInState(collection, item);
+          self.notify();
+          return { ok: true, item: item || fact };
+        });
+      }
+      return this._decideFactApprovalDemo(collection, fact, decision, note);
+    },
+    _decideFactApprovalDemo: function (collection, fact, decision, note) {
+      var Domain = this._domain();
+      var label = collection === 'commitments' ? 'cam kết' : 'khoản chi';
+      if (decision !== 'approved' && decision !== 'rejected') {
+        return { ok: false, error: 'Quyết định phải là "approved" hoặc "rejected".' };
+      }
+      // Thứ tự kiểm bám RPC 0014: FORBIDDEN_ROLE → ALREADY_DECIDED →
+      // SELF_APPROVAL → (chỉ khi approved) BUDGET_NOT_APPROVED →
+      // CURRENCY_MISMATCH → BUDGET_LIMIT_EXCEEDED.
+      if (!this.can('approval.decide')) {
+        return { ok: false, error: 'FORBIDDEN_ROLE: chỉ lead/owner mới được duyệt ' + label + ' (vai hiện tại: ' + this.currentRole() + ')', action: 'approval.decide' };
+      }
+      var status = Domain && Domain.factApprovalStatus ? Domain.factApprovalStatus(fact) : (fact.approvalStatus || null);
+      var effStatus = status === null ? 'approved' : status;
+      if (effStatus !== 'pending') {
+        return { ok: false, error: 'ALREADY_DECIDED: ' + label + ' đã ở trạng thái duyệt ' + effStatus };
+      }
+      var creator = fact.createdBy || fact.created_by || null;
+      if (creator && String(creator) === String(this.currentUserId) && this.currentRole() !== 'owner') {
+        return { ok: false, error: 'SELF_APPROVAL: người tạo ' + label + ' không được tự quyết định (trừ owner)' };
+      }
+      var lineId = fact.budgetLineId || fact.budget_line_id || null;
+      var line = lineId ? this.get('budgetLines', lineId) : null;
+      if (decision === 'approved') {
+        if (!line) return { ok: false, error: 'Không tìm thấy dòng ngân sách của ' + label + ' ' + fact.id };
+        if (!line.approvedBy && !line.approved_by) {
+          return { ok: false, error: 'BUDGET_NOT_APPROVED: dòng ngân sách chưa có dấu duyệt (approved_by null) — cần đề xuất được Owner duyệt trước' };
+        }
+        var factCur = fact.currency || null;
+        var lineCur = line.currency || null;
+        if (factCur && lineCur && String(factCur) !== String(lineCur)) {
+          return { ok: false, error: 'CURRENCY_MISMATCH: currency ' + label + ' (' + factCur + ') khác currency của dòng (' + lineCur + ')' };
+        }
+        // UsageAfter: tính fact đang xét NHƯ ĐÃ DUYỆT bằng
+        // domain.budgetUsageTotal (payment gắn commitment đồng thời làm
+        // giảm nghĩa vụ mở của commitment đó — đúng công thức RPC).
+        var byLine = function (x) {
+          var lid = x.budgetLineId || x.budget_line_id || null;
+          return lid !== null && String(lid) === String(line.id);
+        };
+        var commitments = (this.state.commitments || []).filter(byLine);
+        var actuals = (this.state.actuals || []).filter(byLine);
+        if (collection === 'commitments') {
+          commitments = commitments.map(function (x) {
+            return x.id === fact.id ? Object.assign({}, x, { approvalStatus: 'approved' }) : x;
+          });
+        } else {
+          actuals = actuals.map(function (x) {
+            return x.id === fact.id ? Object.assign({}, x, { approvalStatus: 'approved' }) : x;
+          });
+        }
+        var usage = Domain && Domain.budgetUsageTotal ? Domain.budgetUsageTotal(line, commitments, actuals) : null;
+        var approvedAmt = line.approved !== undefined && line.approved !== null ? Number(line.approved)
+          : (line.approvedAmount !== undefined && line.approvedAmount !== null ? Number(line.approvedAmount)
+          : (line.approved_amount !== undefined && line.approved_amount !== null ? Number(line.approved_amount) : 0));
+        if (usage !== null && usage > approvedAmt) {
+          return { ok: false, error: 'BUDGET_LIMIT_EXCEEDED: tổng sử dụng sau duyệt (' + usage + ') vượt số đã duyệt của dòng (' + approvedAmt + ')' };
+        }
+      }
+      fact.approvalStatus = decision;
+      fact.approvedBy = this.currentUserId;
+      fact.approvedAt = new Date().toISOString();
+      fact.approvalNote = note || null;
+      if ('approval_status' in fact) fact.approval_status = decision;
+      if ('approved_by' in fact) fact.approved_by = this.currentUserId;
+      if ('approved_at' in fact) fact.approved_at = fact.approvedAt;
+      if ('approval_note' in fact) fact.approval_note = note || null;
+      this.notify();
+      return { ok: true, item: fact };
     },
 
     // ======================================================================

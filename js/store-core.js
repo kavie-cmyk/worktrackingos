@@ -66,6 +66,7 @@
     campaignBaselines: 'campaign_baselines',
     campaignAssets: 'campaign_assets',
     budgetAllocations: 'budget_allocations',
+    budgetProposals: 'budget_proposals',
     cashAccounts: 'cash_accounts',
     cashCategories: 'cash_categories',
     cashTransactions: 'cash_transactions'
@@ -81,7 +82,7 @@
     channel_accounts: ['id', 'workspace_id', 'brand_page_id', 'platform', 'external_id', 'display_name', 'handle', 'profile_url', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     assets: ['id', 'workspace_id', 'name', 'asset_type', 'storage_bucket', 'storage_path', 'external_url', 'mime_type', 'size_bytes', 'width', 'height', 'duration_sec', 'tags', 'rights_note', 'status', 'approval_status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     asset_versions: ['id', 'workspace_id', 'asset_id', 'version_no', 'storage_bucket', 'storage_path', 'external_url', 'change_note', 'created_by', 'created_at'],
-    campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'budget_ceiling_amount', 'budget_ceiling_currency', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'budget_ceiling_amount', 'budget_ceiling_currency', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'archived_at', 'created_by', 'created_at', 'updated_at', 'approved_by', 'approved_at', 'approved_via_proposal_id'],
     phases: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'sort_order', 'start_date', 'end_date', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     activities: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'phase_id', 'name', 'description', 'sort_order', 'start_date', 'end_date', 'status', 'owner_id', 'channel', 'deliverables', 'objective', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     tasks: ['id', 'workspace_id', 'campaign_id', 'phase_id', 'activity_id', 'content_item_id', 'parent_id', 'title', 'description', 'owner_id', 'collaborators', 'approver_id', 'start_date', 'due_date', 'completed_at', 'priority', 'effort_hours', 'progress_percent', 'status', 'is_blocked', 'is_milestone', 'sort_order', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
@@ -98,9 +99,10 @@
     metric_observations: ['id', 'workspace_id', 'source', 'object_type', 'object_id', 'metric_code', 'value', 'period_start', 'period_end', 'period_grain', 'scope', 'dimensions', 'definition_version', 'currency', 'observed_at', 'sync_run_id', 'created_at'],
     kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'definition', 'scope_type', 'activity_id', 'task_id', 'content_item_id', 'bu_product_id', 'pillar_id', 'aggregation_mode', 'target_version', 'direction', 'numerator', 'denominator', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     measurements: ['id', 'workspace_id', 'kpi_id', 'measured_at', 'period_start', 'period_end', 'value', 'source', 'note', 'created_by', 'created_at'],
-    budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'activity_id', 'task_id', 'name', 'category', 'planned_amount', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'archived_at', 'created_by', 'created_at', 'updated_at'],
-    budget_commitments: ['id', 'workspace_id', 'budget_line_id', 'description', 'amount', 'currency', 'vendor', 'status', 'settled_amount', 'committed_at', 'expected_at', 'idempotency_key', 'created_by', 'created_at', 'updated_at', 'archived_at'],
-    budget_actuals: ['id', 'workspace_id', 'budget_line_id', 'commitment_id', 'ad_spend_source_id', 'title', 'description', 'idempotency_key', 'amount', 'currency', 'spent_at', 'source', 'created_by', 'created_at', 'updated_at'],
+    budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'activity_id', 'task_id', 'name', 'category', 'planned_amount', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'archived_at', 'created_by', 'created_at', 'updated_at', 'approved_by', 'approved_at', 'approved_via_proposal_id'],
+    budget_commitments: ['id', 'workspace_id', 'budget_line_id', 'description', 'amount', 'currency', 'vendor', 'status', 'settled_amount', 'committed_at', 'expected_at', 'idempotency_key', 'created_by', 'created_at', 'updated_at', 'archived_at', 'approval_status', 'approved_by', 'approved_at', 'approval_note'],
+    budget_actuals: ['id', 'workspace_id', 'budget_line_id', 'commitment_id', 'ad_spend_source_id', 'title', 'description', 'idempotency_key', 'amount', 'currency', 'spent_at', 'source', 'created_by', 'created_at', 'updated_at', 'approval_status', 'approved_by', 'approved_at', 'approval_note'],
+    budget_proposals: ['id', 'workspace_id', 'target_type', 'campaign_id', 'budget_line_id', 'proposed_amount', 'currency', 'reason', 'proposer_id', 'status', 'decided_by', 'decided_at', 'decision_note', 'revision', 'created_at', 'updated_at'],
     ad_accounts: ['id', 'workspace_id', 'platform', 'external_id', 'name', 'currency', 'timezone', 'status', 'connection_id', 'created_by', 'created_at', 'updated_at'],
     ad_campaigns: ['id', 'workspace_id', 'ad_account_id', 'campaign_id', 'external_id', 'name', 'objective', 'status', 'external_created_at', 'last_synced_at', 'raw', 'created_at', 'updated_at'],
     ad_groups: ['id', 'workspace_id', 'ad_campaign_id', 'external_id', 'name', 'status', 'targeting', 'last_synced_at', 'raw', 'created_at', 'updated_at'],
@@ -155,6 +157,11 @@
     assetVersions: { version: 'version_no' },
     contentItems: { type: 'content_type' },
     variants: {},
+    // 0014: các trường chuỗi duyệt (approvalStatus, approvedBy, approvedAt,
+    // approvalNote, approvedViaProposalId; budgetProposals: targetType,
+    // proposedAmount, proposerId, decidedBy, decidedAt, decisionNote…) đổi
+    // tên đúng bằng cơ chế camel→snake mặc định nên không cần alias riêng.
+    budgetProposals: {},
     approvals: { requestedAt: 'created_at' }
   };
   // Trường chỉ để hiển thị ở frontend, không bao giờ gửi lên server.
@@ -439,13 +446,14 @@
     'data.read', 'data.edit', 'task.updateStatus', 'task.edit', 'campaign.edit',
     'content.edit', 'asset.edit', 'kpi.edit', 'budget.edit', 'approval.decide',
     'publish.create', 'settings.manage', 'member.manage', 'channel.connect',
-    'analytics.view', 'ads.read', 'ads.draft', 'ads.approve'
+    'analytics.view', 'ads.read', 'ads.draft', 'ads.approve',
+    'budget.propose', 'budget.decide'
   ];
   function _perm(over) { var m = {}; PERMISSION_ACTIONS.forEach(function (a) { m[a] = false; }); Object.keys(over || {}).forEach(function (k) { m[k] = !!over[k]; }); return m; }
   var PERMISSIONS = {
-    owner: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'campaign.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'budget.edit': true, 'approval.decide': true, 'publish.create': true, 'settings.manage': true, 'member.manage': true, 'channel.connect': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true, 'ads.approve': true }),
-    lead: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'campaign.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'budget.edit': true, 'approval.decide': true, 'publish.create': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true, 'ads.approve': true }),
-    member: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true }),
+    owner: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'campaign.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'budget.edit': true, 'approval.decide': true, 'publish.create': true, 'settings.manage': true, 'member.manage': true, 'channel.connect': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true, 'ads.approve': true, 'budget.propose': true, 'budget.decide': true }),
+    lead: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'campaign.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'budget.edit': true, 'approval.decide': true, 'publish.create': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true, 'ads.approve': true, 'budget.propose': true }),
+    member: _perm({ 'data.read': true, 'data.edit': true, 'task.updateStatus': true, 'task.edit': true, 'content.edit': true, 'asset.edit': true, 'kpi.edit': true, 'analytics.view': true, 'ads.read': true, 'ads.draft': true, 'budget.propose': true }),
     ceo: _perm({ 'data.read': true, 'analytics.view': true, 'ads.read': true })
   };
   // Tên quyền cũ (app.js đang dùng) → action mới. can()/canRole() nhận cả hai.

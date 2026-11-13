@@ -74,7 +74,7 @@
         // 8/15/5/2 = 30tr; thực chi 20,5tr; cam kết còn mở 7,5tr.
         id: 'camp-live', name: 'Livestream giới thiệu giải pháp (minh họa R3.1)', businessUnitId: 'bu-ai', product: 'Nền tảng AI mẫu',
         status: 'active', statusLabel: 'Đang chạy', startDate: '2026-11-16', endDate: '2026-11-29',
-        ownerId: 'member-lead', budgetCeiling: 32000000, budgetCeilingCurrency: 'VND',
+        ownerId: 'member-lead', budgetCeiling: 32000000, budgetCeilingCurrency: 'VND', approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null,
         why: 'Fixture minh họa cho Action Plan / KPI / ngân sách theo đặc tả R3.1 (số liệu D.1/D.2).',
         businessGoal: 'Đạt 150 đăng ký hợp lệ không trùng cho buổi livestream.',
         marketingGoal: 'Chạy ads + seeding để gom đăng ký, mời 2 khách mời xác nhận, tổ chức 1 phiên livestream đúng kế hoạch.',
@@ -235,36 +235,36 @@
       { id: 'obs-6', externalPostId: 'post-3', metric: 'reach', value: 800, observedAt: '2026-11-09T09:00:00+07:00', source: 'Nhập tay (minh họa)', enteredBy: 'member-content' }
     ],
     budgetLines: [
-      { id: 'budget-1', campaignId: 'camp-1', name: 'Sản xuất nội dung', currency: 'VND', planned: 60000000, approved: 50000000 },
-      { id: 'budget-2', campaignId: 'camp-1', name: 'Quảng cáo Meta', currency: 'VND', planned: 90000000, approved: 80000000 },
-      { id: 'budget-3', campaignId: 'camp-2', name: 'Trang giới thiệu và trải nghiệm', currency: 'VND', planned: 40000000, approved: 30000000 },
-      { id: 'budget-4', campaignId: 'camp-2', name: 'Sự kiện trải nghiệm (USD mẫu)', currency: 'USD', planned: 2000, approved: 1500 },
+      { id: 'budget-1', campaignId: 'camp-1', name: 'Sản xuất nội dung', currency: 'VND', planned: 60000000, approved: 50000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-2', campaignId: 'camp-1', name: 'Quảng cáo Meta', currency: 'VND', planned: 90000000, approved: 80000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-3', campaignId: 'camp-2', name: 'Trang giới thiệu và trải nghiệm', currency: 'VND', planned: 40000000, approved: 30000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-4', campaignId: 'camp-2', name: 'Sự kiện trải nghiệm (USD mẫu)', currency: 'USD', planned: 2000, approved: 1500, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
       // Fixture R3.1 D.1: approved = phân bổ cho từng action (8/15/5/2 = 30tr);
       // planned cố ý khác approved để chứng minh hai số lưu độc lập (AC10).
-      { id: 'bl-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', name: 'Phân bổ — Mời khách mời', currency: 'VND', planned: 9000000, approved: 8000000 },
-      { id: 'bl-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', name: 'Phân bổ — Chạy ads', currency: 'VND', planned: 16000000, approved: 15000000 },
-      { id: 'bl-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', name: 'Phân bổ — Seeding', currency: 'VND', planned: 6000000, approved: 5000000 },
-      { id: 'bl-live-show', campaignId: 'camp-live', activityId: 'act-live-show', name: 'Phân bổ — Tổ chức livestream', currency: 'VND', planned: 2500000, approved: 2000000 }
+      { id: 'bl-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', name: 'Phân bổ — Mời khách mời', currency: 'VND', planned: 9000000, approved: 8000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'bl-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', name: 'Phân bổ — Chạy ads', currency: 'VND', planned: 16000000, approved: 15000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'bl-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', name: 'Phân bổ — Seeding', currency: 'VND', planned: 6000000, approved: 5000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'bl-live-show', campaignId: 'camp-live', activityId: 'act-live-show', name: 'Phân bổ — Tổ chức livestream', currency: 'VND', planned: 2500000, approved: 2000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null}
     ],
     commitments: [
-      { id: 'commit-1', budgetLineId: 'budget-1', title: 'Đặt cọc quay dựng video', amount: 20000000, currency: 'VND', status: 'open' },
-      { id: 'commit-2', budgetLineId: 'budget-1', title: 'Thuê thiết bị quay', amount: 5000000, currency: 'VND', status: 'open' },
-      { id: 'commit-3', budgetLineId: 'budget-2', title: 'Ngân sách quảng cáo đã cam kết tuần 1', amount: 30000000, currency: 'VND', status: 'open' },
+      { id: 'commit-1', budgetLineId: 'budget-1', title: 'Đặt cọc quay dựng video', amount: 20000000, currency: 'VND', status: 'open', approvalStatus: 'approved'},
+      { id: 'commit-2', budgetLineId: 'budget-1', title: 'Thuê thiết bị quay', amount: 5000000, currency: 'VND', status: 'open', approvalStatus: 'approved'},
+      { id: 'commit-3', budgetLineId: 'budget-2', title: 'Ngân sách quảng cáo đã cam kết tuần 1', amount: 30000000, currency: 'VND', status: 'open', approvalStatus: 'approved'},
       // Fixture R3.1 D.1: cam kết = thực chi + phần còn mở (8=6+2, 14=10+4, 4=3+1, 2=1,5+0,5).
-      { id: 'cm-live-invite', budgetLineId: 'bl-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', title: 'Cam kết chi mời khách mời', amount: 8000000, currency: 'VND', status: 'committed' },
-      { id: 'cm-live-ads', budgetLineId: 'bl-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Cam kết ngân sách ads livestream', amount: 14000000, currency: 'VND', status: 'committed' },
-      { id: 'cm-live-seeding', budgetLineId: 'bl-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', title: 'Cam kết chi seeding', amount: 4000000, currency: 'VND', status: 'committed' },
-      { id: 'cm-live-show', budgetLineId: 'bl-live-show', campaignId: 'camp-live', activityId: 'act-live-show', title: 'Cam kết chi tổ chức livestream', amount: 2000000, currency: 'VND', status: 'committed' }
+      { id: 'cm-live-invite', budgetLineId: 'bl-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', title: 'Cam kết chi mời khách mời', amount: 8000000, currency: 'VND', status: 'committed', approvalStatus: 'approved'},
+      { id: 'cm-live-ads', budgetLineId: 'bl-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Cam kết ngân sách ads livestream', amount: 14000000, currency: 'VND', status: 'committed', approvalStatus: 'approved'},
+      { id: 'cm-live-seeding', budgetLineId: 'bl-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', title: 'Cam kết chi seeding', amount: 4000000, currency: 'VND', status: 'committed', approvalStatus: 'approved'},
+      { id: 'cm-live-show', budgetLineId: 'bl-live-show', campaignId: 'camp-live', activityId: 'act-live-show', title: 'Cam kết chi tổ chức livestream', amount: 2000000, currency: 'VND', status: 'committed', approvalStatus: 'approved'}
     ],
     actuals: [
-      { id: 'actual-1', budgetLineId: 'budget-1', commitmentId: 'commit-1', title: 'Thanh toán đợt 1 quay dựng', amount: 8000000, currency: 'VND', date: '2026-11-08' },
-      { id: 'actual-2', budgetLineId: 'budget-2', commitmentId: null, title: 'Chi quảng cáo thực tế tuần 1', amount: 18000000, currency: 'VND', date: '2026-11-09' },
+      { id: 'actual-1', budgetLineId: 'budget-1', commitmentId: 'commit-1', title: 'Thanh toán đợt 1 quay dựng', amount: 8000000, currency: 'VND', date: '2026-11-08', approvalStatus: 'approved'},
+      { id: 'actual-2', budgetLineId: 'budget-2', commitmentId: null, title: 'Chi quảng cáo thực tế tuần 1', amount: 18000000, currency: 'VND', date: '2026-11-09', approvalStatus: 'approved'},
       // Fixture R3.1 D.1: thực chi 6/10/3/1,5 = 20,5tr. Hóa đơn chung 60/40
       // KHÔNG nằm ở campaign này (đã có ở test domain/store) để giữ tổng 20,5.
-      { id: 'pay-live-invite', budgetLineId: 'bl-live-invite', commitmentId: 'cm-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', title: 'Chi mời khách mời', description: 'Chứng từ minh họa R3.1', amount: 6000000, currency: 'VND', date: '2026-11-20', source: 'manual' },
-      { id: 'pay-live-ads', budgetLineId: 'bl-live-ads', commitmentId: 'cm-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Chi ads livestream', description: 'Chứng từ minh họa R3.1', amount: 10000000, currency: 'VND', date: '2026-11-24', source: 'manual' },
-      { id: 'pay-live-seeding', budgetLineId: 'bl-live-seeding', commitmentId: 'cm-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', title: 'Chi seeding', description: 'Chứng từ minh họa R3.1', amount: 3000000, currency: 'VND', date: '2026-11-24', source: 'manual' },
-      { id: 'pay-live-show', budgetLineId: 'bl-live-show', commitmentId: 'cm-live-show', campaignId: 'camp-live', activityId: 'act-live-show', title: 'Chi tổ chức livestream', description: 'Chứng từ minh họa R3.1', amount: 1500000, currency: 'VND', date: '2026-11-25', source: 'manual' }
+      { id: 'pay-live-invite', budgetLineId: 'bl-live-invite', commitmentId: 'cm-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', title: 'Chi mời khách mời', description: 'Chứng từ minh họa R3.1', amount: 6000000, currency: 'VND', date: '2026-11-20', source: 'manual', approvalStatus: 'approved'},
+      { id: 'pay-live-ads', budgetLineId: 'bl-live-ads', commitmentId: 'cm-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', title: 'Chi ads livestream', description: 'Chứng từ minh họa R3.1', amount: 10000000, currency: 'VND', date: '2026-11-24', source: 'manual', approvalStatus: 'approved'},
+      { id: 'pay-live-seeding', budgetLineId: 'bl-live-seeding', commitmentId: 'cm-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', title: 'Chi seeding', description: 'Chứng từ minh họa R3.1', amount: 3000000, currency: 'VND', date: '2026-11-24', source: 'manual', approvalStatus: 'approved'},
+      { id: 'pay-live-show', budgetLineId: 'bl-live-show', commitmentId: 'cm-live-show', campaignId: 'camp-live', activityId: 'act-live-show', title: 'Chi tổ chức livestream', description: 'Chứng từ minh họa R3.1', amount: 1500000, currency: 'VND', date: '2026-11-25', source: 'manual', approvalStatus: 'approved'}
     ],
     kpis: [
       { id: 'kpi-1', campaignId: 'camp-1', name: 'Lượt cài đặt mới', target: 10000, actual: 6200, unit: 'lượt', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },

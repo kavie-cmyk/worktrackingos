@@ -1,4 +1,11 @@
 // tests/r31-persist.test.mjs
+// CẬP NHẬT 0014 (chuỗi duyệt ngân sách): 2 test [store] về campaign ceiling
+// bên dưới đã sửa — Store KHÔNG còn gửi budget_ceiling_amount/currency khi
+// create/update campaign (hạn mức chỉ đổi qua RPC decide_budget_proposal;
+// guard DB chặn nếu gửi qua REST thường) và demo create/update cũng không
+// tự đặt/đổi hạn mức. Kỳ vọng cũ "Store gửi/giữ ceiling khi tạo+sửa" là
+// semantics TRƯỚC 0014. Phần store-core (cột thật, custom_fields, chiều
+// ĐỌC) giữ nguyên toàn bộ.
 // R3.1 bổ sung — persist THẬT 2 field trước đây lưu tạm qua custom_fields
 // hoặc bị rơi vì chưa có cột (migration 0011_persist_r31.sql):
 //   kpis.direction                  ↔ cột kpis.direction (increase/decrease)
@@ -145,25 +152,30 @@ test('R3.1-persist [core]: ghi kèm field thật thì xoá bản sao stale; patc
   assert.ok(!('budget_ceiling' in (cleared.custom_fields || {})), 'đã xoá tường minh thì bản sao cũ không được hồi sinh khi đọc');
 });
 
-test('R3.1-persist [store]: campaign ceiling round-trip qua _toPayload/_rowToItem', () => {
+test('R3.1-persist [store]: campaign ceiling — _toPayload strip ceiling khi ghi (0014); _rowToItem vẫn đọc cột thật', () => {
   resetDemo();
   const payload = Store._toPayload('campaigns', {
     name: 'Camp mới', budgetCeiling: 32000000, budgetCeilingCurrency: 'VND',
   }, { workspaceId: WS, forInsert: true });
-  assert.equal(payload.budget_ceiling_amount, 32000000);
-  assert.equal(payload.budget_ceiling_currency, 'VND');
-  const back = Store._rowToItem('campaigns', { id: CAMP_A, ...payload });
+  // 0014: hạn mức chỉ đổi qua RPC decide_budget_proposal — payload ghi
+  // thường KHÔNG mang budget_ceiling_amount/currency (cả create lẫn update).
+  assert.ok(!('budget_ceiling_amount' in payload), 'create campaign không gửi budget_ceiling_amount (0014)');
+  assert.ok(!('budget_ceiling_currency' in payload), 'create campaign không gửi budget_ceiling_currency (0014)');
+  // Chiều ĐỌC không đổi: dòng DB có cột thật vẫn map về budgetCeiling/Currency.
+  const back = Store._rowToItem('campaigns', { id: CAMP_A, budget_ceiling_amount: 32000000, budget_ceiling_currency: 'VND' });
   assert.equal(back.budgetCeiling, 32000000);
   assert.equal(back.budgetCeilingCurrency, 'VND');
 });
 
-test('R3.1-persist [store/demo]: tạo + sửa campaign giữ budgetCeiling/Currency trong state', () => {
-  resetDemo();
+test('R3.1-persist [store/demo]: tạo campaign không tự đặt hạn mức; sửa campaign giữ nguyên hạn mức đã có (0014)', () => {
+  resetDemo({
+    campaigns: [{ id: CAMP_A, name: 'Camp A', status: 'active', budgetCeiling: 32000000, budgetCeilingCurrency: 'VND' }],
+  });
   const c = Store.create('campaigns', { id: 'camp-ceil', name: 'Camp hạn mức', budgetCeiling: 32000000, budgetCeilingCurrency: 'VND' });
   assert.equal(c.ok, true, JSON.stringify(c));
-  assert.equal(c.item.budgetCeiling, 32000000);
-  const u = Store.update('campaigns', 'camp-ceil', { budgetCeiling: 40000000 });
+  assert.equal(c.item.budgetCeiling, null, 'campaign mới tạo chưa có hạn mức — hạn mức chỉ đến từ đề xuất được Owner duyệt (0014)');
+  const u = Store.update('campaigns', CAMP_A, { budgetCeiling: 40000000 });
   assert.equal(u.ok, true, JSON.stringify(u));
-  assert.equal(Store.get('campaigns', 'camp-ceil').budgetCeiling, 40000000);
-  assert.equal(Store.get('campaigns', 'camp-ceil').budgetCeilingCurrency, 'VND');
+  assert.equal(Store.get('campaigns', CAMP_A).budgetCeiling, 32000000, 'update thường không đổi được hạn mức — giữ nguyên giá trị hiện có');
+  assert.equal(Store.get('campaigns', CAMP_A).budgetCeilingCurrency, 'VND');
 });

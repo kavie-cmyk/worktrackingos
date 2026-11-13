@@ -259,6 +259,32 @@
   var OPEN_COMMITMENT_STATUSES = { planned: 1, committed: 1, partially_actualised: 1, open: 1, partial: 1 };
   function isOpenCommitment(c) { return !!(c && OPEN_COMMITMENT_STATUSES[normStatus(c.status)]); }
 
+  // ---------- Chuỗi duyệt ngân sách (0014) ----------
+  /**
+   * Trạng thái duyệt của một fact ngân sách (commitment/actual):
+   * đọc approvalStatus (camel) hoặc approval_status (snake).
+   * @param {object} f Fact ngân sách.
+   * @returns {(string|null)} 'pending'|'approved'|'rejected' hoặc null khi fact
+   *   không mang trạng thái (dữ liệu/fixture cũ).
+   */
+  function factApprovalStatus(f) {
+    if (!f) return null;
+    var v = f.approvalStatus !== undefined && f.approvalStatus !== null ? f.approvalStatus : f.approval_status;
+    if (v === undefined || v === null || String(v).trim() === '') return null;
+    return String(v).trim().toLowerCase();
+  }
+  /**
+   * Fact có được tính vào các tổng ngân sách không: chỉ fact ĐÃ DUYỆT.
+   * Thiếu trạng thái (null) → coi như 'approved' để tương thích dữ liệu cũ /
+   * fixture cũ (khớp cột DB default 'approved' của 0014).
+   * @param {object} f Fact ngân sách.
+   * @returns {boolean} true khi đã duyệt (hoặc không mang trạng thái).
+   */
+  function isApprovedFact(f) {
+    var s = factApprovalStatus(f);
+    return s === null || s === 'approved';
+  }
+
   /**
    * Tổng đã trả của một cam kết — NGUỒN SỰ THẬT DUY NHẤT (R2-01/R2-02):
    * chỉ Σ amount của actuals liên kết (commitmentId === commitment.id).
@@ -272,6 +298,7 @@
     var total = 0;
     (actuals || []).forEach(function (a) {
       if (!a) return;
+      if (!isApprovedFact(a)) return; // 0014: chỉ actual ĐÃ DUYỆT mới là "đã trả"
       var cid = a.commitmentId !== undefined && a.commitmentId !== null ? a.commitmentId : a.commitment_id;
       if (cid === null || cid === undefined || cid === '') return;
       if (String(cid) === String(commitment.id)) {
@@ -293,10 +320,51 @@
     var total = 0;
     (commitments || []).forEach(function (c) {
       if (!isOpenCommitment(c)) return;
+      if (!isApprovedFact(c)) return; // 0014: cam kết chưa duyệt không giữ ngân sách
+      if (c.archivedAt || c.archived_at) return; // 0014: cam kết đã archive bị bỏ qua
       var amt = pickNum(c, ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value']) || 0;
       total += Math.max(0, amt - commitmentPaidTotal(c, actuals));
     });
     return total;
+  }
+
+  /**
+   * Tổng SỬ DỤNG ngân sách của một dòng (0014) — chỉ tính fact ĐÃ DUYỆT:
+   * UsageTotal = Σ actuals đã duyệt + Σ nghĩa vụ mở của commitments đã duyệt,
+   * nghĩa vụ của một commitment = max(0, amount − Σ actuals ĐÃ DUYỆT liên kết).
+   * Commitment có status 'cancelled' (và các status không còn mở khác) hoặc
+   * đã archive (archived_at) bị bỏ qua. Khi line có currency, chỉ tính fact
+   * cùng currency với line (fact không ghi currency thì vẫn tính — tương
+   * thích fixture cũ; khớp công thức RPC decide_*_approval ở 0014).
+   * settledAmount vẫn bị bỏ qua như budgetRemaining trước đây.
+   * @param {object|number} line Dòng ngân sách (có currency?) hoặc số approved.
+   * @param {Array<object>} commitments Các cam kết thuộc dòng.
+   * @param {Array<object>} actuals Các khoản chi thuộc dòng.
+   * @returns {number} Tổng đã sử dụng (đã duyệt).
+   */
+  function budgetUsageTotal(line, commitments, actuals) {
+    var lineCurrency = (line && typeof line === 'object')
+      ? (line.currency || line.currencyCode || line.currency_code || null) : null;
+    function sameCurrency(f) {
+      if (!lineCurrency || !f) return true;
+      var fc = f.currency !== undefined && f.currency !== null ? f.currency : (f.currencyCode !== undefined && f.currencyCode !== null ? f.currencyCode : f.currency_code);
+      if (fc === undefined || fc === null || String(fc).trim() === '') return true;
+      return String(fc).trim() === String(lineCurrency).trim();
+    }
+    var acts = (actuals || []).filter(function (a) { return a && isApprovedFact(a) && sameCurrency(a); });
+    var actualTotal = 0;
+    acts.forEach(function (a) {
+      actualTotal += pickNum(a, ['amount', 'actualAmount', 'actual_amount', 'value']) || 0;
+    });
+    var openTotal = 0;
+    (commitments || []).forEach(function (c) {
+      if (!c || !isApprovedFact(c) || !sameCurrency(c)) return;
+      if (c.archivedAt || c.archived_at) return;
+      if (!isOpenCommitment(c)) return;
+      var amt = pickNum(c, ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value']) || 0;
+      openTotal += Math.max(0, amt - commitmentPaidTotal(c, acts));
+    });
+    return actualTotal + openTotal;
   }
 
   /**
@@ -314,12 +382,9 @@
     // line: object có approved/approvedAmount, hoặc chính số approved (number).
     var approved = (typeof line === 'number') ? line
       : (pickNum(line, ['approved', 'approvedAmount', 'approved_amount', 'budgetApproved', 'amountApproved']) || 0);
-    var acts = actuals || [];
-    var actualTotal = 0;
-    acts.forEach(function (a) {
-      actualTotal += pickNum(a, ['amount', 'actualAmount', 'actual_amount', 'value']) || 0;
-    });
-    return approved - actualTotal - openCommitmentTotal(commitments, acts);
+    // 0014: Remaining = Approved − UsageTotal (chỉ fact ĐÃ DUYỆT). Khi mọi
+    // fact đã duyệt (hoặc không mang trạng thái) kết quả giữ nguyên như trước.
+    return approved - budgetUsageTotal(line, commitments, actuals);
   }
 
   // ---------- KPI ----------
@@ -989,6 +1054,11 @@
       (list || []).forEach(function (f) {
         if (!f || typeof f !== 'object') return;
         var kind = _r31FactKind(f, fallbackKind);
+        // 0014: fact commitment/actual CHƯA DUYỆT bị loại khỏi mọi tổng —
+        // kể cả khi truyền qua input.facts. Fact bị loại thì phần allocation
+        // gắn với chính fact đó cũng không được tính (fact không còn trong
+        // tập tính toán nên share của nó không tới được bất kỳ scope nào).
+        if ((kind === 'commitment' || kind === 'actual') && !isApprovedFact(f)) return;
         var id = _r31FactId(f);
         if (id !== null) {
           var key = kind + ':' + id;
@@ -1061,6 +1131,8 @@
     });
     facts.filter(function (e) { return e.kind === 'commitment'; }).forEach(function (entry) {
       if (!isOpenCommitment(entry.raw)) return;
+      if (entry.raw.archivedAt || entry.raw.archived_at) return; // 0014: bỏ qua cam kết đã archive
+      if (!isApprovedFact(entry.raw)) return; // 0014 (phòng thủ: collect đã lọc)
       var cur = _r31FactCurrency(entry.raw, primaryCurrency);
       var scopedAmount = allocationShareForScope(entry.raw, scopeId);
       if (scopedAmount <= 0) return;
@@ -1386,6 +1458,9 @@
     commitmentPaidTotal: commitmentPaidTotal,
     openCommitmentTotal: openCommitmentTotal,
     budgetRemaining: budgetRemaining,
+    factApprovalStatus: factApprovalStatus,
+    isApprovedFact: isApprovedFact,
+    budgetUsageTotal: budgetUsageTotal,
     kpiDisplay: kpiDisplay,
     computeRates: computeRates,
     aggregateRates: aggregateRates,

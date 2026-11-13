@@ -1,4 +1,11 @@
 // tests/r31-store.test.mjs
+// CẬP NHẬT 0014 (chuỗi duyệt ngân sách): test AC10 [store] bên dưới đã sửa —
+// Store._toPayload('budgetLines', …) KHÔNG còn gửi approved_amount khi
+// create/update nữa (số duyệt chỉ đổi qua RPC decide_budget_proposal; guard
+// DB chặn 42501 nếu gửi qua REST thường). Kỳ vọng cũ "payload giữ
+// approved_amount" là semantics TRƯỚC 0014 nên phải đổi; planned_amount vẫn
+// giữ nguyên. Mapping approved ↔ approved_amount ở tầng store-core
+// (toDbPayload/fromDbRow) KHÔNG đổi — chỉ đường ghi của Store bị strip.
 // R3.1 — hợp đồng Store/adapter: mapping + payload round-trip các field mới
 // (planned độc lập, actual title/description tách, KPI scope/definition,
 // metadata activity/variant/brand, idempotency AC09, capacity thật R3-09,
@@ -41,15 +48,20 @@ function resetDemo(extraState) {
 // ---------------------------------------------------------------------------
 // R3-05 / AC10 — planned 1200 ≠ approved 1000, round-trip hai chiều
 // ---------------------------------------------------------------------------
-test('AC10 [store]: budgetLines payload giữ planned_amount riêng khỏi approved_amount + activity/task', () => {
+test('AC10 [store]: budgetLines payload giữ planned_amount riêng + activity/task; approved_amount bị strip (0014)', () => {
   resetDemo();
   const payload = Store._toPayload('budgetLines', {
     name: 'Ads', planned: 1200, approved: 1000, campaignId: CAMP_A, activityId: ACT1, taskId: TASK1, currency: 'VND',
   }, { workspaceId: WS, forInsert: true });
   assert.equal(payload.planned_amount, 1200);
-  assert.equal(payload.approved_amount, 1000);
+  // 0014: số duyệt KHÔNG gửi qua create/update thường nữa — chỉ đổi khi
+  // Owner duyệt đề xuất qua RPC decide_budget_proposal.
+  assert.ok(!('approved_amount' in payload), 'create budget line không được gửi approved_amount (0014)');
   assert.equal(payload.activity_id, ACT1, 'R3-02: payload phải có activity_id');
   assert.equal(payload.task_id, TASK1, 'R3-02: payload phải có task_id');
+  // Tầng store-core vẫn map approved ↔ approved_amount hai chiều (đọc +
+  // RPC trả về vẫn cần) — chỉ Store strip khi ghi:
+  assert.equal(core.toDbPayload('budgetLines', { name: 'Ads', approved: 1000 }).approved_amount, 1000);
 });
 
 test('AC10 [store]: read budgetLines — planned từ planned_amount, KHÔNG fallback approved; chưa có planned → null', () => {
