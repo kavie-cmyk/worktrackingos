@@ -1,4 +1,4 @@
-# R3.1 Contract — Migration 0009/0010 (đã áp live 12/11/2026)
+# R3.1 Contract — Migration 0009/0010 (đã áp live 12/11/2026) + 0013 (vá P2, đã áp live 13/11/2026)
 
 Project: `sava-marketing-workspace` (`nlbtjtubihxbkigdfpdg`). Cả hai file chạy lại lần 2 không lỗi (AC20 idempotent). Đội Store/UI dùng tài liệu này để map field — KHÔNG tự suy từ UI demo.
 
@@ -10,6 +10,7 @@ Project: `sava-marketing-workspace` (`nlbtjtubihxbkigdfpdg`). Cả hai file ch�
 | budget_lines | `activity_id`, `task_id` | FK → activities/tasks, nullable, ON DELETE SET NULL | Scope chi: giữ nguyên `campaign_id`. Trigger scope (mục 4) kiểm khớp campaign/workspace. |
 | budget_actuals | `title` | text, nullable | R3-07: nội dung/tên khoản chi. `description` = ghi chú/chứng từ. Không alias đè nhau nữa. |
 | budget_actuals | `idempotency_key` | text + UNIQUE(workspace_id, idempotency_key) WHERE NOT NULL | AC09: client gửi key ổn định cho mỗi lần ghi payment; trùng → 409. (`commitment_id` đã có từ 0001.) |
+| budget_commitments | `idempotency_key` | text + UNIQUE(workspace_id, idempotency_key) WHERE NOT NULL — index `budget_commitments_idempotency_uidx` (migration **0013**, vá P2) | AC09 mở rộng: trước 0013 bảng này CHƯA có key/unique nên double-click/retry tạo cam kết trùng, nhân đôi cam kết mở. Nay đúng mẫu `budget_actuals`/`cash_transactions` ở 0009: client gửi key ổn định cho mỗi ý định tạo cam kết; trùng → 409/23505, store đọc lại bản ghi theo key và coi là đã tạo (deduped). Sửa cam kết không đổi key. |
 | kpis | `definition` | jsonb NOT NULL default `{}` — `{how, source, formula?, dedup_key?, note?}` | R3-08: định nghĩa cách đo, tách khỏi name/target. |
 | kpis | `scope_type` | text NOT NULL default `campaign`, CHECK in (campaign, activity, task, content, bu_product, pillar, channel, workspace) + CHECK bộ cột theo scope (mục 3) | `metric_code` đã có từ 0001. |
 | kpis | `activity_id`, `task_id`, `content_item_id`, `bu_product_id`, `pillar_id` | FK nullable (SET NULL) | `product_id` cũ giữ nguyên (legacy); scope `bu_product` chấp nhận `bu_product_id` HOẶC `product_id`. |

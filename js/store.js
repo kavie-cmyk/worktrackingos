@@ -336,7 +336,7 @@
       }
       return null;
     },
-    /** Sinh idempotency_key ổn định cho 1 lần tạo payment/giao dịch (AC09). */
+    /** Sinh idempotency_key ổn định cho 1 lần tạo payment/giao dịch/cam kết (AC09). */
     _newIdempotencyKey: function (prefix, seedObj) {
       var h = Core ? Core.stableHash(seedObj || {}) : String(Date.now());
       return String(prefix || 'pay') + '-' + h + '-' + Math.random().toString(36).slice(2, 8);
@@ -1293,6 +1293,15 @@
             payload.idempotency_key = obj.idempotencyKey || obj.idempotency_key
               || this._newIdempotencyKey('pay', { line: payload.budget_line_id, amount: payload.amount, title: payload.title || null, at: payload.spent_at || null });
           }
+          // P2/AC09 (commitments, migration 0013 — đúng mẫu actuals/cash ở
+          // 0009): tạo cam kết mới cũng sinh idempotency_key ổn định nếu
+          // caller chưa cấp; giữ key caller cấp. Sửa cam kết (không phải
+          // insert) KHÔNG sinh key mới và KHÔNG đổi key đã có.
+          if (collection === 'commitments' && options.forInsert && !payload.idempotency_key) {
+            payload.idempotency_key = obj.idempotencyKey || obj.idempotency_key
+              || this._newIdempotencyKey('cmt', { line: payload.budget_line_id, amount: payload.amount, title: payload.description || obj.title || null });
+          }
+          if (collection === 'commitments' && !options.forInsert) delete payload.idempotency_key;
           break;
         }
         case 'reportSnapshots': {
@@ -1591,12 +1600,13 @@
       if (!this.state[collection]) this.state[collection] = [];
       var item = Object.assign({}, obj);
       if (!item.id) item.id = uid(collection.replace(/s$/, ''));
-      // AC09 (demo/mock): payment/giao dịch thu–chi có idempotency_key — key
-      // do caller cấp được GIỮ; thiếu thì sinh 1 key cho lần tạo này. Retry
-      // cùng key → trả bản ghi cũ, KHÔNG tạo bản ghi thứ hai.
-      if (collection === 'actuals' || collection === 'cashTransactions') {
+      // AC09 (demo/mock): payment/giao dịch thu–chi/cam kết có
+      // idempotency_key — key do caller cấp được GIỮ; thiếu thì sinh 1 key
+      // cho lần tạo này. Retry cùng key → trả bản ghi cũ, KHÔNG tạo bản
+      // ghi thứ hai (P2: commitments theo đúng mẫu actuals/cashTransactions).
+      if (collection === 'actuals' || collection === 'cashTransactions' || collection === 'commitments') {
         if (!item.idempotencyKey && !item.idempotency_key) {
-          item.idempotencyKey = this._newIdempotencyKey(collection === 'actuals' ? 'pay' : 'cash', { line: item.budgetLineId || item.accountId || null, amount: item.amount, title: item.title || null });
+          item.idempotencyKey = this._newIdempotencyKey(collection === 'actuals' ? 'pay' : (collection === 'cashTransactions' ? 'cash' : 'cmt'), { line: item.budgetLineId || item.accountId || null, amount: item.amount, title: item.title || null });
         }
         var keyOf = item.idempotencyKey || item.idempotency_key;
         var dupPay = this.state[collection].find(function (x) { return (x.idempotencyKey || x.idempotency_key) === keyOf; });
@@ -1630,8 +1640,8 @@
       }
       if (collection === 'comments') obj = this._normalizeComment(obj);
       obj = this._applyScopeDerivation(collection, obj);
-      if ((collection === 'actuals' || collection === 'cashTransactions') && !obj.idempotencyKey && !obj.idempotency_key) {
-        obj = Object.assign({}, obj, { idempotencyKey: this._newIdempotencyKey(collection === 'actuals' ? 'pay' : 'cash', { line: obj.budgetLineId || obj.accountId || null, amount: obj.amount, title: obj.title || null }) });
+      if ((collection === 'actuals' || collection === 'cashTransactions' || collection === 'commitments') && !obj.idempotencyKey && !obj.idempotency_key) {
+        obj = Object.assign({}, obj, { idempotencyKey: this._newIdempotencyKey(collection === 'actuals' ? 'pay' : (collection === 'cashTransactions' ? 'cash' : 'cmt'), { line: obj.budgetLineId || obj.accountId || null, amount: obj.amount, title: obj.title || null }) });
       }
       var guard = this._guard(collection, obj, 'create');
       if (guard) return Promise.resolve(guard);
@@ -1651,8 +1661,10 @@
             // AC09 remote: trùng idempotency_key → backend 409/23505. Trả bản
             // ghi ĐÃ CÓ (deduped) nếu truy được; không truy được thì giữ
             // nguyên lỗi backend cho caller (không giả vờ thành công).
-            var key = obj.idempotencyKey || obj.idempotency_key || null;
-            if (key && (collection === 'actuals' || collection === 'cashTransactions')
+            // P2: commitments áp dụng cùng cơ chế (key lấy thêm từ payload
+            // đã gửi để khớp đúng key server đã nhận).
+            var key = obj.idempotencyKey || obj.idempotency_key || payload.idempotency_key || null;
+            if (key && (collection === 'actuals' || collection === 'cashTransactions' || collection === 'commitments')
                 && (String(main.code) === '409' || String(main.code) === '23505' || /duplicate|unique/i.test(main.error || ''))) {
               return self._attempt(table + '.select.by_idempotency', self.supabaseClient.from(table).select('*').eq('idempotency_key', key).limit(1))
                 .then(function (found) {
@@ -1829,6 +1841,8 @@
         item.customFields = Core ? Core.mergeCustomFields(item.customFields || {}, effective.customFields) : effective.customFields;
       }
       delete effective.customFields;
+      // P2: sửa cam kết KHÔNG đổi idempotency_key của bản ghi đã có.
+      if (collection === 'commitments') { delete effective.idempotencyKey; delete effective.idempotency_key; }
       var oldTarget = collection === 'kpis' ? (item.targetValue !== undefined && item.targetValue !== null ? item.targetValue : item.target) : undefined;
       var oldPageVersion = collection === 'brandPages' ? (item.version || 1) : undefined;
       Object.assign(item, effective);
