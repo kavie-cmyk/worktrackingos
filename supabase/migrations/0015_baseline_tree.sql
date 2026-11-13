@@ -1,8 +1,9 @@
 -- 0015 — Baseline cho phase/activity (chốt baseline CẢ CÂY campaign).
 --
--- TRẠNG THÁI: BẢN NHÁP TRONG REPO — CHƯA ÁP LÊN DB LIVE (13/11/2026).
--- Cần Zac/coordinator duyệt rồi mới áp (Supabase Dashboard SQL Editor
--- hoặc Management API như các migration trước).
+-- TRẠNG THÁI: ĐÃ ÁP LÊN DB LIVE 13/11/2026 (coordinator áp qua Management
+-- API sau khi QA độc lập rà soát kết luận an toàn; áp 2 lần đều HTTP 201 —
+-- idempotent; smoke test ghi/đọc baseline trên phases + activities đạt,
+-- dữ kiện thử đã dọn, production sạch).
 --
 -- LÝ DO BẮT BUỘC CÓ MIGRATION NÀY: bảng phases/activities hiện KHÔNG có
 -- cột baseline và KHÔNG có custom_fields (xem 0001_schema.sql), nên
