@@ -103,22 +103,29 @@ test('R3.1-UI [static]: lưu KPI gửi scope/FK/aggregation qua store và đồn
   assert.match(save, /if \(kAct && kAct\.campaignId\) koCampaign = kAct\.campaignId/);
 });
 
-// ---------- 5. Form ngân sách: planned/approved riêng + activity/task ----------
-test('R3.1-UI [static]: form dòng ngân sách có HAI ô Kế hoạch (planned) / Được duyệt (approved) riêng + selector Hoạt động/Task', () => {
-  const form = section("case 'budgetLine': {", "case 'allocation': {");
+// ---------- 5. Form ngân sách: planned riêng + dấu duyệt chỉ-đọc + activity/task ----------
+// SỬA THEO QUY TẮC MỚI CỦA ZAC (chuỗi duyệt 0014, 13/11/2026): form dòng ngân
+// sách KHÔNG còn ô nhập trực tiếp "Được duyệt" (approved) — số duyệt chỉ đổi
+// qua đề xuất ngân sách được Owner duyệt (RPC decide_budget_proposal, store
+// strip approved_* khỏi payload thường). Hai test dưới đây trước đây khẳng
+// định còn ô approved + payload approved; đã viết lại theo quy tắc mới.
+test('R3.1-UI [static]: form dòng ngân sách có ô Kế hoạch (planned) + khối dấu duyệt chỉ-đọc và nút Đề xuất duyệt (KHÔNG còn ô nhập approved)', () => {
+  const form = section("case 'budgetLine': {", "case 'budgetProposal': {");
   assert.match(form, /F\('planned', 'Kế hoạch \(planned\)', 'number'/);
-  assert.match(form, /F\('approved', 'Được duyệt \(approved\)', 'number'/);
+  assert.ok(!form.includes("F('approved', 'Được duyệt (approved)', 'number'"), 'form vẫn còn ô nhập trực tiếp approved — trái quy tắc mới của Zac');
+  assert.match(form, /budgetLineApprovalBlockHtml\(b\)/);
+  assert.match(form, /data-kind="budgetProposal"/);
+  assert.match(form, />Đề xuất duyệt</);
   assert.match(form, /F\('activityId', 'Hoạt động \(thuộc campaign\)', 'select'/);
   assert.match(form, /F\('taskId', 'Task \(thuộc campaign\)', 'select'/);
   assert.match(form, /F\('currency', 'Tiền tệ', 'select'/);
 });
 
-test('R3.1-UI [static]: lưu dòng ngân sách KHÔNG fallback planned ↔ approved (AC10 ở UI)', () => {
-  const save = section("case 'budgetLine': {", "case 'allocation': {", saveStart);
+test('R3.1-UI [static]: lưu dòng ngân sách chỉ gửi planned (trống = null) — KHÔNG gửi approved nữa (quy tắc mới của Zac)', () => {
+  const save = section("case 'budgetLine': {", "case 'budgetProposal': {", saveStart);
   assert.match(save, /planned: \(data\.planned === '' \|\| data\.planned === null \|\| data\.planned === undefined\) \? null : Number\(data\.planned\)/);
-  assert.match(save, /approved: \(data\.approved === '' \|\| data\.approved === null \|\| data\.approved === undefined\) \? null : Number\(data\.approved\)/);
+  assert.doesNotMatch(save, /approved\s*:/);
   assert.doesNotMatch(save, /planned:\s*[^,]*approved/);
-  assert.doesNotMatch(save, /approved:\s*[^,]*planned/);
   assert.match(save, /activityId: data\.activityId \|\| null, taskId: data\.taskId \|\| null/);
 });
 

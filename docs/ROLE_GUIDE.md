@@ -38,3 +38,12 @@ Chuỗi công việc chuẩn của bạn, theo đúng thứ tự:
 - **Xem dashboard / báo cáo:** mở dashboard để xem bức tranh toàn cảnh — tiến độ campaign (chỉ tính việc lá, việc đã huỷ không tính), KPI đạt/chưa đạt, ngân sách đã chi và còn lại, hiệu quả kênh và quảng cáo theo kỳ.
 - **Xuất CSV:** dùng nút xuất CSV trên các bảng/báo cáo để lấy số liệu ra ngoài khi cần làm việc trong spreadsheet hoặc gửi kèm tài liệu họp.
 - **Không sửa:** vai CEO là vai chỉ xem — bạn không chỉnh sửa campaign, việc, nội dung hay số liệu trong app. Cần thay đổi gì thì trao đổi với Lead/Owner để họ cập nhật đúng nguồn dữ liệu.
+
+## Chuỗi duyệt ngân sách (đề xuất → duyệt → cam kết/chi)
+
+Ngân sách đi đúng một chuỗi — không ai sửa thẳng số đã duyệt trong form:
+
+1. **Đề xuất:** Owner / Lead / Member (quyền `budget.propose`) tạo **đề xuất ngân sách** cho một hạn mức campaign hoặc một dòng ngân sách: mở form "Đề xuất ngân sách" ở màn **KPI & Ngân sách**, nút **Đề xuất duyệt** trong form sửa dòng ngân sách, hoặc nút ở khối hạn mức trong **Tổng quan campaign**. Form hiện số hiện tại → số đề xuất, tiền tệ điền sẵn theo đối tượng, kèm lý do. Form dòng ngân sách không còn ô nhập "Được duyệt" — chỉ hiện dấu duyệt hiện tại (đã duyệt bởi ai, ngày nào; hoặc "Chưa được duyệt").
+2. **Duyệt ngân sách:** **chỉ Owner** (quyền `budget.decide`) quyết định đề xuất trong hàng đợi **Ngân sách** ở màn Duyệt/Requests. Duyệt xong, số đã duyệt của dòng / hạn mức của campaign và dấu duyệt (người duyệt + ngày) cập nhật ngay; từ chối thì đối tượng đích giữ nguyên.
+3. **Cam kết / khoản chi:** cam kết và khoản chi mới tạo luôn ở trạng thái **chờ duyệt**. **Lead / Owner** (quyền `approval.decide`) duyệt/từ chối ngay tại danh sách cam kết/khoản chi — nhưng chỉ khi dòng ngân sách chứa nó **đã có dấu duyệt của Owner**, tổng sử dụng sau duyệt (chỉ tính các khoản đã duyệt) **không vượt số đã duyệt**, và **không tự duyệt khoản do mình tạo** (trừ Owner). UI khóa nút kèm lý do tại chỗ ("Khoản ngân sách chưa được duyệt" / "Vượt số đã duyệt") khi tiền kiểm không đạt; server vẫn là chốt cuối.
+4. **CEO** không đề xuất, không duyệt — chỉ xem trạng thái và dấu duyệt như các số liệu khác trong phạm vi xem của mình.

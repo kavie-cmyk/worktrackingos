@@ -384,3 +384,7 @@ td.perm-cell{text-align:center;font-size:15px}
 .perm-yes{color:var(--st-done);font-weight:800}
 .perm-no{color:var(--st-cancelled);font-weight:600}
 @media(max-width:480px){.viz-timeline{min-width:110px}.viz-daybars{min-width:0}.asset-thumb-lg,.asset-thumb-ph{width:56px;height:44px}}
+/* ===== 0014 UI: chuỗi duyệt ngân sách ===== */
+.budget-approval-block-reason{color:var(--st-overdue);font-weight:600}
+.budget-proposal-delta{display:inline-block;margin:4px 0}
+.budget-fact-decide{white-space:nowrap}

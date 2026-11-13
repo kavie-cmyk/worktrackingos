@@ -66,3 +66,39 @@ RLS: mọi bảng mới đều bật RLS + grant authenticated theo mẫu 0002 (
 ## 6. Đã kiểm chứng live (vai thật, user thử role lead — đã xóa sạch)
 
 Campaign → activity (owner/channel/deliverables round-trip) → budget_line (planned 1200 ≠ approved 1000 round-trip) → commitment 1000 → actual 400 (title `Chi ads R31` tách description `Hoa don HD01`); duplicate `idempotency_key` → **409**; KPI scope=activity + definition jsonb → 201; pillar → content_item (pillar + series) → 201; RPC capacity 32h → 200. **AC04**: budget_line kèm activity của campaign A + campaign_id B → **400 R31_SCOPE**. **AC08**: allocation 180/300 → 201, thêm 200 (tổng 380 > 300) → **400 R31_ALLOC**. Anon không JWT đọc campaigns → `[]`. Sau kiểm: auth.users = 1, workspaces = 1 (sava-marketing), mọi bảng nghiệp vụ = 0 dòng.
+
+## 7. Chuỗi duyệt ngân sách — Migration 0014 (budget approval chain)
+
+Luồng: **đề xuất (`budget_proposals`) → Owner quyết định → cam kết/khoản chi chờ duyệt → Lead/Owner quyết định**. Số đã duyệt / hạn mức không còn sửa được qua create/update thường (guard trigger chặn; store strip các field này khỏi payload thường ở cả hai chiều demo/remote).
+
+### 7.1 Bảng `budget_proposals`
+
+| Cột | Ghi chú |
+|---|---|
+| `target_type` | `campaign_ceiling` (hạn mức campaign) hoặc `budget_line` (số duyệt của dòng) — CHECK hai chiều với `budget_line_id` |
+| `campaign_id` | Luôn bắt buộc (kể cả khi target là dòng: dòng thuộc campaign đó) |
+| `budget_line_id` | Bắt buộc đúng khi `target_type='budget_line'` |
+| `proposed_amount`, `currency`, `reason` | Số đề xuất + tiền tệ + lý do của người đề xuất |
+| `proposer_id`, `status` | Người đề xuất; `status` ∈ `pending/approved/rejected`, mặc định `pending` |
+| `decided_by`, `decided_at`, `decision_note` | Quyết định — chỉ ghi qua RPC |
+| `revision` | Khóa lạc quan: người duyệt gửi đúng revision đang xem, lệch → `STALE_REVISION` |
+
+RLS: member của workspace được SELECT; INSERT chỉ cho chính mình (`proposer_id = auth.uid()`); **không** có policy UPDATE/DELETE cho `authenticated` — trạng thái chỉ đổi qua RPC. Dấu duyệt đích: `budget_lines.approved_by/approved_at/approved_via_proposal_id` và bộ ba tương tự trên `campaigns` (cho hạn mức) chỉ ghi bởi RPC quyết định đề xuất; `approved_by IS NULL` nghĩa là dòng/hạn mức **chưa được duyệt**.
+
+### 7.2 Ba RPC quyết định (SECURITY DEFINER, `app.via_rpc='on'`)
+
+| RPC | Ai gọi được | Tác dụng khi `approved` |
+|---|---|---|
+| `decide_budget_proposal(p_proposal_id, p_revision, p_decision, p_note)` | **Chỉ Owner** (Owner được duyệt đề xuất của chính mình) | Ghi `approved_amount` của dòng / `budget_ceiling_amount` + currency của campaign kèm dấu duyệt, chốt proposal |
+| `decide_commitment_approval(p_commitment_id, p_decision, p_note)` | Lead / Owner | Đặt `approval_status` của cam kết (kèm người/thời điểm quyết định + ghi chú) |
+| `decide_payment_approval(p_actual_id, p_decision, p_note)` | Lead / Owner | Đặt `approval_status` của khoản chi; khoản liên kết cam kết đồng thời làm giảm nghĩa vụ mở của cam kết trong công thức trần |
+
+### 7.3 Mã lỗi ổn định (message bắt đầu bằng tiền tố — UI map theo tiền tố)
+
+`FORBIDDEN_ROLE` (42501) · `ALREADY_DECIDED` (P0001) · `SELF_APPROVAL` (42501, người tạo không tự quyết — trừ Owner) · `BUDGET_NOT_APPROVED` (42501, dòng chưa có dấu duyệt) · `BUDGET_LIMIT_EXCEEDED` (42501, vượt `approved_amount` theo UsageTotal) · `STALE_REVISION` (42501, chỉ ở đề xuất) · `CURRENCY_MISMATCH` (22023, tiền tệ fact khác tiền tệ dòng).
+
+### 7.4 Guard + `approval_status` + quy tắc tổng
+
+- `budget_commitments` / `budget_actuals`: cột `approval_status` ∈ `pending/approved/rejected` + `approved_by/approved_at/approval_note` (ở hai cột đầu, giá trị mang nghĩa **người/thời điểm quyết định**, kể cả khi từ chối). Guard trigger: INSERT qua client bị **ép về `pending`** và xóa 3 cột quyết định; UPDATE đổi 4 cột `approval_*` ngoài RPC bị chặn (42501).
+- **Tổng chỉ tính đã duyệt:** `budget_remaining` (SQL) và `Domain.budgetRemaining` / `budgetUsageTotal` / `openCommitmentTotal` / `commitmentPaidTotal` (JS) chỉ tính fact có `approval_status='approved'`: UsageTotal = Σ actual đã duyệt + Σ trên cam kết đã duyệt (chưa archive, status chưa cancelled) của `max(0, amount − Σ actual đã duyệt liên kết)`, lọc cùng currency với dòng khi dòng có currency.
+- **Tương thích dữ liệu cũ:** cột mới có DEFAULT `'approved'` nên dòng cũ giữ nguyên kết quả tính như trước 0014; ở tầng JS, fact **thiếu trạng thái** (`Domain.factApprovalStatus` trả `null`) được `Domain.isApprovedFact` coi như `approved` — cùng quy tắc ở UI (`factApprovalStatusOf`).

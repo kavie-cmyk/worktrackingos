@@ -99,7 +99,8 @@
     taskPanelId: null,
     taskPanelReturnHash: null,
     pendingDatePreview: null,
-    approveComment: {}
+    approveComment: {},
+    budgetProposalNote: {}
   };
 
   // ---------- Nhãn trạng thái tiếng Việt (không lộ mã nội bộ) ----------
@@ -213,6 +214,171 @@
   function canBudget() { return can('budget'); }
   function canBudgetChange() { return can('budgetChange') || can('budget'); }
   function canPublish() { return can('publish'); }
+
+  // ---------- 0014 UI: chuỗi duyệt ngân sách (đề xuất → Owner duyệt → fact chờ duyệt) ----------
+  // Hàm map lỗi DÙNG CHUNG cho cả 3 luồng quyết định (đề xuất ngân sách /
+  // cam kết / khoản chi): store/RPC trả error bắt đầu bằng tiền tố ổn định,
+  // UI chỉ dịch theo tiền tố — không đoán theo nội dung lỗi tự do.
+  function budgetApprovalErrorMessage(error, context) {
+    var msg = '';
+    if (error && typeof error === 'object') msg = String(error.error || error.message || '');
+    else msg = String(error || '');
+    if (/^FORBIDDEN_ROLE\b/.test(msg)) return context === 'proposal' ? 'Chỉ Owner được duyệt ngân sách' : 'Bạn không có quyền duyệt mục này';
+    if (/^ALREADY_DECIDED\b/.test(msg)) return 'Khoản này đã được quyết định trước đó';
+    if (/^SELF_APPROVAL\b/.test(msg)) return 'Không được tự duyệt khoản do mình tạo';
+    if (/^BUDGET_NOT_APPROVED\b/.test(msg)) return 'Khoản ngân sách chưa được duyệt';
+    if (/^BUDGET_LIMIT_EXCEEDED\b/.test(msg)) return 'Vượt số đã duyệt';
+    if (/^STALE_REVISION\b/.test(msg)) return 'Đề xuất đã thay đổi, hãy tải lại';
+    if (/^CURRENCY_MISMATCH\b/.test(msg)) return 'Khác tiền tệ với khoản ngân sách';
+    return msg || 'Thao tác thất bại.';
+  }
+  function budgetProposalChange(current, proposed) {
+    var cur = (current === null || current === undefined || current === '' || isNaN(Number(current))) ? null : Number(current);
+    var prop = (proposed === null || proposed === undefined || proposed === '' || isNaN(Number(proposed))) ? null : Number(proposed);
+    if (prop === null) return { current: cur, proposed: prop, diff: null, pct: null };
+    if (cur === null) return { current: cur, proposed: prop, diff: null, pct: null };
+    var diff = prop - cur;
+    var pct = cur === 0 ? null : Math.round(diff / Math.abs(cur) * 10000) / 100;
+    return { current: cur, proposed: prop, diff: diff, pct: pct };
+  }
+  function budgetLineApprovedAmount(line) {
+    if (!line) return 0;
+    var v = (line.approved !== null && line.approved !== undefined) ? line.approved : (line.approvedAmount !== null && line.approvedAmount !== undefined ? line.approvedAmount : line.approved_amount);
+    return (v === null || v === undefined || v === '' || isNaN(Number(v))) ? 0 : Number(v);
+  }
+  function budgetLineApprovalBlockHtml(line) {
+    var amt = budgetLineApprovedAmount(line);
+    var cur = line ? (line.currency || 'VND') : 'VND';
+    if (line && (line.approvedBy || line.approved_by)) {
+      return '<p class="sub" style="margin:2px 0"><strong>Đã duyệt ' + fmtMoney(amt, cur) + ' · ' + esc(memberName(line.approvedBy || line.approved_by)) + ' · ' + esc(D.formatDateVN(line.approvedAt || line.approved_at)) + '</strong></p>';
+    }
+    return '<p class="sub" style="margin:2px 0"><strong>Chưa được duyệt</strong> — số đã duyệt hiện tại: ' + fmtMoney(amt, cur) + '. Số duyệt chỉ thay đổi khi một đề xuất ngân sách được Owner duyệt.</p>';
+  }
+  function budgetLineApprovedCellHtml(line) {
+    var cur = line ? (line.currency || 'VND') : 'VND';
+    var amt = budgetLineApprovedAmount(line);
+    if (line && (line.approvedBy || line.approved_by)) {
+      return fmtMoney(amt, cur) + '<br><span class="sub">' + esc(memberName(line.approvedBy || line.approved_by)) + ' · ' + esc(D.formatDateVN(line.approvedAt || line.approved_at)) + '</span>';
+    }
+    return fmtMoney(amt, cur) + '<br><span class="sub">Chưa được duyệt</span>';
+  }
+  function approvalStampLineHtml(obj) {
+    if (obj && (obj.approvedBy || obj.approved_by)) {
+      return '<span class="sub">Đã duyệt bởi ' + esc(memberName(obj.approvedBy || obj.approved_by)) + ' · ' + esc(D.formatDateVN(obj.approvedAt || obj.approved_at)) + '</span>';
+    }
+    return '<span class="sub">Chưa được duyệt</span>';
+  }
+  function campaignCeilingApprovalHtml(camp) {
+    if (camp && (camp.approvedBy || camp.approved_by)) {
+      return '<span class="sub">Đã duyệt bởi ' + esc(memberName(camp.approvedBy || camp.approved_by)) + ' · ' + esc(D.formatDateVN(camp.approvedAt || camp.approved_at)) + '</span>';
+    }
+    return '<span class="sub">Hạn mức chưa được duyệt</span>';
+  }
+  function factApprovalStatusOf(fact) {
+    if (!fact) return 'approved';
+    var st = null;
+    if (D && typeof D.factApprovalStatus === 'function') st = D.factApprovalStatus(fact);
+    if (st === null || st === undefined || st === '') st = fact.approvalStatus || fact.approval_status || null;
+    if (st === null || st === undefined || st === '') return 'approved';
+    return String(st).toLowerCase();
+  }
+  function factApprovalPillHtml(fact) {
+    var st = factApprovalStatusOf(fact);
+    return vizStatusPillHtml(st, { label: labelStatus(st) });
+  }
+  // Tiền kiểm phía UI cho fact chờ duyệt: trả '' khi duyệt được, hoặc lý do
+  // disable HIỂN THỊ NGAY TẠI CHỖ. Trần kiểm bằng Domain.budgetUsageTotal
+  // với chính fact đang xét được tính như đã duyệt (đúng công thức RPC).
+  function budgetFactBlockReason(fact, kind) {
+    if (!fact) return '';
+    var lineId = fact.budgetLineId || fact.budget_line_id || null;
+    var line = lineId ? Store.get('budgetLines', lineId) : null;
+    if (!line) return '';
+    if (!(line.approvedBy || line.approved_by)) return 'Khoản ngân sách chưa được duyệt';
+    if (!D || typeof D.budgetUsageTotal !== 'function') return '';
+    try {
+      var byLine = function (x) { return String(x.budgetLineId || x.budget_line_id || '') === String(line.id); };
+      var commitments = Store.list('commitments').filter(byLine);
+      var actuals = Store.list('actuals').filter(byLine);
+      if (kind === 'commitment') {
+        commitments = commitments.map(function (x) { return x.id === fact.id ? Object.assign({}, x, { approvalStatus: 'approved' }) : x; });
+      } else {
+        actuals = actuals.map(function (x) { return x.id === fact.id ? Object.assign({}, x, { approvalStatus: 'approved' }) : x; });
+      }
+      var usage = D.budgetUsageTotal(line, commitments, actuals);
+      if (usage !== null && usage !== undefined && Number(usage) > budgetLineApprovedAmount(line)) return 'Vượt số đã duyệt';
+    } catch (e) { return ''; }
+    return '';
+  }
+  function factApprovalControlsHtml(fact, kind) {
+    var st = factApprovalStatusOf(fact);
+    var html = factApprovalPillHtml(fact);
+    if (st !== 'pending') return html;
+    if (!can('approval.decide')) return html;
+    var reason = budgetFactBlockReason(fact, kind);
+    var disAttr = reason ? ' disabled title="' + esc(reason) + '"' : '';
+    html += ' <span class="budget-fact-decide"><button type="button" class="btn small" data-action="budget-fact-decide" data-kind="' + esc(kind) + '" data-decision="approved" data-id="' + esc(fact.id) + '"' + disAttr + '>Duyệt</button> ' +
+      '<button type="button" class="btn small secondary" data-action="budget-fact-decide" data-kind="' + esc(kind) + '" data-decision="rejected" data-id="' + esc(fact.id) + '"' + disAttr + '>Từ chối</button>' +
+      (reason ? '<br><span class="sub budget-approval-block-reason">' + esc(reason) + '</span>' : '') + '</span>';
+    return html;
+  }
+  function budgetProposalCurrentValue(p) {
+    if (!p) return null;
+    if ((p.targetType || p.target_type) === 'budget_line') {
+      var line = Store.get('budgetLines', p.budgetLineId || p.budget_line_id);
+      return line ? budgetLineApprovedAmount(line) : null;
+    }
+    var camp = Store.get('campaigns', p.campaignId || p.campaign_id);
+    var ceil = camp ? campaignCeilingValue(camp) : null;
+    return ceil ? ceil.amount : null;
+  }
+  function budgetProposalTargetLabel(p) {
+    if (!p) return '—';
+    var campName = campaignName(p.campaignId || p.campaign_id);
+    if ((p.targetType || p.target_type) === 'budget_line') {
+      var line = Store.get('budgetLines', p.budgetLineId || p.budget_line_id);
+      return 'Dòng ngân sách: ' + (line ? line.name : (p.budgetLineId || p.budget_line_id || '—')) + ' — ' + campName;
+    }
+    return 'Hạn mức campaign: ' + campName;
+  }
+  function budgetProposalDeltaHtml(p) {
+    var cur = budgetProposalCurrentValue(p);
+    var prop = (p.proposedAmount !== null && p.proposedAmount !== undefined) ? p.proposedAmount : p.proposed_amount;
+    var ch = budgetProposalChange(cur, prop);
+    var curText = cur === null ? 'chưa có' : fmtMoney(cur, p.currency);
+    var pctText = ch.pct === null ? (cur === null ? 'chưa có số hiện tại' : 'từ 0') : ((ch.pct > 0 ? '+' : '') + fmtPct(ch.pct));
+    var max = Math.max(Math.abs(Number(cur) || 0), Math.abs(Number(prop) || 0));
+    return '<span class="budget-proposal-delta">Hiện tại: <strong>' + esc(curText) + '</strong> → Đề xuất: <strong>' + fmtMoney(prop, p.currency) + '</strong> (' + esc(pctText) + ')</span>' +
+      vizHBarHtml({ label: 'Đề xuất so với hiện tại', value: Number(prop) || 0, max: max > 0 ? max : null, valueText: fmtMoney(prop, p.currency) + ' (' + pctText + ')' });
+  }
+  function budgetProposalsQueueHtml() {
+    var proposals = [];
+    try { proposals = Store.list('budgetProposals') || []; } catch (e) { proposals = []; }
+    var canDecideBudget = can('budget.decide');
+    var html = '<div data-budget-queue="budget"><h2>Hàng đợi ngân sách (' + proposals.length + ')</h2>';
+    if (!proposals.length) {
+      html += '<div class="state-box">Chưa có đề xuất ngân sách nào. Dùng nút "Đề xuất ngân sách" ở màn KPI &amp; Ngân sách, trong form dòng ngân sách, hoặc ở khối hạn mức của campaign để tạo đề xuất.</div>';
+      return html + '</div>';
+    }
+    html += proposals.map(function (p) {
+      var st = String(p.status || 'pending').toLowerCase();
+      var out = '<div class="panel" data-budget-proposal="' + esc(p.id) + '"><strong>' + esc(budgetProposalTargetLabel(p)) + '</strong> ' + vizStatusPillHtml(st, { label: labelStatus(st) }) +
+        '<br>' + budgetProposalDeltaHtml(p) +
+        '<br><span class="sub">Người đề xuất: ' + esc(memberName(p.proposerId || p.proposer_id)) + (p.reason ? ' · Lý do: ' + esc(p.reason) : '') + '</span>';
+      if (st !== 'pending' && (p.decidedBy || p.decided_by)) {
+        out += '<br><span class="sub">Đã quyết bởi ' + esc(memberName(p.decidedBy || p.decided_by)) + ' · ' + esc(D.formatDateVN(p.decidedAt || p.decided_at)) + (p.decisionNote || p.decision_note ? ' · ' + esc(p.decisionNote || p.decision_note) : '') + '</span>';
+      }
+      if (st === 'pending' && canDecideBudget) {
+        out += '<label class="fld wide">Ghi chú khi quyết định<textarea id="budget-proposal-note-' + esc(p.id) + '" rows="2" placeholder="Ghi chú khi duyệt / từ chối (không bắt buộc)">' + esc(UI.budgetProposalNote[p.id] || '') + '</textarea></label>' +
+          '<p><button type="button" class="btn" data-action="budget-proposal-decide" data-decision="approved" data-id="' + esc(p.id) + '">Duyệt</button> ' +
+          '<button type="button" class="btn secondary" data-action="budget-proposal-decide" data-decision="rejected" data-id="' + esc(p.id) + '">Từ chối</button></p>';
+      } else if (st === 'pending') {
+        out += '<br><span class="sub">Chỉ Owner được duyệt ngân sách — vai trò hiện tại chỉ xem trạng thái.</span>';
+      }
+      return out + '</div>';
+    }).join('');
+    return html + '</div>';
+  }
   // R2-30.6: bản duyệt đang chờ MÌNH quyết định.
   function isWaitingForMe(a, me) {
     if (!a || (a.status !== 'pending' && a.status !== 'needs_reapproval')) return false;
@@ -841,9 +1007,38 @@
           F('activityId', 'Hoạt động (thuộc campaign)', 'select', blAct, { options: blActs.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chi trực tiếp campaign / chưa phân bổ —', attrs: ' data-refresh-editor="1"' }) +
           F('taskId', 'Task (thuộc campaign)', 'select', ev('taskId', b.taskId || e.context.taskId || ''), { options: blTasks.map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn task —' }) +
           F('planned', 'Kế hoạch (planned)', 'number', ev('planned', b.planned), { min: 0, step: 'any', help: 'Số kế hoạch — lưu độc lập, không suy từ số được duyệt.' }) +
-          F('approved', 'Được duyệt (approved)', 'number', ev('approved', b.approved), { min: 0, step: 'any', help: 'Số đã được duyệt — lưu độc lập với kế hoạch.' }) +
+          // 0014 (quy tắc mới của Zac): KHÔNG còn ô nhập trực tiếp "Được duyệt" —
+          // số duyệt chỉ đổi qua đề xuất ngân sách được Owner duyệt. Ở đây chỉ
+          // hiển thị dấu duyệt hiện tại (chỉ-đọc) + nút mở form đề xuất.
+          '<div class="fld wide"><span>Được duyệt</span>' + budgetLineApprovalBlockHtml(b) +
+          (e.id && can('budget.propose') ? '<p style="margin:4px 0"><button type="button" class="btn small" data-action="editor-open" data-kind="budgetProposal" data-line="' + esc(b.id) + '" data-campaign="' + esc(b.campaignId || '') + '" data-target-type="budget_line">Đề xuất duyệt</button></p>' : (e.id ? '' : '<p class="sub" style="margin:2px 0">Dòng mới chưa có số duyệt — tạo dòng xong mới đề xuất duyệt được.</p>')) + '</div>' +
           F('currency', 'Tiền tệ', 'select', ev('currency', b.currency || 'VND'), { options: [['VND', 'VND'], ['USD', 'USD']] }),
           'Lưu dòng ngân sách');
+      }
+      case 'budgetProposal': {
+        var bpCampId = ev('proposalCampaignId', e.context.campaignId || '');
+        var bpLineId0 = ev('budgetLineId', e.context.budgetLineId || '');
+        var bpLine0 = bpLineId0 ? Store.get('budgetLines', bpLineId0) : null;
+        if (!bpCampId && bpLine0 && bpLine0.campaignId) bpCampId = bpLine0.campaignId;
+        var bpTargetType = ev('targetType', e.context.targetType || (bpLineId0 ? 'budget_line' : 'campaign_ceiling'));
+        var bpCamp0 = bpCampId ? Store.get('campaigns', bpCampId) : null;
+        var bpLines = visibleList('budgetLines').filter(function (x) { return !bpCampId || x.campaignId === bpCampId; });
+        var bpCurrent = null; var bpCurrency = 'VND';
+        if (bpTargetType === 'budget_line' && bpLine0) { bpCurrent = budgetLineApprovedAmount(bpLine0); bpCurrency = bpLine0.currency || 'VND'; }
+        else if (bpCamp0) { var bpCeil = campaignCeilingValue(bpCamp0); bpCurrent = bpCeil ? bpCeil.amount : null; bpCurrency = (bpCeil && bpCeil.currency) || bpCamp0.budgetCeilingCurrency || 'VND'; }
+        var bpTargetLabel = bpTargetType === 'budget_line'
+          ? ('Dòng ngân sách: ' + (bpLine0 ? bpLine0.name : '— chọn dòng bên dưới —') + (bpCamp0 ? ' — ' + bpCamp0.name : ''))
+          : ('Hạn mức campaign: ' + (bpCamp0 ? bpCamp0.name : '— chọn campaign bên dưới —'));
+        return formShell('budgetProposal', 'Đề xuất ngân sách',
+          '<div class="fld wide"><span>Ngữ cảnh đối tượng</span><p class="sub" style="margin:2px 0"><strong>' + esc(bpTargetLabel) + '</strong></p>' +
+          '<p class="sub" style="margin:2px 0">Hiện tại: <strong>' + (bpCurrent === null ? 'chưa có' : fmtMoney(bpCurrent, bpCurrency)) + '</strong> → Đề xuất: nhập số ở ô "Số đề xuất" bên dưới.</p></div>' +
+          F('proposalCampaignId', 'Campaign *', 'select', bpCampId, { options: campaignPairs(), emptyLabel: '— Chọn campaign —', attrs: ' data-refresh-editor="1"' }) +
+          F('targetType', 'Đối tượng đề xuất', 'select', bpTargetType, { options: [['campaign_ceiling', 'Hạn mức campaign'], ['budget_line', 'Dòng ngân sách']], attrs: ' data-refresh-editor="1"' }) +
+          F('budgetLineId', 'Dòng ngân sách (khi đối tượng là dòng)', 'select', bpLineId0, { options: bpLines.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chọn dòng —', attrs: ' data-refresh-editor="1"' }) +
+          F('proposedAmount', 'Số đề xuất *', 'number', ev('proposedAmount', ''), { required: true, min: 0, step: 'any' }) +
+          F('currency', 'Tiền tệ', 'select', ev('currency', bpCurrency), { options: [['VND', 'VND'], ['USD', 'USD']], help: 'Điền sẵn theo tiền tệ của đối tượng — đổi chỉ khi đề xuất dùng tiền tệ khác.' }) +
+          F('reason', 'Lý do', 'textarea', ev('reason', ''), { wide: true, rows: 3, placeholder: 'Vì sao cần duyệt số này?' }),
+          'Gửi đề xuất');
       }
       case 'allocation': {
         var srcKind = ev('sourceKind', e.context.sourceKind || 'actual');
@@ -1267,10 +1462,28 @@
       case 'budgetLine': {
         req('name', 'tên dòng ngân sách');
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
-        // R3.1/AC10: planned và approved là HAI số độc lập — planned trống thì
-        // giữ null, tuyệt đối không lấy approved lấp vào (và ngược lại).
-        var blo = { name: data.name, campaignId: data.campaignId || null, activityId: data.activityId || null, taskId: data.taskId || null, planned: (data.planned === '' || data.planned === null || data.planned === undefined) ? null : Number(data.planned), approved: (data.approved === '' || data.approved === null || data.approved === undefined) ? null : Number(data.approved), currency: data.currency };
+        // 0014 (quy tắc mới của Zac): approved KHÔNG đi qua form này nữa —
+        // store cũng strip approved_* khỏi mọi payload thường; số duyệt chỉ
+        // đổi qua Store.createBudgetProposal + Owner quyết định. planned giữ
+        // nguyên quy tắc độc lập (trống = null, không lấp bằng số khác).
+        var blo = { name: data.name, campaignId: data.campaignId || null, activityId: data.activityId || null, taskId: data.taskId || null, planned: (data.planned === '' || data.planned === null || data.planned === undefined) ? null : Number(data.planned), currency: data.currency };
         if (e.id) done(sUpdate('budgetLines', e.id, blo), 'Đã lưu dòng ngân sách.'); else done(sCreate('budgetLines', blo), 'Đã tạo dòng ngân sách.');
+        return;
+      }
+      case 'budgetProposal': {
+        req('proposalCampaignId', 'campaign');
+        if (data.targetType === 'budget_line') req('budgetLineId', 'dòng ngân sách');
+        if (data.proposedAmount === '' || data.proposedAmount === null || data.proposedAmount === undefined || isNaN(Number(data.proposedAmount)) || Number(data.proposedAmount) < 0) errors.proposedAmount = 'Số đề xuất phải là số ≥ 0.';
+        if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
+        if (!hasFn('createBudgetProposal')) return editorFail('Tầng dữ liệu chưa hỗ trợ tạo đề xuất ngân sách.', errors);
+        done(Store.createBudgetProposal({
+          targetType: data.targetType === 'budget_line' ? 'budget_line' : 'campaign_ceiling',
+          campaignId: data.proposalCampaignId || null,
+          budgetLineId: data.targetType === 'budget_line' ? (data.budgetLineId || null) : null,
+          amount: Number(data.proposedAmount),
+          currency: data.currency || 'VND',
+          reason: data.reason || ''
+        }), 'Đã gửi đề xuất ngân sách — chờ Owner duyệt ở hàng đợi Ngân sách.');
         return;
       }
       case 'allocation': {
@@ -3243,15 +3456,15 @@
           var lineApproved = Number(l.approved) || 0;
           var lineUsed = lineApproved - lineRem;
           var lineBar = lineApproved > 0 ? vizCellBarHtml({ value: Math.max(0, lineUsed), max: lineApproved, tone: lineRem < 0 ? 'overdue' : (lineRem === 0 ? 'pending' : 'running'), text: 'Đã dùng ' + fmtMoney(lineUsed, l.currency) + ' / Được duyệt ' + fmtMoney(lineApproved, l.currency) + ' · Còn lại ' + fmtMoney(lineRem, l.currency) }) : '<span class="sub">Chưa được duyệt ngân sách</span>';
-          return '<tr><td>' + esc(l.name) + '</td><td>' + (l.planned === null || l.planned === undefined ? '—' : fmtMoney(l.planned, l.currency)) + '</td><td>' + fmtMoney(l.approved, l.currency) + '</td><td><div data-viz="activity-budget-line-bar">' + lineBar + '</div></td><td>' + esc(l.currency || 'VND') + '</td></tr>';
+          return '<tr><td>' + esc(l.name) + '</td><td>' + (l.planned === null || l.planned === undefined ? '—' : fmtMoney(l.planned, l.currency)) + '</td><td>' + budgetLineApprovedCellHtml(l) + '</td><td><div data-viz="activity-budget-line-bar">' + lineBar + '</div></td><td>' + esc(l.currency || 'VND') + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có dòng ngân sách nào gắn hoạt động này.</p>') +
         '<h3>Cam kết (' + scopedFacts.commitments.length + ')</h3>' +
-        (scopedFacts.commitments.length ? tbl('<tr><th>Cam kết</th><th>Số tiền</th><th>Trạng thái</th><th>Thao tác</th></tr>' + scopedFacts.commitments.map(function (cm) {
-          return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency) + '</td><td>' + statusBadge(cm.status) + '</td><td class="row-actions">' + (budgetEd ? '<button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
+        (scopedFacts.commitments.length ? tbl('<tr><th>Cam kết</th><th>Số tiền</th><th>Trạng thái</th><th>Duyệt</th><th>Thao tác</th></tr>' + scopedFacts.commitments.map(function (cm) {
+          return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency) + '</td><td>' + statusBadge(cm.status) + '</td><td>' + factApprovalControlsHtml(cm, 'commitment') + '</td><td class="row-actions">' + (budgetEd ? '<button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có cam kết nào.</p>') +
         '<h3>Thực chi (' + scopedFacts.actuals.length + ')</h3>' +
-        (scopedFacts.actuals.length ? tbl('<tr><th>Khoản chi</th><th>Số tiền</th><th>Ngày</th><th>Thao tác</th></tr>' + scopedFacts.actuals.map(function (a) {
-          return '<tr><td>' + esc(a.title) + '</td><td>' + fmtMoney(a.amount, a.currency) + '</td><td>' + esc(D.formatDateVN(a.date)) + '</td><td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="actual" data-source-id="' + esc(a.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
+        (scopedFacts.actuals.length ? tbl('<tr><th>Khoản chi</th><th>Số tiền</th><th>Ngày</th><th>Duyệt</th><th>Thao tác</th></tr>' + scopedFacts.actuals.map(function (a) {
+          return '<tr><td>' + esc(a.title) + '</td><td>' + fmtMoney(a.amount, a.currency) + '</td><td>' + esc(D.formatDateVN(a.date)) + '</td><td>' + factApprovalControlsHtml(a, 'actual') + '</td><td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="actual" data-source-id="' + esc(a.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có khoản chi nào.</p>');
     }
     if (tab === 'docs') {
@@ -3300,6 +3513,11 @@
       // KPI kết quả chung + đếm action đúng hạn/trễ/bị chặn.
       var ovBudget = summarizeCampaignBudget(c);
       html += '<h3>Ngân sách campaign</h3>';
+      // 0014: khối hạn mức campaign — dấu duyệt hạn mức + điểm mở đề xuất cho
+      // chính ceiling của campaign này (target campaign_ceiling).
+      var ovCeil = campaignCeilingValue(c);
+      html += '<div class="panel" data-budget-ceiling-block="1"><strong>Hạn mức campaign:</strong> ' + (ovCeil ? fmtMoney(ovCeil.amount, ovCeil.currency) : 'chưa có') + '<br>' + campaignCeilingApprovalHtml(c) +
+        (can('budget.propose') ? ' <p style="margin:6px 0 0"><button type="button" class="btn small" data-action="editor-open" data-kind="budgetProposal" data-campaign="' + esc(c.id) + '" data-target-type="campaign_ceiling">Đề xuất ngân sách</button></p>' : '') + '</div>';
       // R3.1-VIZ 1(a): chart-first — biểu đồ cột ngang phân bổ theo từng action
       // (số qua summarizeBudgetScope ở summarizeActivityBudget), ngay trên
       // bảng số chi tiết C.7.
@@ -3397,11 +3615,11 @@
     if (tab === 'kpi') {
       var ckpis = Store.list('kpis').filter(function (x) { return x.campaignId === c.id; });
       var blines = visibleList('budgetLines').filter(function (b) { return b.campaignId === c.id; });
-      html += '<div class="toolbar"><strong>KPI & ngân sách của campaign</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="kpi" data-campaign="' + esc(c.id) + '">+ Tạo KPI</button> <button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-campaign="' + esc(c.id) + '">+ Tạo dòng ngân sách</button>' : '') + ' <a class="btn small secondary" href="#/kpi">Mở mục KPI & Ngân sách</a></span></div>';
+      html += '<div class="toolbar"><strong>KPI & ngân sách của campaign</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="kpi" data-campaign="' + esc(c.id) + '">+ Tạo KPI</button> <button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-campaign="' + esc(c.id) + '">+ Tạo dòng ngân sách</button>' : '') + (can('budget.propose') ? ' <button type="button" class="btn small secondary" data-action="editor-open" data-kind="budgetProposal" data-campaign="' + esc(c.id) + '" data-target-type="campaign_ceiling">Đề xuất ngân sách</button>' : '') + ' <a class="btn small secondary" href="#/kpi">Mở mục KPI & Ngân sách</a></span></div>';
       html += ckpis.length ? '<div data-viz="campaign-tab-kpi-chart">' + vizKpiProgressHtml(ckpis) + '</div>' + '<ul class="clean">' + ckpis.map(function (k) { var d = D.kpiDisplay(k); return '<li>' + esc(k.name) + ': mục tiêu ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + ' · thực đạt: ' + (d.isMissing ? 'Chưa cập nhật' : fmtNum(d.value)) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có KPI.</p>';
       html += blines.length ? '<ul class="clean">' + blines.map(function (b) {
         var rem = D.budgetRemaining(b, Store.list('commitments').filter(function (x) { return x.budgetLineId === b.id; }), Store.list('actuals').filter(function (x) { return x.budgetLineId === b.id; }));
-        return '<li>' + esc(b.name) + ': đã duyệt ' + fmtMoney(b.approved, b.currency) + ' · còn lại ' + fmtMoney(rem, b.currency) + '</li>';
+        return '<li>' + esc(b.name) + ': đã duyệt ' + fmtMoney(b.approved, b.currency) + ' · còn lại ' + fmtMoney(rem, b.currency) + '<br>' + approvalStampLineHtml(b) + '</li>';
       }).join('') + '</ul>' : '<p class="sub">Chưa có dòng ngân sách.</p>';
     }
     if (tab === 'docs') {
@@ -4116,6 +4334,10 @@
         '<button class="btn secondary" data-action="decide" data-decision="changes_requested" data-id="' + esc(a.id) + '"' + dis(!ok) + '>Yêu cầu sửa</button> ' +
         '<button class="btn secondary" data-action="decide" data-decision="rejected" data-id="' + esc(a.id) + '"' + dis(!ok) + '>Từ chối</button></p></div>';
     });
+    // 0014: hàng đợi "Ngân sách" — cùng màn Requests/Duyệt với duyệt nội dung,
+    // liệt kê Store.budgetProposals (đối tượng, Hiện tại → Đề xuất + chênh lệch,
+    // người đề xuất, lý do, pill trạng thái đúng hệ màu; Owner quyết tại chỗ).
+    html += budgetProposalsQueueHtml();
     html += '<h2>Dòng thời gian quyết định (' + done.length + ')</h2>';
     if (!done.length) html += '<p class="sub">Chưa có quyết định nào.</p>';
     else html += tbl('<tr><th>Nội dung</th><th>Phiên bản nội dung</th><th>Quyết định</th><th>Người duyệt</th><th>Thời điểm</th><th>Thời gian chờ</th><th>Nhận xét</th></tr>' + done.map(function (a) {
@@ -4176,7 +4398,7 @@
     var ed = canEdit();
     var budgetEd = canBudgetChange();
     var html = pageHead('KPI & Ngân sách', 'KPI theo mục tiêu/thực đạt/nguồn/thời điểm; ngân sách theo Kế hoạch / Đã duyệt / Đã chi / Cam kết chưa trả / Còn lại.',
-      (ed ? '<button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button> ' : '') + (budgetEd ? '<button class="btn secondary" data-action="editor-open" data-kind="budgetLine">+ Tạo dòng ngân sách</button>' : ''));
+      (ed ? '<button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button> ' : '') + (budgetEd ? '<button class="btn secondary" data-action="editor-open" data-kind="budgetLine">+ Tạo dòng ngân sách</button>' : '') + (can('budget.propose') ? ' <button type="button" class="btn secondary" data-action="editor-open" data-kind="budgetProposal">Đề xuất ngân sách</button>' : ''));
     html += readonlyNote();
     html += collectionBanner('kpis');
     html += '<h2>KPI</h2>';
@@ -4285,18 +4507,18 @@
         var openCommit = (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(commits, acts) : 0;
         var rem = D.budgetRemaining(b, commits, acts);
         // R2-25: cam kết / thực chi hiển thị dạng BẢNG CON từng hàng.
-        var commitRows = commits.length ? tbl('<tr><th>Cam kết</th><th>Số tiền</th><th>Đã thanh toán</th><th>Còn mở</th><th>Trạng thái</th><th>Thao tác</th></tr>' + commits.map(function (cm) {
+        var commitRows = commits.length ? tbl('<tr><th>Cam kết</th><th>Số tiền</th><th>Đã thanh toán</th><th>Còn mở</th><th>Trạng thái</th><th>Duyệt</th><th>Thao tác</th></tr>' + commits.map(function (cm) {
           var cmActs = acts.filter(function (x) { return x.commitmentId === cm.id; });
           var paid = (typeof D.commitmentPaidTotal === 'function') ? D.commitmentPaidTotal(cm, cmActs) : cmActs.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0);
           var cmOpen = String(cm.status).toLowerCase() === 'cancelled' ? 0 : Math.max(0, Number(cm.amount || 0) - paid);
-          return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency || cur) + '</td><td>' + fmtMoney(paid, cm.currency || cur) + '</td><td>' + fmtMoney(cmOpen, cm.currency || cur) + '</td><td>' + statusBadge(cm.status) + '</td>' +
+          return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency || cur) + '</td><td>' + fmtMoney(paid, cm.currency || cur) + '</td><td>' + fmtMoney(cmOpen, cm.currency || cur) + '</td><td>' + statusBadge(cm.status) + '</td><td>' + factApprovalControlsHtml(cm, 'commitment') + '</td>' +
             '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitment" data-id="' + esc(cm.id) + '">Sửa cam kết</button> <button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có cam kết nào.</p>';
-        var actRows = acts.length ? tbl('<tr><th>Khoản chi</th><th>Số tiền</th><th>Ngày chi</th><th>Nguồn</th><th>Ghi chú / chứng từ</th><th>Thao tác</th></tr>' + acts.map(function (a) {
+        var actRows = acts.length ? tbl('<tr><th>Khoản chi</th><th>Số tiền</th><th>Ngày chi</th><th>Nguồn</th><th>Ghi chú / chứng từ</th><th>Duyệt</th><th>Thao tác</th></tr>' + acts.map(function (a) {
           var srcLabel = { manual: 'Nhập tay', invoice: 'Hóa đơn', import: 'Nhập từ file' }[a.source] || a.source || 'Nhập tay';
           var aAllocs = hasFn('listAllocationsForSource') ? Store.listAllocationsForSource('actual', a.id) : [];
           var allocText = aAllocs.length ? '<br><span class="sub">Phân bổ: ' + aAllocs.map(function (al) { var aa = Store.get('activities', al.activityId); return esc(aa ? aa.name : (al.activityId || '—')) + ' = ' + (al.amount !== null && al.amount !== undefined ? fmtMoney(al.amount, a.currency || cur) : (al.sharePercent + '%')); }).join('; ') + '</span>' : '';
-          return '<tr><td>' + esc(a.title) + allocText + '</td><td>' + fmtMoney(a.amount, a.currency || cur) + '</td><td>' + esc(D.formatDateVN(a.date)) + '</td><td>' + esc(srcLabel) + '</td><td>' + esc(a.description || '') + '</td>' +
+          return '<tr><td>' + esc(a.title) + allocText + '</td><td>' + fmtMoney(a.amount, a.currency || cur) + '</td><td>' + esc(D.formatDateVN(a.date)) + '</td><td>' + esc(srcLabel) + '</td><td>' + esc(a.description || '') + '</td><td>' + factApprovalControlsHtml(a, 'actual') + '</td>' +
             '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="actual" data-id="' + esc(a.id) + '">Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="actual" data-source-id="' + esc(a.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
         }).join('')) : '<p class="sub">Chưa có khoản chi nào.</p>';
         var detail = '<tr class="detail-row"><td colspan="9">' +
@@ -4304,7 +4526,7 @@
           '<strong>Thực chi (' + acts.length + ')</strong>' + (budgetEd ? ' <button class="btn small" data-action="editor-open" data-kind="actual" data-line="' + esc(b.id) + '">+ Ghi khoản chi</button>' : '') + actRows +
           '</td></tr>';
         var lineUsed = actualTotal + openCommit;
-        return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc(campaignName(b.campaignId)) + '</td><td>' + fmtMoney(b.planned, cur) + '</td><td>' + fmtMoney(b.approved, cur) + '</td><td>' + fmtMoney(openCommit, cur) + '</td><td>' + fmtMoney(actualTotal, cur) + '</td><td>' + fmtMoney(rem, cur) + (Number(b.approved) > 0 ? vizCellBarHtml({ value: lineUsed, max: Number(b.approved), tone: rem < 0 ? 'overdue' : (rem === 0 ? 'pending' : 'running'), text: 'Đã dùng ' + fmtMoney(lineUsed, cur) + ' / hạn mức dòng ' + fmtMoney(b.approved, cur) + ' (' + fmtPct(vizPct(lineUsed, Number(b.approved))) + ')' }) : '') + '</td><td>' + (rem < 0 ? vizStatusPillHtml('overdue', { label: 'Vượt ngân sách ' + fmtMoney(-rem, cur), derived: true }) : vizStatusPillHtml('done', { label: 'Trong ngân sách' })) + '</td>' +
+        return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc(campaignName(b.campaignId)) + '</td><td>' + fmtMoney(b.planned, cur) + '</td><td>' + budgetLineApprovedCellHtml(b) + '</td><td>' + fmtMoney(openCommit, cur) + '</td><td>' + fmtMoney(actualTotal, cur) + '</td><td>' + fmtMoney(rem, cur) + (Number(b.approved) > 0 ? vizCellBarHtml({ value: lineUsed, max: Number(b.approved), tone: rem < 0 ? 'overdue' : (rem === 0 ? 'pending' : 'running'), text: 'Đã dùng ' + fmtMoney(lineUsed, cur) + ' / hạn mức dòng ' + fmtMoney(b.approved, cur) + ' (' + fmtPct(vizPct(lineUsed, Number(b.approved))) + ')' }) : '') + '</td><td>' + (rem < 0 ? vizStatusPillHtml('overdue', { label: 'Vượt ngân sách ' + fmtMoney(-rem, cur), derived: true }) : vizStatusPillHtml('done', { label: 'Trong ngân sách' })) + '</td>' +
           '<td class="row-actions"><button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-id="' + esc(b.id) + '"' + dis(!budgetEd) + '>Sửa dòng</button></td></tr>' + detail;
       }).join(''));
     });
@@ -5248,6 +5470,7 @@
       if (t.getAttribute('data-line')) context.budgetLineId = t.getAttribute('data-line');
       if (t.getAttribute('data-commitment')) context.commitmentId = t.getAttribute('data-commitment');
       if (t.getAttribute('data-member')) context.memberId = t.getAttribute('data-member');
+      if (t.getAttribute('data-target-type')) context.targetType = t.getAttribute('data-target-type');
       if (kind === 'tiktokMetric') context.variantId = id;
       if (kind === 'snapshot') {
         var aggC = UI.reportAggCache || {};
@@ -5342,6 +5565,30 @@
       if ((decision === 'changes_requested' || decision === 'rejected') && !note) { toast('Hãy nhập nhận xét khi yêu cầu sửa hoặc từ chối, để người sản xuất biết cần sửa gì.'); if (noteEl) noteEl.focus(); return; }
       if (!a) return;
       settle(decideCall(a, decision, note), function () { toast('Đã ghi quyết định gắn với đúng phiên bản nội dung đang hiển thị.'); render(); });
+    }
+    if (action === 'budget-proposal-decide') {
+      var bp = null;
+      try { bp = Store.get('budgetProposals', id); } catch (e) { bp = null; }
+      if (!bp) { toast('Không tìm thấy đề xuất ngân sách.'); return; }
+      var bpNoteEl = document.getElementById('budget-proposal-note-' + id);
+      var bpNote = bpNoteEl ? bpNoteEl.value.trim() : (UI.budgetProposalNote[id] || '');
+      var bpDecision = t.getAttribute('data-decision');
+      if (!hasFn('decideBudgetProposal')) { toast(budgetApprovalErrorMessage('FORBIDDEN_ROLE: tầng dữ liệu chưa hỗ trợ quyết định đề xuất', 'proposal')); return; }
+      saveResult(Store.decideBudgetProposal(id, bpDecision, bpNote, bp.revision !== null && bp.revision !== undefined ? bp.revision : undefined),
+        function () { toast(bpDecision === 'approved' ? 'Đã duyệt đề xuất ngân sách — số duyệt của đối tượng đích đã cập nhật.' : 'Đã từ chối đề xuất ngân sách.'); render(); },
+        function (msg) { toast(budgetApprovalErrorMessage(msg, 'proposal')); });
+    }
+    if (action === 'budget-fact-decide') {
+      var bfKind = t.getAttribute('data-kind');
+      var bfDecision = t.getAttribute('data-decision');
+      var bfNote = window.prompt('Ghi chú khi quyết định (có thể bỏ trống):', '');
+      if (bfNote === null) return;
+      var bfCall = null;
+      if (bfKind === 'commitment') bfCall = hasFn('decideCommitmentApproval') ? Store.decideCommitmentApproval(id, bfDecision, bfNote) : { ok: false, error: 'FORBIDDEN_ROLE: tầng dữ liệu chưa hỗ trợ duyệt cam kết' };
+      else bfCall = hasFn('decidePaymentApproval') ? Store.decidePaymentApproval(id, bfDecision, bfNote) : { ok: false, error: 'FORBIDDEN_ROLE: tầng dữ liệu chưa hỗ trợ duyệt khoản chi' };
+      saveResult(bfCall,
+        function () { toast(bfDecision === 'approved' ? 'Đã duyệt khoản — khoản đã được tính vào ngân sách.' : 'Đã từ chối khoản.'); render(); },
+        function (msg) { toast(budgetApprovalErrorMessage(msg, 'fact')); });
     }
     if (action === 'cancel-date-change') { UI.pendingDatePreview = null; render(); }
     if (action === 'apply-date-change' && UI.pendingDatePreview) {
