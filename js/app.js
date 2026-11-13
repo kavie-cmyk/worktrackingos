@@ -142,7 +142,9 @@
     taskPanelReturnHash: null,
     pendingDatePreview: null,
     approveComment: {},
-    budgetProposalNote: {}
+    budgetProposalNote: {},
+    kpiSection: 'kpi',
+    portfolioGanttOpen: false
   };
 
   // ---------- Nhãn trạng thái tiếng Việt (không lộ mã nội bộ) ----------
@@ -240,7 +242,7 @@
   function tbl(inner, key) { return '<div class="table-wrap"><table' + (key ? ' data-table-key="' + esc(key) + '"' : '') + '>' + inner + '</table></div>'; }
   function tabsHtml(list, active, action) {
     return '<div class="tabs" role="tablist">' + list.map(function (x) {
-      return '<button type="button" class="tab' + (x[0] === active ? ' active' : '') + '" data-action="' + action + '" data-id="' + esc(x[0]) + '" role="tab">' + esc(x[1]) + '</button>';
+      return '<button type="button" class="tab' + (x[0] === active ? ' active' : '') + '" data-action="' + action + '" data-id="' + esc(x[0]) + '" role="tab" aria-selected="' + (x[0] === active ? 'true' : 'false') + '">' + esc(x[1]) + '</button>';
     }).join('') + '</div>';
   }
   function emptyState(title, desc, cta) {
@@ -1937,6 +1939,7 @@
     return !!(pv && pv.coll === r.coll && pv.id === (r.ganttId || r.id));
   }
   function ganttHtml(rowsAll, edges) {
+    GANTT_NAME_W = (typeof window !== 'undefined' && window.innerWidth && window.innerWidth <= 820) ? 150 : 230;
     var rows = ganttVisibleRows(rowsAll);
     var dated = rows.filter(function (r) { return r.start && r.end; });
     var head = '<div class="gantt-toolbar"><span class="sub">Thang thời gian: </span>' +
@@ -1979,14 +1982,18 @@
     if (UI.ganttScale === 'month') {
       var cur = new Date(minISO + 'T00:00:00'); cur.setDate(1);
       if (isoOf(cur) < minISO) cur.setMonth(cur.getMonth() + 1);
+      var lastTickXm = -1000;
       while (isoOf(cur) <= maxISO) {
-        ticks += '<div class="g2-tick" style="left:' + xOf(isoOf(cur)) + 'px">Tháng ' + (cur.getMonth() + 1) + '/' + cur.getFullYear() + '</div>';
+        var tickXm = xOf(isoOf(cur));
+        if (tickXm - lastTickXm >= 72) { ticks += '<div class="g2-tick" style="left:' + tickXm + 'px">Tháng ' + (cur.getMonth() + 1) + '/' + cur.getFullYear() + '</div>'; lastTickXm = tickXm; }
         cur.setMonth(cur.getMonth() + 1);
       }
     } else {
       var cur2 = mondayOf(new Date(minISO + 'T00:00:00'));
+      var lastTickX = -1000;
       while (isoOf(cur2) <= maxISO) {
-        if (isoOf(cur2) >= addDaysISO(minISO, -6)) ticks += '<div class="g2-tick" style="left:' + Math.max(0, xOf(isoOf(cur2))) + 'px">' + D.formatDateVN(isoOf(cur2)) + '</div>';
+        var tickX = Math.max(0, xOf(isoOf(cur2)));
+        if (isoOf(cur2) >= addDaysISO(minISO, -6) && tickX - lastTickX >= 72) { ticks += '<div class="g2-tick" style="left:' + tickX + 'px">' + D.formatDateVN(isoOf(cur2)) + '</div>'; lastTickX = tickX; }
         cur2.setDate(cur2.getDate() + 7);
       }
     }
@@ -2004,13 +2011,13 @@
       var x1 = xOf(aE) + pxPerDay, x2 = xOf(bS);
       var y1 = rowIndexByKey[a.key] * GANTT_ROW_H + GANTT_ROW_H / 2, y2 = rowIndexByKey[b.key] * GANTT_ROW_H + GANTT_ROW_H / 2;
       var mx = Math.max(x1 + 12, x2 - 4);
-      svgPaths += '<polyline points="' + x1 + ',' + y1 + ' ' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2 + '" fill="none" stroke="#66707e" stroke-width="1.6" marker-end="url(#g2arrow)"/>';
+      svgPaths += '<polyline points="' + x1 + ',' + y1 + ' ' + mx + ',' + y1 + ' ' + mx + ',' + y2 + ' ' + x2 + ',' + y2 + '" fill="none" stroke="currentColor" stroke-width="1.6" marker-end="url(#g2arrow)"/>';
     });
     var bodyH = rows.length * GANTT_ROW_H;
     var body = '<div class="g2-body" style="height:' + bodyH + 'px">' +
       '<div class="g2-overlay" style="left:' + GANTT_NAME_W + 'px;width:' + trackW + 'px;height:' + bodyH + 'px">' +
       (todayX >= 0 && todayX <= trackW ? '<div class="g2-today" style="left:' + todayX + 'px" title="Hôm nay"></div>' : '') +
-      '<svg class="g2-svg" style="left:0;width:' + trackW + 'px;height:' + bodyH + 'px" viewBox="0 0 ' + trackW + ' ' + bodyH + '" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="g2arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="#66707e"/></marker></defs>' + svgPaths + '</svg></div>' +
+      '<svg class="g2-svg" style="color:var(--color-text-muted);left:0;width:' + trackW + 'px;height:' + bodyH + 'px" viewBox="0 0 ' + trackW + ' ' + bodyH + '" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="g2arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="currentColor"/></marker></defs>' + svgPaths + '</svg></div>' +
       rows.map(function (r) {
         var indent = 8 + (r.depth || 0) * 18;
         var toggle = r.hasChildren ? '<button class="g2-toggle" data-action="gantt-toggle" data-id="' + esc(r.key) + '" aria-label="Thu/mở">' + (UI.ganttCollapsed[r.key] ? '▸' : '▾') + '</button>' : '<span class="g2-toggle-sp"></span>';
@@ -2463,7 +2470,6 @@
         'Luồng bắt đầu: (1) vào Thiết lập để tạo BU/sản phẩm nếu cần → (2) tạo campaign → (3) trong trang chi tiết campaign, thêm giai đoạn, activity, task và content. Toàn bộ làm ngay trên giao diện.',
         '<p>' + (ed ? '<button class="btn" data-action="editor-open" data-kind="campaign">+ Tạo campaign đầu tiên</button> ' : '') + '<a class="btn secondary" href="#/settings">Tới Thiết lập</a></p>');
     }
-    html += '<h2>Biểu đồ kế hoạch tổng thể (mọi campaign)</h2>' + ganttHtml(ganttRowsPortfolio(), Store.list('dependencies'));
     html += '<h2>Danh sách campaign (' + campaigns.length + ')</h2><div class="cards">' + campaigns.map(function (c) {
       var ctasks3 = Store.list('tasks').filter(function (t) { return t.campaignId === c.id && !isArchived(t); });
       var p = D.campaignProgress(ctasks3);
@@ -2480,6 +2486,7 @@
         '<p>' + health3 + '</p>' +
         '<p><a class="btn small" href="#/campaigns/' + esc(c.id) + '">Mở chi tiết</a> <button class="btn small secondary" data-action="editor-open" data-kind="campaign" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="campaigns" data-id="' + esc(c.id) + '"' + dis(!ed) + '>Lưu trữ</button></p></div>';
     }).join('') + '</div>';
+    html += '<details class="gantt-details"><summary><h2 style="display:inline">Biểu đồ kế hoạch tổng thể (mọi campaign)</h2></summary>' + ganttHtml(ganttRowsPortfolio(), Store.list('dependencies')) + '</details>';
     var archived = archivedList('campaigns');
     if (archived.length) {
       html += '<h2>Campaign đã lưu trữ</h2>' + tbl('<tr><th>Campaign</th><th>Thao tác</th></tr>' + archived.map(function (c) {
@@ -2572,7 +2579,10 @@
         return '<div class="viz-row viz-kpi-row" data-viz-kpi-state="insufficient_data"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-track viz-track-empty"><span class="viz-fill" style="width:0%"></span></span><span class="viz-value">' + vizStatusPillHtml('pending', { label: st.label || 'Chưa đủ dữ liệu' }) + '</span></div>';
       }
       var pctText = st.pct === null ? 'Chưa đặt mục tiêu' : fmtPct(st.pct);
-      return '<div class="viz-row viz-kpi-row" data-viz-kpi-state="ok"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-track"><span class="viz-fill is-actual" style="width:' + vizBarWidth(st.pct) + '%"></span></span><span class="viz-value">' + esc(r.actualText || '') + ' / ' + esc(r.targetText || '—') + ' (' + esc(pctText) + ')</span></div>';
+      if (st.pct === null) {
+        return '<div class="viz-row viz-kpi-row viz-kpi-notarget" data-viz-kpi-state="ok"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-value">' + esc(r.actualText || '') + ' · chưa đặt mục tiêu</span></div>';
+      }
+      return '<div class="viz-row viz-kpi-row" data-viz-kpi-state="ok"><span class="viz-label"><strong>' + esc(r.name) + '</strong>' + (r.scopeLabel ? '<br><span class="sub">' + esc(r.scopeLabel) + '</span>' : '') + '</span><span class="viz-track"><span class="viz-fill series-actual" style="width:' + vizBarWidth(st.pct) + '%"></span></span><span class="viz-value">' + esc(r.actualText || '') + ' / ' + esc(r.targetText || '—') + ' (' + esc(pctText) + ')</span></div>';
     }).join('') + '</div>';
   }
   function vizShareRowsHtml(rows, denominator, unitLabel, chartId) {
@@ -2934,9 +2944,10 @@
     var first = Number(steps[0].value);
     var rows = steps.map(function (s, i) {
       var pct = vizPct(s.value, first);
+      var conv = i > 0 ? vizPct(s.value, steps[i - 1].value) : null;
       return '<div class="viz-row" data-viz="funnel-step"><span class="viz-label"><strong>' + esc(s.label) + '</strong></span>' +
-        '<span class="viz-track"><span class="viz-fill cat-' + ((i % 8) + 1) + '" style="width:' + vizBarWidth(pct) + '%"></span></span>' +
-        '<span class="viz-value">' + esc(fmtNum(s.value)) + ' (' + esc(fmtPct(pct)) + ')</span></div>';
+        '<span class="viz-track"><span class="viz-fill series-alloc" style="width:' + vizBarWidth(pct) + '%;opacity:' + (Math.round((1 - i * 0.18) * 100) / 100) + '"></span></span>' +
+        '<span class="viz-value">' + esc(fmtNum(s.value)) + ' (' + esc(fmtPct(pct)) + ')' + (conv !== null ? ' · chuyển đổi ' + esc(fmtPct(conv)) : '') + '</span></div>';
     }).join('');
     return '<div class="viz-chart" data-viz="ads-funnel">' + rows + '</div>';
   }
@@ -4061,7 +4072,7 @@
     var html = pageHead('Content Plan', 'Lập kế hoạch content theo Pillar, campaign (tùy chọn), kênh và lịch đăng. Tạo content ngay tại đây là luồng bình thường — không cần qua Action Plan hay campaign.',
       (ed ? '<button class="btn" data-action="editor-open" data-kind="content">+ Tạo content</button> <button class="btn secondary" data-action="editor-open" data-kind="variant">+ Thêm phiên bản theo kênh</button> <button class="btn secondary" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : ''));
     html += readonlyNote() + collectionBanner('variants');
-    html += '<form class="inline" id="content-filter-form"><span class="sub">Lọc:</span>' +
+    html += '<details class="filter-details"' + ((typeof window !== 'undefined' && window.innerWidth && window.innerWidth > 820) ? ' open' : '') + '><summary class="filter-summary">Bộ lọc</summary><form class="inline filter-panel" id="content-filter-form"><span class="sub">Lọc:</span>' +
       '<label>Brand / BU<select name="buProductId"><option value="all">Tất cả</option>' + Store.list('businessUnits').map(function (b) { return '<option value="' + esc(b.id) + '"' + (cf.buProductId === b.id ? ' selected' : '') + '>' + esc(b.name || b.buName || b.id) + '</option>'; }).join('') + '</select></label>' +
       '<label>Sản phẩm<select name="product"><option value="all">Tất cả</option>' + productsAll.map(function (p) { return '<option value="' + esc(p) + '"' + (cf.product === p ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select></label>' +
       '<label>Pillar<select name="pillarId"><option value="all">Tất cả pillar</option><option value=""' + (cf.pillarId === '' ? ' selected' : '') + '>Chưa phân loại</option>' + allPillars().map(function (p) { return '<option value="' + esc(p.id) + '"' + (cf.pillarId === p.id ? ' selected' : '') + '>' + esc(p.name || p.title) + (isPillarArchived(p) ? ' (đã lưu trữ)' : '') + '</option>'; }).join('') + '</select></label>' +
@@ -4075,7 +4086,7 @@
       '<label>Đến ngày<input type="date" name="to" value="' + esc(cf.to) + '"></label>' +
       '<label>Activity (nâng cao)<select name="activityId"><option value="all">Tất cả</option>' + visibleList('activities').map(function (a) { return '<option value="' + esc(a.id) + '"' + (cf.activityId === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Task (nâng cao)<select name="taskId"><option value="all">Tất cả</option>' + visibleList('tasks').map(function (t) { return '<option value="' + esc(t.id) + '"' + (cf.taskId === t.id ? ' selected' : '') + '>' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
-      '<button class="btn secondary" type="submit">Lọc</button></form>' +
+      '<button class="btn secondary" type="submit">Lọc</button></form></details>' +
       '<p class="sub">Lọc theo Activity/Task là bộ lọc nâng cao theo liên kết task (tùy chọn). Lọc Pillar thấy cả content thuộc campaign lẫn content thường xuyên; lọc Campaign chỉ thấy content/publication thuộc campaign đó.</p>';
     html += tabsHtml([['backlog', 'Backlog / Ý tưởng'], ['pillars', 'Theo Pillar'], ['calendar', 'Lịch đăng'], ['table', 'Bảng content'], ['board', 'Board sản xuất / duyệt'], ['production', 'Tiến độ sản xuất'], ['library', 'Thư viện Post'], ['mix', 'Content mix'], ['queue', 'Chờ phân loại'], ['manage', 'Quản lý Pillar']], UI.contentTab, 'content-tab');
     function itemActions(x) {
@@ -4395,7 +4406,7 @@
     var html = pageHead('Task', 'Một danh sách task dùng chung ở mọi màn hình. Bấm vào tên task để mở chi tiết và sửa.',
       ed ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button>' : '');
     html += readonlyNote() + collectionBanner('tasks');
-    html += '<form class="inline" id="task-filter-form"><span class="sub">Lọc task:</span>' +
+    html += '<details class="filter-details"' + ((typeof window !== 'undefined' && window.innerWidth && window.innerWidth > 820) ? ' open' : '') + '><summary class="filter-summary">Bộ lọc</summary><form class="inline filter-panel" id="task-filter-form"><span class="sub">Lọc task:</span>' +
       '<label>Campaign<select name="campaignId"><option value="all">Tất cả</option><option value=""' + (tf.campaignId === '' ? ' selected' : '') + '>Task độc lập</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (tf.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Người phụ trách<select name="ownerId"><option value="all">Tất cả</option>' + memberPairs().map(function (p) { return '<option value="' + esc(p[0]) + '"' + (tf.ownerId === p[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select></label>' +
       '<label>Trạng thái<select name="status"><option value="all">Tất cả</option>' + TASK_STATUSES.map(function (p) { return '<option value="' + p[0] + '"' + (tf.status === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
@@ -4403,7 +4414,7 @@
       '<label>Hạn<select name="due"><option value="all">Tất cả</option>' + [['overdue', 'Quá hạn'], ['today', 'Đến hạn hôm nay'], ['week', 'Tuần này'], ['none', 'Chưa xếp lịch']].map(function (p) { return '<option value="' + p[0] + '"' + (tf.due === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Bị chặn<select name="blocked"><option value="all">Tất cả</option><option value="blocked"' + (tf.blocked === 'blocked' ? ' selected' : '') + '>Đang bị chặn</option><option value="unblocked"' + (tf.blocked === 'unblocked' ? ' selected' : '') + '>Không bị chặn</option></select></label>' +
       '<label><span><input type="checkbox" name="unassigned"' + (tf.unassigned ? ' checked' : '') + '> Chỉ task chưa phân công</span></label>' +
-      '<button class="btn secondary" type="submit">Lọc</button></form>' +
+      '<button class="btn secondary" type="submit">Lọc</button></form></details>' +
       '<p class="sub">Đang hiển thị ' + tasks.length + '/' + allTasks.length + ' task.</p>';
     html += tabsHtml([['list', 'Danh sách Task'], ['timeline', 'Timeline']], UI.taskTab, 'task-tab');
     if (UI.taskTab === 'timeline') {
@@ -4635,7 +4646,8 @@
       (ed ? '<button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button> ' : '') + (budgetEd ? '<button class="btn secondary" data-action="editor-open" data-kind="budgetLine">+ Tạo dòng ngân sách</button>' : '') + (can('budget.propose') ? ' <button type="button" class="btn secondary" data-action="editor-open" data-kind="budgetProposal">Đề xuất ngân sách</button>' : ''));
     html += readonlyNote();
     html += collectionBanner('kpis');
-    html += '<h2>KPI</h2>';
+    html += '<nav class="inpage-nav" aria-label="Mục trong trang KPI & Ngân sách"><a href="#/kpi" data-kpi-anchor="kpi">KPI</a><a href="#/kpi" data-kpi-anchor="budget">Ngân sách</a><a href="#/kpi" data-kpi-anchor="cash">Thu–Chi</a></nav>';
+    html += '<h2 id="kpi-sec-kpi">KPI</h2>';
     // AC22: export KPI của đúng tập đang hiển thị ở trang này (kèm IDs, scope, kỳ, đơn vị).
     html += '<p><button class="btn secondary" data-action="export-kpi-csv">Xuất CSV KPI (IDs, scope, kỳ, đơn vị)</button></p>';
     var kpis = Store.list('kpis');
@@ -4671,7 +4683,7 @@
       if (hist.length) main += '<tr class="detail-row"><td colspan="8"><strong>Lịch sử số đo:</strong> ' + hist.map(function (m) { return fmtNum(m.value) + ' (' + esc(m.source || '—') + ', ' + esc(D.formatDateTimeVN(m.measuredAt || m.measured_at)) + ')'; }).join(' · ') + '</td></tr>';
       return main;
     }).join(''), 'kpi-main');
-    html += '<h2>Ngân sách theo từng tiền tệ (không cộng khác tiền tệ)</h2>';
+    html += '<h2 id="kpi-sec-budget">Ngân sách theo từng tiền tệ (không cộng khác tiền tệ)</h2>';
     // R2-30.5: vai không có quyền xem ngân sách (vd CEO) → ẨN hẳn khối số
     // ngân sách chi tiết, chỉ hiện thông báo.
     if (!canBudget()) {
@@ -4773,7 +4785,7 @@
     html += '<p class="sub">Phần đã thanh toán của một cam kết được tính từ các khoản thanh toán liên kết và chỉ tính một lần ở cột Đã chi.</p>';
     // R3.1-VIZ 5: khối Thu–Chi (sổ cash, tách hẳn ngân sách campaign) —
     // chart cột Thu/Chi theo tháng + số dư + bảng giao dịch ngay dưới.
-    html += '<h2>Thu–Chi &amp; Ngân sách (sổ quỹ)</h2><p><button class="btn secondary" data-action="export-cash-csv">Xuất CSV Thu–Chi (giao dịch kèm tài khoản, scope)</button></p>' + cashChartHtml();
+    html += '<h2 id="kpi-sec-cash">Thu–Chi &amp; Ngân sách (sổ quỹ)</h2><p><button class="btn secondary" data-action="export-cash-csv">Xuất CSV Thu–Chi (giao dịch kèm tài khoản, scope)</button></p>' + cashChartHtml();
     return html;
   }
 
@@ -5688,6 +5700,8 @@
 
   // ---------- Sự kiện ----------
   document.addEventListener('click', function (ev) {
+    var anchorEl = ev.target.closest ? ev.target.closest('[data-kpi-anchor]') : null;
+    if (anchorEl) { ev.preventDefault(); var target = document.getElementById('kpi-sec-' + anchorEl.getAttribute('data-kpi-anchor')); if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     var sb = document.getElementById('search-results');
     if (sb && !ev.target.closest('#global-search-form')) sb.hidden = true;
     var t = ev.target.closest ? ev.target.closest('[data-action]') : null;
