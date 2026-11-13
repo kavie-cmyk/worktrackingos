@@ -388,3 +388,9 @@ td.perm-cell{text-align:center;font-size:15px}
 .budget-approval-block-reason{color:var(--st-overdue);font-weight:600}
 .budget-proposal-delta{display:inline-block;margin:4px 0}
 .budget-fact-decide{white-space:nowrap}
+/* ===== Tiến độ checklist trên thẻ/hàng việc + Gantt ===== */
+.task-checklist{display:inline-flex;align-items:center;gap:6px;margin-left:8px;vertical-align:middle;white-space:nowrap}
+.task-checklist-label{font-size:12px;font-weight:700;color:var(--st-neutral)}
+.task-checklist-track{min-width:44px;width:44px;height:7px;flex:0 0 44px}
+.g2-cl-badge{flex:0 0 auto;font-size:11px;font-weight:700;color:var(--st-neutral);background:var(--st-neutral-bg);border-radius:99px;padding:1px 6px;white-space:nowrap}
+.g2-cl-fill{position:absolute;left:0;bottom:0;height:5px;background:rgba(255,255,255,.55);border-radius:0 0 5px 5px;pointer-events:none}

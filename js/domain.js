@@ -603,6 +603,26 @@
     return { total: total, completed: completed, progress: progress, percentage: Math.round(progress * 100) };
   }
 
+  // ---------- Tiến độ checklist của việc ----------
+
+  /**
+   * Tính tiến độ checklist của MỘT việc từ task.checklist = [{text, done}].
+   * Nguồn sự thật duy nhất cho mọi bề mặt hiển thị (panel chi tiết, thẻ/hàng
+   * việc, Gantt): đếm "done" theo đúng cách panel chi tiết đếm (mục có
+   * done truthy). Checklist chỉ là hiển thị tiến độ — KHÔNG liên kết KPI,
+   * KHÔNG tự đổi trạng thái việc.
+   * @param {object} task Việc cần tính (có thể thiếu trường checklist).
+   * @returns {{done:number, total:number, progress:number, percentage:number}}
+   *   total = 0 khi việc không có checklist (bề mặt hiển thị phải ẩn chỉ dấu).
+   */
+  function checklistProgress(task) {
+    var list = (task && Array.isArray(task.checklist)) ? task.checklist : [];
+    var total = list.length;
+    var done = list.filter(function (c) { return !!(c && c.done); }).length;
+    var progress = total === 0 ? 0 : done / total;
+    return { done: done, total: total, progress: progress, percentage: Math.round(progress * 100) };
+  }
+
   // ---------- TikTok / Publish ----------
 
   /** Lấy platform đã chuẩn hoá của một variant. */
@@ -1683,6 +1703,7 @@
     adsRollupGuard: adsRollupGuard,
     pickLevelTotals: pickLevelTotals,
     campaignProgress: campaignProgress,
+    checklistProgress: checklistProgress,
     tiktokCanPublish: tiktokCanPublish,
     shouldCreatePublishJob: shouldCreatePublishJob,
     formatDateVN: formatDateVN,
