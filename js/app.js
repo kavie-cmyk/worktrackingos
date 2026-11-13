@@ -757,6 +757,7 @@
     switch (e.kind) {
       case 'campaign': {
         var c = editorItem('campaigns') || {};
+        var campCeil = campaignCeilingValue(c);
         var audText = (c.audiences || []).map(function (a) { return a.name + (a.description ? ' | ' + a.description : ''); }).join('\n');
         return formShell('campaign', e.id ? 'Sửa campaign' : 'Tạo campaign',
           F('name', 'Tên campaign *', 'text', ev('name', c.name), { required: true, wide: true }) +
@@ -764,8 +765,19 @@
           F('ownerId', 'Người phụ trách', 'select', ev('ownerId', c.ownerId || Store.currentUserId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
           F('businessUnitId', 'BU', 'select', ev('businessUnitId', c.businessUnitId), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name]; }), emptyLabel: '— Không gắn BU —' }) +
           F('product', 'Sản phẩm', 'text', ev('product', c.product)) +
-          F('budgetCeiling', 'Hạn mức ngân sách campaign', 'number', ev('budgetCeiling', c.budgetCeiling !== null && c.budgetCeiling !== undefined ? c.budgetCeiling : cfVal(c, 'budgetCeiling')), { min: 0, step: 'any', help: 'Hạn mức được duyệt ở cấp campaign — khác với tổng phân bổ xuống các hoạt động.' }) +
-          F('budgetCeilingCurrency', 'Tiền tệ của hạn mức', 'select', ev('budgetCeilingCurrency', c.budgetCeilingCurrency || cfVal(c, 'budgetCeilingCurrency') || 'VND'), { options: [['VND', 'VND'], ['USD', 'USD']] }) +
+          // 0014 (quy tắc duyệt ngân sách của Zac, tiếp nối vòng 0014): KHÔNG còn
+          // ô nhập trực tiếp hạn mức — hạn mức campaign CHỈ đổi qua đề xuất ngân
+          // sách được Owner duyệt (Store đã strip budget_ceiling_* khỏi payload
+          // create/update nên ô nhập cũ lưu không hiệu lực). Ở đây chỉ hiển thị
+          // chỉ-đọc: số hạn mức hiện tại + dấu duyệt (campaignCeilingApprovalHtml),
+          // kèm nút mở form đề xuất cho ceiling của campaign này khi đã tồn tại
+          // và vai có quyền budget.propose (đúng entry point ở Tổng quan campaign).
+          '<div class="fld wide" data-budget-ceiling-block="1" data-campaign-ceiling-readonly="1"><span>Hạn mức ngân sách campaign — chỉ xem</span>' +
+          (!e.id
+            ? '<p class="sub" style="margin:2px 0">Chưa thiết lập — hạn mức được đặt qua Đề xuất ngân sách sau khi tạo campaign</p>'
+            : '<p class="sub" style="margin:2px 0"><strong>' + (campCeil ? fmtMoney(campCeil.amount, campCeil.currency) : 'chưa có') + '</strong></p>' + campaignCeilingApprovalHtml(c) +
+              (can('budget.propose') ? '<p style="margin:4px 0"><button type="button" class="btn small" data-action="editor-open" data-kind="budgetProposal" data-campaign="' + esc(c.id || e.id) + '" data-target-type="campaign_ceiling">Đề xuất ngân sách</button></p>' : '')) +
+          '</div>' +
           (!e.id
             ? F('template', 'Mẫu campaign', 'select', ev('template', ''), { options: [['', 'Không dùng mẫu'], ['livestream', 'Livestream — 4 hoạt động mẫu']], emptyLabel: null, help: 'Mẫu chỉ tạo hoạt động/task/KPI gợi ý và dòng phân bổ DỰ THẢO (chưa duyệt, chưa có khoản chi/thanh toán thật). Sửa số phân bổ ngay bên dưới trước khi tạo.' }) +
               '<div class="fld wide"><span>Phân bổ dự thảo của mẫu Livestream (VNĐ) — sửa được trước khi tạo</span></div>' +
@@ -1255,11 +1267,13 @@
         }).filter(function (a) { return a.name; });
         // Baseline không còn đi qua form này (R2-28c) — patch không đụng
         // baselineStartDate/baselineEndDate để giữ nguyên bản đã chốt.
+        // Hạn mức campaign cũng KHÔNG đi qua form này nữa (0014): form không
+        // còn ô budgetCeiling/budgetCeilingCurrency nên obj không đọc/gửi hai
+        // giá trị này — hạn mức chỉ đổi qua đề xuất được Owner duyệt (Store
+        // cũng strip budget_ceiling_* ở tầng dữ liệu làm lớp chặn thứ hai).
         var obj = {
           name: data.name, status: data.status, statusLabel: labelStatus(data.status), ownerId: data.ownerId || null,
           businessUnitId: data.businessUnitId || null, product: data.product || '',
-          budgetCeiling: data.budgetCeiling ? Number(data.budgetCeiling) : null,
-          budgetCeilingCurrency: data.budgetCeilingCurrency || 'VND',
           startDate: data.startDate || null, endDate: data.endDate || null,
           why: data.why || '', businessGoal: data.businessGoal || '', marketingGoal: data.marketingGoal || '',
           desiredOutcome: data.desiredOutcome || '', audiences: audiences, audienceInsights: data.audienceInsights || '',
@@ -3524,7 +3538,7 @@
       html += vizBudgetActionChartHtml(c);
       html += vizBudgetStackedHtml(ovBudget);
       ovBudget.forEach(function (r) {
-        if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa thiết lập hạn mức campaign cho ' + esc(r.currency) + ' — các số dưới đây tạm lấy tổng phân bổ đã duyệt làm hạn mức. Đặt hạn mức trong form Sửa campaign để tách rõ "Chưa phân bổ" và "Còn có thể dùng".</div>';
+        if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa thiết lập hạn mức campaign cho ' + esc(r.currency) + ' — các số dưới đây tạm lấy tổng phân bổ đã duyệt làm hạn mức. Đặt hạn mức qua Đề xuất ngân sách ở khối hạn mức campaign phía trên (hạn mức chỉ đổi khi đề xuất được Owner duyệt) để tách rõ "Chưa phân bổ" và "Còn có thể dùng".</div>';
         html += '<p class="sub" data-viz="campaign-budget-note">Hạn mức campaign (' + esc(r.currency) + '): <strong>' + fmtMoney(r.ceiling, r.currency) + '</strong> · Chưa phân bổ: <strong>' + fmtMoney(r.unallocated, r.currency) + '</strong> · Còn có thể dùng: <strong>' + fmtMoney(r.available, r.currency) + '</strong> — "Chưa phân bổ" và "Còn có thể dùng" là hai số tách biệt, không gộp.</p>';
         html += '<h4>Bảng số chi tiết ngân sách (' + esc(r.currency) + ')</h4>' + tbl('<tr><th>Hạn mức</th><th>Đã phân bổ</th><th>Chưa phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Dự kiến sử dụng</th><th>Còn có thể dùng</th></tr>' +
           '<tr><td>' + fmtMoney(r.ceiling, r.currency) + '</td><td>' + fmtMoney(r.allocated, r.currency) + '</td><td>' + fmtMoney(r.unallocated, r.currency) + '</td><td>' + fmtMoney(r.actualTotal, r.currency) + '</td><td>' + fmtMoney(r.openCommitments, r.currency) + '</td><td>' + fmtMoney(r.forecastUse, r.currency) + '</td><td>' + fmtMoney(r.available, r.currency) + '</td></tr>') +

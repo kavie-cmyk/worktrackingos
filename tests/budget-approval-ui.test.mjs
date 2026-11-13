@@ -53,6 +53,49 @@ test('0014-UI [static]: lưu dòng ngân sách không gửi approved (số duy�
   assert.match(save, /planned:/);
 });
 
+// ---------- 1b. Form campaign — hạn mức chỉ-đọc (tiếp nối 0014) ----------
+// Lý do sửa/thêm: quy tắc duyệt ngân sách của Zac (tiếp nối vòng 0014) —
+// hạn mức campaign CHỈ đổi qua đề xuất được Owner duyệt; Store đã strip
+// budget_ceiling_* khỏi payload create/update nên ô nhập ceiling cũ trong
+// form campaign sửa được nhưng lưu không hiệu lực, gây hiểu nhầm. Form phải
+// khóa ô đó lại, giống cách form dòng ngân sách đã bỏ ô nhập approved.
+test('0014-UI [static]: form campaign KHÔNG còn input budgetCeiling/Currency sửa được — thay bằng khối hạn mức chỉ-đọc + dấu duyệt + nút Đề xuất ngân sách theo quyền budget.propose', () => {
+  const form = section("case 'campaign': {", "case 'phase': {", editorStart);
+  assert.ok(!form.includes("F('budgetCeiling'"), 'vẫn còn ô nhập budgetCeiling trực tiếp trong form campaign');
+  assert.ok(!form.includes("F('budgetCeilingCurrency'"), 'vẫn còn ô chọn budgetCeilingCurrency trực tiếp trong form campaign');
+  assert.ok(!form.includes('name="budgetCeiling"'), 'vẫn còn field name budgetCeiling trong form campaign');
+  // Khối chỉ-đọc: số hạn mức hiện tại (qua campaignCeilingValue + fmtMoney)
+  // + dấu duyệt dùng lại helper campaignCeilingApprovalHtml của vòng UI.
+  assert.match(form, /data-campaign-ceiling-readonly="1"/);
+  assert.match(form, /Hạn mức ngân sách campaign — chỉ xem/);
+  assert.match(form, /campaignCeilingValue\(c\)/);
+  assert.match(form, /fmtMoney\(campCeil\.amount, campCeil\.currency\)/);
+  assert.match(form, /campaignCeilingApprovalHtml\(c\)/);
+  // Dấu duyệt của helper: đủ hai nhánh "Đã duyệt bởi {tên} · {dd/mm/yyyy}"
+  // (formatDateVN) / "Hạn mức chưa được duyệt".
+  const ceil = section('function campaignCeilingApprovalHtml', 'function factApprovalStatusOf');
+  assert.match(ceil, /Đã duyệt bởi/);
+  assert.match(ceil, /D\.formatDateVN\(camp\.approvedAt/);
+  assert.match(ceil, /Hạn mức chưa được duyệt/);
+  // Nút mở form đề xuất cho ceiling của chính campaign này — đúng entry
+  // point ở Tổng quan campaign, chỉ khi campaign đã tồn tại + có quyền.
+  assert.match(form, /e\.id/);
+  assert.match(form, /can\('budget\.propose'\)/);
+  assert.match(form, /data-kind="budgetProposal"[^>]*data-target-type="campaign_ceiling">Đề xuất ngân sách</);
+});
+
+test('0014-UI [static]: form campaign mới hiện câu chưa thiết lập hạn mức; lưu campaign không đọc/gửi ceiling từ form', () => {
+  const form = section("case 'campaign': {", "case 'phase': {", editorStart);
+  assert.match(form, /Chưa thiết lập — hạn mức được đặt qua Đề xuất ngân sách sau khi tạo campaign/);
+  // Luồng lưu: obj tạo/cập nhật campaign không còn budgetCeiling* và
+  // không đọc data.budgetCeiling* (form cũng không còn field để thu thập).
+  const save = section("case 'campaign': {", "case 'phase': {", saveStart);
+  assert.doesNotMatch(save, /budgetCeiling\s*:/);
+  assert.doesNotMatch(save, /budgetCeilingCurrency\s*:/);
+  assert.doesNotMatch(save, /data\.budgetCeiling/);
+  assert.match(save, /name: data\.name/);
+});
+
 // ---------- 2. Form đề xuất ngân sách + 3 điểm mở ----------
 test('0014-UI [static]: modal Đề xuất ngân sách — ngữ cảnh Hiện tại → Đề xuất, tiền tệ điền sẵn theo đối tượng, lý do, gửi qua Store.createBudgetProposal', () => {
   const form = section("case 'budgetProposal': {", "case 'allocation': {", editorStart);
