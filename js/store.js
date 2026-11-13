@@ -2559,6 +2559,16 @@
      * Bảng không có archived_at (quan hệ/phụ) mới hard-delete qua _attempt.
      */
     remove: function (collection, id) {
+      // KPI auto: chặn xoá measurement của KPI auto như mọi đường ghi khác
+      // (KPI_AUTO_SOURCE, dùng chung _kpiAutoBlocked) — chặn TRƯỚC khi
+      // archive/xoá ở cả demo lẫn remote (điều hướng qua _removeRemote).
+      if (collection === 'measurements') {
+        var removeItem = this.get(collection, id);
+        var removeKpiId = removeItem ? (removeItem.kpiId || removeItem.kpi_id || null) : null;
+        var removeKpi = removeKpiId ? this.get('kpis', removeKpiId) : null;
+        var removeBlock = removeKpi ? this._kpiAutoBlocked(removeKpi) : null;
+        if (removeBlock) return this.mode === 'supabase' ? Promise.resolve(removeBlock) : removeBlock;
+      }
       if (this.mode === 'supabase') return this._removeRemote(collection, id);
       var guard = this._guard(collection, {}, 'remove');
       if (guard) return guard;
@@ -2609,6 +2619,16 @@
     },
     _removeRemote: function (collection, id) {
       var self = this;
+      // KPI auto: chặn xoá measurement của KPI auto (KPI_AUTO_SOURCE, dùng
+      // chung _kpiAutoBlocked) TRƯỚC mọi lần chạm client/archive — kể cả
+      // khi _removeRemote được gọi trực tiếp, không qua remove().
+      if (collection === 'measurements') {
+        var rRemoveItem = this.get(collection, id);
+        var rRemoveKpiId = rRemoveItem ? (rRemoveItem.kpiId || rRemoveItem.kpi_id || null) : null;
+        var rRemoveKpi = rRemoveKpiId ? this.get('kpis', rRemoveKpiId) : null;
+        var rRemoveBlock = rRemoveKpi ? this._kpiAutoBlocked(rRemoveKpi) : null;
+        if (rRemoveBlock) return Promise.resolve(rRemoveBlock);
+      }
       if (collection === 'members') return Promise.resolve({ ok: false, error: 'Chỉ Owner xoá/ngừng membership — thao tác này làm ở Supabase Dashboard / Edge Function mời thành viên.' });
       if (collection === 'reportSnapshots') return Promise.resolve({ ok: false, error: 'Báo cáo đã chốt không xoá được (snapshot đóng băng).' });
       if (collection === 'businessUnits') {

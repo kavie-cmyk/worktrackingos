@@ -360,6 +360,36 @@ test('KPI auto: chặn cả ở đường remote (create / _createRemote / updat
   assert.equal(u1.error, AUTO_MSG);
 });
 
+test('KPI auto: remove measurement bị chặn KPI_AUTO_SOURCE (demo + remote) — measurement vẫn còn; KPI manual xoá được', async () => {
+  resetDemo();
+  // Demo: remove measurement thuộc KPI auto bị chặn, bản ghi vẫn còn nguyên.
+  const r1 = Store.remove('measurements', 'meas-auto-old');
+  assert.equal(r1.ok, false);
+  assert.equal(r1.code, 'KPI_AUTO_SOURCE');
+  assert.equal(r1.error, AUTO_MSG);
+  assert.ok(Store.get('measurements', 'meas-auto-old'), 'measurement của KPI auto phải vẫn còn sau remove bị chặn (demo)');
+
+  // Demo: measurement của KPI manual vẫn xoá bình thường.
+  const c = Store.create('measurements', { kpiId: 'kpi-manual', value: 55, source: 'manual' });
+  assert.equal(c.ok, true);
+  const rm = Store.remove('measurements', c.item.id);
+  assert.equal(rm.ok, true);
+  assert.equal(Store.get('measurements', c.item.id), null, 'measurement của KPI manual phải bị xoá');
+
+  // Remote: chặn TRƯỚC mọi lần chạm client, cả qua remove() lẫn _removeRemote trực tiếp.
+  resetDemo();
+  Store.mode = 'supabase';
+  Store.supabaseClient = null;
+  const r2 = await Store.remove('measurements', 'meas-auto-old');
+  assert.equal(r2.ok, false);
+  assert.equal(r2.code, 'KPI_AUTO_SOURCE');
+  const r3 = await Store._removeRemote('measurements', 'meas-auto-old');
+  assert.equal(r3.ok, false);
+  assert.equal(r3.code, 'KPI_AUTO_SOURCE');
+  assert.equal(r3.error, AUTO_MSG);
+  assert.ok(Store.get('measurements', 'meas-auto-old'), 'measurement của KPI auto phải vẫn còn sau remove bị chặn (remote)');
+});
+
 // ---------------------------------------------------------------------------
 // Store — observation mới -> refresh -> actual tăng; roll-up không cộng trùng
 // ---------------------------------------------------------------------------
