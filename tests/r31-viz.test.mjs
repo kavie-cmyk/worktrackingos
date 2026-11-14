@@ -180,7 +180,6 @@ test('R3.1-VIZ [static]: không dùng thư viện chart ngoài/CDN; CSS chart c�
   assert.match(css, /@media\(max-width:480px\)\{[^}]*\.viz-row/);
   assert.match(src, /function ganttHtml\(/);
   assert.match(src, /ganttRowsCampaign\(c\)/);
-  assert.match(src, /ganttRowsPortfolio\(\)/);
   assert.match(src, /data-gantt-drag/);
 });
 

@@ -204,7 +204,8 @@ test('R2-27 [static]: builder Gantt đệ quy dùng chung + nhóm Chưa gắn ph
   assert.match(src, /function appendTaskTree\(rows, tasks, rootParentKeyOf, rootDepthOf\)/);
   assert.match(src, /\(byParent\[t\.id\] \|\| \[\]\)\.forEach/);
   assert.match(src, /Chưa gắn phase\/activity/);
-  assert.match(src, /grp:independent/);
+  // 'grp:independent' chỉ tồn tại trong ganttRowsPortfolio (builder portfolio
+  // đã xoá — code chết); nhóm task độc lập nay do view Timeline đảm nhiệm.
   assert.match(src, /Task độc lập/);
   // Editor task có select phaseId/activityId + validate.
   assert.match(src, /F\('phaseId', 'Giai đoạn \(theo campaign\)', 'select'/);

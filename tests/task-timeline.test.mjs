@@ -224,7 +224,7 @@ test('TL [static]: Gantt chi tiết campaign giữ nguyên lời gọi; trang Ca
   const vc = section('function viewCampaigns()', '// ---------- R3.1-VIZ:');
   assert.doesNotMatch(vc, /Biểu đồ kế hoạch tổng thể/);
   assert.doesNotMatch(vc, /ganttRowsPortfolio\(\)/);
-  // Builder cây cũ vẫn còn trong app cho Gantt chi tiết/đối chiếu; view
-  // Timeline chế độ cây dùng builder thuần mới D.buildCampaignTreeTimeline.
-  assert.match(src, /function ganttRowsPortfolio\(\)/);
+  // Builder portfolio cũ đã xoá (code chết); view Timeline chế độ cây dùng
+  // builder thuần mới D.buildCampaignTreeTimeline, Gantt chi tiết dùng ganttRowsCampaign.
+  assert.doesNotMatch(src, /function ganttRowsPortfolio\(\)/);
 });

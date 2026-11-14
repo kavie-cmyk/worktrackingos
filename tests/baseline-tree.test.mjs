@@ -272,7 +272,7 @@ test('BASELINE-TREE [static]: hiển thị — đầu chi tiết campaign có t�
   assert.match(detail, /data-action="campaign-baseline"/);
   const form = section('Kế hoạch đã duyệt (baseline) — chỉ xem', "F('why',");
   assert.match(form, /baselineVersionStatsText\(bv\)/);
-  const ganttRows = section('function appendPhaseActivityRows', 'function ganttRowsPortfolio');
+  const ganttRows = section('function appendPhaseActivityRows', 'function ganttRowsCampaign');
   assert.match(ganttRows, /bStart: p\.baselineStartDate, bEnd: p\.baselineEndDate/);
   assert.match(ganttRows, /bStart: a\.baselineStartDate, bEnd: a\.baselineEndDate/);
 });

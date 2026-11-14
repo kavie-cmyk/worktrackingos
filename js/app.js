@@ -144,8 +144,7 @@
     pendingDatePreview: null,
     approveComment: {},
     budgetProposalNote: {},
-    kpiSection: 'kpi',
-    portfolioGanttOpen: false
+    kpiSection: 'kpi'
   };
 
   // ---------- Nhãn trạng thái tiếng Việt (không lộ mã nội bộ) ----------
@@ -2103,24 +2102,6 @@
       if (t.phaseId) return baseDepth + 1;
       return baseDepth + 1;
     });
-  }
-  function ganttRowsPortfolio() {
-    var rows = [];
-    var allTasks = Store.list('tasks').filter(function (x) { return !isArchived(x); });
-    visibleList('campaigns').forEach(function (c) {
-      var ckey = 'camp:' + c.id;
-      var phases = Store.list('phases').filter(function (x) { return x.campaignId === c.id; });
-      var acts = Store.list('activities').filter(function (x) { return x.campaignId === c.id; });
-      var tasks = allTasks.filter(function (x) { return x.campaignId === c.id; });
-      rows.push({ key: ckey, coll: 'campaigns', id: c.id, ganttId: c.id, title: c.name, kind: 'campaign', status: c.status, depth: 0, start: c.startDate, end: c.endDate, bStart: c.baselineStartDate, bEnd: c.baselineEndDate, hasChildren: !!(phases.length || acts.length || tasks.length), completed: c.status === 'completed' });
-      appendPhaseActivityRows(rows, c, phases, acts, tasks, 1, ckey);
-    });
-    var independent = allTasks.filter(function (t) { return !t.campaignId; });
-    if (independent.length) {
-      rows.push({ key: 'grp:independent', coll: '', id: '', ganttId: '', title: 'Task độc lập', kind: 'group', depth: 0, hasChildren: true });
-      appendTaskTree(rows, independent, function () { return 'grp:independent'; }, function () { return 1; });
-    }
-    return rows;
   }
   function ganttRowsCampaign(c) {
     var rows = [];
