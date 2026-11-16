@@ -84,7 +84,11 @@ test('BASELINE-TREE [unit]: mục thiếu start hoặc end/due bị bỏ qua, kh
 });
 
 // ---------- 3. Fixture demo camp-1: số thật của cây demo ----------
-test('BASELINE-TREE [unit]: fixture demo camp-1 → 2 phase + 12 task được chốt, 3 activity chưa có lịch bị bỏ qua; task-b ghi đè baseline cũ bằng lịch hiện tại', () => {
+// SYN-21 (16/11): 3 activity của camp-1 không có ngày riêng nhưng phase
+// cha (phase-1/phase-2) có đủ ngày và Gantt đang vẽ thanh cho chúng bằng
+// ngày phase → đếm RIÊNG ở nhóm borrowed ("mượn ngày phase"), KHÔNG còn
+// gộp vào skipped như test cũ khóa. Baseline ghi cho phase/task giữ nguyên.
+test('BASELINE-TREE [unit]: fixture demo camp-1 → 2 phase + 12 task được chốt, 3 activity mượn ngày phase đếm riêng (không gộp skipped); task-b ghi đè baseline cũ bằng lịch hiện tại', () => {
   const d = demo.buildDemoData ? demo.buildDemoData() : demo;
   const state = d.state || d;
   const camp = state.campaigns.find((c) => c.id === 'camp-1');
@@ -95,8 +99,11 @@ test('BASELINE-TREE [unit]: fixture demo camp-1 → 2 phase + 12 task được c
   assert.equal(plan.items.filter((i) => i.type === 'phase').length, 2);
   assert.equal(plan.items.filter((i) => i.type === 'activity').length, 0);
   assert.equal(plan.items.filter((i) => i.type === 'task').length, 12);
-  assert.equal(plan.skipped, 3);
-  assert.equal(plan.skippedByType.activity, 3);
+  assert.equal(plan.skipped, 0);
+  assert.equal(plan.skippedByType.activity, 0);
+  assert.equal(plan.borrowed, 3);
+  assert.equal(plan.borrowedByType.activity, 3);
+  assert.deepEqual(plan.borrowedIds.slice().sort(), ['act-1', 'act-2', 'act-3']);
   const tb = plan.items.find((i) => i.id === 'task-b');
   assert.deepEqual(tb.patch, { baselineStartDate: '2026-11-11', baselineDueDate: '2026-11-16' },
     'baseline mới = lịch HIỆN TẠI của task (11→16/11), không phải baseline cũ (10→14/11)');
@@ -207,7 +214,7 @@ function runBaselineFlow() {
 
 test('BASELINE-TREE [integration/demo]: chốt cả cây ghi baseline đúng từng mục, bỏ qua mục thiếu ngày, version tăng + entry có thống kê', () => {
   resetBaselineDemo('owner');
-  const { nv, rc } = runBaselineFlow();
+  const { plan, nv, rc } = runBaselineFlow();
   assert.equal(rc.ok, true);
   assert.equal(Store.get('phases', 'p1').baselineStartDate, '2026-11-02');
   assert.equal(Store.get('phases', 'p1').baselineEndDate, '2026-11-13');
@@ -226,8 +233,12 @@ test('BASELINE-TREE [integration/demo]: chốt cả cây ghi baseline đúng t�
   assert.equal(versions[0].counts, undefined, 'entry v1 cũ giữ nguyên, không bịa thống kê');
   assert.equal(nv.version, 2);
   assert.deepEqual(nv.counts, { campaign: 1, phase: 1, activity: 1, task: 1 });
-  assert.equal(nv.skipped, 3);
-  assert.deepEqual(nv.skippedByType, { campaign: 0, phase: 1, activity: 1, task: 1 });
+  // SYN-21: a2 (không ngày riêng, phase p1 có đủ ngày) đếm ở borrowed,
+  // không còn ở skipped — skipped chỉ còn p2 (thiếu endDate) + t2 (thiếu dueDate).
+  assert.equal(nv.skipped, 2);
+  assert.deepEqual(nv.skippedByType, { campaign: 0, phase: 1, activity: 0, task: 1 });
+  assert.equal(plan.borrowed, 1);
+  assert.deepEqual(plan.borrowedIds, ['a2']);
   assert.equal(nv.failed, 0);
   // Chốt lại lần nữa → v3, số vẫn đúng (idempotent theo lịch hiện tại).
   const again = runBaselineFlow();

@@ -334,8 +334,12 @@
    * nghĩa vụ của một commitment = max(0, amount − Σ actuals ĐÃ DUYỆT liên kết).
    * Commitment có status 'cancelled' (và các status không còn mở khác) hoặc
    * đã archive (archived_at) bị bỏ qua. Khi line có currency, chỉ tính fact
-   * cùng currency với line (fact không ghi currency thì vẫn tính — tương
-   * thích fixture cũ; khớp công thức RPC decide_*_approval ở 0014).
+   * cùng currency với line: fact THIẾU currency bị coi là lệch currency
+   * (SYN-09 — không tự tính như cùng currency; khớp SQL decide_* ở 0014,
+   * nơi `currency is distinct from line.currency` → CURRENCY_MISMATCH và
+   * usage chỉ cộng fact có currency = currency của line). Khi line KHÔNG
+   * có currency thì không có chuẩn để đối chiếu nên vẫn tính mọi fact
+   * (tương thích fixture cũ không khai currency ở cả hai phía).
    * settledAmount vẫn bị bỏ qua như budgetRemaining trước đây.
    * @param {object|number} line Dòng ngân sách (có currency?) hoặc số approved.
    * @param {Array<object>} commitments Các cam kết thuộc dòng.
@@ -348,7 +352,8 @@
     function sameCurrency(f) {
       if (!lineCurrency || !f) return true;
       var fc = f.currency !== undefined && f.currency !== null ? f.currency : (f.currencyCode !== undefined && f.currencyCode !== null ? f.currencyCode : f.currency_code);
-      if (fc === undefined || fc === null || String(fc).trim() === '') return true;
+      // SYN-09: fact thiếu currency = lệch currency khi line có currency.
+      if (fc === undefined || fc === null || String(fc).trim() === '') return false;
       return String(fc).trim() === String(lineCurrency).trim();
     }
     var acts = (actuals || []).filter(function (a) { return a && isApprovedFact(a) && sameCurrency(a); });
@@ -1355,10 +1360,51 @@
   }
 
   /**
+   * SYN-10: chia số tiền gốc cho các allocation theo LARGEST-REMAINDER về
+   * 2 chữ số thập phân (khớp DB numeric(18,2)): mỗi share được làm tròn
+   * xuống tới cent, phần cent còn thiếu so với tổng đích được cộng lần
+   * lượt cho các share có phần dư thập phân lớn nhất (hòa thì theo thứ tự
+   * khai báo). Tổng đích = số gốc khi các allocation phủ kín số gốc (tổng
+   * thô lệch số gốc dưới 1 cent do làm tròn tỷ lệ, vd 33,333333% × 3),
+   * ngược lại = tổng thô làm tròn 2 chữ số. Nhờ vậy tổng mọi share LUÔN
+   * bằng đúng tổng đích ở độ chính xác cent — hóa đơn 100 chia 1/3 × 3
+   * cho 33,34 + 33,33 + 33,33 = 100 (không còn 99,999999 như khi làm
+   * tròn 6 chữ số từng share); hóa đơn 3tr chia 60/40 giữ 1,8tr / 1,2tr.
+   * @param {number} factAmount Số tiền gốc.
+   * @param {Array<object>} allocs Allocations của fact.
+   * @returns {Array<number>} Share đã chốt theo đúng thứ tự allocs.
+   */
+  function _r31AllocSharesMoney(factAmount, allocs) {
+    var raws = (allocs || []).map(function (a) { return _r31AllocAmount(a, factAmount); });
+    if (!raws.length) return raws;
+    // Share âm (dữ kiện lỗi — validateAllocations chặn riêng) không tham
+    // gia phân phối cent: giữ nguyên làm tròn 2 chữ số cho các share đó.
+    if (raws.some(function (v) { return v < 0; })) {
+      return raws.map(function (v) { return Math.round(v * 100) / 100; });
+    }
+    var rawTotal = raws.reduce(function (s, v) { return s + v; }, 0);
+    var targetCents = (Math.abs(rawTotal - factAmount) < 0.01)
+      ? Math.round(factAmount * 100)
+      : Math.round(rawTotal * 100);
+    var cents = raws.map(function (v) { return Math.floor(v * 100 + 1e-9); });
+    var remainder = targetCents - cents.reduce(function (s, v) { return s + v; }, 0);
+    if (remainder > 0) {
+      var order = raws.map(function (v, i) { return { i: i, frac: v * 100 - Math.floor(v * 100 + 1e-9) }; })
+        .sort(function (a, b) { return (b.frac - a.frac) || (a.i - b.i); });
+      var k = 0;
+      while (remainder > 0 && order.length) { cents[order[k % order.length].i] += 1; remainder -= 1; k += 1; }
+    }
+    return cents.map(function (c) { return c / 100; });
+  }
+
+  /**
    * Share của một fact gốc nhìn từ một scope (activity): có allocations thì
    * lấy tổng share khớp scope; không có allocations thì fact thuộc đúng
    * scope mới tính trọn, fact không gắn scope nào thì tính trọn (caller
    * được hiểu là đã lọc fact theo scope). Không có scopeId → trọn amount.
+   * Share theo allocation được chốt qua _r31AllocSharesMoney (SYN-10,
+   * largest-remainder 2 chữ số) nên cộng share của mọi scope lại bằng
+   * đúng số gốc.
    * @param {object} fact Fact gốc.
    * @param {string} [scopeId] Scope cần xem (vd activity id).
    * @returns {number} Số tiền thuộc scope.
@@ -1369,9 +1415,10 @@
     if (!scopeId) return amount;
     var allocs = _r31FactAllocations(fact);
     if (allocs.length) {
+      var shares = _r31AllocSharesMoney(amount, allocs);
       var sum = 0; var matched = false;
-      allocs.forEach(function (a) {
-        if (_r31AllocScopeId(a) === String(scopeId)) { matched = true; sum += _r31AllocAmount(a, amount); }
+      allocs.forEach(function (a, idx) {
+        if (_r31AllocScopeId(a) === String(scopeId)) { matched = true; sum += shares[idx]; }
       });
       return matched ? _r31RoundMoney(sum) : 0;
     }
@@ -1692,12 +1739,25 @@
       var numTotal = null;
       var denTotal = null;
       var includedRatio = [];
+      var ratioDuplicateFactIds = [];
       function sumFactValues(list) {
+        // SYN-05: khử trùng theo fact ID TRONG từng danh sách tử/mẫu —
+        // cùng một fact truyền qua 2 mapping chỉ cộng 1 lần (như nhánh
+        // facts chính). Fact không có ID thì cộng bình thường.
         var total = 0; var any = false;
+        var seenInList = {};
         (list || []).forEach(function (f) {
           if (!f || typeof f !== 'object') return;
+          var fid = _r31FactId(f);
+          if (fid !== null) {
+            if (seenInList[fid]) {
+              if (ratioDuplicateFactIds.indexOf(fid) === -1) ratioDuplicateFactIds.push(fid);
+              return;
+            }
+            seenInList[fid] = true;
+          }
           var v = pickNum(f, ['value', 'amount', 'count']);
-          if (v !== null) { total += v; any = true; var fid = _r31FactId(f); if (fid) includedRatio.push(fid); }
+          if (v !== null) { total += v; any = true; if (fid && includedRatio.indexOf(fid) === -1) includedRatio.push(fid); }
         });
         return any ? total : null;
       }
@@ -1714,7 +1774,7 @@
           var dv = pickNum(f, ['denominator', 'denominatorValue']);
           if (nv !== null) { nSum += nv; nAny = true; }
           if (dv !== null) { dSum += dv; dAny = true; }
-          var fid = _r31FactId(f); if (fid) includedRatio.push(fid);
+          var fid = _r31FactId(f); if (fid && includedRatio.indexOf(fid) === -1) includedRatio.push(fid);
         });
         numTotal = nAny ? nSum : null;
         denTotal = dAny ? dSum : null;
@@ -1730,7 +1790,9 @@
         excluded: ratioExcluded,
         numeratorTotal: numTotal,
         denominatorTotal: denTotal,
-        currency: options.currency || null
+        currency: options.currency || null,
+        // Gộp trùng của nhánh chính (base) với trùng phát hiện trong tử/mẫu.
+        duplicateFactIds: duplicateFactIds.concat(ratioDuplicateFactIds.filter(function (x) { return duplicateFactIds.indexOf(x) === -1; }))
       });
       if (numTotal === null || denTotal === null || denTotal === 0) {
         ratioResult.value = null;
@@ -1782,8 +1844,17 @@
 
     if (mode === 'snapshot') {
       var latestByObject = {};
-      included.forEach(function (f, idx) {
-        var objectId = f.objectId || f.object_id || f.externalPostId || f.external_post_id || f.postId || _r31FactId(f) || ('row' + idx);
+      // SYN-17: fact THIẾU khóa object tường minh (objectId / externalPostId /
+      // postId) KHÔNG được rơi về fact id / số thứ tự dòng — như vậy 2 lần đo
+      // của cùng một object sẽ bị coi là 2 object và cộng dồn lặng lẽ. Thiếu
+      // khóa → insufficient_data (như mode unique thiếu khóa định danh).
+      var missingObjectFactIds = [];
+      included.forEach(function (f) {
+        var objectId = f.objectId || f.object_id || f.externalPostId || f.external_post_id || f.postId || f.post_id || null;
+        if (objectId === null || objectId === undefined || String(objectId).trim() === '') {
+          missingObjectFactIds.push(_r31FactId(f));
+          return;
+        }
         var key = String(objectId);
         var t = toDate(f.observedAt || f.observed_at || f.date || f.capturedAt);
         var prev = latestByObject[key];
@@ -1800,7 +1871,12 @@
         var e = latestByObject[k]; return { objectId: e.objectId, value: e.value, observedAt: e.observedAt };
       });
       result.perObject = perObject;
-      if (!perObject.length || perObject.some(function (e) { return e.value === null; })) {
+      result.missingObjectFactIds = missingObjectFactIds;
+      if (missingObjectFactIds.length) {
+        result.value = null;
+        result.status = 'insufficient_data';
+        result.reason = 'Thiếu objectId để lấy snapshot theo đối tượng — không cộng dồn các lần đo khi chưa biết chúng thuộc object nào.';
+      } else if (!perObject.length || perObject.some(function (e) { return e.value === null; })) {
         result.value = null;
         result.status = 'insufficient_data';
         result.reason = 'Thiếu observation hợp lệ để lấy snapshot mới nhất.';
@@ -1983,8 +2059,19 @@
     if (!postList.length) return empty;
     var range = _kpiPeriodRange(kpi);
     var perPost = {};
+    // SYN-16: khử trùng observation theo id ở tầng domain thuần — cùng một
+    // observation truyền 2 lần (vd merge 2 nguồn) chỉ tính 1 lần, đặc biệt
+    // ở mode period_sum nơi mọi observation đều được cộng. Observation
+    // không có id thì không có cơ sở khử trùng nên vẫn tính như cũ.
+    var seenObsIds = {};
     (observations || []).forEach(function (o) {
       if (!o) return;
+      var obsId = o.id !== undefined && o.id !== null ? o.id : o.observation_id;
+      if (obsId !== undefined && obsId !== null && String(obsId) !== '') {
+        var obsKey = String(obsId);
+        if (seenObsIds[obsKey]) return;
+        seenObsIds[obsKey] = true;
+      }
       var metric = _pmObsMetric(o);
       if (metric === null || metric === undefined || String(metric).trim() !== cfg.metric) return;
       var value = pickNum(o, ['value', 'metricValue', 'amount', 'count']);

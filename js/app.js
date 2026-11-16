@@ -49,7 +49,10 @@
   // của campaign + mọi phase/activity/task thuộc campaign. Hàm THUẦN (nhận
   // sẵn các danh sách đã lọc theo cây) để test độc lập được. Thực thể đủ cả
   // hai mốc ngày mới có mục ghi; thiếu start hoặc end/due → BỎ QUA (không
-  // ghi baseline rỗng) và đếm theo loại. Campaign/phase/activity dùng
+  // ghi baseline rỗng) và đếm theo loại — NGOẠI TRỪ activity thiếu ngày
+  // riêng mà phase cha có đủ ngày: chúng đang mượn ngày phase để vẽ Gantt
+  // nên đếm riêng ở nhóm "mượn ngày phase" (SYN-21), không gộp vào skipped.
+  // Campaign/phase/activity dùng
   // startDate/endDate → baselineStartDate/baselineEndDate; task dùng
   // startDate/dueDate → baselineStartDate/baselineDueDate (đúng trường mà
   // Gantt và store đang đọc).
@@ -58,11 +61,30 @@
       campaignItem: null,
       items: [],
       skippedByType: { campaign: 0, phase: 0, activity: 0, task: 0 },
-      skipped: 0
+      skipped: 0,
+      // SYN-21: activity KHÔNG có ngày riêng nhưng phase cha có đủ ngày —
+      // Gantt vẫn vẽ thanh cho chúng bằng ngày phase (mượn ngày phase) nên
+      // KHÔNG gộp vào nhóm "bỏ qua vì chưa có lịch": đếm RIÊNG ở borrowed
+      // (chỉ activity mới mượn được ngày phase). Các activity này vẫn
+      // KHÔNG được ghi baseline (không có lịch riêng để chốt).
+      borrowed: 0,
+      borrowedByType: { activity: 0 },
+      borrowedIds: []
     };
+    var phaseById = {};
+    (phases || []).forEach(function (p) { if (p && p.id !== null && p.id !== undefined) phaseById[String(p.id)] = p; });
     function add(type, coll, entity, start, end, endKey) {
       if (!entity) return;
-      if (!start || !end) { plan.skippedByType[type] += 1; plan.skipped += 1; return; }
+      if (!start || !end) {
+        if (type === 'activity') {
+          var ph = entity.phaseId !== null && entity.phaseId !== undefined ? phaseById[String(entity.phaseId)] : null;
+          if (ph && ph.startDate && ph.endDate) {
+            plan.borrowed += 1; plan.borrowedByType.activity += 1; plan.borrowedIds.push(entity.id);
+            return;
+          }
+        }
+        plan.skippedByType[type] += 1; plan.skipped += 1; return;
+      }
       var patch = { baselineStartDate: start };
       patch[endKey] = end;
       var item = { type: type, coll: coll, id: entity.id, patch: patch };
@@ -81,6 +103,7 @@
     var total = (bv.counts.campaign || 0) + (bv.counts.phase || 0) + (bv.counts.activity || 0) + (bv.counts.task || 0);
     var s = 'đã chốt ' + total + ' mục';
     if (bv.skipped) s += ' · bỏ qua ' + bv.skipped + ' mục chưa có lịch';
+    if (bv.borrowed) s += ' · ' + bv.borrowed + ' activity mượn ngày phase (chưa chốt baseline riêng)';
     if (bv.failed) s += ' · lỗi ' + bv.failed + ' mục';
     return s;
   }
@@ -274,8 +297,22 @@
     if (/^FORBIDDEN_ROLE\b/.test(msg)) return context === 'proposal' ? 'Chỉ Owner được duyệt ngân sách' : 'Bạn không có quyền duyệt mục này';
     if (/^ALREADY_DECIDED\b/.test(msg)) return 'Khoản này đã được quyết định trước đó';
     if (/^SELF_APPROVAL\b/.test(msg)) return 'Không được tự duyệt khoản do mình tạo';
-    if (/^BUDGET_NOT_APPROVED\b/.test(msg)) return 'Khoản ngân sách chưa được duyệt';
+    if (/^BUDGET_NOT_APPROVED\b/.test(msg)) {
+      // SYN-04: nói rõ THIẾU DẤU DUYỆT Ở TẦNG NÀO — store trả trường
+      // missingStamp ('campaign'|'line'); RPC 0016 ghi 'level=campaign' /
+      // 'level=budget_line' trong message; lỗi demo của store ghi rõ
+      // 'campaign chưa có dấu duyệt' / 'dòng ngân sách chưa có dấu duyệt'.
+      var stamp = (error && typeof error === 'object' && error.missingStamp) ? String(error.missingStamp) : '';
+      if (stamp === 'campaign' || /level=campaign\b/.test(msg) || /tầng campaign|campaign chưa có dấu duyệt|hạn mức campaign chưa/.test(msg)) {
+        return 'Hạn mức campaign chưa được duyệt — cần Owner duyệt hạn mức campaign trước';
+      }
+      if (stamp === 'line' || /level=budget_line\b/.test(msg) || /dòng ngân sách chưa có dấu duyệt/.test(msg)) {
+        return 'Dòng ngân sách chưa được duyệt — cần Owner duyệt dòng ngân sách trước';
+      }
+      return 'Khoản ngân sách chưa được duyệt';
+    }
     if (/^BUDGET_LIMIT_EXCEEDED\b/.test(msg)) return 'Vượt số đã duyệt';
+    if (/^PAYMENT_EXCEEDS_COMMITMENT\b/.test(msg)) return 'Tổng payment vượt số tiền cam kết gốc';
     if (/^STALE_REVISION\b/.test(msg)) return 'Đề xuất đã thay đổi, hãy tải lại';
     if (/^CURRENCY_MISMATCH\b/.test(msg)) return 'Khác tiền tệ với khoản ngân sách';
     return msg || 'Thao tác thất bại.';
@@ -334,6 +371,20 @@
     var st = factApprovalStatusOf(fact);
     return vizStatusPillHtml(st, { label: labelStatus(st) });
   }
+  // SYN-15: fact có currency KHỚP với currency chuẩn hay không — cùng quy
+  // tắc domain/SQL sau đợt 1 (SYN-09): fact THIẾU currency bị coi là lệch
+  // khi phía chuẩn có currency; phía chuẩn không có currency thì không có
+  // chuẩn để đối chiếu nên coi như khớp. Dùng cho các tổng HIỂN THỊ chi
+  // tiết theo currency (thẻ tiền, bảng dòng, CSV) để cơ cấu Thực chi /
+  // Cam kết mở khớp budgetUsageTotal + RPC (0/50 thay vì 30/20 ở ca actual
+  // USD 30 gắn cam kết VND 50).
+  function factCurrencyMatches(f, currency) {
+    if (!f) return false;
+    if (currency === null || currency === undefined || String(currency).trim() === '') return true;
+    var fc = f.currency !== undefined && f.currency !== null ? f.currency : (f.currencyCode !== undefined && f.currencyCode !== null ? f.currencyCode : f.currency_code);
+    if (fc === undefined || fc === null || String(fc).trim() === '') return false;
+    return String(fc).trim() === String(currency).trim();
+  }
   // Tiền kiểm phía UI cho fact chờ duyệt: trả '' khi duyệt được, hoặc lý do
   // disable HIỂN THỊ NGAY TẠI CHỖ. Trần kiểm bằng Domain.budgetUsageTotal
   // với chính fact đang xét được tính như đã duyệt (đúng công thức RPC).
@@ -342,7 +393,52 @@
     var lineId = fact.budgetLineId || fact.budget_line_id || null;
     var line = lineId ? Store.get('budgetLines', lineId) : null;
     if (!line) return '';
-    if (!(line.approvedBy || line.approved_by)) return 'Khoản ngân sách chưa được duyệt';
+    if (!(line.approvedBy || line.approved_by)) return 'Dòng ngân sách chưa được duyệt';
+    // SYN-04: dòng thuộc campaign thì hạn mức campaign cũng phải có dấu
+    // duyệt Owner (khớp store _budgetStampMissing + RPC 0016) — báo rõ
+    // tầng campaign ngay tại chỗ thay vì để store chặn sau.
+    var campId = line.campaignId || line.campaign_id || null;
+    if (campId) {
+      var camp = null;
+      try { camp = Store.get('campaigns', campId); } catch (e) { camp = null; }
+      if (camp && !(camp.approvedBy || camp.approved_by)) return 'Hạn mức campaign chưa được duyệt';
+    }
+    // SYN-08: payment gắn cam kết — tổng payment ĐÃ DUYỆT của cam kết đó
+    // (Domain.commitmentPaidTotal) + payment đang xét vượt amount gốc
+    // của cam kết → khóa nút Duyệt ngay tại chỗ (khớp RPC 0016
+    // PAYMENT_EXCEEDS_COMMITMENT, kiểm TRƯỚC trần dòng ở dưới).
+    if (kind !== 'commitment') {
+      var commitmentId = fact.commitmentId || fact.commitment_id || null;
+      if (commitmentId) {
+        try {
+          var commitment = Store.get('commitments', commitmentId);
+          if (commitment) {
+            var commitmentAmount = null;
+            ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value'].forEach(function (k) {
+              if (commitmentAmount === null && commitment[k] !== null && commitment[k] !== undefined && commitment[k] !== '' && !isNaN(Number(commitment[k]))) commitmentAmount = Number(commitment[k]);
+            });
+            var factAmount = null;
+            ['amount', 'actualAmount', 'actual_amount', 'value'].forEach(function (k) {
+              if (factAmount === null && fact[k] !== null && fact[k] !== undefined && fact[k] !== '' && !isNaN(Number(fact[k]))) factAmount = Number(fact[k]);
+            });
+            if (commitmentAmount !== null && factAmount !== null) {
+              var allActuals = [];
+              try { allActuals = Store.list('actuals') || []; } catch (e2) { allActuals = []; }
+              var paidTotal = (D && typeof D.commitmentPaidTotal === 'function')
+                ? D.commitmentPaidTotal(commitment, allActuals)
+                : allActuals.reduce(function (s, a) {
+                  if (!a) return s;
+                  var cid = a.commitmentId !== undefined && a.commitmentId !== null ? a.commitmentId : a.commitment_id;
+                  if (cid === null || cid === undefined || String(cid) !== String(commitmentId)) return s;
+                  var st = factApprovalStatusOf(a);
+                  return st === 'approved' ? s + (Number(a.amount) || 0) : s;
+                }, 0);
+              if (Number(paidTotal) + factAmount > commitmentAmount) return 'Payment vượt số tiền cam kết gốc';
+            }
+          }
+        } catch (e) { /* không đủ dữ kiện local — để Store/RPC chốt khi bấm Duyệt */ }
+      }
+    }
     if (!D || typeof D.budgetUsageTotal !== 'function') return '';
     try {
       var byLine = function (x) { return String(x.budgetLineId || x.budget_line_id || '') === String(line.id); };
@@ -365,9 +461,12 @@
     if (!can('approval.decide')) return html;
     var reason = budgetFactBlockReason(fact, kind);
     var disAttr = reason ? ' disabled title="' + esc(reason) + '"' : '';
+    // SYN-07: lý do chặn chỉ khóa nút DUYỆT — nút TỪ CHỐI luôn bấm được
+    // (store/RPC cho quyết rejected đi qua mà không cần qua các chặn của
+    // nhánh approved: dòng chưa duyệt / vượt trần / thiếu dấu campaign).
     html += ' <span class="budget-fact-decide"><button type="button" class="btn small" data-action="budget-fact-decide" data-kind="' + esc(kind) + '" data-decision="approved" data-id="' + esc(fact.id) + '"' + disAttr + '>Duyệt</button> ' +
-      '<button type="button" class="btn small secondary" data-action="budget-fact-decide" data-kind="' + esc(kind) + '" data-decision="rejected" data-id="' + esc(fact.id) + '"' + disAttr + '>Từ chối</button>' +
-      (reason ? '<br><span class="sub budget-approval-block-reason">' + esc(reason) + '</span>' : '') + '</span>';
+      '<button type="button" class="btn small secondary" data-action="budget-fact-decide" data-kind="' + esc(kind) + '" data-decision="rejected" data-id="' + esc(fact.id) + '">Từ chối</button>' +
+      (reason ? '<br><span class="sub budget-approval-block-reason">' + esc(reason) + ' — vẫn có thể từ chối khoản này.</span>' : '') + '</span>';
     return html;
   }
   function budgetProposalCurrentValue(p) {
@@ -1150,9 +1249,13 @@
         var paidHtml = '';
         if (e.id) {
           var cmActs = Store.list('actuals').filter(function (x) { return x.commitmentId === e.id; });
+          // SYN-15: "đã thanh toán" hiển thị theo currency của dòng — chỉ
+          // tính actual CÙNG currency (actual lệch currency không làm giảm
+          // phần đã trả của cam kết ở currency này).
+          var cmActsCur = cmActs.filter(function (x) { return factCurrencyMatches(x, cmCur); });
           var paidTotal = (typeof D.commitmentPaidTotal === 'function')
-            ? D.commitmentPaidTotal(cm, cmActs)
-            : cmActs.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0);
+            ? D.commitmentPaidTotal(cm, cmActsCur)
+            : cmActsCur.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0);
           paidHtml = '<div class="fld wide"><span>Đã thanh toán (từ các khoản thanh toán)</span>' +
             '<p class="sub" style="margin:2px 0"><strong>' + fmtMoney(paidTotal, cmCur) + '</strong> — số này tự tính từ các khoản thanh toán đã ghi cho cam kết này; muốn ghi thêm, dùng nút "Ghi thanh toán" ở chi tiết dòng ngân sách.</p></div>';
         }
@@ -1207,7 +1310,7 @@
           F('contentItemId', 'Content gốc của publication này', 'select', ev('contentItemId', po.contentItemId || e.context.contentItemId || ''), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Chưa gắn content gốc —' }) +
           F('variantId', 'Phiên bản theo kênh của publication này', 'select', ev('variantId', po.variantId || ''), { options: Store.list('variants').map(function (x) { return [x.id, contentTitle(x.contentItemId) + ' — ' + (x.channelLabel || labelStatus(x.platform))]; }), emptyLabel: '— Chưa gắn phiên bản —', help: 'Đăng lại (repost) = tạo một post/publication MỚI ở đây — không sửa đè link/số liệu của publication trước.' }) +
           F('campaignId', 'Campaign của publication này', 'select', ev('campaignId', po.campaignId), { options: campaignPairs(), emptyLabel: '— Không thuộc campaign —', help: 'Campaign lưu ở PUBLICATION: khi dùng lại content thường xuyên cho một campaign, chọn campaign tại đây — campaign của content gốc KHÔNG bị đổi.' }),
-          'Lưu bài');
+          'Lưu post');
       }
       case 'adcr': {
         var r = editorItem('adChangeRequests') || {};
@@ -2031,7 +2134,13 @@
         var track = '<div class="g2-track">';
         if (r.start && r.end) {
           var left = xOf(r.start), width = Math.max(pxPerDay, xOf(addDaysISO(r.end, 1)) - left);
+          // SYN-28: khoá kéo theo ĐÚNG quyền của từng loại hàng — hàng
+          // campaign/phase/activity cần quyền campaign.edit (Member chỉ có
+          // data.edit nên trước đây kéo được nhưng lưu bị store chặn);
+          // hàng task giữ gate data.edit như cũ. Owner/Lead có cả hai
+          // quyền nên hành vi kéo không đổi.
           var locked = r.completed || !canEdit();
+          if (r.kind === 'campaign' || r.kind === 'phase' || r.kind === 'activity') locked = r.completed || !can('campaign.edit');
           var isPv = ganttIsPreviewRow(r);
           var dragAttrs = ' data-gantt-drag="1" data-coll="' + esc(r.coll || '') + '" data-oid="' + esc(r.ganttId || r.id) + '" data-title="' + esc(r.title) + '" data-start="' + esc(r.start) + '" data-end="' + esc(r.end) + '" data-locked="' + (locked ? '1' : '0') + '"';
           if (r.milestone) {
@@ -2048,7 +2157,10 @@
             var bl = xOf(r.bStart), bw = Math.max(pxPerDay, xOf(addDaysISO(r.bEnd, 1)) - bl);
             track += '<div class="g2-bar baseline" style="left:' + bl + 'px;width:' + bw + 'px" title="Kế hoạch đã duyệt"></div>';
           }
-        } else {
+        } else if (r.kind !== 'group') {
+          // SYN-19: hàng NHÓM (kind='group') không phải mục có lịch — không
+          // in nhãn "Chưa xếp lịch" lên track của chúng; mục "Chưa xếp
+          // lịch (N)" riêng ở cuối trang vẫn đếm đúng các task chưa có lịch.
           track += '<span class="sub g2-unsched">Chưa xếp lịch</span>';
         }
         return '<div class="g2-row">' + name + track + '</div></div>';
@@ -3414,14 +3526,27 @@
     if (!curs.length) curs = ['VND'];
     var ceilingRaw = campaignCeilingValue(c);
     return curs.map(function (cur) {
+      // SYN-01: phân bổ gồm MỌI dòng ngân sách của currency này — dòng gắn
+      // activity (gom theo activity) LẪN dòng scope campaign (không gắn
+      // activity, gom vào scope campaign). Trước đây chỉ dòng có activityId
+      // được tính nên campaign có dòng scope campaign ra allocated/ceiling
+      // 0 và available âm giả (camp-1: −73tr thay vì +57tr).
       var child = {};
-      facts.lines.filter(function (l) { return (l.currency || 'VND') === cur && l.activityId; }).forEach(function (l) { child[l.activityId] = (child[l.activityId] || 0) + Number(l.approved || 0); });
+      facts.lines.filter(function (l) { return (l.currency || 'VND') === cur; }).forEach(function (l) {
+        var key = l.activityId || c.id;
+        child[key] = (child[key] || 0) + Number(l.approved || 0);
+      });
       var childAllocations = Object.keys(child).map(function (aid) { return { activityId: aid, scopeId: aid, amount: child[aid], currency: cur }; });
       var allocatedSum = childAllocations.reduce(function (s, a) { return s + a.amount; }, 0);
       var configured = !!(ceilingRaw && (ceilingRaw.currency || 'VND') === cur);
       var s = D.summarizeBudgetScope({ ceiling: configured ? ceilingRaw.amount : allocatedSum, currency: cur, childAllocations: childAllocations, commitments: facts.commitments, actuals: facts.actuals });
       var b = (s.byCurrency && s.byCurrency[cur]) || s;
-      return { currency: cur, ceilingConfigured: configured, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: b.available };
+      // SYN-13: currency không có dòng ngân sách nào và cũng không có hạn
+      // mức campaign cấu hình cho currency đó → chưa từng đặt trần cho
+      // currency này, available = null (hiển thị '—') thay vì âm giả.
+      var hasLine = facts.lines.some(function (l) { return (l.currency || 'VND') === cur; });
+      var available = (!hasLine && !configured) ? null : b.available;
+      return { currency: cur, ceilingConfigured: configured, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: available };
     });
   }
   // Fact thuộc về một activity: qua dòng ngân sách của activity, qua chính
@@ -3447,9 +3572,16 @@
     if (!curs.length) curs = ['VND'];
     var out = curs.map(function (cur) {
       var ceiling = facts.lines.filter(function (l) { return l.activityId === act.id && (l.currency || 'VND') === cur; }).reduce(function (s, l) { return s + Number(l.approved || 0); }, 0);
-      var s = D.summarizeBudgetScope({ ceiling: ceiling, currency: cur, scopeId: act.id, commitments: facts.commitments, actuals: facts.actuals });
+      // SYN-01: truyền facts ĐÃ SCOPE theo activity (scoped.*), không phải
+      // facts.* của toàn campaign — trước đây mọi activity đều nhận trọn
+      // total campaign (camp-1: cả 3 activity lặp 26tr/47tr, gấp 3 lần).
+      var s = D.summarizeBudgetScope({ ceiling: ceiling, currency: cur, scopeId: act.id, commitments: scoped.commitments, actuals: scoped.actuals });
       var b = (s.byCurrency && s.byCurrency[cur]) || s;
-      return { currency: cur, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: b.available };
+      // SYN-13: activity không có dòng ngân sách của currency này → chưa
+      // đặt trần cho currency đó ở scope này, available = null ('—').
+      var hasLine = facts.lines.some(function (l) { return l.activityId === act.id && (l.currency || 'VND') === cur; });
+      var available = hasLine ? b.available : null;
+      return { currency: cur, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: available };
     }).filter(function (r) { return r.ceiling > 0 || r.actualTotal > 0 || r.openCommitments > 0; });
     return out.length ? out : [{ currency: 'VND', ceiling: 0, allocated: 0, unallocated: 0, actualTotal: 0, openCommitments: 0, forecastUse: 0, available: 0 }];
   }
@@ -4178,7 +4310,7 @@
     }
     if (UI.contentTab === 'production') {
       var sorted = variants.slice().sort(function (a, b) { return String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')); });
-      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở bảng content (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu content không tự tạo task, và task sản xuất có thể chỉ gắn content, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Nội dung</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
+      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở bảng content (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu content không tự tạo task, và task sản xuất có thể chỉ gắn content, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Content</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
         var tlPts = [
           { label: 'Hạn sản xuất', date: v.productionDeadline ? String(v.productionDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.productionDeadline) || '—', tone: 'running' },
           { label: 'Hạn duyệt', date: v.reviewDeadline ? String(v.reviewDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.reviewDeadline) || '—', tone: 'pending' },
@@ -4255,7 +4387,19 @@
         html += vizMixChartHtml(mix, unit);
         var heatMax = 0;
         mix.rows.forEach(function (r) { mix.channels.forEach(function (c) { heatMax = Math.max(heatMax, Number(r.byChannel[c]) || 0); }); });
-        html += '<div data-viz="content-mix-heat"><h3>Ma trận Pillar × Kênh (tô nền theo mật độ ô)</h3>' + tbl('<tr><th>Pillar chính</th>' + mix.channels.map(function (c) { return '<th>' + esc(labelStatus(c)) + '</th>'; }).join('') + '<th>Tổng</th><th>Tỷ trọng</th></tr>' + mix.rows.map(function (r) {
+        // SYN-24: chú thích BA mẫu số khác nhau ngay tại ma trận — mẫu số
+        // toàn kỳ (cột Tỷ trọng), mẫu số từng pillar (thanh 100% ở dưới) và
+        // heatMax (thang tô màu, trước đây chỉ có trong tooltip của ô).
+        var channelTotal = 0;
+        mix.rows.forEach(function (r) { mix.channels.forEach(function (c) { channelTotal += Number(r.byChannel[c]) || 0; }); });
+        var heatNote = '<p class="sub">Cách đọc ma trận: cột <strong>Tỷ trọng</strong> tính trên mẫu số toàn kỳ (<strong>' + mix.denominator + '</strong> ' + (unit === 'publication' ? 'publication' : 'content gốc') + '). Mẫu số của từng Pillar (dùng cho thanh 100% ở mục dưới) là tổng của chính pillar đó. <strong>Thang tô màu tính theo ô đậm nhất (heatMax = ' + heatMax + ')</strong> — ô càng đậm càng gần heatMax, không tính theo mẫu số tỷ trọng.</p>';
+        if (channelTotal < mix.denominator) {
+          var missingMix = mix.denominator - channelTotal;
+          heatNote += '<p class="sub"><strong>Tổng tỷ trọng theo kênh nhỏ hơn 100%:</strong> còn <strong>' + missingMix + '</strong> ' + (unit === 'publication' ? 'publication' : 'content gốc') + ' (' + (mix.denominator ? (Math.round(missingMix / mix.denominator * 1000) / 10) + '%' : '—') + ' mẫu số) chưa vào cột kênh nào. ' + (unit === 'publication'
+            ? 'Đó là các publication chưa rõ nền tảng/kênh — chúng vẫn tính vào mẫu số và tổng của pillar nhưng không thuộc cột kênh nào.'
+            : 'Ở đơn vị content gốc, mỗi content chỉ được tính vào kênh ĐẦU TIÊN của nó và content chưa có phiên bản theo kênh nào vẫn tính vào mẫu số + tổng của pillar nhưng không thuộc cột kênh nào — phần thiếu này chính là các content đó.') + '</p>';
+        }
+        html += '<div data-viz="content-mix-heat"><h3>Ma trận Pillar × Kênh (tô nền theo mật độ ô)</h3>' + heatNote + tbl('<tr><th>Pillar chính</th>' + mix.channels.map(function (c) { return '<th>' + esc(labelStatus(c)) + '</th>'; }).join('') + '<th>Tổng</th><th>Tỷ trọng</th></tr>' + mix.rows.map(function (r) {
           return '<tr><td><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong></td>' + mix.channels.map(function (c) {
             var v = Number(r.byChannel[c]) || 0;
             var ratio = heatMax > 0 ? v / heatMax : 0;
@@ -4739,10 +4883,16 @@
       lines.forEach(function (b) {
         var commits = allCommits.filter(function (x) { return x.budgetLineId === b.id; });
         var acts = allActuals.filter(function (x) { return x.budgetLineId === b.id; });
+        // SYN-15: cơ cấu Thực chi / Cam kết mở của thẻ tiền theo currency
+        // chỉ tính fact CÙNG currency với dòng (khớp budgetUsageTotal +
+        // RPC sau đợt 1) — actual USD gắn cam kết VND không còn hiện là
+        // "Đã chi 30 / Cam kết mở 20" ở thẻ VND (đúng phải 0 / 50).
+        var commitsCur = commits.filter(function (x) { return factCurrencyMatches(x, b.currency); });
+        var actsCur = acts.filter(function (x) { return factCurrencyMatches(x, b.currency); });
         sum.planned += Number(b.planned || 0);
         sum.approved += Number(b.approved || 0);
-        sum.spent += acts.reduce(function (s, a) { return s + Number(a.amount || 0); }, 0);
-        sum.open += (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(commits, acts) : 0;
+        sum.spent += actsCur.reduce(function (s, a) { return s + Number(a.amount || 0); }, 0);
+        sum.open += (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(commitsCur, actsCur) : 0;
         sum.remaining += D.budgetRemaining(b, commits, acts);
       });
       var projected = sum.approved - sum.remaining; // dự kiến sử dụng = đã duyệt − còn phân bổ
@@ -4769,14 +4919,20 @@
       html += tbl('<tr><th>Dòng ngân sách</th><th>Campaign</th><th>Kế hoạch</th><th>Đã duyệt</th><th>Cam kết còn mở</th><th>Thực chi</th><th>Còn lại</th><th>Trạng thái</th><th>Thao tác</th></tr>' + lines.map(function (b) {
         var commits = allCommits.filter(function (x) { return x.budgetLineId === b.id; });
         var acts = allActuals.filter(function (x) { return x.budgetLineId === b.id; });
-        var actualTotal = acts.reduce(function (s, a) { return s + Number(a.amount || 0); }, 0);
+        // SYN-15: Thực chi / Cam kết còn mở của dòng chỉ tính fact cùng
+        // currency với dòng (như thẻ tiền ở trên + budgetUsageTotal).
+        var commitsCur = commits.filter(function (x) { return factCurrencyMatches(x, b.currency); });
+        var actsCur = acts.filter(function (x) { return factCurrencyMatches(x, b.currency); });
+        var actualTotal = actsCur.reduce(function (s, a) { return s + Number(a.amount || 0); }, 0);
         // R2-02: "Cam kết còn mở" lấy thẳng từ D.openCommitmentTotal — không
         // còn phép tính riêng ở view.
-        var openCommit = (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(commits, acts) : 0;
+        var openCommit = (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(commitsCur, actsCur) : 0;
         var rem = D.budgetRemaining(b, commits, acts);
         // R2-25: cam kết / thực chi hiển thị dạng BẢNG CON từng hàng.
         var commitRows = commits.length ? tbl('<tr><th>Cam kết</th><th>Số tiền</th><th>Đã thanh toán</th><th>Còn mở</th><th>Trạng thái</th><th>Duyệt</th><th>Thao tác</th></tr>' + commits.map(function (cm) {
-          var cmActs = acts.filter(function (x) { return x.commitmentId === cm.id; });
+          // SYN-15: đã trả của cam kết tính theo currency CỦA CAM KẾT —
+          // actual lệch currency không làm giảm phần còn mở ở currency này.
+          var cmActs = acts.filter(function (x) { return x.commitmentId === cm.id && factCurrencyMatches(x, cm.currency || cur); });
           var paid = (typeof D.commitmentPaidTotal === 'function') ? D.commitmentPaidTotal(cm, cmActs) : cmActs.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0);
           var cmOpen = String(cm.status).toLowerCase() === 'cancelled' ? 0 : Math.max(0, Number(cm.amount || 0) - paid);
           return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency || cur) + '</td><td>' + fmtMoney(paid, cm.currency || cur) + '</td><td>' + fmtMoney(cmOpen, cm.currency || cur) + '</td><td>' + statusBadge(cm.status) + '</td><td>' + factApprovalControlsHtml(cm, 'commitment') + '</td>' +
@@ -5237,7 +5393,7 @@
     html += '<h2>Thành viên & vai trò</h2>';
     var members = Store.list('members');
     if (!members.length) html += '<div class="state-box">Chưa có thành viên (chưa kết nối dữ liệu).</div>';
-    else html += tbl('<tr><th>Thành viên</th><th>Email</th><th>Vai trò</th><th>Activity</th><th>Năng lực / ngày nghỉ</th></tr>' + members.map(function (m) {
+    else html += tbl('<tr><th>Thành viên</th><th>Email</th><th>Vai trò</th><th>Trạng thái hoạt động</th><th>Năng lực / ngày nghỉ</th></tr>' + members.map(function (m) {
       var roleSel = '<select data-action-change="member-role" data-id="' + esc(m.id) + '"' + dis(!isOwner) + '>' + [['owner', 'Owner'], ['lead', 'Lead'], ['member', 'Member'], ['ceo', 'CEO (chỉ xem)']].map(function (r) { return '<option value="' + r[0] + '"' + (m.role === r[0] ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') + '</select>';
       var activeSel = '<select data-action-change="member-active" data-id="' + esc(m.id) + '"' + dis(!isOwner) + '><option value="1"' + (m.isActive !== false ? ' selected' : '') + '>Đang hoạt động</option><option value="0"' + (m.isActive === false ? ' selected' : '') + '>Ngừng hoạt động</option></select>';
       return '<tr><td><strong>' + esc(m.name) + '</strong></td><td>' + esc(m.email) + '</td><td>' + (isOwner ? roleSel : esc(m.roleLabel || labelStatus(m.role))) + '</td><td>' + (isOwner ? activeSel : (m.isActive === false ? 'Ngừng hoạt động' : 'Đang hoạt động')) + '</td>' +
@@ -5648,9 +5804,13 @@
     lines.forEach(function (l) {
       var cs = commitments.filter(function (x) { return x.budgetLineId === l.id; });
       var as = actuals.filter(function (x) { return x.budgetLineId === l.id; });
+      // SYN-15: actual_total / open_commitments trong CSV cũng chỉ tính
+      // fact cùng currency với dòng — khớp cơ cấu UI + budgetUsageTotal.
+      var csCur = cs.filter(function (x) { return factCurrencyMatches(x, l.currency); });
+      var asCur = as.filter(function (x) { return factCurrencyMatches(x, l.currency); });
       lineStats[l.id] = {
-        actualTotal: as.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0),
-        openCommitments: (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(cs, as) : 0,
+        actualTotal: asCur.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0),
+        openCommitments: (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(csCur, asCur) : 0,
         remaining: D.budgetRemaining(l, cs, as)
       };
     });
@@ -5968,12 +6128,14 @@
           version: versions.length + 1, startDate: bc.startDate, endDate: bc.endDate,
           setBy: Store.currentUserId, setAt: new Date().toISOString(),
           counts: { campaign: 1, phase: bDone.phase, activity: bDone.activity, task: bDone.task },
-          skipped: bPlan.skipped, skippedByType: bPlan.skippedByType, failed: bFailed
+          skipped: bPlan.skipped, skippedByType: bPlan.skippedByType, failed: bFailed,
+          borrowed: bPlan.borrowed || 0, borrowedByType: bPlan.borrowedByType || { activity: 0 }, borrowedIds: bPlan.borrowedIds || []
         };
         versions.push(nv);
         settle(sUpdate('campaigns', id, { baselineStartDate: nv.startDate, baselineEndDate: nv.endDate, baselineVersions: versions }), function () {
           var msg = 'Đã chốt baseline v' + nv.version + ': 1 campaign, ' + bDone.phase + ' phase, ' + bDone.activity + ' activity, ' + bDone.task + ' task';
           if (bPlan.skipped) msg += ' — bỏ qua ' + bPlan.skipped + ' mục chưa có lịch';
+          if (bPlan.borrowed) msg += ' — ' + bPlan.borrowed + ' activity chưa có ngày riêng (đang mượn ngày phase trên Gantt) nên chưa chốt baseline riêng';
           if (bFailed) msg += ' — lỗi ' + bFailed + ' mục chưa ghi được, hãy thử chốt lại';
           toast(msg);
           render();

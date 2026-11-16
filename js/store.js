@@ -88,7 +88,7 @@
     // 0014: lỗi RPC chuỗi duyệt ngân sách bắt đầu bằng tiền tố ổn định
     // (FORBIDDEN_ROLE / ALREADY_DECIDED / …) — GIỮ NGUYÊN tiền tố để UI map
     // sang tiếng Việt theo tiền tố.
-    if (/^(FORBIDDEN_ROLE|ALREADY_DECIDED|SELF_APPROVAL|BUDGET_NOT_APPROVED|BUDGET_LIMIT_EXCEEDED|STALE_REVISION|CURRENCY_MISMATCH)\b/.test(msg)) return msg;
+    if (/^(FORBIDDEN_ROLE|ALREADY_DECIDED|SELF_APPROVAL|BUDGET_NOT_APPROVED|BUDGET_LIMIT_EXCEEDED|PAYMENT_EXCEEDS_COMMITMENT|STALE_REVISION|CURRENCY_MISMATCH)\b/.test(msg)) return msg;
     if (/duplicate key|already exists/i.test(msg)) return 'Bản ghi đã tồn tại (trùng khóa duy nhất trên server).';
     if (/row-level security|permission denied|RLS/i.test(msg)) return 'Vai trò hiện tại không có quyền thực hiện thao tác này trên server.';
     if (/violates check constraint|check constraint/i.test(msg)) return 'Giá trị không hợp lệ với ràng buộc dữ liệu trên server: ' + msg;
@@ -1754,6 +1754,59 @@
     _kpiAutoBlocked: function (kpiLike) {
       return this._kpiDataSource(kpiLike) ? this._kpiAutoSourceError() : null;
     },
+    /**
+     * SYN-06: khóa measurement phải kiểm theo KPI HIỆN TẠI của measurement
+     * VÀ KPI đích khi patch gán lại kpiId — một trong hai là KPI auto thì
+     * chặn KPI_AUTO_SOURCE (đổi chủ measurement của KPI auto sang KPI
+     * thường cũng bị chặn, và ngược lại gán measurement thường vào KPI
+     * auto cũng bị chặn). Trả lỗi hoặc null.
+     */
+    _kpiAutoBlockedForMeasurementUpdate: function (item, patch) {
+      var ids = [];
+      var currentId = item ? (item.kpiId || item.kpi_id || null) : null;
+      if (currentId !== null && currentId !== undefined && String(currentId) !== '') ids.push(currentId);
+      var targetId = patch ? (patch.kpiId || patch.kpi_id || null) : null;
+      if (targetId !== null && targetId !== undefined && String(targetId) !== ''
+        && ids.map(String).indexOf(String(targetId)) === -1) ids.push(targetId);
+      for (var i = 0; i < ids.length; i++) {
+        var kpi = this.get('kpis', ids[i]);
+        if (kpi && this._kpiAutoBlocked(kpi)) return this._kpiAutoSourceError();
+      }
+      return null;
+    },
+    /**
+     * KPI sau khi áp patch update('kpis') — gồm cả việc gấp patch.dataSource
+     * ở top-level vào definition.dataSource như các đường update vẫn làm —
+     * để quyết định chặn/strip actual theo NGUỒN HIỆU LỰC sau patch.
+     */
+    _kpiAfterPatch: function (item, patch) {
+      var merged = Object.assign({}, item || {}, patch || {});
+      if (patch && patch.dataSource !== undefined) {
+        var baseDef = (patch.definition && typeof patch.definition === 'object') ? patch.definition
+          : (item && item.definition && typeof item.definition === 'object' ? item.definition : {});
+        var folded = Object.assign({}, baseDef);
+        if (patch.dataSource) folded.dataSource = patch.dataSource; else delete folded.dataSource;
+        merged.definition = folded;
+        delete merged.dataSource;
+      }
+      return merged;
+    },
+    /**
+     * SYN-18: update('kpis') đổi nguồn auto → manual trong CÙNG một thao
+     * tác mà patch kèm actual → strip actual khỏi patch (bản sao), không
+     * ghi actual trong chính thao tác đổi nguồn; các trường hợp còn lại
+     * giữ nguyên patch. Trả { patch, stripped }.
+     */
+    _stripActualOnSourceChangeToManual: function (item, patch) {
+      if (!patch || patch.actual == null) return { patch: patch, stripped: false };
+      var oldDs = this._kpiDataSource(item);
+      if (!oldDs) return { patch: patch, stripped: false };
+      var newDs = this._kpiDataSource(this._kpiAfterPatch(item, patch));
+      if (newDs) return { patch: patch, stripped: false };
+      var cleaned = Object.assign({}, patch);
+      delete cleaned.actual;
+      return { patch: cleaned, stripped: true };
+    },
     /** Pillar chính của content item: cột thật / snake / custom_fields (như contentPillarId ở app). */
     _contentPillarId: function (ci) {
       if (!ci) return null;
@@ -2229,13 +2282,17 @@
       var item = existingItem;
       if (!item) return { ok: false, error: 'Không tìm thấy bản ghi ' + id };
       // KPI auto: chặn ghi actual trực tiếp qua update kpis / sửa measurement.
+      // SYN-18: đổi nguồn auto → manual trong cùng update kèm actual thì
+      // strip actual khỏi patch thay vì chặn (thao tác đổi nguồn vẫn chạy,
+      // actual không được ghi trong chính thao tác đó).
+      // SYN-06: sửa measurement kiểm KPI auto theo KPI HIỆN TẠI và KPI đích.
       var updateBlock = null;
       if (collection === 'kpis' && patch && patch.actual != null) {
-        updateBlock = this._kpiAutoBlocked(Object.assign({}, item, patch));
+        var stripRes = this._stripActualOnSourceChangeToManual(item, patch);
+        if (stripRes.stripped) patch = stripRes.patch;
+        else updateBlock = this._kpiAutoBlocked(this._kpiAfterPatch(item, patch));
       } else if (collection === 'measurements') {
-        var measKpiId = (patch && (patch.kpiId || patch.kpi_id)) || item.kpiId || item.kpi_id || null;
-        var measKpi2 = measKpiId ? this.get('kpis', measKpiId) : null;
-        if (measKpi2) updateBlock = this._kpiAutoBlocked(measKpi2);
+        updateBlock = this._kpiAutoBlockedForMeasurementUpdate(item, patch);
       }
       if (updateBlock) return updateBlock;
       var invalid = this._validate(collection, patch || {}, item);
@@ -2337,11 +2394,13 @@
       // KPI auto: chặn ghi actual trực tiếp qua update kpis / sửa measurement (như demo).
       var remoteUpdateBlock = null;
       if (collection === 'kpis' && patch && patch.actual != null) {
-        remoteUpdateBlock = this._kpiAutoBlocked(Object.assign({}, item, patch));
+        // SYN-18 (như demo): đổi nguồn auto → manual kèm actual → strip actual.
+        var rStripRes = this._stripActualOnSourceChangeToManual(item, patch);
+        if (rStripRes.stripped) patch = rStripRes.patch;
+        else remoteUpdateBlock = this._kpiAutoBlocked(this._kpiAfterPatch(item, patch));
       } else if (collection === 'measurements') {
-        var rMeasKpiId = (patch && (patch.kpiId || patch.kpi_id)) || item.kpiId || item.kpi_id || null;
-        var rMeasKpi2 = rMeasKpiId ? this.get('kpis', rMeasKpiId) : null;
-        if (rMeasKpi2) remoteUpdateBlock = this._kpiAutoBlocked(rMeasKpi2);
+        // SYN-06 (như demo): kiểm KPI auto theo KPI hiện tại VÀ KPI đích.
+        remoteUpdateBlock = this._kpiAutoBlockedForMeasurementUpdate(item, patch);
       }
       if (remoteUpdateBlock) return Promise.resolve(remoteUpdateBlock);
       // KPI auto: gấp patch.dataSource top-level vào definition.dataSource (như demo).
@@ -3035,8 +3094,8 @@
     // decide_commitment_approval / decide_payment_approval). Demo thực thi
     // ĐÚNG quy tắc RPC trong JS. Mọi lỗi nghiệp vụ giữ NGUYÊN tiền tố ổn
     // định của 0014 (FORBIDDEN_ROLE / ALREADY_DECIDED / SELF_APPROVAL /
-    // BUDGET_NOT_APPROVED / BUDGET_LIMIT_EXCEEDED / STALE_REVISION /
-    // CURRENCY_MISMATCH) trong trường `error` của kết quả trả về.
+    // BUDGET_NOT_APPROVED / BUDGET_LIMIT_EXCEEDED / PAYMENT_EXCEEDS_COMMITMENT /
+    // STALE_REVISION / CURRENCY_MISMATCH) trong trường `error` của kết quả trả về.
     // ======================================================================
     /**
      * Tạo đề xuất duyệt ngân sách: {targetType:'campaign_ceiling'|'budget_line',
@@ -3186,6 +3245,87 @@
     decidePaymentApproval: function (id, decision, note) {
       return this._decideFactApproval('actuals', 'decide_payment_approval', 'p_actual_id', id, decision, note);
     },
+    /**
+     * SYN-04: kiểm dấu duyệt HAI tầng cho fact — dòng ngân sách (line) và,
+     * khi dòng thuộc một campaign, hạn mức campaign (campaign). Trả
+     * { missingStamp:'line'|'campaign', line, campaign? } hoặc null khi đủ
+     * dấu / không suy ra được từ state local. opts.requireCampaignRecord:
+     * dòng có campaignId nhưng không thấy campaign trong state cũng coi
+     * là thiếu dấu campaign (đường demo — state là nguồn sự thật; đường
+     * remote KHÔNG đặt cờ này vì state có thể chưa nạp campaign, RPC là
+     * nguồn sự thật cuối cùng).
+     */
+    _budgetStampMissing: function (fact, opts) {
+      opts = opts || {};
+      if (!fact) return null;
+      var lineId = fact.budgetLineId || fact.budget_line_id || null;
+      var line = lineId ? this.get('budgetLines', lineId) : null;
+      if (!line) return null;
+      if (!line.approvedBy && !line.approved_by) {
+        return { missingStamp: 'line', line: line, campaign: null };
+      }
+      var campaignId = line.campaignId || line.campaign_id || null;
+      if (campaignId) {
+        var campaign = this.get('campaigns', campaignId);
+        if (campaign) {
+          if (!campaign.approvedBy && !campaign.approved_by) {
+            return { missingStamp: 'campaign', line: line, campaign: campaign };
+          }
+        } else if (opts.requireCampaignRecord) {
+          return { missingStamp: 'campaign', line: line, campaign: null };
+        }
+      }
+      return null;
+    },
+    /**
+     * SYN-08 (0016): chặn trả vượt cam kết gốc — mirror RPC
+     * decide_payment_approval: khi payment gắn một cam kết, tổng payment
+     * ĐÃ DUYỆT của cam kết đó (Domain.commitmentPaidTotal — chỉ actual
+     * đã duyệt liên kết, đúng tập "đã trả" của RPC) + amount của payment
+     * đang xét > amount gốc của cam kết → PAYMENT_EXCEEDS_COMMITMENT.
+     * Trả object lỗi chuẩn {ok:false, code, error} hoặc null khi không
+     * vượt / payment không gắn cam kết / không đủ dữ kiện local (đường
+     * remote: RPC vẫn là nguồn sự thật cuối cùng).
+     */
+    _paymentExceedsCommitmentResult: function (fact) {
+      if (!fact) return null;
+      var commitmentId = fact.commitmentId || fact.commitment_id || null;
+      if (!commitmentId) return null;
+      var commitment = this.get('commitments', commitmentId);
+      if (!commitment) return null;
+      var commitmentAmount = null;
+      ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value'].forEach(function (k) {
+        if (commitmentAmount === null && commitment[k] !== null && commitment[k] !== undefined && commitment[k] !== '' && !isNaN(Number(commitment[k]))) commitmentAmount = Number(commitment[k]);
+      });
+      if (commitmentAmount === null) return null;
+      var factAmount = null;
+      ['amount', 'actualAmount', 'actual_amount', 'value'].forEach(function (k) {
+        if (factAmount === null && fact[k] !== null && fact[k] !== undefined && fact[k] !== '' && !isNaN(Number(fact[k]))) factAmount = Number(fact[k]);
+      });
+      if (factAmount === null) return null;
+      var Domain = this._domain();
+      var paid = Domain && Domain.commitmentPaidTotal
+        ? Domain.commitmentPaidTotal(commitment, this.state.actuals || [])
+        : (this.state.actuals || []).reduce(function (s, a) {
+          if (!a) return s;
+          var cid = a.commitmentId !== undefined && a.commitmentId !== null ? a.commitmentId : a.commitment_id;
+          if (cid === null || cid === undefined || String(cid) !== String(commitmentId)) return s;
+          var st = a.approvalStatus || a.approval_status || null;
+          if (st !== null && String(st).toLowerCase() !== 'approved') return s;
+          return s + (Number(a.amount) || 0);
+        }, 0);
+      if (paid + factAmount > commitmentAmount) {
+        return { ok: false, code: 'PAYMENT_EXCEEDS_COMMITMENT', error: 'PAYMENT_EXCEEDS_COMMITMENT: tổng payment đã duyệt (' + paid + ') + payment này (' + factAmount + ') vượt số tiền cam kết gốc (' + commitmentAmount + ')' };
+      }
+      return null;
+    },
+    /** Kết quả lỗi BUDGET_NOT_APPROVED chuẩn (code + missingStamp + error). */
+    _budgetNotApprovedResult: function (missingStamp) {
+      var error = missingStamp === 'campaign'
+        ? 'BUDGET_NOT_APPROVED: campaign chưa có dấu duyệt hạn mức (approved_by null) — cần đề xuất hạn mức campaign được Owner duyệt trước'
+        : 'BUDGET_NOT_APPROVED: dòng ngân sách chưa có dấu duyệt (approved_by null) — cần đề xuất được Owner duyệt trước';
+      return { ok: false, code: 'BUDGET_NOT_APPROVED', missingStamp: missingStamp === 'campaign' ? 'campaign' : 'line', error: error };
+    },
     _decideFactApproval: function (collection, rpcName, idArg, id, decision, note) {
       var fact = this.get(collection, id);
       if (!fact) {
@@ -3194,12 +3334,42 @@
       }
       if (this.mode === 'supabase') {
         var self = this;
+        // SYN-04 (remote): tiền kiểm dấu duyệt 2 tầng từ state local khi
+        // suy ra được — trả missingStamp ngay, không chờ RPC. Không suy
+        // ra được (chưa nạp dòng/campaign) thì RPC là nguồn sự thật, và
+        // lỗi BUDGET_NOT_APPROVED từ RPC cũng được gắn missingStamp.
+        if (decision === 'approved') {
+          var preStamp = this._budgetStampMissing(fact, {});
+          if (preStamp) return Promise.resolve(this._budgetNotApprovedResult(preStamp.missingStamp));
+          // SYN-08 (remote): tiền kiểm local cùng logic với demo/RPC —
+          // payment gắn cam kết mà tổng đã duyệt + payment này vượt
+          // amount gốc của cam kết thì chặn ngay, không chờ RPC.
+          if (collection === 'actuals') {
+            var preExceeds = this._paymentExceedsCommitmentResult(fact);
+            if (preExceeds) return Promise.resolve(preExceeds);
+          }
+        }
         var args = {};
         args[idArg] = id;
         args.p_decision = decision;
         args.p_note = note || null;
         return this._rpc(rpcName, args).then(function (r) {
-          if (!r.ok) return r;
+          if (!r.ok) {
+            // SYN-08: lỗi PAYMENT_EXCEEDS_COMMITMENT từ RPC phải được map
+            // NGUYÊN code ra kết quả — không nuốt thành lỗi chung.
+            if (r.error && /^PAYMENT_EXCEEDS_COMMITMENT\b/.test(String(r.error))) {
+              return Object.assign({}, r, { code: 'PAYMENT_EXCEEDS_COMMITMENT' });
+            }
+            if (r.error && /^BUDGET_NOT_APPROVED\b/.test(String(r.error))) {
+              var stamp = /campaign|hạn mức/i.test(String(r.error)) ? 'campaign' : null;
+              if (!stamp) {
+                var inferred = self._budgetStampMissing(fact, {});
+                stamp = inferred ? inferred.missingStamp : 'line';
+              }
+              return Object.assign({}, r, { code: 'BUDGET_NOT_APPROVED', missingStamp: stamp });
+            }
+            return r;
+          }
           var item = r.data ? self._rowToItem(collection, r.data) : null;
           if (item) self._replaceInState(collection, item);
           self.notify();
@@ -3214,9 +3384,9 @@
       if (decision !== 'approved' && decision !== 'rejected') {
         return { ok: false, error: 'Quyết định phải là "approved" hoặc "rejected".' };
       }
-      // Thứ tự kiểm bám RPC 0014: FORBIDDEN_ROLE → ALREADY_DECIDED →
+      // Thứ tự kiểm bám RPC 0016 (gốc 0014): FORBIDDEN_ROLE → ALREADY_DECIDED →
       // SELF_APPROVAL → (chỉ khi approved) BUDGET_NOT_APPROVED →
-      // CURRENCY_MISMATCH → BUDGET_LIMIT_EXCEEDED.
+      // CURRENCY_MISMATCH → PAYMENT_EXCEEDS_COMMITMENT → BUDGET_LIMIT_EXCEEDED.
       if (!this.can('approval.decide')) {
         return { ok: false, error: 'FORBIDDEN_ROLE: chỉ lead/owner mới được duyệt ' + label + ' (vai hiện tại: ' + this.currentRole() + ')', action: 'approval.decide' };
       }
@@ -3233,13 +3403,26 @@
       var line = lineId ? this.get('budgetLines', lineId) : null;
       if (decision === 'approved') {
         if (!line) return { ok: false, error: 'Không tìm thấy dòng ngân sách của ' + label + ' ' + fact.id };
-        if (!line.approvedBy && !line.approved_by) {
-          return { ok: false, error: 'BUDGET_NOT_APPROVED: dòng ngân sách chưa có dấu duyệt (approved_by null) — cần đề xuất được Owner duyệt trước' };
-        }
+        // SYN-04: siết cả dấu campaign — dòng thuộc campaign thì campaign
+        // phải có dấu duyệt Owner; thiếu dấu tầng nào báo missingStamp
+        // tầng đó ('line' kiểm trước, rồi 'campaign').
+        var stampMissing = this._budgetStampMissing(fact, { requireCampaignRecord: true });
+        if (stampMissing) return this._budgetNotApprovedResult(stampMissing.missingStamp);
+        // SYN-09: fact THIẾU currency trên dòng có currency = CURRENCY_MISMATCH
+        // (khớp SQL decide_*: `currency is distinct from line.currency`).
         var factCur = fact.currency || null;
         var lineCur = line.currency || null;
-        if (factCur && lineCur && String(factCur) !== String(lineCur)) {
-          return { ok: false, error: 'CURRENCY_MISMATCH: currency ' + label + ' (' + factCur + ') khác currency của dòng (' + lineCur + ')' };
+        if (lineCur && (!factCur || String(factCur) !== String(lineCur))) {
+          return { ok: false, code: 'CURRENCY_MISMATCH', error: 'CURRENCY_MISMATCH: currency ' + label + ' (' + (factCur || 'thiếu currency') + ') khác currency của dòng (' + lineCur + ')' };
+        }
+        // SYN-08 (0016): payment gắn cam kết — tổng payment ĐÃ DUYỆT của
+        // cam kết đó + payment đang xét vượt amount gốc của cam kết →
+        // PAYMENT_EXCEEDS_COMMITMENT. Kiểm TRƯỚC trần dòng
+        // (BUDGET_LIMIT_EXCEEDED) đúng thứ tự RPC 0016; payment không
+        // gắn cam kết giữ nguyên hành vi cũ.
+        if (collection === 'actuals') {
+          var exceedsCommitment = this._paymentExceedsCommitmentResult(fact);
+          if (exceedsCommitment) return exceedsCommitment;
         }
         // UsageAfter: tính fact đang xét NHƯ ĐÃ DUYỆT bằng
         // domain.budgetUsageTotal (payment gắn commitment đồng thời làm
@@ -3446,13 +3629,21 @@
       var v = typeof variantOrId === 'string' ? this.get('variants', variantOrId) : variantOrId;
       if (!v) return { ok: false, error: 'Không tìm thấy variant để đăng.' };
       var Domain = global.SAVA_DOMAIN || (typeof require === 'function' ? (function () { try { return require('./domain.js'); } catch (e) { return null; } })() : null);
+      // SYN-26: kiểm TikTok TRƯỚC nhánh demo/kết nối — thông điệp riêng
+      // "TikTok đăng ngoài app" không bị lỗi chung của demo che mất.
+      // Nhận diện: platform là tiktok (không phân biệt hoa/thường, khớp
+      // platformOf của domain) — TikTok không bao giờ tạo PublishJob,
+      // bất kể publishMode hay chế độ demo/supabase.
+      var platformRaw = String(v.platform || v.channel || v.network || '').trim().toLowerCase();
+      if (platformRaw === 'tiktok') {
+        return { ok: false, error: 'TikTok đăng ngoài app: app không tạo PublishJob cho TikTok.' };
+      }
       if (this.mode === 'demo') {
         return { ok: false, error: 'Đang ở chế độ demo: tài khoản demo không có quyền đăng bài thật. Nút đăng bị khóa — hãy kết nối Supabase và kênh thật để đăng.' };
       }
       if (this.mode !== 'supabase') return { ok: false, error: 'Chưa kết nối Supabase nên chưa thể đăng bài.' };
       if (!this.can('publish.create')) return { ok: false, error: 'Vai trò hiện tại không có quyền Đăng bài.' };
       if (Domain && !Domain.shouldCreatePublishJob(v)) {
-        if ((v.platform || '') === 'tiktok') return { ok: false, error: 'TikTok đăng ngoài app: app không tạo PublishJob cho TikTok.' };
         return { ok: false, error: 'Variant này ở chế độ đăng ngoài app nên không tạo PublishJob.' };
       }
       if (v.approvalStatus !== 'approved') return { ok: false, error: 'Variant chưa được duyệt nên chưa thể đăng.' };

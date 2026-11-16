@@ -138,7 +138,11 @@ test('R2-01 [unit]: D.commitmentPaidTotal chỉ tính Σ actuals liên kết', (
 // ---------- R2-02: viewKpi dùng openCommitmentTotal ----------
 test('R2-02 [static]: viewKpi dùng D.openCommitmentTotal và D.budgetRemaining — không còn phép tính openCommit riêng', () => {
   const kpi = section('function viewKpi()', '// ---------- Kênh & Bài đã đăng ----------');
-  assert.match(kpi, /D\.openCommitmentTotal\(commits, acts\)/);
+  // SYN-15 (16/11): openCommitmentTotal nay nhận danh sách ĐÃ LỌC theo
+  // currency của dòng (commitsCur/actsCur) để cơ cấu Thực chi/Cam kết mở
+  // khớp budgetUsageTotal — ý đồ gốc của test (dùng hàm domain, không tự
+  // tính open ở view) giữ nguyên.
+  assert.match(kpi, /D\.openCommitmentTotal\(commitsCur, actsCur\)/);
   assert.match(kpi, /D\.budgetRemaining\(b, commits, acts\)/);
   assert.doesNotMatch(kpi, /var paidByCommit = \{\}/);
 });

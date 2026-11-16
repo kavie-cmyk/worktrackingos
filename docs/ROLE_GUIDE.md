@@ -1,6 +1,6 @@
 # Hướng dẫn theo vai trò — SAVA Marketing Workspace
 
-Hướng dẫn ngắn cho từng vai trò. Thuật ngữ trên giao diện: **Mục tiêu**, **Target audiences**, **Hoạt động & Kênh triển khai**, **Người phụ trách**, **Đầu ra cần bàn giao**, **Mốc cần hoàn thành**.
+Hướng dẫn ngắn cho từng vai trò. Thuật ngữ trên giao diện: **Mục tiêu**, **Target audiences**, **Activity**, **Người phụ trách**, **Đầu ra cần bàn giao**, **Mốc cần hoàn thành**.
 
 ## Owner — người quản trị workspace
 
@@ -17,7 +17,7 @@ Bạn là người thiết lập và giữ workspace chạy đúng:
 Chuỗi công việc chuẩn của bạn, theo đúng thứ tự:
 
 1. **Tạo campaign** — đặt tên, **Mục tiêu**, **Target audiences**, giai đoạn và **Mốc cần hoàn thành** chính.
-2. **Tách việc** — chia campaign thành các đầu việc trong **Hoạt động & Kênh triển khai**; việc lớn tách thành việc con, đặt quan hệ phụ thuộc (việc sau chờ việc trước) để hệ thống báo đúng việc nào đã sẵn sàng làm, việc nào đang bị chặn.
+2. **Tách việc** — chia campaign thành các đầu việc trong **Activity**; việc lớn tách thành việc con, đặt quan hệ phụ thuộc (việc sau chờ việc trước) để hệ thống báo đúng việc nào đã sẵn sàng làm, việc nào đang bị chặn.
 3. **Giao việc** — mỗi việc có một **Người phụ trách**, **Đầu ra cần bàn giao** rõ ràng, ngày bắt đầu và hạn hoàn thành. Dời ngày một việc thì xem trước danh sách việc phía sau bị ảnh hưởng trước khi chốt.
 4. **Content** — lên nội dung cho từng kênh trong lịch nội dung: bản nháp, media đính kèm, caption và lịch dự kiến đăng.
 5. **Duyệt** — kiểm tra nội dung Member gửi: duyệt để chuyển sang trạng thái sẵn sàng đăng, hoặc trả lại kèm lý do cụ thể cần sửa.
@@ -35,8 +35,8 @@ Chuỗi công việc chuẩn của bạn, theo đúng thứ tự:
 
 ## CEO — người xem báo cáo
 
-- **Xem dashboard / báo cáo:** mở dashboard để xem bức tranh toàn cảnh — tiến độ campaign (chỉ tính việc lá, việc đã huỷ không tính), KPI đạt/chưa đạt, ngân sách đã chi và còn lại, hiệu quả kênh và quảng cáo theo kỳ.
-- **Xuất CSV:** dùng nút xuất CSV trên các bảng/báo cáo để lấy số liệu ra ngoài khi cần làm việc trong spreadsheet hoặc gửi kèm tài liệu họp.
+- **Xem dashboard / báo cáo (phạm vi đọc THẬT hiện hành):** ở dữ liệu thật (Supabase, theo RLS hiện hành) CEO chỉ đọc được **KPI (bảng `kpis` và số đo của nó), dòng ngân sách tổng hợp (`budget_lines`), snapshot báo cáo (`report_snapshots`) và insights (`external_posts` / `metric_observations` / `ads_insights`)**. CEO **không** đọc được campaign / phase / activity / task, content, cam kết và khoản chi chi tiết, phân bổ hay sổ Thu–Chi (cash) — vì vậy các số cần dữ liệu đó (tiến độ campaign, chi tiết đã chi / còn lại theo cam kết và khoản chi, hiệu quả content) **không hiển thị cho CEO ở dữ liệu thật**. Đây là hành vi hiện hành theo policy, không phải lỗi hiển thị; chế độ demo không áp RLS nên có thể hiện rộng hơn — không lấy demo làm chuẩn cho quyền thật.
+- **Xuất CSV:** dùng nút xuất CSV trên các bảng/báo cáo **trong phạm vi đọc được ở trên** để lấy số liệu ra ngoài khi cần làm việc trong spreadsheet hoặc gửi kèm tài liệu họp.
 - **Không sửa:** vai CEO là vai chỉ xem — bạn không chỉnh sửa campaign, việc, nội dung hay số liệu trong app. Cần thay đổi gì thì trao đổi với Lead/Owner để họ cập nhật đúng nguồn dữ liệu.
 
 ## Chuỗi duyệt ngân sách (đề xuất → duyệt → cam kết/chi)
@@ -44,6 +44,8 @@ Chuỗi công việc chuẩn của bạn, theo đúng thứ tự:
 Ngân sách đi đúng một chuỗi — không ai sửa thẳng số đã duyệt trong form:
 
 1. **Đề xuất:** Owner / Lead / Member (quyền `budget.propose`) tạo **đề xuất ngân sách** cho một hạn mức campaign hoặc một dòng ngân sách: mở form "Đề xuất ngân sách" ở màn **KPI & Ngân sách**, nút **Đề xuất duyệt** trong form sửa dòng ngân sách, hoặc nút ở khối hạn mức trong **Tổng quan campaign**. Form hiện số hiện tại → số đề xuất, tiền tệ điền sẵn theo đối tượng, kèm lý do. Form dòng ngân sách không còn ô nhập "Được duyệt" — chỉ hiện dấu duyệt hiện tại (đã duyệt bởi ai, ngày nào; hoặc "Chưa được duyệt").
-2. **Duyệt ngân sách:** **chỉ Owner** (quyền `budget.decide`) quyết định đề xuất trong hàng đợi **Ngân sách** ở màn Duyệt/Requests. Duyệt xong, số đã duyệt của dòng / hạn mức của campaign và dấu duyệt (người duyệt + ngày) cập nhật ngay; từ chối thì đối tượng đích giữ nguyên.
-3. **Cam kết / khoản chi:** cam kết và khoản chi mới tạo luôn ở trạng thái **chờ duyệt**. **Lead / Owner** (quyền `approval.decide`) duyệt/từ chối ngay tại danh sách cam kết/khoản chi — nhưng chỉ khi dòng ngân sách chứa nó **đã có dấu duyệt của Owner**, tổng sử dụng sau duyệt (chỉ tính các khoản đã duyệt) **không vượt số đã duyệt**, và **không tự duyệt khoản do mình tạo** (trừ Owner). UI khóa nút kèm lý do tại chỗ ("Khoản ngân sách chưa được duyệt" / "Vượt số đã duyệt") khi tiền kiểm không đạt; server vẫn là chốt cuối.
+2. **Duyệt ngân sách:** **chỉ Owner** (quyền `budget.decide`) quyết định đề xuất trong hàng đợi **Ngân sách** ở màn Duyệt/Requests. Duyệt xong, số đã duyệt của dòng / hạn mức của campaign và dấu duyệt (người duyệt + ngày) cập nhật ngay; từ chối thì đối tượng đích giữ nguyên. Lưu ý: dấu duyệt của **dòng ngân sách** và dấu duyệt của **campaign** (hạn mức, `campaigns.approved_by`) là **hai dấu riêng biệt** — duyệt dòng không thay cho duyệt campaign và ngược lại.
+3. **Cam kết / khoản chi:** cam kết và khoản chi mới tạo luôn ở trạng thái **chờ duyệt**. **Lead / Owner** (quyền `approval.decide`) duyệt/từ chối ngay tại danh sách cam kết/khoản chi — nhưng chỉ khi đã đủ dấu duyệt của Owner theo quy tắc: nếu khoản thuộc một **campaign** thì cần **CẢ HAI** dấu — dấu duyệt của **dòng ngân sách** chứa nó **và** dấu duyệt của **campaign** đó; dòng **không thuộc campaign** nào thì chỉ cần dấu duyệt của dòng. Thiếu một trong hai dấu thì bị chặn với mã `BUDGET_NOT_APPROVED` và thông điệp/lý do tại chỗ nói rõ **đang thiếu dấu ở tầng nào** (dòng ngân sách hay campaign). Ngoài ra: tổng sử dụng sau duyệt (chỉ tính các khoản đã duyệt) **không vượt số đã duyệt**; riêng khoản chi gắn cam kết, **tổng chi đã duyệt + khoản này không được vượt số tiền cam kết gốc** (vượt thì bị chặn, mã `PAYMENT_EXCEEDS_COMMITMENT`); và **không tự duyệt khoản do mình tạo** (trừ Owner). UI khóa nút kèm lý do tại chỗ ("Khoản ngân sách chưa được duyệt" / "Vượt số đã duyệt") khi tiền kiểm không đạt; server vẫn là chốt cuối.
 4. **CEO** không đề xuất, không duyệt — chỉ xem trạng thái và dấu duyệt như các số liệu khác trong phạm vi xem của mình.
+
+> **Hoàn tiền (refund) — CHƯA hỗ trợ:** app hiện **chưa có đường ghi hoàn tiền** từ nhà cung cấp đúng bản chất (số tiền âm bị chặn ở cả app lẫn cơ sở dữ liệu). Khoản hoàn về hiện **không ghi được** vào app như một khoản hoàn — đừng ghi tạm thành khoản chi dương vì sẽ sai bản chất số liệu. Đây là khoảng trống nghiệp vụ **đang chờ Zac quyết định** cách xử lý, không phải tính năng đã có.

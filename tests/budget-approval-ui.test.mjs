@@ -177,9 +177,13 @@ test('0014-UI [static]: factApprovalControlsHtml — pill theo Domain.factApprov
   assert.match(controls, /data-decision="rejected"/);
   assert.match(controls, /budget-approval-block-reason/);
   // Tiền kiểm: dòng chưa approvedBy → lý do 1; vượt trần qua Domain.budgetUsageTotal (fact tính như đã duyệt) → lý do 2.
+  // SYN-04 (16/11): lý do 1 nói rõ TẦNG DÒNG ('Dòng ngân sách chưa được
+  // duyệt') và có thêm lý do tầng campaign ('Hạn mức campaign chưa được
+  // duyệt') — trước đây cả hai tầng gộp một câu 'Khoản ngân sách...'.
   const reason = section('function budgetFactBlockReason', 'function factApprovalControlsHtml');
   assert.match(reason, /line\.approvedBy/);
-  assert.match(reason, /return 'Khoản ngân sách chưa được duyệt';/);
+  assert.match(reason, /return 'Dòng ngân sách chưa được duyệt';/);
+  assert.match(reason, /return 'Hạn mức campaign chưa được duyệt';/);
   assert.match(reason, /D\.budgetUsageTotal\(line, commitments, actuals\)/);
   assert.match(reason, /approvalStatus: 'approved'/);
   assert.match(reason, /return 'Vượt số đã duyệt';/);

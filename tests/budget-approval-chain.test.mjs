@@ -44,7 +44,11 @@ function resetDemo(extraState) {
       { id: MEMBER, name: 'Member', role: 'member', capacityHoursPerWeek: null, daysOff: null },
       { id: CEO, name: 'CEO', role: 'ceo', capacityHoursPerWeek: null, daysOff: null },
     ],
-    campaigns: [{ id: 'camp-1', name: 'Camp 1', status: 'active', budgetCeiling: null, budgetCeilingCurrency: null, approvedBy: null, approvedAt: null, approvedViaProposalId: null }],
+    // SYN-04 (16/11, Zac chốt siết cả dấu campaign): campaign mặc định của
+    // fixture PHẢI có dấu duyệt Owner — trước đây approvedBy: null mà các
+    // test duyệt fact vẫn kỳ vọng duyệt được là khóa hành vi SAI (chuỗi
+    // duyệt chỉ kiểm dấu dòng). Ca thiếu dấu campaign có test riêng bên dưới.
+    campaigns: [{ id: 'camp-1', name: 'Camp 1', status: 'active', budgetCeiling: null, budgetCeilingCurrency: null, approvedBy: OWNER, approvedAt: '2026-11-15T09:00:00Z', approvedViaProposalId: 'prop-camp-seed' }],
     budgetLines: [], commitments: [], actuals: [], budgetProposals: [],
   }, extraState || {});
   Store.loadState = {};
@@ -447,7 +451,59 @@ test('0014 [store/demo]: duyệt cam kết ở dòng CHƯA có dấu duyệt →
   const r = Store.decideCommitmentApproval('cm-1', 'approved');
   assert.equal(r.ok, false);
   assert.ok(r.error.startsWith('BUDGET_NOT_APPROVED'), r.error);
+  // SYN-04: thiếu dấu DÒNG thì missingStamp phải là 'line'.
+  assert.equal(r.code, 'BUDGET_NOT_APPROVED');
+  assert.equal(r.missingStamp, 'line');
   assert.equal(Store.get('commitments', 'cm-1').approvalStatus, 'pending');
+});
+
+test('SYN-04 [store/demo]: dòng có dấu duyệt nhưng CAMPAIGN chưa có dấu duyệt → BUDGET_NOT_APPROVED + missingStamp campaign (cam kết + khoản chi)', () => {
+  resetDemo({
+    campaigns: [{ id: 'camp-1', name: 'Camp 1', status: 'active', budgetCeiling: null, budgetCeilingCurrency: null, approvedBy: null, approvedAt: null, approvedViaProposalId: null }],
+    budgetLines: [approvedLine()],
+    commitments: [pendingCommitment()],
+    actuals: [pendingActual()],
+  });
+  asUser(LEAD);
+  const rc = Store.decideCommitmentApproval('cm-1', 'approved');
+  assert.equal(rc.ok, false);
+  assert.ok(rc.error.startsWith('BUDGET_NOT_APPROVED'), rc.error);
+  assert.equal(rc.code, 'BUDGET_NOT_APPROVED');
+  assert.equal(rc.missingStamp, 'campaign', 'thiếu dấu campaign phải nói rõ tầng campaign');
+  assert.equal(Store.get('commitments', 'cm-1').approvalStatus, 'pending');
+  const rp = Store.decidePaymentApproval('pay-1', 'approved');
+  assert.equal(rp.ok, false);
+  assert.equal(rp.missingStamp, 'campaign');
+  assert.equal(Store.get('actuals', 'pay-1').approvalStatus, 'pending');
+  // Dòng KHÔNG thuộc campaign nào (campaignId null) chỉ cần dấu dòng → duyệt được.
+  resetDemo({
+    budgetLines: [approvedLine({ id: 'bl-free', campaignId: null })],
+    commitments: [pendingCommitment({ id: 'cm-free', budgetLineId: 'bl-free' })],
+  });
+  asUser(LEAD);
+  const free = Store.decideCommitmentApproval('cm-free', 'approved');
+  assert.equal(free.ok, true, JSON.stringify(free));
+});
+
+test('SYN-09 [store/demo]: fact THIẾU currency trên dòng có currency → CURRENCY_MISMATCH khi duyệt; usage JS không tính fact thiếu currency', () => {
+  const noCur = pendingCommitment({ id: 'cm-nocur' });
+  delete noCur.currency;
+  resetDemo({
+    budgetLines: [approvedLine()],
+    commitments: [noCur],
+    actuals: [{ id: 'a-nocur', budgetLineId: 'bl-1', amount: 50, approvalStatus: 'approved', createdBy: MEMBER }],
+  });
+  asUser(LEAD);
+  const r = Store.decideCommitmentApproval('cm-nocur', 'approved');
+  assert.equal(r.ok, false);
+  assert.ok(r.error.startsWith('CURRENCY_MISMATCH'), r.error);
+  assert.equal(Store.get('commitments', 'cm-nocur').approvalStatus, 'pending');
+  // Usage: actual 50 thiếu currency trên dòng VND → 0 (khớp SQL decide_*), không phải 50.
+  const line = Store.get('budgetLines', 'bl-1');
+  assert.equal(domain.budgetUsageTotal(line, [], Store.state.actuals), 0);
+  assert.equal(domain.budgetRemaining(line, [], Store.state.actuals), 100);
+  // Cùng fact NHƯNG dòng không khai currency → không có chuẩn đối chiếu, vẫn tính (fixture cũ).
+  assert.equal(domain.budgetUsageTotal({ approved: 100 }, [], Store.state.actuals), 50);
 });
 
 test('0014 [store/demo]: duyệt cam kết vượt số đã duyệt → BUDGET_LIMIT_EXCEEDED (UsageAfter tính cả actual đã duyệt)', () => {
