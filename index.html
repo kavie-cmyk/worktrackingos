@@ -11,12 +11,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="config.js"></script>
 <script src="js/domain.js"></script>
-<script src="js/demo-data.js"></script>
 <script src="js/store-core.js"></script>
 <script src="js/store.js"></script>
 </head>
 <body>
-<div id="demo-banner" class="demo-banner" hidden>Dữ liệu minh họa — không phải dữ liệu thật</div>
 <div class="layout">
   <aside class="sidebar" id="sidebar">
     <div class="wordmark">SAVA Marketing Workspace</div>
@@ -36,9 +34,6 @@
       </form>
       <div class="topbar-user">
         <span id="topbar-user"></span>
-        <label class="user-picker" id="demo-user-picker" hidden>Chế độ demo — đổi người dùng xem thử
-          <select id="current-user-select" aria-label="Đổi người dùng (chỉ chế độ demo)"></select>
-        </label>
         <button class="btn secondary small" data-action="sign-out" id="sign-out-btn" hidden>Đăng xuất</button>
       </div>
     </header>

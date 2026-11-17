@@ -4,8 +4,8 @@
 // Planning thấy trống trơn không lời giải thích. Vá:
 //  - viewPlanning phân biệt 3 trường hợp rỗng: toàn tập trống (no-data),
 //    rỗng do bộ lọc Brand/Segment (filtered), rỗng do năm (year);
-//  - nút "Xem dữ liệu mẫu" (chỉ khi CHƯA ở demo) bật demo bằng đúng cơ
-//    chế Store.setDemoEnabled(true) + reload, hạ cánh ở #/planning;
+//  - (prep/remove-demo-mode) KHÔNG còn nút "Xem dữ liệu mẫu" / chế độ
+//    demo: khối rỗng chỉ giải thích + hướng dẫn nới lọc / tạo dữ liệu;
 //  - cùng mẫu cho trạng thái rỗng toàn tập của mục Brand (#/brand);
 //  - brandFilter KHÔNG bị persist vào localStorage/prefs (mặc định 'all').
 // Tầng kiểm: [static] khóa cấu trúc source + [unit] render helper thật
@@ -48,21 +48,15 @@ test('EMPTY [static]: viewPlanning rẽ 3 trường hợp rỗng qua planningEmp
   assert.doesNotMatch(v, /khớp bộ lọc hiện tại \('/);
 });
 
-test('EMPTY [static]: nút Xem dữ liệu mẫu dùng ĐÚNG cơ chế demo hiện có và hạ cánh ở Planning / Brand', () => {
-  // Handler mới: setDemoEnabled(true) + hash của đúng view + reload.
-  assert.match(src, /if \(action === 'demo-on-planning'\) \{ Store\.setDemoEnabled\(true\); window\.location\.hash = '#\/planning'; window\.location\.reload\(\); \}/);
-  assert.match(src, /if \(action === 'demo-on-brand'\) \{ Store\.setDemoEnabled\(true\); window\.location\.hash = '#\/brand'; window\.location\.reload\(\); \}/);
-  // Handler demo-on cũ (từ Thiết lập -> Overview) KHÔNG đổi hành vi.
-  assert.match(src, /if \(action === 'demo-on'\) \{ Store\.setDemoEnabled\(true\); window\.location\.hash = '#\/overview'; window\.location\.reload\(\); \}/);
-  // Nút nằm trong helper trạng thái rỗng, không phải nút demo-on cũ.
+test('EMPTY [static]: KHÔNG còn nút/demo mode trong trạng thái rỗng (đã gỡ demo)', () => {
   const helpers = section('// ---------- Planning / Brand: trạng thái rỗng có lời ----------', '// ---------- Planning (Brand + Planning, bản bấm thử) ----------');
-  assert.match(helpers, /data-action="demo-on-planning">Xem dữ liệu mẫu</);
-  assert.match(helpers, /data-action="demo-on-brand">Xem dữ liệu mẫu</);
+  assert.doesNotMatch(helpers, /demo-on-planning|demo-on-brand|Xem dữ liệu mẫu|isDemo/);
+  assert.doesNotMatch(src, /demo-on-planning|demo-on-brand|setDemoEnabled/);
 });
 
 test('EMPTY [static]: mục Brand áp cùng mẫu trạng thái rỗng (brandEmptyStateHtml) khi collection brands trống toàn tập', () => {
   const sec = section('function brandSectionHtml(ed)', 'function brandDetailHtml(b)');
-  assert.match(sec, /html \+= brandEmptyStateHtml\(\{ isDemo: brandIsDemo, canEditBrand: ed \}\);/);
+  assert.match(sec, /html \+= brandEmptyStateHtml\(\{ canEditBrand: ed \}\);/);
 });
 
 test('EMPTY [static]: Planning vẫn hiện nhãn ngữ cảnh lọc như các view khác (contextBanner + contextLabel)', () => {
@@ -83,67 +77,49 @@ test('EMPTY [static]: brandFilter/segmentFilter KHÔNG lưu localStorage hay pre
 });
 
 // ---------- [unit] render helper: Planning ----------
-test('EMPTY [unit]: plan rỗng toàn tập ở dữ liệu thật -> giải thích chờ nhập dữ liệu + nút Xem dữ liệu mẫu', () => {
+test('EMPTY [unit]: plan rỗng toàn tập -> giải thích + hướng dẫn tạo dữ liệu, không nút mẫu', () => {
   const h = loadEmptyHelpers();
-  const html = h.planningEmptyStateHtml('no-data', { isDemo: false, year: 2027, contextLabel: 'Tất cả Brand · Tất cả Segment' });
+  const html = h.planningEmptyStateHtml('no-data', { year: 2027, contextLabel: 'Tất cả Brand · Tất cả Segment' });
   assert.match(html, /data-planning-empty="1"/);
   assert.match(html, /data-planning-empty-kind="no-data"/);
   assert.match(html, /Chưa có dòng Planning nào/);
-  assert.match(html, /Dữ liệu thật hiện chưa có dòng kế hoạch nào — bản này đang chờ nhập dữ liệu Planning/);
-  assert.match(html, /data-action="demo-on-planning">Xem dữ liệu mẫu</);
+  assert.match(html, /hãy tạo Brand rồi thêm dòng Planning đầu tiên/);
+  assert.doesNotMatch(html, /demo|Xem dữ liệu mẫu/);
 });
 
-test('EMPTY [unit]: plan rỗng toàn tập ở demo -> không hiện nút chuyển demo (đã ở demo rồi)', () => {
+test('EMPTY [unit]: rỗng do lọc -> nói rõ đang lọc theo Brand/Segment nào + gợi ý nới lọc', () => {
   const h = loadEmptyHelpers();
-  const html = h.planningEmptyStateHtml('no-data', { isDemo: true, year: 2027, contextLabel: 'Tất cả Brand · Tất cả Segment' });
-  assert.match(html, /data-planning-empty-kind="no-data"/);
-  assert.doesNotMatch(html, /demo-on-planning/);
-  assert.doesNotMatch(html, /Xem dữ liệu mẫu/);
-});
-
-test('EMPTY [unit]: rỗng do lọc ở dữ liệu thật -> nói rõ đang lọc theo Brand/Segment nào + gợi ý nới lọc + nút mẫu', () => {
-  const h = loadEmptyHelpers();
-  const html = h.planningEmptyStateHtml('filtered', { isDemo: false, year: 2027, contextLabel: 'Brand: Lumus AI · Segment: B2C', total: 776 });
+  const html = h.planningEmptyStateHtml('filtered', { year: 2027, contextLabel: 'Brand: Lumus AI · Segment: B2C', total: 776 });
   assert.match(html, /data-planning-empty-kind="filtered"/);
   assert.match(html, /Đang lọc theo <strong>Brand: Lumus AI · Segment: B2C<\/strong>/);
   assert.match(html, /776 dòng ngoài ngữ cảnh đang chọn/);
   assert.match(html, /sang "Tất cả" ở thanh bên để nới lọc/);
-  assert.match(html, /data-action="demo-on-planning">Xem dữ liệu mẫu</);
+  assert.doesNotMatch(html, /demo|Xem dữ liệu mẫu/);
 });
 
-test('EMPTY [unit]: rỗng do lọc ở demo -> chỉ hướng dẫn nới lọc, KHÔNG hiện nút chuyển demo', () => {
+test('EMPTY [unit]: rỗng do năm -> nói rõ thuộc năm khác, không đổ cho bộ lọc', () => {
   const h = loadEmptyHelpers();
-  const html = h.planningEmptyStateHtml('filtered', { isDemo: true, year: 2027, contextLabel: 'Brand: Lumus AI', total: 776 });
-  assert.match(html, /data-planning-empty-kind="filtered"/);
-  assert.match(html, /Brand: Lumus AI/);
-  assert.match(html, /nới lọc/);
-  assert.doesNotMatch(html, /demo-on-planning/);
-  assert.doesNotMatch(html, /Xem dữ liệu mẫu/);
-});
-
-test('EMPTY [unit]: rỗng do năm -> nói rõ thuộc năm khác, không đổ cho bộ lọc, không hiện nút mẫu', () => {
-  const h = loadEmptyHelpers();
-  const html = h.planningEmptyStateHtml('year', { isDemo: false, year: 2026, contextLabel: 'Tất cả Brand · Tất cả Segment', total: 776 });
+  const html = h.planningEmptyStateHtml('year', { year: 2026, contextLabel: 'Tất cả Brand · Tất cả Segment', total: 776 });
   assert.match(html, /data-planning-empty-kind="year"/);
   assert.match(html, /Không có dòng Planning nào cho năm 2026/);
   assert.match(html, /thuộc năm khác/);
-  assert.doesNotMatch(html, /demo-on-planning/);
+  assert.doesNotMatch(html, /demo/);
 });
 
 // ---------- [unit] render helper: Brand ----------
-test('EMPTY [unit]: Brand rỗng toàn tập ở dữ liệu thật -> giải thích chờ nhập dữ liệu + nút Xem dữ liệu mẫu hạ cánh Brand', () => {
+test('EMPTY [unit]: Brand rỗng toàn tập -> hướng dẫn tạo Brand đầu tiên khi có quyền sửa', () => {
   const h = loadEmptyHelpers();
-  const html = h.brandEmptyStateHtml({ isDemo: false, canEditBrand: true });
+  const html = h.brandEmptyStateHtml({ canEditBrand: true });
   assert.match(html, /data-brand-empty="1"/);
   assert.match(html, /data-brand-empty-kind="no-data"/);
-  assert.match(html, /Dữ liệu thật hiện chưa có Brand nào — bản này đang chờ nhập dữ liệu Brand/);
-  assert.match(html, /data-action="demo-on-brand">Xem dữ liệu mẫu</);
+  assert.match(html, /Chưa có Brand nào trong collection brands/);
+  assert.match(html, /tạo Brand đầu tiên\./);
+  assert.doesNotMatch(html, /demo|Xem dữ liệu mẫu/);
 });
 
-test('EMPTY [unit]: Brand rỗng ở demo -> giữ hướng dẫn tạo Brand, không hiện nút chuyển demo', () => {
+test('EMPTY [unit]: Brand rỗng + vai chỉ xem -> không hiện hướng dẫn tạo', () => {
   const h = loadEmptyHelpers();
-  const html = h.brandEmptyStateHtml({ isDemo: true, canEditBrand: true });
+  const html = h.brandEmptyStateHtml({ canEditBrand: false });
   assert.match(html, /Chưa có Brand nào trong collection brands/);
-  assert.match(html, /tạo Brand đầu tiên ở chế độ demo/);
-  assert.doesNotMatch(html, /demo-on-brand/);
+  assert.doesNotMatch(html, /Tạo Brand/);
 });

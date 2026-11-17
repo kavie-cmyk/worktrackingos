@@ -261,8 +261,8 @@ test('BP-UI [static]: khối Phase — uplift/qty/views/4 tỉ lệ là ô nhậ
   assert.match(block, /funnelTotalsFor\(chRows, benchmarks\)/);
   assert.match(block, /funnelTotalsFor\(pRows, benchmarks\)/);
   assert.match(block, /effectivePhaseRates\(phase, ch, benchmarks\)/);
-  // Editable khi (demo hoặc supabase) + canEdit (0017: Planning có bảng thật); vai chỉ xem có banner khóa.
-  assert.match(src, /function planningInputsEditable\(\) \{ return \(Store\.mode === 'demo' \|\| Store\.mode === 'supabase'\) && canEdit\(\); \}/);
+  // Editable khi supabase + canEdit (0017: Planning có bảng thật; demo đã gỡ); vai chỉ xem có banner khóa.
+  assert.match(src, /function planningInputsEditable\(\) \{ return Store\.mode === 'supabase' && canEdit\(\); \}/);
   assert.match(blk, /data-planning-phase-locked="1"/);
   assert.match(blk, /data-planning-phase-empty="1"/);
 });

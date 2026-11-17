@@ -266,7 +266,6 @@
     el.textContent = msg; el.hidden = false;
     setTimeout(function () { el.hidden = true; }, 5200);
   }
-  function demoBanner() { var b = document.getElementById('demo-banner'); if (b) b.hidden = Store.mode !== 'demo'; }
   function readiness(t) {
     var r = D.taskReadiness(t.id, Store.list('tasks'), Store.list('dependencies'));
     return r;
@@ -3469,7 +3468,7 @@
         atRisk.push({ campaign: c, reason: reasons.join('. '), overdueCount: od.length, blockedCount: blockedReal.length, totalCount: ct.length, affectedCount: affected });
       }
     });
-    var html = pageHead('Overview', 'Tình hình Marketing tại thời điểm hiện tại' + (Store.mode === 'demo' ? ' — dữ liệu minh họa' : '') + '.',
+    var html = pageHead('Overview', 'Tình hình Marketing tại thời điểm hiện tại.',
       canEdit() ? '<a class="btn" href="#/campaigns">+ Tạo campaign</a>' : '');
     html += contextBannerHtml();
     html += collectionBanner('campaigns');
@@ -3538,7 +3537,7 @@
     var myContent = Store.list('variants').filter(function (v2) {
       return v2.ownerId === (me && me.id) && v2.scheduledAt && dateInTz(v2.scheduledAt) >= weekStart && dateInTz(v2.scheduledAt) <= weekEnd;
     });
-    var html = pageHead('Task của tôi', 'Task của ' + (me ? me.name : '—') + (Store.mode === 'demo' ? ' (đổi người dùng ở thanh trên — chỉ trong Chế độ demo)' : '') + '. Bấm vào tên task để mở chi tiết và sửa ngay tại chỗ.',
+    var html = pageHead('Task của tôi', 'Task của ' + (me ? me.name : '—') + '. Bấm vào tên task để mở chi tiết và sửa ngay tại chỗ.',
       canEdit() ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button>' : '');
     html += readonlyNote();
     // WAVE-B1-VIZ2: dải KPI đầu trang — số đếm lấy NGUYÊN từ chính các nhóm
@@ -3616,18 +3615,13 @@
   // planningEmptyStateHtml(kind, opts): HTML khối rỗng của Planning.
   // kind: 'no-data' (toàn tập plan_rows trống) | 'filtered' (rỗng do bộ
   // lọc Brand/Segment) | 'year' (có dòng khớp lọc nhưng khác năm).
-  // opts: { isDemo, year, contextLabel, total } — hàm chỉ phụ thuộc esc()
-  // để test render/string trích xuất được độc lập.
-  // Nút "Xem dữ liệu mẫu" CHỈ hiện khi chưa ở demo (isDemo=false): bấm
-  // nút chạy action demo-on-planning (Store.setDemoEnabled(true) +
-  // hash #/planning + reload) — xem handler ở cuối file.
+  // opts: { year, contextLabel, total } — hàm chỉ phụ thuộc esc() để test
+  // render/string trích xuất được độc lập.
   function planningEmptyStateHtml(kind, opts) {
     opts = opts || {};
-    var isDemo = !!opts.isDemo;
-    var demoBtn = isDemo ? '' : '<p><button class="btn" data-action="demo-on-planning">Xem dữ liệu mẫu</button></p>';
     if (kind === 'filtered') {
       return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="filtered"><p><strong>Không có dòng Planning nào khớp bộ lọc Brand/Segment hiện tại</strong></p>' +
-        '<p>Đang lọc theo <strong>' + esc(opts.contextLabel || '') + '</strong>. Dữ liệu Planning vẫn có ' + esc(opts.total != null ? String(opts.total) : 'một số') + ' dòng ngoài ngữ cảnh đang chọn — hãy đổi Brand / Segment sang "Tất cả" ở thanh bên để nới lọc và xem thêm.</p>' + demoBtn + '</div>';
+        '<p>Đang lọc theo <strong>' + esc(opts.contextLabel || '') + '</strong>. Dữ liệu Planning vẫn có ' + esc(opts.total != null ? String(opts.total) : 'một số') + ' dòng ngoài ngữ cảnh đang chọn — hãy đổi Brand / Segment sang "Tất cả" ở thanh bên để nới lọc và xem thêm.</p></div>';
     }
     if (kind === 'year') {
       return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="year"><p><strong>Không có dòng Planning nào cho năm ' + esc(opts.year != null ? String(opts.year) : '') + '</strong></p>' +
@@ -3635,24 +3629,13 @@
     }
     // no-data: toàn bộ tập plan_rows trống (chưa có dữ liệu ở bất kỳ lọc/năm nào).
     return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="no-data"><p><strong>Chưa có dòng Planning nào</strong></p>' +
-      '<p>' + (isDemo
-        ? 'Chế độ demo hiện cũng chưa có dòng Planning nào — dữ liệu mẫu chưa được nạp cho Planning.'
-        : 'Dữ liệu thật hiện chưa có dòng kế hoạch nào — bản này đang chờ nhập dữ liệu Planning. Dữ liệu mẫu chỉ có ở chế độ demo, không nằm trong dữ liệu thật.') + '</p>' + demoBtn + '</div>';
+      '<p>Dữ liệu hiện chưa có dòng kế hoạch nào — hãy tạo Brand rồi thêm dòng Planning đầu tiên.</p></div>';
   }
   // brandEmptyStateHtml(opts): khối rỗng toàn tập của mục Brand trong
-  // trang Brand (collection brands trống). opts: { isDemo, canEditBrand }.
-  // Ở dữ liệu thật: giải thích đang chờ nhập dữ liệu + nút xem mẫu
-  // (action demo-on-brand, hạ cánh #/brand). Ở demo: giữ hướng dẫn tạo
-  // Brand như trước, không hiện nút demo (đã ở demo rồi).
+  // trang Brand (collection brands trống). opts: { canEditBrand }.
   function brandEmptyStateHtml(opts) {
     opts = opts || {};
-    var isDemo = !!opts.isDemo;
-    if (isDemo) {
-      return '<div class="state-box" data-brand-empty="1" data-brand-empty-kind="no-data">Chưa có Brand nào trong collection brands. ' + (opts.canEditBrand ? 'Bấm "+ Tạo Brand" để tạo Brand đầu tiên ở chế độ demo.' : '') + '</div>';
-    }
-    return '<div class="state-box" data-brand-empty="1" data-brand-empty-kind="no-data"><p><strong>Chưa có Brand nào</strong></p>' +
-      '<p>Dữ liệu thật hiện chưa có Brand nào — bản này đang chờ nhập dữ liệu Brand. Dữ liệu mẫu chỉ có ở chế độ demo, không nằm trong dữ liệu thật.</p>' +
-      '<p><button class="btn" data-action="demo-on-brand">Xem dữ liệu mẫu</button></p></div>';
+    return '<div class="state-box" data-brand-empty="1" data-brand-empty-kind="no-data">Chưa có Brand nào trong collection brands. ' + (opts.canEditBrand ? 'Bấm "+ Tạo Brand" để tạo Brand đầu tiên.' : '') + '</div>';
   }
 
   // ---------- Planning (Brand + Planning, bản bấm thử) ----------
@@ -3733,9 +3716,8 @@
     // theo năm/bộ lọc để vẫn thêm được dòng đầu tiên cho năm đó.
     if (mode === 'month') html += planningAddRowHtml(year);
     var allPlanRows = planRowsList();
-    var isDemo = false; try { isDemo = Store.mode === 'demo'; } catch (e) { isDemo = false; }
     if (!allPlanRows.length) {
-      html += planningEmptyStateHtml('no-data', { isDemo: isDemo, year: year, contextLabel: contextLabel() });
+      html += planningEmptyStateHtml('no-data', { year: year, contextLabel: contextLabel() });
       return html;
     }
     if (!rows.length) {
@@ -3743,9 +3725,9 @@
       // rỗng-do-năm (đã lọc còn dòng nhưng không thuộc năm đang xem) —
       // không gộp chung một câu để tránh khẳng định sai nguyên nhân.
       if (!allRows.length) {
-        html += planningEmptyStateHtml('filtered', { isDemo: isDemo, year: year, contextLabel: contextLabel(), total: allPlanRows.length });
+        html += planningEmptyStateHtml('filtered', { year: year, contextLabel: contextLabel(), total: allPlanRows.length });
       } else {
-        html += planningEmptyStateHtml('year', { isDemo: isDemo, year: year, contextLabel: contextLabel(), total: allRows.length });
+        html += planningEmptyStateHtml('year', { year: year, contextLabel: contextLabel(), total: allRows.length });
       }
       return html;
     }
@@ -3992,7 +3974,7 @@
   // bảng Supabase thật nên chế độ dữ liệu thật lưu bình thường qua Store;
   // vai chỉ xem thì ô bị disabled ngay từ lúc render và handler lưu cũng
   // chặn lại (phaseSaveGuard).
-  function planningInputsEditable() { return (Store.mode === 'demo' || Store.mode === 'supabase') && canEdit(); }
+  function planningInputsEditable() { return Store.mode === 'supabase' && canEdit(); }
   function phaseSaveGuard() {
     if (!canEdit()) { toast('Vai trò hiện tại chỉ xem, không sửa được Planning theo Phase.'); render(); return false; }
     return true;
@@ -5173,8 +5155,7 @@
     var brands = filteredBrandsList();
     var html = '<h2>Brand (' + brands.length + ')</h2>';
     if (!allBrands.length) {
-      var brandIsDemo = false; try { brandIsDemo = Store.mode === 'demo'; } catch (e) { brandIsDemo = false; }
-      html += brandEmptyStateHtml({ isDemo: brandIsDemo, canEditBrand: ed });
+      html += brandEmptyStateHtml({ canEditBrand: ed });
       return html;
     }
     if (!brands.length) {
@@ -7480,7 +7461,7 @@
     // pageHead + cụm tab chính ở ngoài) — giữ nguyên toàn bộ hàng đợi,
     // nút quyết định và quy tắc vai trò như view approvals cũ.
     var html = '<p class="sub">Hộp thư chờ mình duyệt: xem đúng bản content được gửi, rồi duyệt / yêu cầu sửa / từ chối kèm nhận xét. Việc sửa content làm ở tab Danh sách, không sửa tại màn duyệt.</p>';
-    if (!ok) html += '<div class="notice warn">Vai trò hiện tại (' + esc(labelStatus(Store.currentRole())) + ') không có quyền duyệt — các nút quyết định bị khóa.' + (Store.mode === 'demo' ? ' Đổi sang Owner/Lead ở thanh trên (Chế độ demo) để thử duyệt.' : '') + '</div>';
+    if (!ok) html += '<div class="notice warn">Vai trò hiện tại (' + esc(labelStatus(Store.currentRole())) + ') không có quyền duyệt — các nút quyết định bị khóa.' + '</div>';
     html += collectionBanner('approvals');
     // WAVE-B4: dải hàng đợi — số chờ theo tab + tuổi chờ lâu nhất (từ mốc
     // gửi duyệt sẵn có requestedAt; thiếu thì lùi createdAt/created_at).
@@ -8151,11 +8132,8 @@
   }
 
   // ---------- Thiết lập ----------
-  // Panel "Trạng thái kết nối Supabase": phân biệt ĐÚNG 4 trạng thái theo mode.
+  // Panel "Trạng thái kết nối Supabase": phân biệt theo mode.
   // - 'supabase' + đã đăng nhập / chưa đăng nhập: giữ nguyên như trước.
-  // - 'demo': Supabase ĐÃ cấu hình — người dùng chỉ đang xem dữ liệu demo nên
-  //   app chưa dùng dữ liệu thật; TUYỆT ĐỐI không hiện "Chờ kết nối Supabase"
-  //   hay 3 bước tự cài đặt (hai thứ đó chỉ đúng cho mode 'setup').
   // - 'setup' (mọi mode còn lại): chưa cấu hình thật → badge warn + 3 bước.
   function supabaseConnectionHtml(mode, me, hasSupabaseUser) {
     if (mode === 'supabase') {
@@ -8163,11 +8141,6 @@
         '<p><button class="btn secondary" data-action="sign-out">Đăng xuất</button></p>';
       return '<p><span class="badge ok">Đã cấu hình</span> App đã có thông tin kết nối. Đăng nhập bằng email/mật khẩu để vào workspace.</p>' +
         '<form class="inline" id="signin-form"><label>Email<input type="email" name="email" required></label><label>Mật khẩu<input type="password" name="password" required></label><button class="btn" type="submit">Đăng nhập</button></form>';
-    }
-    if (mode === 'demo') {
-      return '<p><span class="badge ok">Supabase đã cấu hình</span></p>' +
-        '<p>Bạn đang xem dữ liệu demo nên app chưa dùng dữ liệu thật. Supabase đã được cấu hình sẵn — bạn không cần tự cài đặt hay kết nối lại.</p>' +
-        '<p>Để vào workspace thật, hãy tắt chế độ demo ở panel "Chế độ demo" bên dưới rồi đăng nhập bằng email/mật khẩu.</p>';
     }
     return '<p><span class="badge warn">Chờ kết nối Supabase</span></p><p>Hướng dẫn 3 bước:</p><ol>' +
       '<li>Tạo một Supabase project riêng cho Marketing Workspace.</li>' +
@@ -8182,11 +8155,6 @@
     html += '<h2>Trạng thái kết nối Supabase</h2><div class="panel">';
     html += supabaseConnectionHtml(Store.mode, Store.currentUser(), !!Store.supabaseUser);
     html += '</div>';
-    html += '<h2>Chế độ demo</h2><div class="panel">' +
-      '<p>Trạng thái hiện tại: <strong>' + (Store.mode === 'demo' ? 'Đang bật — mọi màn hình đều có banner "Dữ liệu minh họa — không phải dữ liệu thật", và bộ đổi người dùng ở thanh trên chỉ xuất hiện trong chế độ này (ghi rõ "Chế độ demo")' : 'Đang tắt') + '</strong>.</p>' +
-      (Store.mode === 'demo'
-        ? '<button class="btn" data-action="demo-off">Tắt chế độ demo</button> <button class="btn secondary" data-action="demo-reset">Đặt lại dữ liệu demo</button>'
-        : '<button class="btn" data-action="demo-on">Bật chế độ demo</button>') + '</div>';
     html += '<h2>Thành viên & vai trò</h2>';
     var members = Store.list('members');
     if (!members.length) html += '<div class="state-box">Chưa có thành viên (chưa kết nối dữ liệu).</div>';
@@ -8242,15 +8210,7 @@
       '<label>Email<input type="email" name="email" required autocomplete="username"></label>' +
       '<label>Mật khẩu<input type="password" name="password" required autocomplete="current-password"></label>' +
       '<button class="btn" type="submit">Đăng nhập</button></form>' +
-      '<p class="sub">Chưa có tài khoản? Tài khoản do Owner mời qua email — hãy mở liên kết trong email mời để đặt mật khẩu lần đầu. Quên mật khẩu: nhờ Owner gửi liên kết đặt lại, hoặc dùng tính năng khôi phục của hệ thống tài khoản nếu đã bật.</p>' +
-      // Lối vào dữ liệu mẫu NGAY tại màn hình đăng nhập (không cần tài
-      // khoản): dùng ĐÚNG action demo-on-planning đã có — handler chạy
-      // Store.setDemoEnabled(true) + hash #/planning + reload, tức cùng
-      // một cơ chế demo với nút "Xem dữ liệu mẫu" ở Planning / Brand và
-      // nút bật demo ở Thiết lập, không chế cơ chế mới.
-      '<div class="login-demo-entry" data-login-demo="1"><p><strong>Chỉ muốn xem thử trước?</strong></p>' +
-      '<p class="sub">Xem dữ liệu mẫu (dữ liệu minh họa, không phải dữ liệu thật) — không cần tài khoản. Thoát chế độ mẫu bất cứ lúc nào ở mục Thiết lập bằng nút "Tắt chế độ demo".</p>' +
-      '<p><button type="button" class="btn secondary" data-action="demo-on-planning">Xem dữ liệu mẫu</button></p></div></div>';
+      '<p class="sub">Chưa có tài khoản? Tài khoản do Owner mời qua email — hãy mở liên kết trong email mời để đặt mật khẩu lần đầu. Quên mật khẩu: nhờ Owner gửi liên kết đặt lại, hoặc dùng tính năng khôi phục của hệ thống tài khoản nếu đã bật.</p></div>';
   }
   function viewNoMembership() {
     return pageHead('Tài khoản chưa được gán quyền', 'Bạn đã đăng nhập nhưng chưa thuộc workspace nào.') +
@@ -8266,15 +8226,8 @@
     'kpi': viewKpi, 'channels': viewChannels, 'ads': viewAds, 'reports': viewReports, 'settings': viewSettings
   };
   function authGateView() {
-    // Chế độ demo là lối vào KHÔNG cần đăng nhập: khi cờ demo đã bật,
-    // Store.load() nạp dữ liệu mẫu và Store.mode === 'demo' — cổng này
-    // phải cho qua thẳng (kể cả khi state.authRequired còn sót true từ
-    // phiên/trạng thái trước), nếu không màn hình đăng nhập sẽ chặn cả
-    // người xem dữ liệu mẫu. Khi demo TẮT (mode khác 'demo'), mọi nhánh
-    // dưới giữ nguyên tuyệt đối như trước: chưa đăng nhập vẫn bị chặn ở
-    // màn hình đăng nhập và dữ liệu thật không lộ qua đường này, vì chế
-    // độ demo chỉ nạp dữ liệu minh họa từ js/demo-data.js.
-    if (Store.mode === 'demo') return null;
+    // Không còn chế độ demo: chưa đăng nhập luôn bị chặn ở màn hình đăng
+    // nhập; dữ liệu chỉ nạp qua Supabase sau khi xác thực.
     if (Store.pendingInvite && Store.pendingInvite.expired) return viewInviteExpired();
     if (Store.pendingInvite) return viewSetPassword();
     if (Store.state.noMembership) return viewNoMembership();
@@ -8294,20 +8247,10 @@
     var me = Store.currentUser ? Store.currentUser() : null;
     var userEl = document.getElementById('topbar-user');
     if (userEl) userEl.innerHTML = me ? '<strong>' + esc(me.name) + '</strong> <span class="sub">· ' + esc(me.roleLabel || labelStatus(me.role)) + '</span>' : '';
-    var pickerWrap = document.getElementById('demo-user-picker');
-    if (pickerWrap) pickerWrap.hidden = Store.mode !== 'demo';
-    var sel = document.getElementById('current-user-select');
-    if (sel) {
-      var members = Store.list('members');
-      sel.innerHTML = members.length ? members.map(function (m) {
-        return '<option value="' + esc(m.id) + '"' + (Store.currentUserId === m.id ? ' selected' : '') + '>' + esc(m.name) + ' (' + esc(m.roleLabel || labelStatus(m.role)) + ')</option>';
-      }).join('') : '<option>— Chưa có người dùng —</option>';
-      sel.disabled = Store.mode !== 'demo';
-    }
     var signOutBtn = document.getElementById('sign-out-btn');
-    if (signOutBtn) signOutBtn.hidden = Store.mode === 'demo' || !Store.supabaseUser;
+    if (signOutBtn) signOutBtn.hidden = !Store.supabaseUser;
     var conn = document.getElementById('connection-status');
-    if (conn) conn.textContent = Store.mode === 'demo' ? 'Chế độ: Dữ liệu minh họa (demo)' : (Store.mode === 'supabase' ? 'Chế độ: Dữ liệu thật' : 'Chờ kết nối Supabase');
+    if (conn) conn.textContent = Store.mode === 'supabase' ? 'Chế độ: Dữ liệu thật' : 'Chờ kết nối Supabase';
     var wsName = document.getElementById('workspace-name');
     if (wsName) wsName.textContent = 'SAVA Marketing Workspace';
   }
@@ -8318,7 +8261,6 @@
   }
   function render() {
     ROUTE = parseRoute();
-    demoBanner();
     renderNav();
     var app = document.getElementById('app');
     var gate = authGateView();
@@ -9020,19 +8962,11 @@
     if (action === 'export-kpi-csv') exportKpiCsv();
     if (action === 'export-budget-csv') exportBudgetCsv();
     if (action === 'export-cash-csv') exportCashCsv();
-    if (action === 'demo-on') { Store.setDemoEnabled(true); window.location.hash = '#/overview'; window.location.reload(); }
-    // Từ trạng thái rỗng của Planning / Brand: cùng cơ chế bật demo như
-    // demo-on nhưng HẠ CÁNH Ở ĐÚNG VIEW ĐANG XEM (không về Overview).
-    if (action === 'demo-on-planning') { Store.setDemoEnabled(true); window.location.hash = '#/planning'; window.location.reload(); }
-    if (action === 'demo-on-brand') { Store.setDemoEnabled(true); window.location.hash = '#/brand'; window.location.reload(); }
-    if (action === 'demo-off') { Store.setDemoEnabled(false); window.location.hash = '#/settings'; window.location.reload(); }
-    if (action === 'demo-reset') { Store.resetDemo(); render(); toast('Đã đặt lại dữ liệu minh họa về trạng thái ban đầu.'); }
     if (action === 'team-week-now') { UI.teamWeek = isoOf(mondayOf(new Date())); render(); }
   });
 
   document.addEventListener('change', function (ev) {
     var t = ev.target;
-    if (t.id === 'current-user-select') { Store.setCurrentUser(t.value); render(); return; }
     var ctxKind = t.getAttribute && t.getAttribute('data-action-change');
     if (ctxKind === 'context-brand') { UI.brandFilter = t.value || 'all'; render(); return; }
     if (ctxKind === 'context-segment') { UI.segmentFilter = t.value || 'all'; render(); return; }

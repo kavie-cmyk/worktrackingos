@@ -85,12 +85,12 @@ function setupRemote(handler, { role = 'lead', state = {} } = {}) {
 // ---------------------------------------------------------------------------
 // 1. inviteMember — nhánh demo + thiếu quyền + supabase (fetch Edge Function)
 // ---------------------------------------------------------------------------
-test('invite [store-contract/demo]: Owner ở chế độ demo → lỗi rõ "không gửi được email mời thật" (đồng bộ, không giả vờ đã mời)', () => {
+test('invite [store-contract/demo]: Owner ở adapter trong bộ nhớ (chưa kết nối Supabase) → lỗi rõ "không gửi được email mời thật" (đồng bộ, không giả vờ đã mời)', () => {
   setupDemo({ role: 'owner' });
   const r = Store.inviteMember({ email: 'new@sava.example', role: 'member' });
   assert.equal(typeof r.then, 'undefined', 'nhánh demo trả kết quả đồng bộ như các action demo khác');
   assert.equal(r.ok, false);
-  assert.equal(r.error, 'Chế độ demo không gửi được email mời thật');
+  assert.equal(r.error, 'Chưa kết nối Supabase: không gửi được email mời thật');
 });
 
 test('invite [store-contract]: thiếu quyền member.manage/settings.manage bị gate trước — member demo và lead supabase đều bị chặn, fetch không được gọi', async () => {
