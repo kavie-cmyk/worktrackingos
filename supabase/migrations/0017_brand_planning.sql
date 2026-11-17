@@ -113,8 +113,10 @@ begin
   select conname into v_name
   from pg_constraint
   where conrelid = 'public.phases'::regclass and contype = 'c'
-    and pg_get_constraintdef(oid) like '%plan_id IS NOT NULL OR campaign_id IS NOT NULL%'
-    and pg_get_constraintdef(oid) not like '%brand_id%';
+    and pg_get_constraintdef(oid) like '%plan_id%'
+    and pg_get_constraintdef(oid) like '%campaign_id%'
+    and pg_get_constraintdef(oid) not like '%brand_id%'
+    and conname <> 'phases_scope_check';
   if v_name is not null then
     execute format('alter table public.phases drop constraint %I', v_name);
   end if;

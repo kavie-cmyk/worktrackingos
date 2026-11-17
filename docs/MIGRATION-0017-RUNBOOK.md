@@ -89,6 +89,19 @@ where table_schema = 'public' and (
 select conname from pg_constraint
 where conrelid = 'public.phases'::regclass and conname = 'phases_scope_check';
 -- kỳ vọng: 1 dòng
+
+-- Ràng buộc scope CŨ của 0001 phải ĐÃ BỊ XOÁ (bài học 17/11: bản áp đầu tiên
+-- sót ràng buộc này — nó có tên tự sinh 'phases_check' — khiến INSERT phase
+-- Brand lỗi 23514 ở chunk seed đầu tiên; đã vá bằng SQL sửa trực tiếp +
+-- sửa điều kiện tìm constraint trong file 0017 cho khớp định dạng Postgres
+-- chuẩn hoá có ngoặc đơn quanh từng vế):
+select conname, pg_get_constraintdef(oid) as dinh_nghia from pg_constraint
+where conrelid = 'public.phases'::regclass and contype = 'c'
+  and pg_get_constraintdef(oid) like '%plan_id%'
+  and pg_get_constraintdef(oid) like '%campaign_id%'
+  and pg_get_constraintdef(oid) not like '%brand_id%'
+  and conname <> 'phases_scope_check';
+-- kỳ vọng: 0 dòng
 ```
 
 ## (b) Chạy seed
