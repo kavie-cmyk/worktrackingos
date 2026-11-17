@@ -8,6 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { moneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const domain = require('../js/domain.js');
@@ -100,8 +101,10 @@ test('BP [demo]: campaigns/kpis/budgetLines hiện có gắn brand_id + segment;
   assert.ok(demo.campaigns.every((c) => c.brand_id && c.segment));
   assert.ok(demo.kpis.every((k) => k.brand_id && k.segment));
   assert.ok(demo.budgetLines.every((b) => b.brand_id && b.segment));
-  assert.ok(demo.kpis.some((k) => k.brand_id === 'brand-lumus-ai'));
-  assert.ok(demo.budgetLines.some((b) => b.brand_id === 'brand-lumus-ai'));
+  // KPI/dòng ngân sách gắn brand Lumus trong bộ dữ liệu kiểm thử nằm ở fixture tiền ẩn
+  // (camp-live đã gỡ khỏi demo-data; demo file nguồn không có kpi/budgetLine Lumus).
+  assert.ok(moneyContract.kpis.some((k) => k.brand_id === 'brand-lumus-ai'));
+  assert.ok(moneyContract.budgetLines.some((b) => b.brand_id === 'brand-lumus-ai'));
 });
 
 // ---------------------------------------------------------------- summarize

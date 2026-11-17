@@ -12,10 +12,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { withMoneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const src = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
-const demo = require('../js/demo-data.js');
+const demo = withMoneyContract(require('../js/demo-data.js')); // demo file nguồn + fixture tiền ẩn (tests/fixtures/money-contract.mjs) — export neo vào fixture D.1/D.2 + kpi-2 của fixture
 const D = require('../js/domain.js');
 
 function section(startMarker, endMarker, fromIndex) {

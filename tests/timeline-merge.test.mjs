@@ -157,17 +157,19 @@ test('TM [unit] (iii): timelineStateFromTaskFilter — chế độ Chỉ task + 
 });
 
 // ---------- [demo] ----------
-test('TM [demo]: dữ liệu demo chế độ cây — 155 hàng / 131 task có ngày / 1 chưa xếp lịch / 4 edges', () => {
+test('TM [demo]: dữ liệu demo chế độ cây — 123 hàng / 116 task có ngày / 0 chưa xếp lịch / 0 edges', () => {
   const r = domain.buildCampaignTreeTimeline(
     { campaigns: demo.campaigns, phases: demo.phases, activities: demo.activities, tasks: demo.tasks, dependencies: demo.dependencies, blockers: demo.blockers },
     { today: '2026-11-13' }
   );
-  // Neo cũ 36 hàng/16 task; seed CAMP 01 (17/11): +1 campaign (CREATE) + 3 activity + 115 task -> 155 hàng/131 task.
-  assert.equal(r.rows.length, 155, '6 campaign + 5 phase + 11 activity + 1 nhóm chưa gắn + 131 task + 1 nhóm độc lập');
-  assert.equal(r.datedCount, 131);
-  assert.equal(r.totalCount, 132);
-  assert.deepEqual(r.unscheduled.map((t) => t.id), ['task-f']);
-  assert.equal(r.edges.length, 4);
+  // Neo cũ 155 hàng/131 task/4 edges gồm cả fixture camp-1/camp-2/camp-live;
+  // fixture đã gỡ khỏi demo (17/11) -> demo file nguồn: 3 campaign + 3 activity
+  // + 116 task + 1 nhóm chưa gắn = 123 hàng, 0 dependency.
+  assert.equal(r.rows.length, 123, '3 campaign + 3 activity + 1 nhóm chưa gắn + 116 task');
+  assert.equal(r.datedCount, 116);
+  assert.equal(r.totalCount, 116);
+  assert.deepEqual(r.unscheduled.map((t) => t.id), []);
+  assert.equal(r.edges.length, 0);
   const grp = r.rows.find((x) => x.key === 'grp:no-campaign');
   assert.equal(grp.title, 'Không thuộc campaign');
   assert.equal(r.rows.find((x) => x.id === 'task-solo-1').parentKey, 'grp:no-campaign');
@@ -185,7 +187,8 @@ test('TM [demo]: dữ liệu demo lọc theo người phụ trách — edges ch�
   for (const e of r.edges) {
     assert.ok(visibleTaskIds.has(e.predecessorId) && visibleTaskIds.has(e.successorId), 'edge ' + e.id + ' phải nối hai hàng đang hiển thị');
   }
-  assert.deepEqual(r.edges.map((e) => e.id), ['dep-4']);
+  // Demo file nguồn không còn dependency nào (dep-1..4 thuộc fixture đã gỡ) -> 0 edges.
+  assert.deepEqual(r.edges.map((e) => e.id), []);
 });
 
 // ---------- [static] bề mặt view Timeline ----------
@@ -271,10 +274,10 @@ test('TM [unit] FIX-TF: submit lọc Task với campaignId="" → UI.taskFilter.
   assert.deepEqual(tl.rows.filter((x) => x.kind === 'task').map((x) => x.id), ['tS1']);
 });
 
-test('TM [demo] FIX-TF: demo lọc Task độc lập = 1/132 và Timeline Chỉ task giữ "" = 1/1', () => {
+test('TM [demo] FIX-TF: demo lọc Task độc lập = 1/116 và Timeline Chỉ task giữ "" = 1/1', () => {
   const tf = { campaignId: resolveTaskFilterCampaignId(''), ownerId: 'all', status: 'all', priority: 'all', due: 'all', blocked: 'all', unassigned: false };
   const filtered = applyTaskListFilter(demo.tasks, tf);
-  assert.equal(demo.tasks.length, 132);
+  assert.equal(demo.tasks.length, 116);
   assert.deepEqual(filtered.map((t) => t.id), ['task-solo-1'], 'demo kỳ vọng đúng 1 task độc lập');
   const st = domain.timelineStateFromTaskFilter(tf);
   assert.equal(st.mode, 'tasks');

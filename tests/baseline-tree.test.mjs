@@ -14,6 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { withMoneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const src = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
@@ -90,7 +91,7 @@ test('BASELINE-TREE [unit]: mục thiếu start hoặc end/due bị bỏ qua, kh
 // gộp vào skipped như test cũ khóa. Baseline ghi cho phase/task giữ nguyên.
 test('BASELINE-TREE [unit]: fixture demo camp-1 → 2 phase + 12 task được chốt, 3 activity mượn ngày phase đếm riêng (không gộp skipped); task-b ghi đè baseline cũ bằng lịch hiện tại', () => {
   const d = demo.buildDemoData ? demo.buildDemoData() : demo;
-  const state = d.state || d;
+  const state = withMoneyContract(d.state || d); // cây camp-1 nằm ở fixture tiền ẩn
   const camp = state.campaigns.find((c) => c.id === 'camp-1');
   const phases = state.phases.filter((x) => x.campaignId === 'camp-1');
   const acts = state.activities.filter((x) => x.campaignId === 'camp-1');

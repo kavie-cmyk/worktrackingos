@@ -20,6 +20,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { withMoneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const src = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
@@ -45,7 +46,8 @@ function cfValStub(obj, key) {
   return undefined;
 }
 const demoState = (demo.buildDemoData ? demo.buildDemoData() : demo);
-const demoData = demoState.state || demoState;
+// Ngữ cảnh adapter = demo file nguồn + fixture tiền ẩn (camp-1/camp-2/camp-live đã gỡ khỏi demo-data).
+const demoData = withMoneyContract(demoState.state || demoState);
 function demoDb() {
   return {
     budgetLines: demoData.budgetLines, activities: demoData.activities,

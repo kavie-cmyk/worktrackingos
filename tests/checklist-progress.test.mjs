@@ -12,10 +12,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import { withMoneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const domain = require('../js/domain.js');
-const demo = require('../js/demo-data.js');
+const demo = withMoneyContract(require('../js/demo-data.js')); // demo file nguồn + fixture tiền ẩn (tests/fixtures/money-contract.mjs) — 2 task checklist mẫu thuộc fixture livestream
 const src = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 

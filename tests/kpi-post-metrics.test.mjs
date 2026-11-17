@@ -14,6 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { withMoneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const domain = require('../js/domain.js');
@@ -468,6 +469,9 @@ test('Đổi definition.dataSource -> push kpiTargetVersions với snapshot defi
 // Tích hợp demo: KPI mẫu của executor B tự tính đúng khi nạp demo
 // ---------------------------------------------------------------------------
 test('Demo load: kpi-auto-post-views tự tính actual = 200 (post-1, latest lifetime_views), postCount = 1', () => {
+  // KPI mẫu + post-1/observations thuộc fixture tiền ẩn: gộp vào SAVA_DEMO_DATA
+  // trước khi Store nạp (Store._loadDemo đọc global này tại thời điểm gọi).
+  globalThis.SAVA_DEMO_DATA = withMoneyContract(require('../js/demo-data.js'));
   Store.currentUserId = 'member-lead';
   Store._loadDemo();
   const k = Store.get('kpis', 'kpi-auto-post-views');

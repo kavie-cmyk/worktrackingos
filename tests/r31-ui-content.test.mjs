@@ -9,10 +9,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { withMoneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const src = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
-const demo = require('../js/demo-data.js');
+const demo = withMoneyContract(require('../js/demo-data.js')); // demo file nguồn + fixture tiền ẩn (tests/fixtures/money-contract.mjs) — test AC23–AC29 neo vào fixture content/publication; content-always-1 dùng chung vẫn lấy từ demo qua bản gộp
 
 function section(startMarker, endMarker, fromIndex) {
   const a = src.indexOf(startMarker, fromIndex || 0);

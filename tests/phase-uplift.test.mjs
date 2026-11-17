@@ -10,6 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { moneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const domain = require('../js/domain.js');
@@ -30,9 +31,9 @@ const savaPhases = brandPhases.filter((p) => p.brand_id === 'brand-sava-meta');
 const CTX = { phases: brandPhases, phaseAssumptions: demo.phase_assumptions };
 
 // ---------------------------------------------------------------- demo-data
-test('PU [demo]: phases — 5 phase campaign cũ giữ nguyên + 7 brand phase mới phân biệt bằng brand_id/start_month', () => {
+test('PU [demo]: phases — demo chỉ còn 7 brand phase (5 phase campaign của fixture tiền đã gỡ sang fixture ẩn), phân biệt bằng brand_id/start_month', () => {
   const campPhases = demo.phases.filter((p) => p.campaignId);
-  assert.equal(campPhases.length, 5);
+  assert.equal(campPhases.length, 0);
   assert.equal(brandPhases.length, 7);
   // Brand phase không mang campaignId -> không lẫn vào lọc campaign của app.
   assert.ok(brandPhases.every((p) => p.campaignId === undefined));
@@ -112,8 +113,8 @@ test('PU [demo]: plan_rows Lumus 144 dòng đều có phase_id suy từ khoảng
   assert.ok(demo.plan_rows.filter((r) => r.brand_id === 'brand-sava-meta').every((r) => r.phase_id === 'phase-sava-play'));
 });
 
-test('PU [demo]: KPI Lumus (camp-live) đều có phase_id, trải đủ GĐ1–GĐ4', () => {
-  const lumusKpis = demo.kpis.filter((k) => k.brand_id === 'brand-lumus-ai');
+test('PU [fixture ẩn]: KPI Lumus (camp-live) đều có phase_id, trải đủ GĐ1–GĐ4', () => {
+  const lumusKpis = moneyContract.kpis.filter((k) => k.brand_id === 'brand-lumus-ai');
   assert.equal(lumusKpis.length, 6);
   const valid = new Set(['phase-lumus-1', 'phase-lumus-2', 'phase-lumus-3', 'phase-lumus-4']);
   for (const k of lumusKpis) assert.ok(valid.has(k.phase_id), `${k.id} thiếu phase_id hợp lệ`);

@@ -14,6 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { withMoneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const core = require('../js/store-core.js');
@@ -599,27 +600,29 @@ test('0014 [store/demo]: duyệt payment vượt trần → BUDGET_LIMIT_EXCEEDE
 // ---------------------------------------------------------------------------
 // Demo-data — fixture livestream có dấu duyệt + D.1 giữ số qua domain
 // ---------------------------------------------------------------------------
-test('0014 [demo-data]: camp-live + các dòng ngân sách có dấu duyệt của Owner demo; commitments/actuals đều approved tường minh', () => {
-  const camp = demo.campaigns.find((c) => c.id === 'camp-live');
+test('0014 [fixture ẩn]: camp-live + các dòng ngân sách có dấu duyệt của Owner demo; commitments/actuals đều approved tường minh', () => {
+  const demoM = withMoneyContract(demo);
+  const camp = demoM.campaigns.find((c) => c.id === 'camp-live');
   assert.equal(camp.approvedBy, 'member-owner');
   assert.ok(camp.approvedAt);
   assert.equal(camp.approvedViaProposalId, null);
-  for (const line of demo.budgetLines) {
+  for (const line of demoM.budgetLines) {
     assert.equal(line.approvedBy, 'member-owner', `dòng ${line.id} thiếu dấu duyệt`);
     assert.ok(line.approvedAt, `dòng ${line.id} thiếu approvedAt`);
     assert.equal(line.approvedViaProposalId, null);
   }
-  for (const f of [...demo.commitments, ...demo.actuals]) {
+  for (const f of [...demoM.commitments, ...demoM.actuals]) {
     assert.equal(f.approvalStatus, 'approved', `fact ${f.id} phải mang approvalStatus approved tường minh`);
   }
 });
 
-test('0014 [demo-data]: tổng ngân sách livestream qua domain GIỮ NGUYÊN D.1 (phân bổ 30tr, thực chi 20.5tr, cam kết mở 7.5tr, dự kiến 28tr, chưa phân bổ 2tr, còn dùng được 4tr)', () => {
-  const camp = demo.campaigns.find((c) => c.id === 'camp-live');
-  const lines = demo.budgetLines.filter((l) => l.campaignId === 'camp-live');
-  const commitments = demo.commitments.filter((c) => c.campaignId === 'camp-live');
-  const actuals = demo.actuals.filter((a) => a.campaignId === 'camp-live');
-  const child = demo.activities.filter((a) => a.campaignId === 'camp-live').map((a) => ({
+test('0014 [fixture ẩn]: tổng ngân sách livestream qua domain GIỮ NGUYÊN D.1 (phân bổ 30tr, thực chi 20.5tr, cam kết mở 7.5tr, dự kiến 28tr, chưa phân bổ 2tr, còn dùng được 4tr)', () => {
+  const demoM = withMoneyContract(demo);
+  const camp = demoM.campaigns.find((c) => c.id === 'camp-live');
+  const lines = demoM.budgetLines.filter((l) => l.campaignId === 'camp-live');
+  const commitments = demoM.commitments.filter((c) => c.campaignId === 'camp-live');
+  const actuals = demoM.actuals.filter((a) => a.campaignId === 'camp-live');
+  const child = demoM.activities.filter((a) => a.campaignId === 'camp-live').map((a) => ({
     scopeId: a.id, currency: 'VND',
     amount: lines.filter((l) => l.activityId === a.id).reduce((s, l) => s + l.approved, 0),
   }));

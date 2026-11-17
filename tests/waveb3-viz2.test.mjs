@@ -12,11 +12,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { withMoneyContract } from './fixtures/money-contract.mjs';
 
 const require = createRequire(import.meta.url);
 const src = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
-const demo = require('../js/demo-data.js');
+const demo = withMoneyContract(require('../js/demo-data.js')); // demo file nguồn + fixture tiền ẩn (tests/fixtures/money-contract.mjs) — số cash 16→37,5→60tr và dư 108,5/11,5tr gồm 4 giao dịch gắn campaign fixture
 
 function section(startMarker, endMarker) {
   const a = src.indexOf(startMarker);
