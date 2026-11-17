@@ -326,6 +326,7 @@
     "unit": null,
     "qty": null,
     "budget": 4396000,
+    "audience": "b2c",
     "phase_id": "phase-sava-play"
   },
   {
@@ -338,6 +339,7 @@
     "unit": null,
     "qty": null,
     "budget": 4396000,
+    "audience": "b2c",
     "phase_id": "phase-sava-play"
   },
   {
@@ -350,6 +352,7 @@
     "unit": null,
     "qty": null,
     "budget": 2000000,
+    "audience": "b2c",
     "phase_id": "phase-sava-play"
   },
   {
@@ -398,6 +401,7 @@
     "unit": null,
     "qty": null,
     "budget": 9438000,
+    "audience": "b2c",
     "phase_id": "phase-sava-play"
   },
   {
