@@ -2220,40 +2220,233 @@
     return { channels: channels, byChannel: byChannel, totalQty: totalQty, totalBudget: totalBudget };
   }
 
+  // ---------- Forecast v2: Phase + Uplift (bổ sung 17/11/2026) ----------
+  // ctx = { phases: [{id, brand_id, start_month, end_month,
+  //   uplift_percent_per_month}], phaseAssumptions: [{phase_id, channel,
+  //   view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
+  //   top_funnel_override}] } — cả hai đều tuỳ chọn; không truyền ctx thì
+  // forecastFunnel giữ nguyên hành vi v1.
+
+  /**
+   * Tỉ lệ hiệu dụng sau uplift lũy kế theo tháng:
+   * rate × (1 + upliftPercent/100)^monthOffset.
+   * rate null → null; uplift/tháng thiếu → 0; monthOffset âm → 0.
+   */
+  function effectiveRate(rate, upliftPercent, monthOffset) {
+    var r = _planNum(rate);
+    if (r === null) return null;
+    var u = _planNum(upliftPercent);
+    if (u === null) u = 0;
+    var n = _planNum(monthOffset);
+    if (n === null || n < 0) n = 0;
+    return r * Math.pow(1 + u / 100, n);
+  }
+
+  /** 'YYYY-MM' → chỉ số tháng tuyệt đối (year*12 + month-1); null nếu sai dạng. */
+  function _monthIndex(m) {
+    if (typeof m !== 'string') return null;
+    var mm = /^(\d{4})-(\d{2})/.exec(m);
+    if (!mm) return null;
+    return Number(mm[1]) * 12 + (Number(mm[2]) - 1);
+  }
+  function _phaseMonth(p, snake, camel) {
+    if (!p) return null;
+    var v = p[snake] !== undefined && p[snake] !== null ? p[snake] : p[camel];
+    return (typeof v === 'string' && /^\d{4}-\d{2}/.test(v)) ? v.slice(0, 7) : null;
+  }
+  function _phaseUplift(p) {
+    if (!p) return 0;
+    var v = _planNum(p.uplift_percent_per_month !== undefined && p.uplift_percent_per_month !== null
+      ? p.uplift_percent_per_month : p.upliftPercentPerMonth);
+    return v === null ? 0 : v;
+  }
+  function _rowPhaseId(r) {
+    if (!r) return null;
+    var v = r.phase_id !== undefined && r.phase_id !== null ? r.phase_id : r.phaseId;
+    return (v === undefined || v === null || v === '') ? null : String(v);
+  }
+  /**
+   * Xác định phase của một row: ưu tiên row.phase_id (tra trong ctx.phases);
+   * nếu trống (hoặc id không có trong danh sách) thì khớp theo brand +
+   * khoảng tháng start_month ≤ month ≤ end_month. Phase không mang
+   * start/end_month (vd phase campaign cũ campaignId/startDate) bị bỏ qua
+   * ở đường khớp tháng. Trả { phase, phaseId } — phase có thể null trong
+   * khi phaseId vẫn là id khai trên row (để gom byPhase).
+   */
+  function _resolvePhase(phases, row, month) {
+    var rid = _rowPhaseId(row);
+    var list = phases || [];
+    if (rid) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i] && String(list[i].id) === rid) return { phase: list[i], phaseId: rid };
+      }
+      // id khai trên row nhưng không có object phase: vẫn giữ id để gom
+      // byPhase, không uplift được (thiếu start_month/uplift).
+      if (!month) return { phase: null, phaseId: rid };
+    }
+    if (month) {
+      var brand = _planBrandId(row);
+      var fallback = null;
+      for (var j = 0; j < list.length; j++) {
+        var p = list[j];
+        var sm = _phaseMonth(p, 'start_month', 'startMonth');
+        var em = _phaseMonth(p, 'end_month', 'endMonth');
+        if (!sm || !em || month < sm || month > em) continue;
+        var pb = _planBrandId(p);
+        if (brand !== null && pb !== null && pb !== brand) continue;
+        if (brand !== null && pb === brand) return { phase: p, phaseId: String(p.id) };
+        if (!fallback) fallback = p;
+      }
+      if (fallback) return { phase: fallback, phaseId: String(fallback.id) };
+    }
+    return { phase: null, phaseId: rid };
+  }
+  function _assumptionIndex(assumptions) {
+    var idx = {};
+    (assumptions || []).forEach(function (a) {
+      if (!a || !a.channel) return;
+      var pid = a.phase_id !== undefined && a.phase_id !== null ? a.phase_id : a.phaseId;
+      if (pid === undefined || pid === null || pid === '') return;
+      idx[String(pid) + '|' + String(a.channel)] = a;
+    });
+    return idx;
+  }
+  function _assumpField(a, snake, camel) {
+    if (!a) return null;
+    return _planNum(a[snake] !== undefined && a[snake] !== null ? a[snake] : a[camel]);
+  }
+  function _assumpOverride(a) {
+    return _assumpField(a, 'top_funnel_override', 'topFunnelOverride');
+  }
+
   /**
    * Forecast funnel: views = qty × output_per_unit → visits → signups →
    * first → paid theo chuỗi tỉ lệ của benchmark khớp brand+channel.
    * Row không có benchmark (hoặc benchmark thiếu output/tỉ lệ, vd Paid Ads
    * direct budget) → forecast = null ở chi tiết dòng, không cộng vào tổng.
+   *
+   * V2 (khi truyền ctx = { phases, phaseAssumptions }):
+   * - Phase của row: row.phase_id trước, trống thì khớp brand + khoảng tháng.
+   * - Tỉ lệ gốc từng bước = assumption(phase, channel) nếu khác null,
+   *   ngược lại benchmark. Tỉ lệ hiệu dụng = effectiveRate(tỉ lệ gốc,
+   *   phase.uplift_percent_per_month ?? 0, n) với n = số tháng từ
+   *   start_month của phase tới tháng của row (tháng đầu phase n = 0).
+   *   Uplift CHỈ áp vào 4 tỉ lệ chuyển đổi — không áp qty/output_per_unit.
+   * - top_funnel_override của assumption(phase, channel) là TỔNG đầu phễu
+   *   (views) của cả phase cho channel đó: phân bổ về từng tháng tỉ lệ theo
+   *   qty của các row trong phase×channel (qty 0 → 0; mọi qty đều 0 → chia
+   *   đều theo số row). Cách làm tròn: override nguyên → largest remainder
+   *   (phần nguyên theo sàn, phần dư 1 đơn vị cho các tháng có phần lẻ lớn
+   *   nhất, hòa thì theo thứ tự row) nên tổng các tháng ĐÚNG bằng override;
+   *   override không nguyên → chia tỉ lệ thuần và dồn phần dư vào tháng
+   *   cuối có row của nhóm.
+   * - Channel không benchmark VÀ không assumption đủ tỉ lệ → null như v1.
+   *   Assumption đủ 4 tỉ lệ nhưng không benchmark: chỉ tính được khi có
+   *   top_funnel_override (có đầu phễu); thiếu đầu phễu → null.
+   * - Trả thêm byPhase: { [phase_id]: { phase_id, views, visits, signups,
+   *   first, paid, rowCount } } cộng từ CÙNG kết quả từng row đã tính
+   *   (rowCount = số row có forecast thuộc phase); row chi tiết thêm
+   *   field phase_id đã suy. Không truyền ctx → không phase object nào
+   *   được resolve nên KHÔNG uplift (số liệu y hệt v1); byPhase vẫn gom
+   *   theo phase_id khai sẵn trên row nếu có, ngược lại là {}.
    */
-  function forecastFunnel(rows, benchmarks) {
+  function forecastFunnel(rows, benchmarks, ctx) {
     var list = rows || [];
     var idx = _benchmarkIndex(benchmarks);
+    var phases = (ctx && Array.isArray(ctx.phases)) ? ctx.phases : [];
+    var assumpIdx = _assumptionIndex(ctx && ctx.phaseAssumptions);
     var months = _planMonthsOf(list);
     var byMonth = {};
     months.forEach(function (m) {
       byMonth[m] = { month: m, views: 0, visits: 0, signups: 0, first: 0, paid: 0, hasForecast: false };
     });
     var totals = { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
-    var detail = list.map(function (r) {
+    // Tiền xử lý: resolve phase cho mọi row + phân bổ top_funnel_override.
+    var resolved = list.map(function (r) {
+      return _resolvePhase(phases, r || {}, _planMonth(r));
+    });
+    var overrideViews = {}; // index của row trong list -> views được phân bổ
+    (function allocateOverrides() {
+      var groups = {};
+      list.forEach(function (r, i) {
+        var pid = resolved[i].phaseId;
+        if (!pid || !r || !r.channel) return;
+        var a = assumpIdx[pid + '|' + String(r.channel)];
+        if (!a) return;
+        var ov = _assumpOverride(a);
+        if (ov === null) return;
+        var key = pid + '|' + String(r.channel);
+        if (!groups[key]) groups[key] = { override: ov, items: [] };
+        groups[key].items.push(i);
+      });
+      Object.keys(groups).forEach(function (key) {
+        var g = groups[key];
+        var totalQty = 0;
+        g.items.forEach(function (i) { totalQty += _planNum(list[i] && list[i].qty) || 0; });
+        var raw = g.items.map(function (i) {
+          if (totalQty > 0) return g.override * ((_planNum(list[i] && list[i].qty) || 0) / totalQty);
+          return g.override / g.items.length;
+        });
+        var alloc;
+        if (Number.isInteger(g.override)) {
+          // Largest remainder: sàn + phát phần dư theo phần lẻ lớn nhất.
+          alloc = raw.map(function (v) { return Math.floor(v); });
+          var rem = g.override - alloc.reduce(function (s, v) { return s + v; }, 0);
+          var order = g.items.map(function (_, k) { return k; }).sort(function (x, y) {
+            var fx = raw[x] - Math.floor(raw[x]);
+            var fy = raw[y] - Math.floor(raw[y]);
+            return fy - fx || x - y;
+          });
+          for (var t = 0; t < rem && t < order.length; t++) alloc[order[t]] += 1;
+        } else {
+          alloc = raw.slice();
+          var sum = alloc.reduce(function (s, v) { return s + v; }, 0);
+          alloc[alloc.length - 1] += g.override - sum;
+        }
+        g.items.forEach(function (rowIdx, k) { overrideViews[rowIdx] = alloc[k]; });
+      });
+    })();
+    var byPhase = {};
+    var detail = list.map(function (r, i) {
+      var res = resolved[i];
       var base = {
         rowId: r && r.id !== undefined ? r.id : null,
         brand_id: _planBrandId(r), segment: r ? (r.segment || null) : null,
         month: _planMonth(r), channel: r ? (r.channel || null) : null,
         group: r ? (r.group || null) : null, qty: r ? _planNum(r.qty) : null,
+        phase_id: res.phaseId,
         forecast: null
       };
       var b = _benchmarkFor(idx, r || {});
+      if (b && (b.direct_budget || b.directBudget)) return base;
+      var assumption = (res.phaseId && r && r.channel)
+        ? assumpIdx[res.phaseId + '|' + String(r.channel)] || null : null;
       var qty = _planNum(r && r.qty);
-      if (!b || qty === null) return base;
-      if (b.direct_budget || b.directBudget) return base;
-      var output = _benchField(b, 'output_per_unit', 'outputPerUnit');
-      var v2v = _benchField(b, 'view_to_visit', 'viewToVisit');
-      var v2s = _benchField(b, 'visit_to_signup', 'visitToSignup');
-      var s2f = _benchField(b, 'signup_to_first', 'signupToFirst');
-      var f2p = _benchField(b, 'first_to_paid', 'firstToPaid');
-      if (output === null || v2v === null || v2s === null || s2f === null || f2p === null) return base;
-      var views = qty * output;
+      var output = b ? _benchField(b, 'output_per_unit', 'outputPerUnit') : null;
+      var views;
+      if (overrideViews[i] !== undefined) views = overrideViews[i];
+      else if (qty !== null && output !== null) views = qty * output;
+      else return base;
+      function baseRate(snake, camel) {
+        var av = _assumpField(assumption, snake, camel);
+        if (av !== null) return av;
+        return b ? _benchField(b, snake, camel) : null;
+      }
+      var v2v = baseRate('view_to_visit', 'viewToVisit');
+      var v2s = baseRate('visit_to_signup', 'visitToSignup');
+      var s2f = baseRate('signup_to_first', 'signupToFirst');
+      var f2p = baseRate('first_to_paid', 'firstToPaid');
+      if (v2v === null || v2s === null || s2f === null || f2p === null) return base;
+      if (res.phase) {
+        var startIdx = _monthIndex(_phaseMonth(res.phase, 'start_month', 'startMonth'));
+        var rowIdx = _monthIndex(base.month);
+        var n = (startIdx !== null && rowIdx !== null) ? Math.max(0, rowIdx - startIdx) : 0;
+        var uplift = _phaseUplift(res.phase);
+        v2v = effectiveRate(v2v, uplift, n);
+        v2s = effectiveRate(v2s, uplift, n);
+        s2f = effectiveRate(s2f, uplift, n);
+        f2p = effectiveRate(f2p, uplift, n);
+      }
       var visits = views * v2v;
       var signups = visits * v2s;
       var first = signups * s2f;
@@ -2265,9 +2458,15 @@
         bm.hasForecast = true;
       }
       totals.views += views; totals.visits += visits; totals.signups += signups; totals.first += first; totals.paid += paid;
+      if (res.phaseId) {
+        var bp = byPhase[res.phaseId];
+        if (!bp) bp = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, signups: 0, first: 0, paid: 0, rowCount: 0 };
+        bp.views += views; bp.visits += visits; bp.signups += signups; bp.first += first; bp.paid += paid;
+        bp.rowCount += 1;
+      }
       return base;
     });
-    return { steps: FUNNEL_STEPS.slice(), months: months, byMonth: byMonth, totals: totals, rows: detail };
+    return { steps: FUNNEL_STEPS.slice(), months: months, byMonth: byMonth, totals: totals, rows: detail, byPhase: byPhase };
   }
 
   /**
@@ -2317,6 +2516,7 @@
     summarizePlanByMonth: summarizePlanByMonth,
     summarizePlanByChannel: summarizePlanByChannel,
     forecastFunnel: forecastFunnel,
+    effectiveRate: effectiveRate,
     planBudget: planBudget,
     wouldCreateCycle: wouldCreateCycle,
     taskReadiness: taskReadiness,

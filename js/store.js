@@ -63,7 +63,12 @@
     // Brand + Planning (17/11, bản bấm thử): CHƯA có bảng Supabase tương ứng
     // (không migration) — _loadCollection không thấy ánh xạ bảng trong
     // store-core nên tự trả [] ở chế độ thật, không gọi Supabase, không crash.
-    'brands', 'benchmarks', 'plan_rows'];
+    // Đợt Phase + Uplift (17/11): 'phase_assumptions' cũng theo đúng cơ chế
+    // này. Riêng 'phases' VỐN là collection cũ (giai đoạn campaign, CÓ bảng
+    // thật) nên không nằm ở đây — phase Brand + Planning chỉ là dữ liệu
+    // demo thêm trong mảng `phases` của demo-data (phân biệt bằng
+    // brand_id/start_month), chế độ thật không có dữ liệu đó thì thôi.
+    'brands', 'benchmarks', 'plan_rows', 'phase_assumptions'];
 
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
   function uid(prefix) { return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }

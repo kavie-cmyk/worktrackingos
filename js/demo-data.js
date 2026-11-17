@@ -53,6 +53,14 @@
     'TikTok Ads': [3640000, 5460000, 21840000, 29120000, 21840000, 5460000, 6825000, 6825000, 8190000, 33488000, 33488000, 5824000]
   };
   function planSlug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+  // Phase Lumus theo khoảng tháng (khớp BRAND_PHASES bên dưới):
+  // T1–T2 → GĐ1, T3–T5 → GĐ2, T6–T9 → GĐ3, T10–T12 → GĐ4.
+  function lumusPhaseIdForMonth(month) {
+    if (month <= '2027-02') return 'phase-lumus-1';
+    if (month <= '2027-05') return 'phase-lumus-2';
+    if (month <= '2027-09') return 'phase-lumus-3';
+    return 'phase-lumus-4';
+  }
   function buildPlanRows() {
     var rows = [];
     PLAN_MATRIX.forEach(function (m) {
@@ -60,7 +68,8 @@
         rows.push({
           id: 'plan-lumus-' + month + '-' + planSlug(m.channel),
           brand_id: 'brand-lumus-ai', segment: m.segment, month: month,
-          channel: m.channel, group: m.group, unit: m.unit, qty: m.qty[i], budget: null
+          channel: m.channel, group: m.group, unit: m.unit, qty: m.qty[i], budget: null,
+          phase_id: lumusPhaseIdForMonth(month)
         });
       });
     });
@@ -70,13 +79,65 @@
           id: 'plan-lumus-' + month + '-' + planSlug(channel),
           brand_id: 'brand-lumus-ai', segment: 'b2c', month: month,
           channel: channel, group: 'Paid Media', unit: null, qty: null,
-          budget: PAID_BUDGET_VND[channel][i]
+          budget: PAID_BUDGET_VND[channel][i],
+          phase_id: lumusPhaseIdForMonth(month)
         });
       });
     });
     return rows;
   }
   var PLAN_ROWS = buildPlanRows();
+
+  // =====================================================================
+  // Phase + Uplift (bổ sung 17/11/2026) — CHỈ dữ liệu demo.
+  // LƯU Ý đặt tên: collection `phases` của app VỐN là "giai đoạn campaign"
+  // (campaignId/startDate/endDate, có bảng Supabase thật). Các phase
+  // Brand + Planning dưới đây nằm CHUNG mảng demo `phases` nhưng phân biệt
+  // rõ bằng brand_id + start_month/end_month (không có campaignId nên
+  // không lẫn vào màn campaign/Gantt/baseline vốn lọc theo campaignId);
+  // liên kết campaign của phase SAVA ghi ở field campaign_id (snake).
+  //
+  // Lumus: khoảng tháng GĐ1–GĐ4 khớp sheet 03 Inputs (T1–T2 / T3–T5 /
+  // T6–T9 / T10–T12). File nguồn KHÔNG có tên phase tiếng Anh, objective
+  // theo phase, uplift hay tỉ lệ riêng theo phase → tên + uplift do bản
+  // bấm thử chốt (0 / 5 / 5 / 3 %/tháng), objective là ĐIỀN TẠM hợp lý
+  // (note ghi rõ từng dòng).
+  // SAVA: objective lấy nguyên văn mô tả campaign ở sheet IMC Timeline
+  // của file IMC Game Chapter; khoảng tháng PLAY 2026-10..2026-11 và
+  // BUILD 2026-11..2027-01 khớp campaign demo tương ứng; CREATE
+  // 2027-02..2027-03 lấy từ sheet "KPI & Budget" của file IMC
+  // ("CAMP 03 - CREATE THE UNKNOWN | T2–T3/2027") — KHÔNG phải
+  // placeholder. Riêng uplift của SAVA là SỐ MẪU nhỏ (1–2%), file nguồn
+  // không có số này.
+  // =====================================================================
+  var BRAND_PHASES = [
+    { id: 'phase-lumus-1', brand_id: 'brand-lumus-ai', name: 'Preparation', start_month: '2027-01', end_month: '2027-02', objective: 'Chuẩn bị nền tảng: dựng kênh owned, chốt benchmark và lịch booking KOL/Paid đợt đầu.', uplift_percent_per_month: 0, note: 'Objective điền tạm cho bản bấm thử — file nguồn chỉ ghi khoảng tháng T1–T2 và 15% operating budget cho GĐ1.' },
+    { id: 'phase-lumus-2', brand_id: 'brand-lumus-ai', name: 'Test & Validate', start_month: '2027-03', end_month: '2027-05', objective: 'Kiểm chứng: chạy wave Paid T3–T5 cùng KOL, đo tỉ lệ chuyển đổi thực tế so với benchmark giả định.', uplift_percent_per_month: 5, note: 'Objective điền tạm — căn cứ ghi chú file nguồn "Ưu tiên 2 wave: T3–T5 và T10–T11"; uplift 5%/tháng là số của bản bấm thử.' },
+    { id: 'phase-lumus-3', brand_id: 'brand-lumus-ai', name: 'Optimize & Grow', start_month: '2027-06', end_month: '2027-09', objective: 'Tối ưu và tăng trưởng: tinh chỉnh channel mix theo dữ liệu GĐ2, duy trì nhịp owned publishing.', uplift_percent_per_month: 5, note: 'Objective điền tạm cho bản bấm thử; uplift 5%/tháng là số của bản bấm thử.' },
+    { id: 'phase-lumus-4', brand_id: 'brand-lumus-ai', name: 'Scale & Convert', start_month: '2027-10', end_month: '2027-12', objective: 'Mở rộng và chuyển đổi: dồn lực wave T10–T11, đẩy Signup → First → Paid cuối năm.', uplift_percent_per_month: 3, note: 'Objective điền tạm — căn cứ wave T10–T11 trong file nguồn; uplift 3%/tháng là số của bản bấm thử.' },
+    { id: 'phase-sava-play', brand_id: 'brand-sava-meta', segment: 'b2c', campaign_id: 'camp-play-unknown', name: 'PLAY THE UNKNOWN', start_month: '2026-10', end_month: '2026-11', objective: 'Xây dựng tệp khách hàng, mở phễu: tập hợp đúng Game Audience bằng conversation, ký ức và những trải nghiệm chung quanh Game.', uplift_percent_per_month: 1, note: 'Objective theo file IMC Game Chapter; uplift 1%/tháng là SỐ MẪU cho bản bấm thử.' },
+    { id: 'phase-sava-build', brand_id: 'brand-sava-meta', segment: 'b2b', campaign_id: 'camp-build-unknown', name: 'BUILD THE UNKNOWN', start_month: '2026-11', end_month: '2027-01', objective: 'Sàng lọc cơ hội kinh doanh, chuyển đổi phễu: đưa Studio/Creator có Project thật vào quy trình đánh giá, Market Test và mở cơ hội hợp tác Publishing.', uplift_percent_per_month: 2, note: 'Objective theo file IMC Game Chapter; uplift 2%/tháng là SỐ MẪU cho bản bấm thử.' },
+    { id: 'phase-sava-create', brand_id: 'brand-sava-meta', segment: 'b2c', campaign_id: null, name: 'CREATE THE UNKNOWN', start_month: '2027-02', end_month: '2027-03', objective: 'Mở rộng tệp Future Builder, nuôi dưỡng phễu: chuyển Game Audience từ quan tâm sang hành động sáng tạo, qua đó nhận diện những Creator/Game Maker Signal tiềm năng.', uplift_percent_per_month: 1, note: 'Khoảng tháng + objective theo file IMC Game Chapter (CAMP 03, T2–T3/2027); chưa có campaign demo tương ứng (campaign_id = null); uplift 1%/tháng là SỐ MẪU.' }
+  ];
+  // phase_assumptions: tỉ lệ null = kế thừa benchmark của brand×channel.
+  // File nguồn 03 Inputs KHÔNG ghi tỉ lệ riêng theo phase → toàn bộ 12
+  // dòng KOL (3 channel × 4 phase Lumus) để null hết, top_funnel_override
+  // cũng null (engine/UI phải chạy đúng khi assumption toàn null).
+  var PHASE_ASSUMPTIONS = (function () {
+    var out = [];
+    var kolChannels = ['KOL Nano', 'KOL Micro', 'KOL Expert'];
+    ['phase-lumus-1', 'phase-lumus-2', 'phase-lumus-3', 'phase-lumus-4'].forEach(function (pid) {
+      kolChannels.forEach(function (ch) {
+        out.push({
+          id: 'passump-' + pid.replace('phase-', '') + '-' + planSlug(ch),
+          phase_id: pid, channel: ch,
+          view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null,
+          top_funnel_override: null
+        });
+      });
+    });
+    return out;
+  })();
 
   var data = {
     demoLabel: 'Dữ liệu minh họa — không phải dữ liệu thật',
@@ -138,6 +199,7 @@
       { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs — Paid Media pool 7.000 USD/năm, ngân sách thẳng theo tháng' }
     ],
     plan_rows: PLAN_ROWS,
+    phase_assumptions: PHASE_ASSUMPTIONS,
     campaigns: [
       {
         id: 'camp-1', brand_id: 'brand-sava-meta', segment: 'b2c', name: 'Ra mắt tính năng mới — Mùa lễ hội', businessUnitId: 'bu-game', product: 'Game di động mẫu A',
@@ -232,13 +294,16 @@
         lessons: ''
       }
     ],
+    // 5 phase đầu là "giai đoạn campaign" cũ (campaignId/startDate);
+    // BRAND_PHASES (Brand + Planning, brand_id/start_month) nối tiếp ở
+    // cuối — xem ghi chú ở định nghĩa BRAND_PHASES phía trên.
     phases: [
       { id: 'phase-1', campaignId: 'camp-1', name: 'Giai đoạn 1 — Khởi động', startDate: '2026-11-02', endDate: '2026-11-13' },
       { id: 'phase-2', campaignId: 'camp-1', name: 'Giai đoạn 2 — Cao điểm', startDate: '2026-11-14', endDate: '2026-11-27' },
       { id: 'phase-3', campaignId: 'camp-2', name: 'Giai đoạn 1 — Chuẩn bị', startDate: '2026-11-16', endDate: '2026-11-27' },
       { id: 'phase-live-prep', campaignId: 'camp-live', name: 'Chuẩn bị & tổ chức', startDate: '2026-11-16', endDate: '2026-11-29' },
       { id: 'phase-live-media', campaignId: 'camp-live', name: 'Truyền thông & đăng ký', startDate: '2026-11-18', endDate: '2026-11-28' }
-    ],
+    ].concat(BRAND_PHASES),
     activities: [
       { id: 'act-1', campaignId: 'camp-1', phaseId: 'phase-1', name: 'Teaser trên mạng xã hội', channel: 'Facebook, Instagram', ownerId: 'member-content' },
       { id: 'act-2', campaignId: 'camp-1', phaseId: 'phase-2', name: 'Video thử thách trên TikTok', channel: 'TikTok (đăng ngoài app)', ownerId: 'member-content' },
@@ -420,16 +485,21 @@
       // lifetime_views 100 -> 150 -> 200 nên actual store tự tính phải là
       // 200 (số mới nhất), postCount 1 — KHÔNG đặt actual cứng ở đây.
       { id: 'kpi-auto-post-views', campaignId: 'camp-1', scopeType: 'campaign', brand_id: 'brand-sava-meta', segment: 'b2c', name: 'Lượt xem lũy kế từ bài đã đăng — Campaign mẫu 1', metricCode: 'lifetime_views', aggregationMode: 'sum', target: 500, actual: null, unit: 'lượt xem', periodKey: '2026-11', definition: { description: 'Tự tính từ bộ đếm lifetime_views của các bài đã đăng thuộc campaign — cộng số mới nhất của từng bài.', dataSource: { type: 'post_metrics', metric: 'lifetime_views', mode: 'latest_sum' } }, source: 'Tự động từ bài đã đăng', updatedAt: null },
+      // Phase + Uplift (17/11): 6 KPI Lumus này gắn phase_id TRẢI ĐỀU có
+      // chủ đích theo thứ tự GĐ1→GĐ4 rồi lặp lại (ads-reg→GĐ1,
+      // seeding-reg→GĐ2, campaign-reg→GĐ3, guests→GĐ4, ads-cpl→GĐ1,
+      // campaign-cpl→GĐ2) — periodKey của fixture là 2026-11, TRƯỚC mọi
+      // phase 2027, dữ liệu không gợi ý phase nào nên không suy theo tháng.
       // Fixture R3.1 D.2: đăng ký ads 100 (target 120), seeding 60 (target 80),
       // trùng 20 khóa → campaign unique 140/150 = 93,33%.
-      { id: 'kpi-live-ads-reg', campaignId: 'camp-live', activityId: 'act-live-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', scopeType: 'activity', name: 'Đăng ký hợp lệ từ ads', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 120, actual: 100, unit: 'người', periodKey: '2026-11', identityKeys: ADS_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ ads theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
-      { id: 'kpi-live-seeding-reg', campaignId: 'camp-live', activityId: 'act-live-seeding', brand_id: 'brand-lumus-ai', segment: 'b2c', scopeType: 'activity', name: 'Đăng ký hợp lệ từ seeding', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 80, actual: 60, unit: 'người', periodKey: '2026-11', identityKeys: SEEDING_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ seeding theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
-      { id: 'kpi-live-campaign-reg', campaignId: 'camp-live', scopeType: 'campaign', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Đăng ký hợp lệ không trùng — toàn campaign', metricCode: 'valid_registrations', aggregationMode: 'unique', target: 150, actual: null, unit: 'người', periodKey: '2026-11', definition: { description: 'COUNT DISTINCT khóa định danh trên tập KPI nguồn đã chọn (ads + seeding).' }, source: 'Roll-up từ KPI nguồn (contributions)', updatedAt: '2026-11-12T09:00:00+07:00' },
-      { id: 'kpi-live-guests', campaignId: 'camp-live', activityId: 'act-live-invite', brand_id: 'brand-lumus-ai', segment: 'b2c', scopeType: 'activity', name: 'Khách mời xác nhận', metricCode: 'confirmed_guests', aggregationMode: 'sum', target: 2, actual: 2, unit: 'khách', periodKey: '2026-11', definition: { description: 'Số khách mời đã xác nhận tham gia — metric khác, không cộng vào đăng ký.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-ads-reg', campaignId: 'camp-live', activityId: 'act-live-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', phase_id: 'phase-lumus-1', scopeType: 'activity', name: 'Đăng ký hợp lệ từ ads', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 120, actual: 100, unit: 'người', periodKey: '2026-11', identityKeys: ADS_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ ads theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-seeding-reg', campaignId: 'camp-live', activityId: 'act-live-seeding', brand_id: 'brand-lumus-ai', segment: 'b2c', phase_id: 'phase-lumus-2', scopeType: 'activity', name: 'Đăng ký hợp lệ từ seeding', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 80, actual: 60, unit: 'người', periodKey: '2026-11', identityKeys: SEEDING_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ seeding theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-campaign-reg', campaignId: 'camp-live', scopeType: 'campaign', brand_id: 'brand-lumus-ai', segment: 'b2c', phase_id: 'phase-lumus-3', name: 'Đăng ký hợp lệ không trùng — toàn campaign', metricCode: 'valid_registrations', aggregationMode: 'unique', target: 150, actual: null, unit: 'người', periodKey: '2026-11', definition: { description: 'COUNT DISTINCT khóa định danh trên tập KPI nguồn đã chọn (ads + seeding).' }, source: 'Roll-up từ KPI nguồn (contributions)', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-guests', campaignId: 'camp-live', activityId: 'act-live-invite', brand_id: 'brand-lumus-ai', segment: 'b2c', phase_id: 'phase-lumus-4', scopeType: 'activity', name: 'Khách mời xác nhận', metricCode: 'confirmed_guests', aggregationMode: 'sum', target: 2, actual: 2, unit: 'khách', periodKey: '2026-11', definition: { description: 'Số khách mời đã xác nhận tham gia — metric khác, không cộng vào đăng ký.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
       // CPL ratio hai scope: Ads = 10tr/100 = 100.000; toàn campaign =
       // 20,5tr/140 ≈ 146.429 — nhãn phạm vi ghi rõ ở từng KPI.
-      { id: 'kpi-live-ads-cpl', campaignId: 'camp-live', activityId: 'act-live-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', scopeType: 'activity', name: 'Chi phí / đăng ký — phạm vi Chạy ads', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 10000000, denominator: 100, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi của hoạt động Chạy ads / đăng ký hợp lệ từ ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
-      { id: 'kpi-live-campaign-cpl', campaignId: 'camp-live', scopeType: 'campaign', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Chi phí / đăng ký — phạm vi toàn campaign', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 20500000, denominator: 140, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi toàn campaign / đăng ký unique toàn campaign — KHÔNG phải CPL của riêng ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' }
+      { id: 'kpi-live-ads-cpl', campaignId: 'camp-live', activityId: 'act-live-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', phase_id: 'phase-lumus-1', scopeType: 'activity', name: 'Chi phí / đăng ký — phạm vi Chạy ads', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 10000000, denominator: 100, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi của hoạt động Chạy ads / đăng ký hợp lệ từ ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-campaign-cpl', campaignId: 'camp-live', scopeType: 'campaign', brand_id: 'brand-lumus-ai', segment: 'b2c', phase_id: 'phase-lumus-2', name: 'Chi phí / đăng ký — phạm vi toàn campaign', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 20500000, denominator: 140, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi toàn campaign / đăng ký unique toàn campaign — KHÔNG phải CPL của riêng ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' }
     ],
     kpiContributions: [
       { id: 'contrib-live-1', kpiId: 'kpi-live-campaign-reg', sourceKpiId: 'kpi-live-ads-reg', rule: 'unique', dedupKeyField: 'identityKeys' },
