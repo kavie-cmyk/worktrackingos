@@ -33,3 +33,26 @@ comment on column public.phases.monthly_cvr is '0018: tỉ lệ chuyển đổi 
 comment on column public.phases.cogs_per_free_user is '0018: COGS trên mỗi Free User (tách từ cogs_per_user gộp của 0017; cột cũ giữ nguyên).';
 comment on column public.phases.cogs_per_paid_user is '0018: COGS trên mỗi Paid User (tách từ cogs_per_user gộp của 0017; cột cũ giữ nguyên).';
 comment on column public.phases.paid_price_tiers is '0018: bậc giá Paid dạng jsonb mảng object [{price, pct}]; pct là số phần trăm 0–100.';
+
+-- ============================================================================
+-- BỔ SUNG 0018 (persistence phễu freemium): tỉ lệ phễu MỚI cho
+-- public.benchmarks và public.phase_assumptions.
+-- Hai bảng này ở 0017 khai tỉ lệ phễu là CỘT PHẲNG (view_to_visit,
+-- visit_to_signup, signup_to_first, first_to_paid — numeric(12,8)).
+-- Key MỚI visit_to_freemium / freemium_to_paid chưa có cột thì store-core
+-- (whitelist TABLE_COLUMNS) sẽ làm rơi tỉ lệ mới khi ghi/đọc DB và seed
+-- sinh từ demo-data sẽ mất tỉ lệ phễu của benchmarks.
+-- Cột cũ GIỮ NGUYÊN (engine có fallback đọc key cũ); chỉ THÊM cột mới
+-- theo đúng kiểu numeric(12,8) của nhóm tỉ lệ hiện có, idempotent như
+-- phần phases ở trên. KHÔNG tạo bảng mới, KHÔNG đổi RLS/policy.
+-- ============================================================================
+
+alter table public.benchmarks add column if not exists visit_to_freemium numeric(12,8);
+alter table public.benchmarks add column if not exists freemium_to_paid numeric(12,8);
+alter table public.phase_assumptions add column if not exists visit_to_freemium numeric(12,8);
+alter table public.phase_assumptions add column if not exists freemium_to_paid numeric(12,8);
+
+comment on column public.benchmarks.visit_to_freemium is '0018: tỉ lệ Visit → Freemium, lưu dạng phân số (0–1); cột cũ visit_to_signup/signup_to_first/first_to_paid giữ nguyên cho fallback.';
+comment on column public.benchmarks.freemium_to_paid is '0018: tỉ lệ Freemium → Paid, lưu dạng phân số (0–1); cột cũ visit_to_signup/signup_to_first/first_to_paid giữ nguyên cho fallback.';
+comment on column public.phase_assumptions.visit_to_freemium is '0018: tỉ lệ Visit → Freemium ghi đè theo Phase × Channel, lưu dạng phân số (0–1); null = kế thừa benchmark; cột cũ giữ nguyên cho fallback.';
+comment on column public.phase_assumptions.freemium_to_paid is '0018: tỉ lệ Freemium → Paid ghi đè theo Phase × Channel, lưu dạng phân số (0–1); null = kế thừa benchmark; cột cũ giữ nguyên cho fallback.';

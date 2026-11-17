@@ -19,6 +19,7 @@ const Core = require('../js/store-core.js');
 const demo = require('../js/demo-data.js');
 
 const mig = readFileSync(new URL('../supabase/migrations/0018_funnel_freemium.sql', import.meta.url), 'utf8');
+const seed = readFileSync(new URL('../supabase/seed/from-demo-data.sql', import.meta.url), 'utf8');
 
 test('0018 [migration]: file 0018 thêm đủ 4 cột phases với đúng kiểu, không xoá cột cũ', () => {
   assert.match(mig, /alter table public\.phases add column if not exists monthly_cvr numeric/);
@@ -117,6 +118,69 @@ test('0018 [demo-data]: benchmarks Lumus dùng key phễu freemium mới, bỏ k
   assert.equal(meta.cost_per_result.remarketing, 20000 / (0.09 * 0.0275));
   const tiktok = lumus.find((b) => b.channel === 'TikTok Ads');
   assert.equal(tiktok.cost_per_result.remarketing, 22000 / (0.09 * 0.0275));
+});
+
+test('0018 [migration bổ sung]: benchmarks + phase_assumptions có đủ cột phễu mới numeric(12,8), cột cũ giữ nguyên', () => {
+  assert.match(mig, /alter table public\.benchmarks add column if not exists visit_to_freemium numeric\(12,8\)/);
+  assert.match(mig, /alter table public\.benchmarks add column if not exists freemium_to_paid numeric\(12,8\)/);
+  assert.match(mig, /alter table public\.phase_assumptions add column if not exists visit_to_freemium numeric\(12,8\)/);
+  assert.match(mig, /alter table public\.phase_assumptions add column if not exists freemium_to_paid numeric\(12,8\)/);
+  // Cột cũ không bị xoá (đã khẳng định ở test migration phases, nhắc lại cho 2 bảng này):
+  assert.ok(!/drop column/i.test(mig), 'migration 0018 không được chứa drop column');
+});
+
+test('0018 [store-core bổ sung]: TABLE_COLUMNS.benchmarks và TABLE_COLUMNS.phase_assumptions chứa 2 cột phễu mới', () => {
+  for (const table of ['benchmarks', 'phase_assumptions']) {
+    for (const c of ['visit_to_freemium', 'freemium_to_paid']) {
+      assert.ok(Core.hasColumn(table, c), table + ' thiếu cột ' + c);
+      assert.ok(Core.TABLE_COLUMNS[table].includes(c), table + ' TABLE_COLUMNS thiếu ' + c);
+    }
+    // Cột cũ vẫn còn để engine fallback:
+    assert.ok(Core.hasColumn(table, 'visit_to_signup'), table + ' mất cột cũ visit_to_signup');
+    assert.ok(Core.hasColumn(table, 'first_to_paid'), table + ' mất cột cũ first_to_paid');
+  }
+  // camelCase tự khớp, không cần FIELD_ALIASES:
+  assert.equal(Core.camelToSnake('visitToFreemium'), 'visit_to_freemium');
+  assert.equal(Core.camelToSnake('freemiumToPaid'), 'freemium_to_paid');
+  assert.equal(Core.snakeToCamel('visit_to_freemium'), 'visitToFreemium');
+  assert.equal(Core.snakeToCamel('freemium_to_paid'), 'freemiumToPaid');
+});
+
+test('0018 [round-trip benchmarks]: visitToFreemium 0.09 + freemiumToPaid 0.0275 qua toDbPayload → fromDbRow giữ nguyên', () => {
+  const bench = {
+    brand_id: 'brand-lumus-ai', channel: 'KOL Nano', group: 'KOL',
+    view_to_visit: 0.003, visitToFreemium: 0.09, freemiumToPaid: 0.0275
+  };
+  const payload = Core.toDbPayload('benchmarks', bench, { forInsert: true, workspaceId: 'a0870eed-cbdc-4fde-a3da-0b09d83d83b6' });
+  assert.equal(payload.visit_to_freemium, 0.09);
+  assert.equal(payload.freemium_to_paid, 0.0275);
+  assert.equal(payload.view_to_visit, 0.003);
+  const back = Core.fromDbRow('benchmarks', payload);
+  assert.equal(back.visitToFreemium, 0.09);
+  assert.equal(back.freemiumToPaid, 0.0275);
+  // Dạng snake_case (như demo-data) cũng phải qua được:
+  const payload2 = Core.toDbPayload('benchmarks', { visit_to_freemium: 0.09, freemium_to_paid: 0.0275 }, { forInsert: true });
+  assert.equal(payload2.visit_to_freemium, 0.09);
+  assert.equal(payload2.freemium_to_paid, 0.0275);
+  const back2 = Core.fromDbRow('benchmarks', payload2);
+  assert.equal(back2.visitToFreemium, 0.09);
+  assert.equal(back2.freemiumToPaid, 0.0275);
+  // phase_assumptions cùng cơ chế (cột đã có trong whitelist):
+  const paPayload = Core.toDbPayload('phase_assumptions', { phase_id: 'phase-lumus-1', channel: 'KOL Nano', visitToFreemium: 0.09, freemiumToPaid: 0.0275 }, { forInsert: true });
+  assert.equal(paPayload.visit_to_freemium, 0.09);
+  assert.equal(paPayload.freemium_to_paid, 0.0275);
+  const paBack = Core.fromDbRow('phase_assumptions', paPayload);
+  assert.equal(paBack.visitToFreemium, 0.09);
+  assert.equal(paBack.freemiumToPaid, 0.0275);
+});
+
+test('0018 [seed]: seed chứa visit_to_freemium + freemium_to_paid trong phần insert benchmarks', () => {
+  const benchInserts = seed.match(/^insert into public\.benchmarks .*$/gm) || [];
+  assert.ok(benchInserts.length > 0, 'seed phải có insert benchmarks');
+  assert.ok(benchInserts.some((l) => l.includes('visit_to_freemium')), 'insert benchmarks trong seed thiếu cột visit_to_freemium');
+  assert.ok(benchInserts.some((l) => l.includes('freemium_to_paid')), 'insert benchmarks trong seed thiếu cột freemium_to_paid');
+  // Giá trị tỉ lệ mới của Lumus phải xuất hiện trong các dòng insert đó:
+  assert.ok(benchInserts.some((l) => l.includes('0.09') && l.includes('0.0275')), 'insert benchmarks phải mang giá trị 0.09 / 0.0275');
 });
 
 test('0018 [demo-data]: số neo không đổi — tổng qty Lumus 776, tổng ngân sách năm 1.598.700.000đ', () => {
