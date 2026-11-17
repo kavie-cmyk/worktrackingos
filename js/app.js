@@ -172,6 +172,10 @@
     // chọn đúng 1 Brand — xem viewKpi).
     planningMode: 'month',
     kpiPhaseFilter: 'all',
+    // 3 bảng KPI chi tiết theo tháng (chế độ Theo tháng): trạng thái
+    // thu gọn theo key 'views' | 'paid' | 'cac' — chỉ giữ trong phiên
+    // làm việc (UI state, không lưu Store); thiếu key = đang mở.
+    planningKpiCollapsed: {},
     brandDetailId: null,
     approvalsTab: 'mine',
     actionGroupBy: 'phase',
@@ -887,6 +891,39 @@
     if (prices.some(function (p) { return p !== first; })) return { value: null, source: 'mixed' };
     return { value: first, source: qtyRows.some(planRowHasManualUnitPrice) ? 'manual' : 'benchmark' };
   }
+  // --- Planning Theo phase: Đơn giá mỗi bài của 1 Channel trong Phase ---
+  // MỘT nguồn sự thật: đơn giá của Phase KHÔNG có trường riêng — nó là
+  // field unit_price (đặt tay) trên chính các dòng plan của Channel thuộc
+  // các tháng trong Phase (xem savePhaseUnitPrice). Hàm này chỉ ĐỌC để
+  // trình bày ô nhập ở khối Phase:
+  // - Mọi dòng Số lượng trong Phase cùng một đơn giá hiệu dụng và đều
+  //   đặt tay -> { value, source: 'manual' } (nhãn "đặt tay tại phase").
+  // - Cùng đơn giá hiệu dụng, đều lấy từ Benchmark -> 'benchmark'.
+  // - Đơn giá HIỆU DỤNG khác nhau giữa các tháng (vd sửa lẻ ở Theo tháng
+  //   mỗi tháng một giá đặt tay) -> { value: null, source: 'mixed' }:
+  //   ô nhập để trống kèm ghi chú "khác nhau theo tháng" — KHÔNG bịa một
+  //   con số đại diện; nhập một giá mới sẽ áp đồng nhất cho cả Phase.
+  // - Đơn giá hiệu dụng bằng nhau nhưng nguồn lẫn lộn (một số tháng đặt
+  //   tay, một số tháng Benchmark) -> { value, source: 'mixed' } kèm ghi
+  //   chú lẫn lộn nguồn ở nơi render.
+  // - Không có dòng Số lượng (vd Paid Media) -> { value: null, source: null }.
+  // - Có dòng Số lượng nhưng không dòng nào có đơn giá (không Benchmark,
+  //   không đặt tay) -> { value: null, source: null }.
+  function phaseChannelUnitPriceInfo(chRows, benchmarks) {
+    var qtyRows = (chRows || []).filter(planRowHasQty);
+    if (!qtyRows.length) return { value: null, source: null };
+    var prices = qtyRows.map(function (r) { return planRowEffectiveUnitPrice(r, benchmarks); });
+    var nonNull = prices.filter(function (x) { return x !== null; });
+    if (!nonNull.length) return { value: null, source: null };
+    var first = nonNull[0];
+    if (nonNull.length !== prices.length || nonNull.some(function (x) { return x !== first; })) {
+      return { value: null, source: 'mixed' };
+    }
+    var manualCount = qtyRows.filter(planRowHasManualUnitPrice).length;
+    if (manualCount === qtyRows.length) return { value: first, source: 'manual' };
+    if (manualCount === 0) return { value: first, source: 'benchmark' };
+    return { value: first, source: 'mixed' };
+  }
   // --- Planning Theo tháng: helper Thêm dòng (THUẦN, không UI/Store) ---
   // Mọi Channel "hiện có" trong hệ thống: từ plan_rows của mọi Brand +
   // từ benchmarks, khử trùng, giữ thứ tự gặp đầu tiên.
@@ -1277,6 +1314,124 @@
       ];
     }
     return [];
+  }
+  // --- Planning Theo tháng: dữ liệu 3 bảng KPI chi tiết theo tháng ---
+  // Nguồn DUY NHẤT: forecast views/paid lấy từ CHÍNH engine
+  // forecastFunnel (qua forecastRawFor, kèm ctx phase nên uplift theo
+  // phase nhất quán với funnel và chế độ Theo phase); ngân sách lấy từ
+  // planRowEffectiveBudget (cùng công thức domain.planBudget: qty × đơn
+  // giá hiệu dụng, Paid Media lấy field budget). TUYỆT ĐỐI không fork
+  // công thức funnel/CAC ở nơi khác: CAC ở đây chỉ là phép chia
+  // ngân sách ÷ paid của đúng channel × tháng đã tính ở trên.
+  // Channel Paid Media: benchmark direct_budget (hoặc dòng nhóm
+  // "Paid Media" qty null) — engine cho views = 0 nhưng đó là "không có
+  // Views" chứ không phải 0 lượt xem: nơi render hiển thị "—".
+  function planningChannelIsPaidMedia(chRows, benchmarks) {
+    var list = chRows || [];
+    if (!list.length) return false;
+    if (list.some(planRowIsPaidMedia)) return true;
+    var bm = benchmarkForRow(list[0], benchmarks);
+    return !!(bm && (bm.direct_budget || bm.directBudget));
+  }
+  // Trả { months, channels: [{ channel, group, isPaidMedia,
+  //   months: { 'YYYY-MM': { views, paid, budget, hasForecast, cac } },
+  //   totals: { views, paid, budget, hasForecast, cac } }],
+  //   blended: { months: { 'YYYY-MM': { budget, paid, cac } },
+  //   totals: { budget, paid, cac } } }
+  // views/paid = null khi channel × tháng không có forecast nào (không
+  // benchmark/assumption khớp) — nơi render hiện "—", không bịa 0.
+  // cac = budget / paid khi paid > 0, ngược lại null ("—"). Cột Tổng
+  // của CAC = tổng ngân sách cả kỳ ÷ tổng paid cả kỳ (KHÔNG phải trung
+  // bình các CAC tháng). blended là hàng "Tất cả" của bảng CAC: mỗi
+  // tháng = tổng ngân sách mọi channel ÷ tổng paid mọi channel.
+  function planningKpiData(rows, benchmarks, months) {
+    var list = rows || [];
+    var mlist = months || [];
+    var raw = forecastRawFor(list, benchmarks);
+    var detailById = {};
+    var detailByIndex = [];
+    if (raw && Array.isArray(raw.rows)) {
+      raw.rows.forEach(function (d, i) {
+        detailByIndex[i] = d || null;
+        if (d && d.rowId !== undefined && d.rowId !== null) detailById[String(d.rowId)] = d;
+      });
+    }
+    var channelOrder = [];
+    var byChannel = {};
+    list.forEach(function (r, i) {
+      if (!r) return;
+      var ch = String(r.channel || '—');
+      var e = byChannel[ch];
+      if (!e) {
+        e = byChannel[ch] = { channel: ch, group: planRowGroup(r), rows: [], months: {}, totals: { views: null, paid: null, budget: 0, hasForecast: false, cac: null } };
+        channelOrder.push(ch);
+        mlist.forEach(function (m) { e.months[m] = { views: null, paid: null, budget: 0, hasForecast: false, cac: null }; });
+      }
+      e.rows.push(r);
+      var m = planRowMonth(r);
+      var cell = m && e.months[m];
+      if (!cell) return;
+      cell.budget += planRowEffectiveBudget(r, benchmarks);
+      var d = (r.id !== undefined && r.id !== null && detailById[String(r.id)]) || detailByIndex[i];
+      var fv = forecastDetailValues(d);
+      if (fv) {
+        cell.hasForecast = true;
+        cell.views = (cell.views === null ? 0 : cell.views) + fv.views;
+        cell.paid = (cell.paid === null ? 0 : cell.paid) + fv.paid;
+      }
+    });
+    var blended = { months: {}, totals: { budget: 0, paid: 0, cac: null } };
+    mlist.forEach(function (m) { blended.months[m] = { budget: 0, paid: 0, cac: null }; });
+    var channels = channelOrder.map(function (ch) {
+      var e = byChannel[ch];
+      e.isPaidMedia = planningChannelIsPaidMedia(e.rows, benchmarks);
+      var tViews = null, tPaid = null, tBudget = 0, tHas = false;
+      mlist.forEach(function (m) {
+        var cell = e.months[m];
+        cell.cac = (cell.paid !== null && cell.paid > 0) ? cell.budget / cell.paid : null;
+        tBudget += cell.budget;
+        if (cell.hasForecast) {
+          tHas = true;
+          tViews = (tViews === null ? 0 : tViews) + (cell.views || 0);
+          tPaid = (tPaid === null ? 0 : tPaid) + (cell.paid || 0);
+        }
+        blended.months[m].budget += cell.budget;
+        if (cell.paid !== null) blended.months[m].paid += cell.paid;
+      });
+      e.totals = { views: tViews, paid: tPaid, budget: tBudget, hasForecast: tHas, cac: (tPaid !== null && tPaid > 0) ? tBudget / tPaid : null };
+      blended.totals.budget += tBudget;
+      if (tPaid !== null) blended.totals.paid += tPaid;
+      return e;
+    });
+    mlist.forEach(function (m) {
+      var b = blended.months[m];
+      b.cac = b.paid > 0 ? b.budget / b.paid : null;
+    });
+    blended.totals.cac = blended.totals.paid > 0 ? blended.totals.budget / blended.totals.paid : null;
+    return { months: mlist.slice(), channels: channels, blended: blended };
+  }
+  // Paid Users hiển thị: làm tròn TỐI ĐA 4 chữ số thập phân (bỏ số 0
+  // cuối) — đủ giữ đúng ca neo 0,1188 trên màn hình; CAC luôn tính từ
+  // paid CHƯA làm tròn. (Phễu tổng dùng fmtNum; bảng Phase dùng 2 số
+  // thập phân — ở bảng chi tiết theo tháng này cần thấy đủ 4 số để đối
+  // chiếu CAC, nên chốt 4 số và ghi rõ ở chú thích bảng Paid Users.)
+  function fmtPlanningPaid(v) {
+    if (v === null || v === undefined || v === '' || isNaN(Number(v))) return '—';
+    var r = Math.round(Number(v) * 10000) / 10000;
+    return r.toLocaleString('vi-VN', { maximumFractionDigits: 4 });
+  }
+  // CAC hiển thị: VNĐ làm tròn TỚI ĐỒNG (Math.round) qua fmtMoney.
+  function fmtPlanningCac(v) {
+    if (v === null || v === undefined || v === '' || isNaN(Number(v)) || !isFinite(Number(v))) return '—';
+    return fmtMoney(Math.round(Number(v)), 'VND');
+  }
+  // Toggle thu gọn 3 bảng KPI: hàm THUẦN trên map trạng thái
+  // { views?: bool, paid?: bool, cac?: bool } (true = đang thu gọn).
+  function planningKpiToggleMap(map, key) {
+    var out = {};
+    Object.keys(map || {}).forEach(function (k) { out[k] = !!map[k]; });
+    out[key] = !out[key];
+    return out;
   }
   // Phân bổ tổng Số lượng mới về các tháng theo tỉ lệ qty hiện tại —
   // largest remainder, deterministic (phần dư lớn nhất trước; hòa thì
@@ -3325,7 +3480,7 @@
     var benchmarks = filteredBenchmarks();
     var months = [];
     for (var mi = 1; mi <= 12; mi++) months.push(String(year) + '-' + String(mi).padStart(2, '0'));
-    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng ở chế độ demo (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đầu phễu / Tỉ lệ chuyển đổi theo Phase ở chế độ demo). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.',
+    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng ở chế độ demo (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Đầu phễu / Tỉ lệ chuyển đổi theo Phase ở chế độ demo). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.',
       '');
     html += readonlyNote() + contextBannerHtml();
     // Chọn năm
@@ -3508,6 +3663,12 @@
       }
       html += '</div>';
     }
+    // 3 bảng KPI chi tiết theo tháng (Views / Paid Users / CAC) — ngay
+    // dưới khu vực lưới + bảng chi tiết, trước chart ngân sách. Số liệu
+    // đọc thẳng từ planningKpiData (cùng engine forecast + cùng công
+    // thức ngân sách) nên sửa Số lượng/Đơn giá/Ngân sách Paid ở bất kỳ
+    // chế độ nào cũng phản ánh ngay ở lần render này, không cache.
+    html += planningKpiTablesHtml(rows, benchmarks, months);
     // Chart ngân sách dự kiến theo tháng (planBudget)
     var budgetMonthly = planBudgetFor(rows, benchmarks);
     html += '<h2>Ngân sách dự kiến theo tháng</h2>';
@@ -3618,6 +3779,26 @@
         var rates = effectivePhaseRates(phase, ch, benchmarks);
         var cells = '<td><strong>' + esc(ch) + '</strong></td>' +
           '<td><input class="phase-input" type="number" step="1" min="0" value="' + esc(String(qtyTotal)) + '" data-action-change="phase-qty" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Số lượng của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></td>' +
+          (function () {
+            // Ô Đơn giá mỗi bài: hiện ĐƠN GIÁ HIỆU DỤNG của Channel trong
+            // Phase kèm nhãn nguồn. Không có dòng Số lượng (Paid Media)
+            // -> '—'. Giá lẫn lộn theo tháng -> ô trống + ghi chú rõ.
+            if (!chRows.some(planRowHasQty)) return '<td>—</td>';
+            var priceInfo = phaseChannelUnitPriceInfo(chRows, benchmarks);
+            var priceLabel;
+            if (priceInfo.source === 'mixed' && priceInfo.value === null) {
+              priceLabel = '<br><span class="sub" data-phase-price-mixed="1">khác nhau theo tháng — nhập một giá để áp đồng nhất cho cả Phase</span>';
+            } else if (priceInfo.source === 'mixed') {
+              priceLabel = '<br><span class="sub" data-phase-price-mixed="1">một số tháng đặt tay, một số tháng Benchmark — nhập một giá để áp đồng nhất cho cả Phase</span>';
+            } else if (priceInfo.source === 'manual') {
+              priceLabel = '<br><span class="sub" data-phase-price-manual="1">đặt tay tại phase</span>';
+            } else if (priceInfo.source === 'benchmark') {
+              priceLabel = '<br><span class="sub" data-phase-price-benchmark="1">Benchmark</span>';
+            } else {
+              priceLabel = '<br><span class="sub">Chưa có đơn giá</span>';
+            }
+            return '<td><input class="phase-input planning-price-input phase-unit-price-input" type="number" step="1" min="0" value="' + esc(priceInfo.value === null ? '' : String(priceInfo.value)) + '" placeholder="—" data-action-change="phase-unit-price" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Đơn giá mỗi bài của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' + priceLabel + '</td>';
+          })() +
           '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="' + esc(viewsVal === null || viewsVal === undefined ? '' : String(Math.round(Number(viewsVal) * 100) / 100)) + '" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Đầu phễu (Views) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' +
           (override !== null ? '<br><span class="sub">Đang đặt thẳng (Assumption)</span>' : '') + '</td>';
         rateHeads.forEach(function (rh) {
@@ -3630,8 +3811,9 @@
           '<td>' + (totals ? fmtNum(Math.round(totals.paid * 100) / 100) : '—') + '</td>';
         return '<tr data-planning-phase-channel="' + esc(ch) + '">' + cells + '</tr>';
       }).join('');
-      html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đầu phễu (Views)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Signups</th><th>Forecast Paid</th></tr>' + body, 'planning-phase-channels');
+      html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đơn giá mỗi bài (VNĐ)</th><th>Đầu phễu (Views)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Signups</th><th>Forecast Paid</th></tr>' + body, 'planning-phase-channels');
       html += '<p class="sub">Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).</p>';
+      html += '<p class="sub" data-planning-phase-price-hint="1">Đơn giá mỗi bài: ô hiện đơn giá HIỆU DỤNG của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang đơn giá đặt tay, "Benchmark" nghĩa là đang lấy đơn giá Benchmark. Nhập một giá vào ô sẽ ghi đơn giá đặt tay đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × đơn giá hiệu dụng như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ đơn giá đặt tay của cả Phase, quay về Benchmark. Nếu các tháng đang có đơn giá khác nhau (do sửa lẻ ở Theo tháng), ô để trống kèm ghi chú "khác nhau theo tháng".</p>';
     }
     // Chart funnel theo Phase (totals của Phase qua cùng engine + ctx)
     var pTotals = funnelTotalsFor(pRows, benchmarks);
@@ -3644,6 +3826,63 @@
     }
     html += '</div>';
     return html;
+  }
+  // --- 3 bảng KPI chi tiết theo tháng (chế độ Theo tháng) ---
+  // Mỗi bảng nằm trong một panel có tiêu đề là NÚT bấm thu gọn / mở
+  // rộng (data-action="planning-kpi-toggle"); trạng thái thu gọn giữ ở
+  // UI.planningKpiCollapsed trong phiên làm việc. Mặc định CẢ 3 bảng
+  // đều MỞ (thiếu key trong map = mở) để số liệu hiện ngay khi vào
+  // Planning; người dùng thu gọn bảng nào thì bảng đó giữ thu gọn qua
+  // các lần render trong phiên. Khi thu gọn, bảng không render (chỉ
+  // còn tiêu đề) — số liệu vẫn tính lại từ state ở lần mở ra sau.
+  function planningKpiSectionHtml(key, title, note, tableHtml) {
+    var collapsed = !!((UI.planningKpiCollapsed || {})[key]);
+    return '<div class="panel planning-kpi-section" data-planning-kpi-section="' + esc(key) + '"><h3><button type="button" class="linklike" data-action="planning-kpi-toggle" data-id="' + esc(key) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '">' + (collapsed ? '▸ ' : '▾ ') + esc(title) + '</button></h3>' +
+      (collapsed ? '' : '<p class="sub">' + note + '</p>' + tableHtml) + '</div>';
+  }
+  function planningKpiTablesHtml(rows, benchmarks, months) {
+    var data = planningKpiData(rows, benchmarks, months);
+    var head = '<tr><th>Channel</th>' + months.map(function (m) { return '<th>' + esc(vizMonthLabel(m)) + '</th>'; }).join('') + '<th>Tổng</th></tr>';
+    function rowHtml(kind, ch, valFor, totalVal) {
+      var cells = months.map(function (m) {
+        return '<td data-planning-kpi-cell="' + esc(kind) + '" data-channel="' + esc(ch.channel) + '" data-month="' + esc(m) + '">' + valFor(ch.months[m], ch) + '</td>';
+      }).join('');
+      return '<tr data-planning-kpi-row="' + esc(kind) + '" data-channel="' + esc(ch.channel) + '"><td><strong>' + esc(ch.channel) + '</strong></td>' + cells +
+        '<td data-planning-kpi-total="' + esc(kind) + '" data-channel="' + esc(ch.channel) + '"><strong>' + totalVal(ch.totals, ch) + '</strong></td></tr>';
+    }
+    // 1) VIEWS — Paid Media không có Views -> "—" ở mọi tháng + ghi chú.
+    var viewsBody = data.channels.map(function (ch) {
+      return rowHtml('views', ch,
+        function (cell) { return ch.isPaidMedia ? '—' : (cell.hasForecast ? fmtNum(Math.round(cell.views)) : '—'); },
+        function (tot) { return ch.isPaidMedia ? '—' : (tot.hasForecast ? fmtNum(Math.round(tot.views)) : '—'); });
+    }).join('');
+    var viewsHtml = planningKpiSectionHtml('views', 'KPI chi tiết theo tháng — Views (Forecast)',
+      'Views forecast theo Channel × tháng, lấy từ cùng engine funnel với Forecast ở trên (đã gồm uplift theo Phase). Channel thuộc Paid Media <strong>không có Views</strong> (phễu của Paid Media bắt đầu ở Visits, suy từ ngân sách) nên hiển thị "—" ở mọi tháng. Channel chưa có Benchmark/Assumption khớp cũng hiển thị "—".',
+      tbl(head + viewsBody, 'planning-kpi-views'));
+    // 2) PAID USERS — gồm cả Paid Media suy từ ngân sách.
+    var paidBody = data.channels.map(function (ch) {
+      return rowHtml('paid', ch,
+        function (cell) { return cell.hasForecast ? fmtPlanningPaid(cell.paid) : '—'; },
+        function (tot) { return tot.hasForecast ? fmtPlanningPaid(tot.paid) : '—'; });
+    }).join('');
+    var paidHtml = planningKpiSectionHtml('paid', 'KPI chi tiết theo tháng — Paid Users (Forecast)',
+      'Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (suy từ ngân sách qua Visits → Signups → First → Paid). Số hiển thị làm tròn tối đa 4 chữ số thập phân; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn.',
+      tbl(head + paidBody, 'planning-kpi-paid'));
+    // 3) CAC — kèm hàng "Tất cả" (blended).
+    var cacBody = data.channels.map(function (ch) {
+      return rowHtml('cac', ch,
+        function (cell) { return fmtPlanningCac(cell.cac); },
+        function (tot) { return fmtPlanningCac(tot.cac); });
+    }).join('');
+    var blendedCells = months.map(function (m) {
+      return '<td data-planning-kpi-cell="cac" data-channel="Tất cả" data-month="' + esc(m) + '">' + fmtPlanningCac(data.blended.months[m].cac) + '</td>';
+    }).join('');
+    cacBody += '<tr data-planning-kpi-row="cac" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + blendedCells +
+      '<td data-planning-kpi-total="cac" data-channel="Tất cả"><strong>' + fmtPlanningCac(data.blended.totals.cac) + '</strong></td></tr>';
+    var cacHtml = planningKpiSectionHtml('cac', 'KPI chi tiết theo tháng — CAC (VNĐ / Paid User)',
+      'CAC = Ngân sách dự kiến của Channel trong tháng ÷ Paid Users forecast của Channel trong tháng; Paid Users = 0 (hoặc chưa tính được) thì hiển thị "—". Hàng <strong>Tất cả</strong>: tổng ngân sách của tháng ÷ tổng Paid Users của tháng. Cột Tổng = tổng ngân sách cả kỳ ÷ tổng Paid Users cả kỳ của Channel (KHÔNG phải trung bình các CAC tháng). CAC làm tròn tới đồng.',
+      tbl(head + cacBody, 'planning-kpi-cac'));
+    return '<div data-planning-kpi-tables="1"><h2>KPI chi tiết theo tháng (' + esc(months.length ? months[0].slice(0, 4) : '') + ')</h2>' + viewsHtml + paidHtml + cacHtml + '</div>';
   }
   // --- Lưu các ô nhập Theo phase (chỉ chạy khi phaseSaveGuard cho qua) ---
   function savePhaseAssumption(phaseId, channel, patch, okMsg) {
@@ -3715,6 +3954,64 @@
       saveResult(sUpdate('plan_rows', job.id, { qty: job.qty }), function () { next(); }, function () { failed++; next(); });
     }
     next();
+  }
+  // Lưu Đơn giá mỗi bài tại Phase: ghi field unit_price (đặt tay) cho
+  // MỌI dòng plan CÓ SỐ LƯỢNG của Channel thuộc các tháng trong Phase
+  // — ĐÚNG các dòng mà bảng chi tiết Theo tháng sửa lẻ từng tháng, nên
+  // ngân sách Phase + mọi tổng tính lại qua planBudgetFor /
+  // planRowEffectiveBudget như thường, không có trường giá riêng cho
+  // Phase. Cùng guard demo/chỉ-xem như các ô Phase khác
+  // (phaseSaveGuard) và cùng validate với ô Đơn giá Theo tháng
+  // (parsePlanUnitPrice: số nguyên >= 0).
+  // - Nhập số: áp đồng nhất cho cả Phase (kể cả khi các tháng đang lẫn
+  //   lộn giá khác nhau, và kể cả khi số bằng đúng giá Benchmark — ghi
+  //   tường minh để thành đặt tay thật).
+  // - Xoá trắng ô: bỏ đặt tay — unit_price = null cho mọi dòng Số
+  //   lượng trong Phase đang mang giá đặt tay, quay về Benchmark.
+  // - Sai định dạng (âm/chữ/thập phân): không lưu, toast lỗi.
+  // - Channel chỉ có dòng ngân sách nguồn (qty null, vd Paid Media):
+  //   không có đơn giá mỗi bài — báo rõ, dữ liệu không đổi.
+  function savePhaseUnitPrice(phaseId, channel, raw) {
+    if (!phaseSaveGuard()) return;
+    var phase = phaseById(phaseId);
+    if (!phase) { toast('Không tìm thấy Phase để lưu Đơn giá mỗi bài.'); render(); return; }
+    var chRows = phaseRowsFor(phase, filteredPlanRows()).filter(function (r) { return String(r.channel || '—') === String(channel); });
+    var qtyRows = chRows.filter(planRowHasQty);
+    function runJobs(jobs, okToast, failLabel) {
+      var idx = 0, failed = 0;
+      function next() {
+        if (idx >= jobs.length) {
+          if (failed) toast(failLabel + ' nhưng ' + failed + ' dòng chưa lưu được — hãy thử lại.');
+          else toast(okToast);
+          render(); return;
+        }
+        var job = jobs[idx++];
+        saveResult(sUpdate('plan_rows', job.id, { unit_price: job.unit_price }), function () { next(); }, function () { failed++; next(); });
+      }
+      next();
+    }
+    var isClear = raw === '' || raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '');
+    if (isClear) {
+      var manualRows = qtyRows.filter(planRowHasManualUnitPrice);
+      if (!manualRows.length) { render(); return; }
+      runJobs(manualRows.map(function (r) { return { id: r.id, unit_price: null }; }),
+        'Đã bỏ Đơn giá đặt tay của ' + channel + ' trong Phase ' + (phase.name || phase.id) + ' — Đơn giá quay về Benchmark, Ngân sách đã tính lại.',
+        'Đã bỏ Đơn giá đặt tay của ' + channel + ' trong Phase ' + (phase.name || phase.id));
+      return;
+    }
+    var v = parsePlanUnitPrice(raw);
+    if (v === null) { toast('Đơn giá mỗi bài phải là số nguyên từ 0 trở lên.'); render(); return; }
+    if (!qtyRows.length) {
+      if (chRows.length) toast('Channel ' + channel + ' trong Phase này chỉ có dòng ngân sách nguồn (chưa có Số lượng) nên không đặt Đơn giá mỗi bài tại đây.');
+      else toast('Không có dòng plan nào của Channel ' + channel + ' trong Phase để đặt Đơn giá mỗi bài.');
+      render(); return;
+    }
+    var jobs = [];
+    qtyRows.forEach(function (r) { if (planRowManualUnitPrice(r) !== v) jobs.push({ id: r.id, unit_price: v }); });
+    if (!jobs.length) { render(); return; }
+    runJobs(jobs,
+      'Đã lưu Đơn giá mỗi bài đặt tay ' + fmtNum(v) + ' cho ' + channel + ' trong Phase ' + (phase.name || phase.id) + ' (áp cho mọi tháng trong Phase) — Ngân sách đã tính lại theo Số lượng × đơn giá mới.',
+      'Đã lưu Đơn giá mỗi bài ' + fmtNum(v) + ' cho ' + channel + ' trong Phase ' + (phase.name || phase.id));
   }
   // --- Lưu ô Số lượng trong BẢNG CHI TIẾT Theo tháng (guard như Theo phase) ---
   // plan_rows chưa có bảng Supabase nên chỉ lưu ở chế độ demo + có quyền
@@ -7636,6 +7933,7 @@
     if (action === 'planning-channel') { var detailSel = planningDetailToggle(UI.planningChannel, UI.planningChannelGroup, t.getAttribute('data-channel'), t.getAttribute('data-group')); UI.planningChannel = detailSel.channel; UI.planningChannelGroup = detailSel.group; render(); }
     if (action === 'planning-channel-close') { UI.planningChannel = null; UI.planningChannelGroup = null; render(); }
     if (action === 'planning-mode') { UI.planningMode = id === 'phase' ? 'phase' : 'month'; render(); }
+    if (action === 'planning-kpi-toggle') { UI.planningKpiCollapsed = planningKpiToggleMap(UI.planningKpiCollapsed, id); render(); }
     if (action === 'planning-add-row-toggle') { UI.planningAddOpen = !UI.planningAddOpen; render(); }
     if (action === 'brand-detail') { UI.brandDetailId = id; render(); }
     if (action === 'brand-detail-close') { UI.brandDetailId = null; render(); }
@@ -7896,6 +8194,7 @@
     if (ctxKind === 'kpi-phase') { UI.kpiPhaseFilter = t.value || 'all'; render(); return; }
     if (ctxKind === 'phase-uplift') { savePhaseUplift(t.getAttribute('data-phase-id'), t.value); return; }
     if (ctxKind === 'phase-qty') { savePhaseQty(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
+    if (ctxKind === 'phase-unit-price') { savePhaseUnitPrice(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'planning-month-qty') { savePlanningMonthQty(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-unit-price') { savePlanningMonthUnitPrice(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-paid-budget') { savePlanningMonthPaidBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }

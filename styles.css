@@ -640,5 +640,8 @@ table.col-resize-measuring th,table.col-resize-measuring td{white-space:nowrap!i
 .planning-price-input{width:118px}
 .planning-paid-budget-input{width:118px}
 .phase-input-wide{width:120px}
+.phase-unit-price-input{width:118px}
+.planning-kpi-section{margin:14px 0}
+.planning-kpi-section h3{margin-top:0}
 .phase-input:disabled{opacity:.55;cursor:not-allowed;background:var(--color-surface-sunken)}
 #kpi-phase-filter-form{margin:8px 0}
