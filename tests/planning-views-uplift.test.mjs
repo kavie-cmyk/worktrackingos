@@ -30,6 +30,31 @@ const Core = require('../js/store-core.js');
 const mig = readFileSync(new URL('../supabase/migrations/0019_views_uplift.sql', import.meta.url), 'utf8');
 const appSrc = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
 
+function appSection(startMarker, endMarker) {
+  const a = appSrc.indexOf(startMarker);
+  assert.notEqual(a, -1, 'không thấy điểm bắt đầu: ' + startMarker);
+  const b = appSrc.indexOf(endMarker, a);
+  assert.notEqual(b, -1, 'không thấy điểm kết thúc: ' + endMarker);
+  return appSrc.slice(a, b);
+}
+function cfValStub(obj, key) {
+  if (!obj) return undefined;
+  if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+  if (obj.customFields && obj.customFields[key] !== undefined) return obj.customFields[key];
+  if (obj.custom_fields && obj.custom_fields[key] !== undefined) return obj.custom_fields[key];
+  return undefined;
+}
+// Trích xuất khối helper Brand + Planning THẬT của app.js (cùng khuôn
+// loadHelpers của brand-planning-ui.test.mjs) chạy với stub Store/D/UI.
+function loadAppHelpers({ storeList, domain }) {
+  const block = appSection('// ---------- Brand + Planning: ngữ cảnh Brand / Segment toàn cục ----------', 'function canSettings()');
+  const UI = { brandFilter: 'all', segmentFilter: 'all', kpiPhaseFilter: 'all' };
+  const Store = { list: storeList || (() => []), get: () => null };
+  const factory = new Function('Store', 'D', 'UI', 'cfVal',
+    block + '\nreturn { UI: UI, phaseViewsUplift: phaseViewsUplift, phaseForPlanRow: phaseForPlanRow, phaseCtx: phaseCtx, forecastRawFor: forecastRawFor, forecastFunnelFor: forecastFunnelFor, funnelTotalsFor: funnelTotalsFor, brandPhasesList: brandPhasesList };');
+  return factory(Store, domain || {}, UI, cfValStub);
+}
+
 function approx(actual, expected, label) {
   assert.ok(Math.abs(actual - expected) < 1e-6, `${label}: expected ${expected}, got ${actual}`);
 }
@@ -177,4 +202,69 @@ test('VU [demo]: demo-data KHÔNG đặt views uplift mặc định -> mọi s�
   // engine của bản trước 0019: cộng tay từ rows T1.
   const jan = domain.forecastFunnel(demo.plan_rows.filter((r) => r.month === '2027-01'), demo.benchmarks, ctx);
   assert.equal(jan.byMonth['2027-01'].views, f.byMonth['2027-01'].views);
+});
+
+// ---------------------------------------------------------------- UI (static)
+test('VU [UI static]: khối Phase có ô nhập Uplift Views cạnh ô Uplift tỉ lệ + handler lưu riêng', () => {
+  assert.match(appSrc, /data-action-change="phase-views-uplift" data-phase-id=/);
+  assert.match(appSrc, /Uplift Views \(%\/tháng\)/);
+  assert.match(appSrc, /function phaseViewsUplift\(p\)/);
+  assert.match(appSrc, /function savePhaseViewsUplift\(phaseId, raw\)/);
+  assert.match(appSrc, /if \(ctxKind === 'phase-views-uplift'\) \{ savePhaseViewsUplift\(t\.getAttribute\('data-phase-id'\), t\.value\); return; \}/);
+  assert.match(appSrc, /sUpdate\('phases', phaseId, \{ views_uplift_percent_per_month: v \}\)/);
+  assert.match(appSrc, /sUpdate\('phases', phaseId, \{ views_uplift_percent_per_month: null \}\)/);
+  // Validate: số âm -> chặn + toast như ô Uplift tỉ lệ; lưu xong render lại.
+  const saveBlock = appSection('function savePhaseViewsUplift(phaseId, raw)', '// --- Lưu các ô Chỉ số vận hành');
+  assert.match(saveBlock, /if \(isNaN\(v\) \|\| v < 0\) \{ toast\('Uplift Views phải là số %\/tháng từ 0 trở lên\.'\); render\(\); return; \}/);
+  assert.match(saveBlock, /phaseSaveGuard\(\)/);
+});
+
+// ---------------------------------------------------------------- UI (unit): hai view khớp nhau qua lớp app
+test('VU [UI unit]: phaseViewsUplift đọc snake/camel; trống -> null', () => {
+  const h = loadAppHelpers({});
+  assert.equal(h.phaseViewsUplift({ views_uplift_percent_per_month: 10 }), 10);
+  assert.equal(h.phaseViewsUplift({ viewsUpliftPercentPerMonth: 7.5 }), 7.5);
+  assert.equal(h.phaseViewsUplift({ views_uplift_percent_per_month: null }), null);
+  assert.equal(h.phaseViewsUplift({}), null);
+  assert.equal(h.phaseViewsUplift({ views_uplift_percent_per_month: 0 }), 0);
+});
+
+test('VU [UI unit]: view Theo phase (funnelTotalsFor) == view Theo tháng (forecastRawFor byMonth) khi phase có vu', () => {
+  const phases = [{ id: 'ph-vu', brand_id: 'b1', name: 'VU', start_month: '2027-03', end_month: '2027-05', uplift_percent_per_month: 0, views_uplift_percent_per_month: 10 }];
+  const h = loadAppHelpers({
+    storeList: (coll) => (coll === 'phases' ? phases : coll === 'phase_assumptions' ? [] : []),
+    domain
+  });
+  // Đường Theo phase: funnelTotalsFor trên rows của phase.
+  const tPhase = h.funnelTotalsFor(ROWS_VU, BM);
+  // Đường Theo tháng: forecastRawFor -> byMonth (nguồn của bảng KPI
+  // Theo tháng Views/Paid Users/CAC/B2B Accounts).
+  const raw = h.forecastRawFor(ROWS_VU, BM);
+  const sumByMonth = Object.values(raw.byMonth).reduce((s, m) => s + m.views, 0);
+  approx(tPhase.views, 16000 + 17600 + 19360, 'Theo phase tổng views có vu');
+  approx(tPhase.views, sumByMonth, 'Theo phase == Theo tháng (views)');
+  approx(tPhase.views, raw.byPhase['ph-vu'].views, 'Theo phase == byPhase engine');
+  approx(tPhase.paid, Object.values(raw.byMonth).reduce((s, m) => s + m.paid, 0), 'Theo phase == Theo tháng (paid)');
+});
+
+test('VU [UI unit]: đường dự phòng normalizeFunnelSteps (engine không trả kết quả) cũng áp Uplift Views cùng cơ chế', () => {
+  const phases = [{ id: 'ph-vu', brand_id: 'b1', name: 'VU', start_month: '2027-03', end_month: '2027-05', views_uplift_percent_per_month: 10 }];
+  // domain rỗng -> forecastRawFor null -> forecastFunnelFor rơi vào
+  // dự phòng tự tính reach = qty x output_per_unit trong app.js.
+  const h = loadAppHelpers({
+    storeList: (coll) => (coll === 'phases' ? phases : []),
+    domain: {}
+  });
+  const steps = h.forecastFunnelFor([ROWS_VU[0], ROWS_VU[1]], BM);
+  const reach = steps.find((s) => s.label === 'Reach / Views');
+  assert.ok(reach, 'dự phòng phải có bước Reach / Views');
+  // T3 (n=0): 4 x 4.000 = 16.000; T4 (n=1): 4 x 4.000 x 1,1 = 17.600.
+  assert.equal(reach.value, 16000 + 17600, 'reach dự phòng phải gồm vu: ' + JSON.stringify(steps));
+  // Không vu -> reach phẳng 32.000.
+  const h2 = loadAppHelpers({
+    storeList: (coll) => (coll === 'phases' ? [{ ...phases[0], views_uplift_percent_per_month: null }] : []),
+    domain: {}
+  });
+  const reach2 = h2.forecastFunnelFor([ROWS_VU[0], ROWS_VU[1]], BM).find((s) => s.label === 'Reach / Views');
+  assert.equal(reach2.value, 32000);
 });

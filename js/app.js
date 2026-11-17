@@ -1243,6 +1243,16 @@
       if (outPer === null || outPer === undefined || isNaN(Number(outPer))) return;
       any = true;
       var reach = planRowQty(r) * Number(outPer);
+      // Uplift Views của Phase (0019) — cùng cơ chế engine: reach x
+      // (1 + vu/100)^n với n = số tháng từ tháng đầu Phase tới tháng
+      // của dòng (tháng đầu Phase hệ số 1).
+      var vuPh = phaseForPlanRow(r);
+      var vuVal = vuPh ? phaseViewsUplift(vuPh) : null;
+      if (vuVal) {
+        var smVu = phaseStartMonth(vuPh), rmVu = planRowMonth(r);
+        var nVu = (smVu && rmVu) ? Math.max(0, (Number(rmVu.slice(0, 4)) * 12 + Number(rmVu.slice(5, 7))) - (Number(smVu.slice(0, 4)) * 12 + Number(smVu.slice(5, 7)))) : 0;
+        if (nVu > 0) reach = reach * Math.pow(1 + vuVal / 100, nVu);
+      }
       var visits = reach * (Number(bm.view_to_visit !== undefined ? bm.view_to_visit : bm.viewToVisit) || 0);
       // Phễu Freemium/Paid: Freemium = Visits x visit_to_freemium
       // (fallback key cũ visit_to_signup); Paid = Freemium x
@@ -1319,6 +1329,33 @@
   function phaseStartMonth(p) { var v = phaseField(p, 'start_month', 'startMonth'); return v ? String(v).slice(0, 7) : ''; }
   function phaseEndMonth(p) { var v = phaseField(p, 'end_month', 'endMonth'); return v ? String(v).slice(0, 7) : ''; }
   function phaseUplift(p) { var v = phaseField(p, 'uplift_percent_per_month', 'upliftPercentPerMonth'); return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v); }
+  // Uplift Views RIÊNG của Phase (0019): cùng cách đọc với phaseUplift
+  // (snake/camel qua phaseField); trống/không phải số -> null (không
+  // tăng trưởng). Engine áp vào Views mỗi bài của đường Content.
+  function phaseViewsUplift(p) { var v = phaseField(p, 'views_uplift_percent_per_month', 'viewsUpliftPercentPerMonth'); return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v); }
+  // Phase của 1 dòng plan theo đúng cơ chế resolve của engine
+  // (phase_id trước; trống/không thấy thì khớp Brand + khoảng tháng) —
+  // dùng cho đường dự phòng tự tính Views ở normalizeFunnelSteps.
+  function phaseForPlanRow(r) {
+    var list = brandPhasesList();
+    var pid = recordPhaseId(r);
+    if (pid) {
+      for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(pid)) return list[i];
+    }
+    var m = planRowMonth(r);
+    if (!m) return null;
+    var bid = recordBrandId(r);
+    var fallback = null;
+    for (var j = 0; j < list.length; j++) {
+      var p = list[j];
+      if (phaseMonths(p).indexOf(m) === -1) continue;
+      var pb = recordBrandId(p);
+      if (bid && pb && String(pb) !== String(bid)) continue;
+      if (bid && pb && String(pb) === String(bid)) return p;
+      if (!fallback) fallback = p;
+    }
+    return fallback;
+  }
   function phaseObjective(p) { var v = phaseField(p, 'objective', 'objective'); return v ? String(v) : ''; }
   // Danh sách tháng 'YYYY-MM' trong khoảng phase (rỗng khi thiếu mốc;
   // chặn tối đa 36 tháng để không vỡ vòng lặp khi dữ liệu lỗi).
@@ -4150,6 +4187,7 @@
     var months = phaseMonths(phase);
     var rangeText = months.length ? (vizMonthLabel(months[0]) + ' – ' + vizMonthLabel(months[months.length - 1]) + ' (' + esc(months[0]) + ' → ' + esc(months[months.length - 1]) + ')') : 'Chưa rõ khoảng tháng';
     var uplift = phaseUplift(phase);
+    var viewsUplift = phaseViewsUplift(phase);
     var objective = phaseObjective(phase);
     var html = '<div class="panel planning-phase" data-planning-phase="' + esc(phase.id) + '">';
     html += '<h3>Phase: ' + esc(phase.name || phase.id) + '</h3>' +
@@ -4157,6 +4195,9 @@
     // Ô nhập Uplift của Phase (%/tháng)
     html += '<p class="phase-uplift-row"><label>Uplift (%/tháng)<input class="phase-input" type="number" step="any" min="0" name="uplift" value="' + esc(uplift === null ? '' : String(uplift)) + '" data-action-change="phase-uplift" data-phase-id="' + esc(phase.id) + '" data-phase-uplift="' + esc(phase.id) + '" aria-label="Uplift %/tháng của Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></label> ' +
       '<span class="sub">Uplift áp vào 4 tỉ lệ chuyển đổi theo từng tháng trong Phase (tháng đầu hệ số 1) — do engine tính khi Forecast.</span></p>';
+    // Ô nhập Uplift Views của Phase (%/tháng) — ngay cạnh ô Uplift tỉ lệ.
+    html += '<p class="phase-uplift-row"><label>Uplift Views (%/tháng)<input class="phase-input" type="number" step="any" min="0" name="views-uplift" value="' + esc(viewsUplift === null ? '' : String(viewsUplift)) + '" data-action-change="phase-views-uplift" data-phase-id="' + esc(phase.id) + '" data-phase-views-uplift="' + esc(phase.id) + '" aria-label="Uplift Views %/tháng của Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></label> ' +
+      '<span class="sub">Uplift Views áp vào Views mỗi bài của các dòng Content theo từng tháng trong Phase (tháng đầu hệ số 1) — không áp cho dòng Paid Media / Partnership / Event (Views suy từ ngân sách). Để trống = không tăng trưởng.</span></p>';
     // Khối Chỉ số vận hành & tài chính của Phase (+ số dư đầu kỳ ở
     // khối Phase đầu tiên của năm).
     html += planningPhaseOperatingHtml(phase, disAttr, showOpening);
@@ -4676,6 +4717,26 @@
     saveResult(sUpdate('phases', phaseId, { uplift_percent_per_month: v }),
       function () { toast('Đã lưu Uplift ' + v + '%/tháng cho Phase — Forecast đã tính lại.'); render(); },
       function (msg) { toast('Chưa lưu được Uplift: ' + msg); render(); });
+  }
+  // Lưu Uplift Views của Phase (0019) — cùng đường lưu field của Phase
+  // như savePhaseUplift (sUpdate thẳng lên phases). Cùng miền validate
+  // với ô Uplift tỉ lệ: số %/tháng từ 0 trở lên, số âm -> chặn + toast.
+  // Khác ô Uplift tỉ lệ ở điểm đã chốt cho field này: XOÁ TRẮNG = ghi
+  // null (không tăng trưởng), không báo lỗi.
+  function savePhaseViewsUplift(phaseId, raw) {
+    if (!phaseSaveGuard()) return;
+    var isClear = raw === '' || raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '');
+    if (isClear) {
+      saveResult(sUpdate('phases', phaseId, { views_uplift_percent_per_month: null }),
+        function () { toast('Đã xoá Uplift Views của Phase — Views mỗi bài không còn tăng trưởng theo tháng, Forecast đã tính lại.'); render(); },
+        function (msg) { toast('Chưa lưu được Uplift Views: ' + msg); render(); });
+      return;
+    }
+    var v = Number(raw);
+    if (isNaN(v) || v < 0) { toast('Uplift Views phải là số %/tháng từ 0 trở lên.'); render(); return; }
+    saveResult(sUpdate('phases', phaseId, { views_uplift_percent_per_month: v }),
+      function () { toast('Đã lưu Uplift Views ' + v + '%/tháng cho Phase — Forecast đã tính lại.'); render(); },
+      function (msg) { toast('Chưa lưu được Uplift Views: ' + msg); render(); });
   }
   // --- Lưu các ô Chỉ số vận hành & tài chính theo Phase + số dư đầu kỳ ---
   // Cùng guard demo/chỉ-xem như mọi ô Phase (phaseSaveGuard); field ghi
@@ -9102,6 +9163,7 @@
     // phaseSaveGuard (render lại để ô quay về giá trị đã lưu).
     if (ctxKind === 'kpi-phase') { UI.kpiPhaseFilter = t.value || 'all'; render(); return; }
     if (ctxKind === 'phase-uplift') { savePhaseUplift(t.getAttribute('data-phase-id'), t.value); return; }
+    if (ctxKind === 'phase-views-uplift') { savePhaseViewsUplift(t.getAttribute('data-phase-id'), t.value); return; }
     if (ctxKind === 'phase-price-tier') { savePhasePriceTiers(t.getAttribute('data-phase-id')); return; }
     if (ctxKind === 'phase-operating-rate') { savePhaseOperatingRate(t.getAttribute('data-phase-id'), t.getAttribute('data-field'), t.value); return; }
     if (ctxKind === 'phase-operating-money') { savePhaseOperatingMoney(t.getAttribute('data-phase-id'), t.getAttribute('data-field'), t.value); return; }
