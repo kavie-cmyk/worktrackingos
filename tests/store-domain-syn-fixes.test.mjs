@@ -240,14 +240,14 @@ test('SYN-18 [store/demo]: giữ nguyên các đường chặn — auto→auto k
 // ---------------------------------------------------------------------------
 // SYN-26 — TikTok ở demo: thông điệp riêng không bị lỗi demo chung che mất
 // ---------------------------------------------------------------------------
-test('SYN-26 [store/demo]: createPublishJob cho variant TikTok ở demo → thông điệp riêng của TikTok; Facebook vẫn lỗi demo chung', () => {
+test('SYN-26 [store/demo]: createPublishJob cho variant TikTok ở adapter trong bộ nhớ → thông điệp riêng của TikTok; Facebook nhận thông điệp chưa-kết-nối chung', () => {
   resetDemo();
   const tt = Store.createPublishJob('v-tiktok', { accountId: 'acc-1', decisionId: 'dec-1' });
   assert.equal(tt.ok, false);
   assert.equal(tt.error, 'TikTok đăng ngoài app: app không tạo PublishJob cho TikTok.');
   const fb = Store.createPublishJob('v-fb', { accountId: 'acc-1', decisionId: 'dec-1' });
   assert.equal(fb.ok, false);
-  assert.match(fb.error, /chế độ demo/, 'variant không phải TikTok vẫn nhận thông điệp demo chung như cũ');
+  assert.match(fb.error, /Chưa kết nối Supabase/, 'variant không phải TikTok nhận thông điệp chưa-kết-nối chung');
 });
 
 // ---------------------------------------------------------------------------

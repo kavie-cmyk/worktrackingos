@@ -6,14 +6,14 @@
  *    workspace hiện hành, CRUD write-through qua REST (PostgREST) với khóa
  *    lạc quan theo updated_at (AC09). Chưa có phiên đăng nhập thì
  *    state.authRequired = true và state rỗng — KHÔNG rơi vào demo.
- *  - demo: người dùng chủ động bật ở Thiết lập hoặc mở ?demo=1 → dữ liệu minh họa
- *    từ js/demo-data.js, sửa trong bộ nhớ và lưu ở localStorage với tiền tố demo_.
- *  - setup: chưa cấu hình và chưa bật demo → state.setupNeeded = true.
+ *  - setup: chưa cấu hình Supabase → state.setupNeeded = true.
+ *  (Chế độ demo đã gỡ: app chỉ chạy dữ liệu thật qua Supabase. Adapter trong
+ *   bộ nhớ mode='demo' chỉ còn phục vụ test với dữ liệu test độc lập.)
  * Ở chế độ supabase, create/update/remove/updateVariant/decideApproval/
  * createPublishJob trả về Promise<{ok, item?, error?, conflict?}>;
- * ở chế độ demo chúng giữ nguyên hành vi đồng bộ như trước.
+ * ở adapter trong bộ nhớ chúng giữ nguyên hành vi đồng bộ như trước.
  * Mapping collection ↔ bảng + camelCase ↔ snake_case nằm ở js/store-core.js.
- * localStorage chỉ lưu tuỳ chọn giao diện và cờ demo (ngoài kho demo riêng ở trên).
+ * localStorage chỉ lưu tuỳ chọn giao diện.
  */
 (function (global) {
   'use strict';
@@ -23,9 +23,7 @@
     try { Core = require('./store-core.js'); } catch (e) { Core = null; }
   }
 
-  var DEMO_STORAGE_KEY = 'demo_sava_workspace_v1';
   var PREFS_KEY = 'sava_ui_prefs';
-  var DEMO_FLAG_KEY = 'sava_demo_enabled';
   var PAGE_SIZE = 1000;
 
   /**
@@ -77,13 +75,6 @@
     return !!(c.supabaseUrl && c.supabaseAnonKey &&
       /^https:\/\/.+/.test(c.supabaseUrl) &&
       c.supabaseUrl.indexOf('YOUR-') === -1 && c.supabaseAnonKey.indexOf('YOUR-') === -1);
-  }
-  function demoRequested() {
-    try {
-      var q = new URLSearchParams(global.location ? global.location.search : '');
-      if (q.get('demo') === '1') return true;
-      return global.localStorage && global.localStorage.getItem(DEMO_FLAG_KEY) === '1';
-    } catch (e) { return false; }
   }
   /** Dịch lỗi REST/PostgREST thành thông điệp dễ hiểu cho người dùng. */
   function friendlyError(err) {
@@ -180,7 +171,7 @@
       return this._attempt('rpc.' + name, this.supabaseClient.rpc(name, args || {}));
     },
 
-    /** Người dùng hiện tại (demo: chọn ở Thiết lập / Việc của tôi). */
+    /** Người dùng hiện tại. */
     currentUser: function () {
       var list = this.state.members || [];
       return list.find(function (m) { return m.id === this.currentUserId; }.bind(this)) || list[0] || null;
@@ -414,22 +405,17 @@
     },
     subscribe: function (fn) { this._listeners.push(fn); },
     notify: function () {
-      this._persistDemo();
       this._listeners.forEach(function (fn) { try { fn(); } catch (e) { /* bỏ qua lỗi listener */ } });
     },
 
     // ======================================================================
     // Khởi tạo / phiên đăng nhập
     // ======================================================================
-    /** Nạp Store: chọn chế độ theo config và cờ demo. Luôn trả về Promise. */
+    /** Nạp Store: chọn chế độ theo config Supabase. Luôn trả về Promise. */
     load: function () {
       COLLECTIONS.forEach(function (k) { this.state[k] = []; this.loadState[k] = { status: 'idle', error: null, updatedAt: null }; }.bind(this));
       this.state.authRequired = false;
       this.state.noMembership = false;
-      if (demoRequested()) {
-        this._loadDemo();
-        return Promise.resolve(this);
-      }
       if (configIsValid()) {
         this.mode = 'supabase';
         this.setupNeeded = false;
@@ -1592,7 +1578,7 @@
       if (!email || email.indexOf('@') === -1) return { ok: false, error: 'Email người được mời không hợp lệ.' };
       if (!role) return { ok: false, error: 'Chưa chọn vai trò cho người được mời.' };
       if (this.mode === 'demo') {
-        return { ok: false, error: 'Chế độ demo không gửi được email mời thật' };
+        return { ok: false, error: 'Chưa kết nối Supabase: không gửi được email mời thật' };
       }
       if (this.mode !== 'supabase' || !this.supabaseClient) {
         return { ok: false, error: 'Chưa kết nối Supabase nên chưa gửi được lời mời.' };
@@ -1632,46 +1618,6 @@
       }).catch(function (err) { return { ok: false, error: friendlyError(err) }; });
     },
 
-    _loadDemo: function () {
-      this.mode = 'demo';
-      this.setupNeeded = false;
-      var raw = null;
-      try { raw = global.localStorage ? global.localStorage.getItem(DEMO_STORAGE_KEY) : null; } catch (e) { raw = null; }
-      var source = null;
-      if (raw) { try { source = JSON.parse(raw); } catch (e) { source = null; } }
-      if (!source || !source.campaigns) source = clone(global.SAVA_DEMO_DATA || {});
-      COLLECTIONS.forEach(function (k) { this.state[k] = clone(source[k] || []); }.bind(this));
-      this._postMappings = (source.postMappings || (this.state.externalPosts || []).filter(function (pp) { return pp.campaignId || pp.variantId; }).map(function (pp) {
-        return { id: 'demo-map-' + pp.id, external_post_id: pp.id, campaign_id: pp.campaignId || null, variant_id: pp.variantId || null, content_item_id: pp.contentItemId || null, mapping_source: 'manual' };
-      })).slice();
-      this.holidays = clone(source.holidays || []);
-      if (!this.currentUserId) {
-        var prefs = this.getPrefs();
-        this.currentUserId = prefs.demoUserId || 'member-lead';
-      }
-      // KPI auto (demo): tính actual tự động ngay khi nạp xong state.
-      try { this.refreshKpiAutoActuals(); } catch (e) { /* domain chưa sẵn sàng: actual được tính ở lần refresh sau */ }
-    },
-    _persistDemo: function () {
-      if (this.mode !== 'demo') return;
-      try {
-        var snapshot = { holidays: this.holidays };
-        COLLECTIONS.forEach(function (k) { snapshot[k] = this.state[k]; }.bind(this));
-        global.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(snapshot));
-      } catch (e) { /* localStorage đầy hoặc bị chặn: giữ dữ liệu trong bộ nhớ */ }
-    },
-    /** Bật/tắt chế độ demo (lưu cờ riêng, không lẫn tuỳ chọn khác). */
-    setDemoEnabled: function (enabled) {
-      try { global.localStorage.setItem(DEMO_FLAG_KEY, enabled ? '1' : '0'); } catch (e) {}
-      if (!enabled) { try { global.localStorage.removeItem(DEMO_STORAGE_KEY); } catch (e) {} }
-    },
-    isDemoEnabled: function () { return this.mode === 'demo'; },
-    resetDemo: function () {
-      try { global.localStorage.removeItem(DEMO_STORAGE_KEY); } catch (e) {}
-      this._loadDemo();
-      this.notify();
-    },
-
     /** Tuỳ chọn giao diện — phạm vi duy nhất localStorage được dùng ngoài kho demo. */
     getPrefs: function () {
       try { return JSON.parse(global.localStorage.getItem(PREFS_KEY) || '{}'); } catch (e) { return {}; }
@@ -1683,7 +1629,7 @@
     setCurrentUser: function (id) {
       if (this.mode === 'supabase') return; // danh tính thật do Supabase Auth quyết định
       this.currentUserId = id;
-      this.setPref('demoUserId', id);
+      this.setPref('currentUserId', id);
       this.notify();
     },
 
@@ -3649,7 +3595,7 @@
         return { ok: false, error: 'TikTok đăng ngoài app: app không tạo PublishJob cho TikTok.' };
       }
       if (this.mode === 'demo') {
-        return { ok: false, error: 'Đang ở chế độ demo: tài khoản demo không có quyền đăng bài thật. Nút đăng bị khóa — hãy kết nối Supabase và kênh thật để đăng.' };
+        return { ok: false, error: 'Chưa kết nối Supabase: nút đăng bị khóa — hãy kết nối Supabase và kênh thật để đăng.' };
       }
       if (this.mode !== 'supabase') return { ok: false, error: 'Chưa kết nối Supabase nên chưa thể đăng bài.' };
       if (!this.can('publish.create')) return { ok: false, error: 'Vai trò hiện tại không có quyền Đăng bài.' };

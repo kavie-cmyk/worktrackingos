@@ -469,11 +469,17 @@ test('Đổi definition.dataSource -> push kpiTargetVersions với snapshot defi
 // Tích hợp demo: KPI mẫu của executor B tự tính đúng khi nạp demo
 // ---------------------------------------------------------------------------
 test('Demo load: kpi-auto-post-views tự tính actual = 200 (post-1, latest lifetime_views), postCount = 1', () => {
-  // KPI mẫu + post-1/observations thuộc fixture tiền ẩn: gộp vào SAVA_DEMO_DATA
-  // trước khi Store nạp (Store._loadDemo đọc global này tại thời điểm gọi).
-  globalThis.SAVA_DEMO_DATA = withMoneyContract(require('../js/demo-data.js'));
+  // Gỡ demo (prep/remove-demo-mode): Store không còn _loadDemo — test nạp
+  // dữ liệu test độc lập (fixture tiền ẩn gộp vào demo-data) thẳng vào
+  // state của adapter trong bộ nhớ rồi gọi đúng refreshKpiAutoActuals mà
+  // đường nạp cũ từng gọi.
+  const fixture = withMoneyContract(require('../js/demo-data.js'));
+  Store.mode = 'demo';
+  Store.supabaseClient = null;
+  Store.COLLECTIONS.forEach((k) => { Store.state[k] = JSON.parse(JSON.stringify(fixture[k] || [])); });
+  Store.holidays = JSON.parse(JSON.stringify(fixture.holidays || []));
   Store.currentUserId = 'member-lead';
-  Store._loadDemo();
+  Store.refreshKpiAutoActuals();
   const k = Store.get('kpis', 'kpi-auto-post-views');
   assert.ok(k, 'demo phải có KPI mẫu kpi-auto-post-views');
   assert.equal(k.actual, 200);
