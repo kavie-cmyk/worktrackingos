@@ -6,6 +6,12 @@
 // views_per_unit, byPhase) và hợp đồng store cho phase_assumptions.
 // Ca neo bắt buộc: effectiveRate(0.003, 10, 2) = 0,00363; chuỗi forecast
 // có uplift tính tay; ca neo v1 KOL Nano 2027-01 giữ nguyên.
+// CĂN CHỈNH PHỄU Freemium/Paid: forecast dùng key freemium (bỏ
+// signups/first); tỉ lệ benchmark key cũ đi qua fallback của engine
+// (v2f = visit_to_signup; f2p = signup_to_first x first_to_paid).
+// Hệ quả cơ học: uplift lũy kế nay áp 2 lần trên chuỗi dưới views
+// (v2f và f2p GỘP) thay vì 3 lần (v2s/s2f/f2p riêng) như phễu cũ —
+// ca uplift tính tay dưới đây đã tính lại theo đúng cơ chế mới.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -100,6 +106,10 @@ test('PU [demo]: phase_assumptions đủ 3 KOL x 4 phase Lumus, toàn bộ null 
     assert.equal(a.signup_to_first, null);
     assert.equal(a.first_to_paid, null);
     assert.equal(a.views_per_unit, null);
+    // Key MỚI của phễu Freemium cũng phải trống (null hoặc chưa khai) —
+    // engine fallback đọc key cũ null là đủ để kế thừa benchmark.
+    assert.ok(a.visit_to_freemium === null || a.visit_to_freemium === undefined, 'visit_to_freemium phải trống');
+    assert.ok(a.freemium_to_paid === null || a.freemium_to_paid === undefined, 'freemium_to_paid phải trống');
   }
 });
 
@@ -134,13 +144,16 @@ test('PU [domain]: effectiveRate CA NEO (0.003, 10, 2) = 0,00363 + các biên', 
 
 // ---------------------------------------------------------------- forecast v2
 test('PU [domain]: forecast CÓ uplift — chuỗi tính tay (n=2, uplift 10%/tháng)', () => {
-  // Fixture: output 1000, tỉ lệ 0,01 / 0,1 / 0,5 / 0,2; phase bắt đầu
-  // 2027-01 uplift 10; row 2027-03 qty 2 -> n=2, hệ số 1,1^2 = 1,21.
+  // Fixture: output 1000, tỉ lệ key CŨ 0,01 / 0,1 / 0,5 / 0,2; phase
+  // bắt đầu 2027-01 uplift 10; row 2027-03 qty 2 -> n=2, hệ số
+  // 1,1^2 = 1,21 cho MỖI tỉ lệ hiệu dụng của phễu mới.
   // views = 2 x 1000 = 2000 (uplift KHÔNG áp vào qty/output)
   // visits = 2000 x (0,01x1,21=0,0121) = 24,2
-  // signups = 24,2 x (0,1x1,21=0,121) = 2,9282
-  // first = 2,9282 x (0,5x1,21=0,605) = 1,771561
-  // paid = 1,771561 x (0,2x1,21=0,242) = 0,428717762
+  // v2f fallback = visit_to_signup 0,1 -> uplift 0,121
+  // freemium = 24,2 x 0,121 = 2,9282
+  // f2p fallback GỘP = 0,5 x 0,2 = 0,1 -> uplift 0,121 (áp MỘT lần
+  // trên tỉ lệ gộp, không còn áp riêng cho signup_to_first/first_to_paid)
+  // paid = 2,9282 x 0,121 = 0,3543122
   const benchmarks = [{ brand_id: 'b1', channel: 'X', output_per_unit: 1000, view_to_visit: 0.01, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, direct_budget: false }];
   const phases = [{ id: 'ph-test', brand_id: 'b1', name: 'T', start_month: '2027-01', end_month: '2027-12', uplift_percent_per_month: 10 }];
   const rows = [{ id: 'r1', brand_id: 'b1', month: '2027-03', channel: 'X', qty: 2 }];
@@ -150,9 +163,8 @@ test('PU [domain]: forecast CÓ uplift — chuỗi tính tay (n=2, uplift 10%/th
   assert.equal(f.rows[0].phase_id, 'ph-test', 'phase suy theo brand + khoảng tháng');
   approx(fc.views, 2000, 'views');
   approx(fc.visits, 24.2, 'visits');
-  approx(fc.signups, 2.9282, 'signups');
-  approx(fc.first, 1.771561, 'first');
-  approx(fc.paid, 0.428717762, 'paid');
+  approx(fc.freemium, 2.9282, 'freemium');
+  approx(fc.paid, 0.3543122, 'paid');
   // Tháng đầu phase n=0 -> không uplift.
   const f0 = domain.forecastFunnel([{ id: 'r0', brand_id: 'b1', month: '2027-01', channel: 'X', qty: 2 }], benchmarks, { phases });
   approx(f0.rows[0].forecast.visits, 20, 'n=0 visits');
@@ -181,9 +193,8 @@ test('PU [domain]: assumption khác null ghi đè benchmark theo từng bước;
   const fc = f.rows[0].forecast;
   approx(fc.views, 1000, 'views');
   approx(fc.visits, 20, 'visits dùng assumption 0,02');
-  approx(fc.signups, 2, 'signups kế thừa benchmark 0,1');
-  approx(fc.first, 1, 'first');
-  approx(fc.paid, 0.2, 'paid');
+  approx(fc.freemium, 2, 'freemium kế thừa benchmark (v2f fallback 0,1)');
+  approx(fc.paid, 0.2, 'paid = freemium x f2p gộp (0,5 x 0,2)');
 });
 
 test('PU [domain]: byPhase = tổng đúng các row thuộc phase (cộng từ cùng kết quả rows)', () => {
@@ -192,18 +203,18 @@ test('PU [domain]: byPhase = tổng đúng các row thuộc phase (cộng từ c
   const manual = {};
   for (const r of f.rows) {
     if (!r.forecast || !r.phase_id) continue;
-    const m = manual[r.phase_id] || (manual[r.phase_id] = { views: 0, visits: 0, signups: 0, first: 0, paid: 0, rowCount: 0 });
-    m.views += r.forecast.views; m.visits += r.forecast.visits; m.signups += r.forecast.signups;
-    m.first += r.forecast.first; m.paid += r.forecast.paid; m.rowCount += 1;
+    const m = manual[r.phase_id] || (manual[r.phase_id] = { views: 0, visits: 0, freemium: 0, paid: 0, rowCount: 0 });
+    m.views += r.forecast.views; m.visits += r.forecast.visits; m.freemium += r.forecast.freemium;
+    m.paid += r.forecast.paid; m.rowCount += 1;
   }
   assert.deepEqual(Object.keys(f.byPhase).sort(), Object.keys(manual).sort());
   for (const pid of Object.keys(manual)) {
-    for (const k of ['views', 'visits', 'signups', 'first', 'paid']) approx(f.byPhase[pid][k], manual[pid][k], `byPhase ${pid}.${k}`);
+    for (const k of ['views', 'visits', 'freemium', 'paid']) approx(f.byPhase[pid][k], manual[pid][k], `byPhase ${pid}.${k}`);
     assert.equal(f.byPhase[pid].rowCount, manual[pid].rowCount);
     assert.equal(f.byPhase[pid].phase_id, pid);
   }
   // Tổng byPhase = totals toàn cục (mọi row có forecast đều thuộc 1 phase Lumus).
-  for (const k of ['views', 'visits', 'signups', 'first', 'paid']) {
+  for (const k of ['views', 'visits', 'freemium', 'paid']) {
     approx(Object.values(f.byPhase).reduce((s, p) => s + p[k], 0), f.totals[k], `sum byPhase ${k} = totals`);
   }
   // GĐ1 (uplift 0): views KOL T1–T2 = (4+6)x4000 + (4+5)x15000 + (1+1)x25000.
@@ -225,8 +236,7 @@ test('PU [domain]: ca neo v1 giữ nguyên khi KHÔNG truyền ctx và khi CÓ c
     const fc = f.rows[0].forecast;
     approx(fc.views, 16000, 'views');
     approx(fc.visits, 48, 'visits');
-    approx(fc.signups, 4.32, 'signups');
-    approx(fc.first, 2.16, 'first');
+    approx(fc.freemium, 4.32, 'freemium');
     approx(fc.paid, 0.1188, 'paid');
   }
   const withCtx = domain.forecastFunnel([nanoJan], demo.benchmarks, CTX);
@@ -292,9 +302,8 @@ test('PU [domain]: không benchmark — assumption đủ tỉ lệ CHỈ tính �
   assert.ok(fc);
   approx(fc.views, 500, 'views = qty 5 × views_per_unit 100');
   approx(fc.visits, 100, 'visits');
-  approx(fc.signups, 50, 'signups');
-  approx(fc.first, 25, 'first');
-  approx(fc.paid, 10, 'paid');
+  approx(fc.freemium, 50, 'freemium');
+  approx(fc.paid, 10, 'paid = freemium x f2p gộp (0,5 x 0,4)');
   // Không benchmark + không assumption -> null như v1.
   const none = domain.forecastFunnel(rows, [], { phases });
   assert.equal(none.rows[0].forecast, null);
@@ -309,6 +318,28 @@ test('PU [domain]: ctx rỗng / assumption vắng mặt -> hành vi v1 trên to�
   // dòng — SỬA PHẠM VI đợt Paid Objective: tổng ngân sách cộng thêm
   // 83.200.000đ của 2 kênh Paid B2B mới).
   assert.equal(domain.planBudget(lumusRows, demo.benchmarks).total, 65 * 1500000 + 60 * 5500000 + 12 * 30000000 + 546000000 + 182000000 + 41600000 + 41600000);
+});
+
+test('PU [domain]: uplift áp trên tỉ lệ MỚI + assumption key mới override benchmark key cũ (fallback theo từng key hiệu dụng)', () => {
+  // Benchmark key MỚI: v2f 0,1 / f2p 0,1; phase uplift 10%, row ở
+  // tháng thứ 3 của phase (n=2, hệ số 1,21 mỗi tỉ lệ):
+  // views 2000 -> visits 2000 x 0,0121 = 24,2 -> freemium 24,2 x
+  // (0,1x1,21) = 2,9282 -> paid 2,9282 x (0,1x1,21) = 0,3543122.
+  const benchmarksNew = [{ brand_id: 'b1', channel: 'X', output_per_unit: 1000, view_to_visit: 0.01, visit_to_freemium: 0.1, freemium_to_paid: 0.1, direct_budget: false }];
+  const phases = [{ id: 'ph-test', brand_id: 'b1', name: 'T', start_month: '2027-01', end_month: '2027-12', uplift_percent_per_month: 10 }];
+  const rows = [{ id: 'r1', brand_id: 'b1', month: '2027-03', channel: 'X', qty: 2 }];
+  const fc = domain.forecastFunnel(rows, benchmarksNew, { phases }).rows[0].forecast;
+  approx(fc.freemium, 2.9282, 'freemium key mới + uplift');
+  approx(fc.paid, 0.3543122, 'paid key mới + uplift');
+  // Assumption mang freemium_to_paid MỚI (0,2) phải thắng benchmark
+  // key cũ: benchmark cũ cho f2p gộp 0,5 x 0,2 = 0,1; nếu assumption
+  // thắng thì paid (n=0, không uplift) = freemium 2 x 0,2 = 0,4.
+  const benchmarksOld = [{ brand_id: 'b1', channel: 'X', output_per_unit: 1000, view_to_visit: 0.01, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, direct_budget: false }];
+  const phases0 = [{ id: 'ph-a', brand_id: 'b1', start_month: '2027-01', end_month: '2027-12', uplift_percent_per_month: 0 }];
+  const assumptionsNew = [{ phase_id: 'ph-a', channel: 'X', view_to_visit: null, visit_to_freemium: null, freemium_to_paid: 0.2, views_per_unit: null }];
+  const fc2 = domain.forecastFunnel([{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'X', qty: 1 }], benchmarksOld, { phases: phases0, phaseAssumptions: assumptionsNew }).rows[0].forecast;
+  approx(fc2.freemium, 1, 'freemium = 1000 x 0,01 x 0,1 (fallback v2f từ benchmark cũ)');
+  approx(fc2.paid, 0.2, 'paid dùng freemium_to_paid của assumption (0,2), không dùng fallback gộp 0,1');
 });
 
 // ---------------------------------------------------------------- store
