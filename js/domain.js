@@ -2679,12 +2679,121 @@
     };
   }
 
+  // =====================================================================
+  // Bảng Chỉ số vận hành & tài chính theo tháng (bổ sung — Zac duyệt).
+  // Đầu vào THUẦN, mọi số do nơi gọi chuẩn bị từ cùng engine funnel +
+  // planBudget + các ô nhập theo Phase:
+  //   input = { months: ['YYYY-MM', ...],
+  //     funnelByMonth: { [month]: { views, visits, signups, first, paid } },
+  //     budgetByMonth: { [month]: VNĐ },
+  //     inputsByMonth: { [month]: { paid_churn_rate, free_churn_rate,
+  //       arppu, cogs_per_user, fixed_cost } },  // tỉ lệ dạng phân số
+  //     openingFree, openingPaid }              // số dư trước tháng đầu
+  // Ánh xạ: Budget = ngân sách plan tháng; Reach = Views; Visits =
+  // Visits; Free user = Signups; New Free = First; New Paid = Paid.
+  // Chuỗi tồn (EOM_0 = opening):
+  //   Paid churn_t = Paid EOM_{t-1} × paid_churn_rate(phase của t)
+  //   Free churn_t = Free EOM_{t-1} × free_churn_rate(phase của t)
+  //   Free EOM_t = Free EOM_{t-1} + New Free_t − New Paid_t − Free
+  //     churn_t (kẹp ≥ 0, đánh dấu freeClamped nếu phải kẹp)
+  //   Paid EOM_t = Paid EOM_{t-1} + New Paid_t − Paid churn_t
+  //   Total users = Free EOM + Paid EOM
+  //   Revenue_t = arppu × Paid EOM_t
+  //   COGS_t = cogs_per_user × Total users_t  (COGS theo SỐ TIỀN trên
+  //     mỗi user — VNĐ/user/tháng — KHÔNG theo % doanh thu)
+  //   Profit (after COGS + mkt cost) = Revenue − COGS − Budget
+  //   Profit (after COGS + fixed cost + mkt cost) = trên − fixed_cost
+  // Thiếu đầu vào -> giá trị null ("—" ở UI), TUYỆT ĐỐI không điền 0
+  // lặng lẽ: thiếu opening hoặc thiếu 1 tỉ lệ churn của 1 tháng thì
+  // chuỗi EOM đứt từ tháng đó (các tháng sau cũng null vì phụ thuộc
+  // tồn trước); thiếu arppu -> Revenue + cả 2 Profit null tháng đó;
+  // thiếu cogs_per_user -> COGS + 2 Profit null; thiếu fixed_cost ->
+  // chỉ Profit cuối null. Cột Tổng: dòng flow cộng dồn (null nếu có
+  // tháng null), dòng tồn lấy giá trị tháng cuối.
+  // =====================================================================
+  function computeOperatingFinancials(input) {
+    var inp = input || {};
+    var months = Array.isArray(inp.months) ? inp.months.slice() : [];
+    var funnel = inp.funnelByMonth || {};
+    var budgetMap = inp.budgetByMonth || {};
+    var inputsMap = inp.inputsByMonth || {};
+    function num(v) { return _planNum(v); }
+    var openingFree = num(inp.openingFree !== undefined && inp.openingFree !== null ? inp.openingFree : inp.opening_free);
+    var openingPaid = num(inp.openingPaid !== undefined && inp.openingPaid !== null ? inp.openingPaid : inp.opening_paid);
+    var missing = { opening: openingFree === null || openingPaid === null, paid_churn_rate: false, free_churn_rate: false, arppu: false, cogs_per_user: false, fixed_cost: false };
+    var prevFree = openingFree, prevPaid = openingPaid;
+    var chainBroken = missing.opening;
+    var rows = months.map(function (m) {
+      var f = funnel[m] || {};
+      var im = inputsMap[m] || {};
+      function inNum(snake, camel) {
+        var v = im[snake] !== undefined && im[snake] !== null ? im[snake] : im[camel];
+        return num(v);
+      }
+      var budget = num(budgetMap[m]);
+      var row = {
+        month: m,
+        budget: budget === null ? 0 : budget,
+        reach: num(f.views) || 0,
+        visits: num(f.visits) || 0,
+        freeUser: num(f.signups) || 0,
+        newFree: num(f.first) || 0,
+        newPaid: num(f.paid) || 0,
+        paidChurn: null, freeChurn: null,
+        paidEom: null, freeEom: null, totalUsers: null,
+        revenue: null, cogs: null,
+        profitAfterCogsMkt: null, profitAfterCogsFixedMkt: null,
+        freeClamped: false
+      };
+      var paidChurnRate = inNum('paid_churn_rate', 'paidChurnRate');
+      var freeChurnRate = inNum('free_churn_rate', 'freeChurnRate');
+      var arppu = inNum('arppu', 'arppu');
+      var cogsPerUser = inNum('cogs_per_user', 'cogsPerUser');
+      var fixedCost = inNum('fixed_cost', 'fixedCost');
+      if (paidChurnRate === null) missing.paid_churn_rate = true;
+      if (freeChurnRate === null) missing.free_churn_rate = true;
+      if (arppu === null) missing.arppu = true;
+      if (cogsPerUser === null) missing.cogs_per_user = true;
+      if (fixedCost === null) missing.fixed_cost = true;
+      if (!chainBroken && paidChurnRate !== null && freeChurnRate !== null) {
+        row.paidChurn = prevPaid * paidChurnRate;
+        row.freeChurn = prevFree * freeChurnRate;
+        row.paidEom = prevPaid + row.newPaid - row.paidChurn;
+        var freeRaw = prevFree + row.newFree - row.newPaid - row.freeChurn;
+        if (freeRaw < 0) { row.freeClamped = true; freeRaw = 0; }
+        row.freeEom = freeRaw;
+        row.totalUsers = row.freeEom + row.paidEom;
+        prevFree = row.freeEom; prevPaid = row.paidEom;
+      } else {
+        chainBroken = true;
+      }
+      if (row.paidEom !== null && arppu !== null) row.revenue = arppu * row.paidEom;
+      if (row.totalUsers !== null && cogsPerUser !== null) row.cogs = cogsPerUser * row.totalUsers;
+      if (row.revenue !== null && row.cogs !== null) row.profitAfterCogsMkt = row.revenue - row.cogs - row.budget;
+      if (row.profitAfterCogsMkt !== null && fixedCost !== null) row.profitAfterCogsFixedMkt = row.profitAfterCogsMkt - fixedCost;
+      return row;
+    });
+    var FLOW_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'revenue', 'cogs', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt'];
+    var STOCK_KEYS = ['paidEom', 'freeEom', 'totalUsers'];
+    var totals = {};
+    FLOW_KEYS.forEach(function (k) {
+      var sum = 0, ok = rows.length > 0;
+      rows.forEach(function (r) { if (r[k] === null) ok = false; else sum += r[k]; });
+      totals[k] = ok ? sum : null;
+    });
+    STOCK_KEYS.forEach(function (k) {
+      totals[k] = rows.length ? rows[rows.length - 1][k] : null;
+    });
+    return { months: rows, totals: totals, missing: missing, openingFree: openingFree, openingPaid: openingPaid };
+  }
+
   var api = {
     summarizePlanByMonth: summarizePlanByMonth,
     summarizePlanByChannel: summarizePlanByChannel,
     forecastFunnel: forecastFunnel,
     effectiveRate: effectiveRate,
     planBudget: planBudget,
+    computeOperatingFinancials: computeOperatingFinancials,
     PAID_OBJECTIVES: PAID_OBJECTIVES,
     PAID_OBJECTIVE_TIER: PAID_OBJECTIVE_TIER,
     PAID_CHANNEL_OBJECTIVES: PAID_CHANNEL_OBJECTIVES,

@@ -1215,6 +1215,13 @@
     if (camel) { v = cfVal(rec, camel); if (v !== undefined && v !== null) return v; }
     return undefined;
   }
+  // Đọc 1 field SỐ của Phase (snake/camel/customFields qua phaseField):
+  // thiếu / trống / không phải số -> null (đầu vào tài chính thiếu thì
+  // hiện "—", không điền 0 lặng lẽ).
+  function phaseNumField(rec, snake, camel) {
+    var v = phaseField(rec, snake, camel);
+    return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v);
+  }
   function phaseStartMonth(p) { var v = phaseField(p, 'start_month', 'startMonth'); return v ? String(v).slice(0, 7) : ''; }
   function phaseEndMonth(p) { var v = phaseField(p, 'end_month', 'endMonth'); return v ? String(v).slice(0, 7) : ''; }
   function phaseUplift(p) { var v = phaseField(p, 'uplift_percent_per_month', 'upliftPercentPerMonth'); return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v); }
@@ -3858,6 +3865,48 @@
     if (frac === null || frac === undefined || frac === '' || isNaN(Number(frac))) return '';
     return String(Math.round(Number(frac) * 100 * 10000) / 10000);
   }
+  // Khối "Chỉ số vận hành & tài chính" trong mỗi khối Phase: 5 ô nhập
+  // theo Brand x Phase (paid_churn_rate / free_churn_rate dạng % như
+  // các tỉ lệ phase hiện có — lưu dạng phân số; arppu / cogs_per_user /
+  // fixed_cost dạng VNĐ). COGS tính theo SỐ TIỀN TRÊN MỖI USER
+  // (VNĐ/user/tháng), KHÔNG theo % doanh thu. Để trống = chưa có đầu
+  // vào (KHÔNG seed số bịa — file nguồn không có churn/ARPPU/COGS);
+  // bảng tài chính ở Theo tháng hiện "—" cho chỉ số liên quan.
+  // showOpening = true chỉ ở khối Phase đầu tiên của năm (theo Brand):
+  // thêm 2 ô opening_free / opening_paid (số dư trước tháng 1), nhập
+  // MỘT LẦN theo Brand x năm, lưu trên chính Phase đầu tiên đó.
+  function planningPhaseOperatingHtml(phase, disAttr, showOpening) {
+    var CAMEL = { paid_churn_rate: 'paidChurnRate', free_churn_rate: 'freeChurnRate', arppu: 'arppu', cogs_per_user: 'cogsPerUser', fixed_cost: 'fixedCost', opening_free: 'openingFree', opening_paid: 'openingPaid' };
+    function rateVal(field) {
+      var v = phaseNumField(phase, field, CAMEL[field]);
+      return v === null ? '' : ratePctText(v);
+    }
+    function moneyVal(field) {
+      var v = phaseNumField(phase, field, CAMEL[field]);
+      return v === null ? '' : String(v);
+    }
+    var pid = esc(phase.id);
+    var pname = esc(phase.name || phase.id);
+    var html = '<div class="planning-phase-operating" data-planning-phase-operating="1" data-phase-id="' + pid + '"><h4>Chỉ số vận hành &amp; tài chính</h4>' +
+      '<p class="phase-operating-row">' +
+      '<label>Paid churn rate (%/tháng)<input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(rateVal('paid_churn_rate')) + '" data-action-change="phase-operating-rate" data-field="paid_churn_rate" data-phase-id="' + pid + '" aria-label="Paid churn rate %/tháng của Phase ' + pname + '"' + disAttr + '></label> ' +
+      '<label>Free churn rate (%/tháng)<input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(rateVal('free_churn_rate')) + '" data-action-change="phase-operating-rate" data-field="free_churn_rate" data-phase-id="' + pid + '" aria-label="Free churn rate %/tháng của Phase ' + pname + '"' + disAttr + '></label> ' +
+      '<label>ARPPU (VNĐ/Paid user/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('arppu')) + '" data-action-change="phase-operating-money" data-field="arppu" data-phase-id="' + pid + '" aria-label="ARPPU của Phase ' + pname + '"' + disAttr + '></label> ' +
+      '<label>COGS / user (VNĐ/user/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('cogs_per_user')) + '" data-action-change="phase-operating-money" data-field="cogs_per_user" data-phase-id="' + pid + '" aria-label="COGS trên mỗi user của Phase ' + pname + '"' + disAttr + '></label> ' +
+      '<label>Chi phí cố định mỗi tháng (VNĐ)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('fixed_cost')) + '" data-action-change="phase-operating-money" data-field="fixed_cost" data-phase-id="' + pid + '" aria-label="Chi phí cố định mỗi tháng của Phase ' + pname + '"' + disAttr + '></label>' +
+      '</p>' +
+      '<p class="sub">Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng) × tổng user cuối kỳ (Free EOM + Paid EOM) — không theo % doanh thu. Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0.</p>';
+    if (showOpening) {
+      html += '<div class="planning-phase-opening" data-planning-phase-opening="1" data-phase-id="' + pid + '"><h4>Số dư đầu kỳ của Brand (trước tháng 1)</h4>' +
+        '<p class="phase-operating-row">' +
+        '<label>Free đầu kỳ (opening_free)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('opening_free')) + '" data-action-change="phase-opening" data-field="opening_free" data-phase-id="' + pid + '" aria-label="Free đầu kỳ của Brand (trước tháng 1)"' + disAttr + '></label> ' +
+        '<label>Paid đầu kỳ (opening_paid)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('opening_paid')) + '" data-action-change="phase-opening" data-field="opening_paid" data-phase-id="' + pid + '" aria-label="Paid đầu kỳ của Brand (trước tháng 1)"' + disAttr + '></label>' +
+        '</p>' +
+        '<p class="sub">Nhập MỘT LẦN theo Brand × năm — đặt tại khối Phase đầu tiên của năm này và lưu trên chính Phase đó; các Phase sau không có 2 ô này.</p></div>';
+    }
+    html += '</div>';
+    return html;
+  }
   function planningPhaseModeHtml(year, rows, benchmarks) {
     var editable = planningInputsEditable();
     var disAttr = editable ? '' : ' disabled';
@@ -3889,6 +3938,12 @@
       groupByBrand[bid].phases.push(p);
     });
     var multiBrand = UI.brandFilter === 'all' && groups.length > 1;
+    // Phase đầu tiên của mỗi Brand (đã sắp xếp theo start_month) là nơi
+    // đặt 2 ô số dư đầu kỳ opening_free / opening_paid của Brand x năm.
+    UI.planningOpeningPhaseIds = {};
+    groups.forEach(function (g) {
+      if (g.phases.length) UI.planningOpeningPhaseIds[String(g.phases[0].id)] = true;
+    });
     groups.forEach(function (g) {
       if (multiBrand || !UI.brandFilter || UI.brandFilter === 'all') {
         html += '<h3 data-planning-phase-brand="' + esc(g.brandId) + '">Brand: ' + esc(g.brandId ? brandNameOf(g.brandId) : 'Chưa gắn Brand') + '</h3>';
@@ -3900,6 +3955,11 @@
     return html;
   }
   function planningPhaseBlockHtml(phase, rows, benchmarks, editable, disAttr) {
+    // Số dư đầu kỳ (Brand x năm) chỉ đặt ở khối Phase ĐẦU TIÊN của năm
+    // cho mỗi Brand: planningPhaseModeHtml ghi id các Phase đầu tiên đó
+    // vào UI.planningOpeningPhaseIds trước khi render; block này chỉ
+    // hiện 2 ô opening khi id của Phase nằm trong map đó.
+    var showOpening = !!((UI.planningOpeningPhaseIds || {})[String(phase.id)]);
     var pRows = phaseRowsFor(phase, rows);
     var months = phaseMonths(phase);
     var rangeText = months.length ? (vizMonthLabel(months[0]) + ' – ' + vizMonthLabel(months[months.length - 1]) + ' (' + esc(months[0]) + ' → ' + esc(months[months.length - 1]) + ')') : 'Chưa rõ khoảng tháng';
@@ -3911,6 +3971,9 @@
     // Ô nhập Uplift của Phase (%/tháng)
     html += '<p class="phase-uplift-row"><label>Uplift (%/tháng)<input class="phase-input" type="number" step="any" min="0" name="uplift" value="' + esc(uplift === null ? '' : String(uplift)) + '" data-action-change="phase-uplift" data-phase-id="' + esc(phase.id) + '" data-phase-uplift="' + esc(phase.id) + '" aria-label="Uplift %/tháng của Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></label> ' +
       '<span class="sub">Uplift áp vào 4 tỉ lệ chuyển đổi theo từng tháng trong Phase (tháng đầu hệ số 1) — do engine tính khi Forecast.</span></p>';
+    // Khối Chỉ số vận hành & tài chính của Phase (+ số dư đầu kỳ ở
+    // khối Phase đầu tiên của năm).
+    html += planningPhaseOperatingHtml(phase, disAttr, showOpening);
     // Bảng Channel trong Phase
     var channels = [];
     pRows.forEach(function (r) { var ch = String(r.channel || '—'); if (channels.indexOf(ch) === -1) channels.push(ch); });
@@ -4049,7 +4112,145 @@
     var cacHtml = planningKpiSectionHtml('cac', 'KPI chi tiết theo tháng — CAC (VNĐ / Paid User)',
       'CAC = Ngân sách dự kiến của Channel trong tháng ÷ Paid Users forecast của Channel trong tháng; Paid Users = 0 (hoặc chưa tính được) thì hiển thị "—". Hàng <strong>Tất cả</strong>: tổng ngân sách của tháng ÷ tổng Paid Users của tháng. Cột Tổng = tổng ngân sách cả kỳ ÷ tổng Paid Users cả kỳ của Channel (KHÔNG phải trung bình các CAC tháng). CAC làm tròn tới đồng.',
       tbl(head + cacBody, 'planning-kpi-cac'));
-    return '<div data-planning-kpi-tables="1"><h2>KPI chi tiết theo tháng (' + esc(months.length ? months[0].slice(0, 4) : '') + ')</h2>' + viewsHtml + paidHtml + cacHtml + '</div>';
+    // 4) CHỈ SỐ VẬN HÀNH & TÀI CHÍNH — bảng thứ 4, thu gọn như 3 bảng trên.
+    var operatingHtml = planningOperatingTableHtml(rows, benchmarks, months);
+    return '<div data-planning-kpi-tables="1"><h2>KPI chi tiết theo tháng (' + esc(months.length ? months[0].slice(0, 4) : '') + ')</h2>' + viewsHtml + paidHtml + cacHtml + operatingHtml + '</div>';
+  }
+  // --- Bảng Chỉ số vận hành & tài chính theo tháng (bảng thứ 4) ---
+  // Số liệu: Budget từ planBudgetFor, funnel (Reach/Visits/Free user/
+  // New Free/New Paid) từ forecastRawFor — CÙNG nguồn với 3 bảng KPI —
+  // chuỗi tồn + Revenue/COGS/Profit do domain.computeOperatingFinancials
+  // tính (KHÔNG fork công thức). Đầu vào churn/ARPPU/COGS/fixed_cost lấy
+  // theo Phase chứa tháng (field trên Phase, nhập ở chế độ Theo phase);
+  // opening_free/opening_paid lấy từ Phase ĐẦU TIÊN của Brand có tháng
+  // thuộc năm đang xem. Tính RIÊNG theo từng Brand rồi cộng theo tháng
+  // (mỗi Brand một chuỗi tồn riêng); Brand nào thiếu đầu vào thì chỉ số
+  // liên quan của tháng hiện "—" (gộp: null nếu bất kỳ Brand nào null).
+  var OPERATING_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'paidEom', 'freeEom', 'totalUsers', 'revenue', 'cogs', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt'];
+  function planningOperatingData(rows, benchmarks, months) {
+    try {
+      if (!D || typeof D.computeOperatingFinancials !== 'function') return null;
+      var list = rows || [];
+      var mlist = months || [];
+      var brandOrder = [];
+      var byBrand = {};
+      list.forEach(function (r) {
+        var bid = String(recordBrandId(r) || '');
+        if (!byBrand[bid]) { byBrand[bid] = []; brandOrder.push(bid); }
+        byBrand[bid].push(r);
+      });
+      if (!brandOrder.length) { byBrand[''] = []; brandOrder = ['']; }
+      var perBrand = brandOrder.map(function (bid) {
+        var bRows = byBrand[bid];
+        var raw = forecastRawFor(bRows, benchmarks);
+        var funnelByMonth = {};
+        mlist.forEach(function (m) {
+          var bm = raw && raw.byMonth ? raw.byMonth[m] : null;
+          funnelByMonth[m] = bm
+            ? { views: bm.views || 0, visits: bm.visits || 0, signups: bm.signups || 0, first: bm.first || 0, paid: bm.paid || 0 }
+            : { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+        });
+        var budgetByMonth = {};
+        planBudgetFor(bRows, benchmarks).forEach(function (x) { budgetByMonth[x.month] = x.total; });
+        var phases = brandPhasesList().filter(function (p) { return String(recordBrandId(p) || '') === bid; })
+          .slice().sort(function (a, b) { return (phaseStartMonth(a) || '9999').localeCompare(phaseStartMonth(b) || '9999'); });
+        var inputsByMonth = {};
+        mlist.forEach(function (m) {
+          var ph = null;
+          phases.forEach(function (p) { if (!ph && phaseMonths(p).indexOf(m) !== -1) ph = p; });
+          if (ph) {
+            inputsByMonth[m] = {
+              paid_churn_rate: phaseNumField(ph, 'paid_churn_rate', 'paidChurnRate'),
+              free_churn_rate: phaseNumField(ph, 'free_churn_rate', 'freeChurnRate'),
+              arppu: phaseNumField(ph, 'arppu', 'arppu'),
+              cogs_per_user: phaseNumField(ph, 'cogs_per_user', 'cogsPerUser'),
+              fixed_cost: phaseNumField(ph, 'fixed_cost', 'fixedCost')
+            };
+          }
+        });
+        var firstPhase = null;
+        phases.forEach(function (p) {
+          if (!firstPhase && phaseMonths(p).some(function (m) { return mlist.indexOf(m) !== -1; })) firstPhase = p;
+        });
+        return D.computeOperatingFinancials({
+          months: mlist, funnelByMonth: funnelByMonth, budgetByMonth: budgetByMonth,
+          inputsByMonth: inputsByMonth,
+          openingFree: firstPhase ? phaseNumField(firstPhase, 'opening_free', 'openingFree') : null,
+          openingPaid: firstPhase ? phaseNumField(firstPhase, 'opening_paid', 'openingPaid') : null
+        });
+      });
+      var mergedMonths = mlist.map(function (m, i) {
+        var out = { month: m, freeClamped: perBrand.some(function (pb) { return pb.months[i] && pb.months[i].freeClamped; }) };
+        OPERATING_KEYS.forEach(function (k) {
+          var sum = 0, ok = true;
+          perBrand.forEach(function (pb) {
+            var v = pb.months[i] ? pb.months[i][k] : null;
+            if (v === null || v === undefined) ok = false; else sum += v;
+          });
+          out[k] = ok ? sum : null;
+        });
+        return out;
+      });
+      var totals = {};
+      OPERATING_KEYS.forEach(function (k) {
+        if (k === 'paidEom' || k === 'freeEom' || k === 'totalUsers') {
+          totals[k] = mergedMonths.length ? mergedMonths[mergedMonths.length - 1][k] : null;
+          return;
+        }
+        var sum = 0, ok = mergedMonths.length > 0;
+        mergedMonths.forEach(function (r) { if (r[k] === null) ok = false; else sum += r[k]; });
+        totals[k] = ok ? sum : null;
+      });
+      var missing = { opening: false, paid_churn_rate: false, free_churn_rate: false, arppu: false, cogs_per_user: false, fixed_cost: false };
+      perBrand.forEach(function (pb) {
+        Object.keys(missing).forEach(function (k) { if (pb.missing && pb.missing[k]) missing[k] = true; });
+      });
+      return { months: mergedMonths, totals: totals, missing: missing };
+    } catch (e) { return null; }
+  }
+  // Hàng của bảng theo ĐÚNG thứ tự bản gốc của Zac.
+  var OPERATING_ROWS = [
+    ['budget', 'Budget', 'money'], ['reach', 'Reach', 'num'], ['visits', 'Visits', 'num'],
+    ['freeUser', 'Free user', 'num'], ['newPaid', 'New Paid', 'num'], ['newFree', 'New Free', 'num'],
+    ['paidChurn', 'Paid churn', 'num'], ['freeChurn', 'Free churn', 'num'],
+    ['paidEom', 'Paid EOM', 'num'], ['freeEom', 'Free EOM', 'num'], ['totalUsers', 'Total users', 'num'],
+    ['revenue', 'Revenue', 'money'],
+    ['profitAfterCogsMkt', 'Profit (after COGS + mkt cost)', 'money'],
+    ['profitAfterCogsFixedMkt', 'Profit (after COGS + fixed cost + mkt cost)', 'money']
+  ];
+  var OPERATING_MISSING_LABELS = {
+    opening: 'số dư đầu kỳ (Free đầu kỳ / Paid đầu kỳ)',
+    paid_churn_rate: 'Paid churn rate', free_churn_rate: 'Free churn rate',
+    arppu: 'ARPPU', cogs_per_user: 'COGS / user', fixed_cost: 'Chi phí cố định (fixed cost)'
+  };
+  function planningOperatingTableHtml(rows, benchmarks, months) {
+    var data = planningOperatingData(rows, benchmarks, months);
+    var head = '<tr><th>Chỉ số</th>' + months.map(function (m) { return '<th>' + esc(vizMonthLabel(m)) + '</th>'; }).join('') + '<th>Tổng</th></tr>';
+    if (!data) {
+      return planningKpiSectionHtml('operating', 'Chỉ số vận hành & tài chính theo tháng',
+        'Chưa tính được bảng này (engine computeOperatingFinancials chưa sẵn sàng).',
+        '<div class="state-box">Chưa tính được Chỉ số vận hành & tài chính.</div>');
+    }
+    function fmtVal(kind, v) {
+      if (v === null || v === undefined) return '—';
+      return kind === 'money' ? fmtMoney(v, 'VND') : fmtPlanningPaid(v);
+    }
+    var body = OPERATING_ROWS.map(function (def) {
+      var key = def[0], label = def[1], kind = def[2];
+      var cells = data.months.map(function (r) {
+        return '<td data-planning-operating-cell="' + esc(key) + '" data-month="' + esc(r.month) + '">' + fmtVal(kind, r[key]) + '</td>';
+      }).join('');
+      return '<tr data-planning-operating-row="' + esc(key) + '"><td><strong>' + esc(label) + '</strong></td>' + cells +
+        '<td data-planning-operating-total="' + esc(key) + '"><strong>' + fmtVal(kind, data.totals[key]) + '</strong></td></tr>';
+    }).join('');
+    var missingLabels = Object.keys(OPERATING_MISSING_LABELS).filter(function (k) { return data.missing[k]; })
+      .map(function (k) { return OPERATING_MISSING_LABELS[k]; });
+    var note = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Paid/Free churn = tồn cuối tháng trước × churn rate của Phase chứa tháng; Free EOM = tồn trước + New Free − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn; Revenue = ARPPU × Paid EOM; COGS = COGS/user × Total users (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, churn, Revenue, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối.' +
+      (data.months.some(function (r) { return r.freeClamped; }) ? ' Có tháng Free EOM phải kẹp về 0 vì công thức cho số âm.' : '') +
+      (missingLabels.length
+        ? ' <strong>Thiếu đầu vào:</strong> ' + esc(missingLabels.join(', ')) + ' — các chỉ số liên quan hiện "—" (nhập ở chế độ Theo phase, khối "Chỉ số vận hành & tài chính"; số dư đầu kỳ nhập ở khối Phase đầu tiên của năm).'
+        : ' Đủ đầu vào: churn rate / ARPPU / COGS / fixed cost theo Phase và số dư đầu kỳ đều đã nhập ở chế độ Theo phase.');
+    return planningKpiSectionHtml('operating', 'Chỉ số vận hành & tài chính theo tháng', note, tbl(head + body, 'planning-operating'));
   }
   // --- Lưu các ô nhập Theo phase (chỉ chạy khi phaseSaveGuard cho qua) ---
   function savePhaseAssumption(phaseId, channel, patch, okMsg) {
@@ -4068,6 +4269,62 @@
     saveResult(sUpdate('phases', phaseId, { uplift_percent_per_month: v }),
       function () { toast('Đã lưu Uplift ' + v + '%/tháng cho Phase — Forecast đã tính lại.'); render(); },
       function (msg) { toast('Chưa lưu được Uplift: ' + msg); render(); });
+  }
+  // --- Lưu các ô Chỉ số vận hành & tài chính theo Phase + số dư đầu kỳ ---
+  // Cùng guard demo/chỉ-xem như mọi ô Phase (phaseSaveGuard); field ghi
+  // THẲNG lên record Phase (như uplift_percent_per_month). Tỉ lệ churn
+  // nhập dạng % (0–100), lưu dạng phân số như cơ chế tỉ lệ phase hiện
+  // có (savePhaseRate); tiền/số dư là số >= 0. Xoá trắng ô = ghi null
+  // (đầu vào thành "thiếu", bảng tài chính hiện "—" cho chỉ số liên
+  // quan) — không điền 0 lặng lẽ.
+  var PHASE_OPERATING_RATE_FIELDS = ['paid_churn_rate', 'free_churn_rate'];
+  var PHASE_OPERATING_MONEY_FIELDS = ['arppu', 'cogs_per_user', 'fixed_cost'];
+  var PHASE_OPENING_FIELDS = ['opening_free', 'opening_paid'];
+  var PHASE_OPERATING_LABELS = {
+    paid_churn_rate: 'Paid churn rate', free_churn_rate: 'Free churn rate',
+    arppu: 'ARPPU', cogs_per_user: 'COGS / user', fixed_cost: 'Chi phí cố định mỗi tháng',
+    opening_free: 'Free đầu kỳ', opening_paid: 'Paid đầu kỳ'
+  };
+  function savePhaseOperatingField(phaseId, field, raw, isRate) {
+    if (!phaseSaveGuard()) return;
+    var label = PHASE_OPERATING_LABELS[field] || field;
+    var isClear = raw === '' || raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '');
+    if (isClear) {
+      var clearPatch = {};
+      clearPatch[field] = null;
+      saveResult(sUpdate('phases', phaseId, clearPatch),
+        function () { toast('Đã xoá ' + label + ' của Phase — chỉ số liên quan ở bảng tài chính sẽ hiện "—" cho tới khi nhập lại.'); render(); },
+        function (msg) { toast('Chưa lưu được ' + label + ': ' + msg); render(); });
+      return;
+    }
+    var n = Number(raw);
+    if (isRate) {
+      if (isNaN(n) || n < 0 || n > 100) { toast(label + ' phải là số % từ 0 đến 100.'); render(); return; }
+      var ratePatch = {};
+      ratePatch[field] = n / 100;
+      saveResult(sUpdate('phases', phaseId, ratePatch),
+        function () { toast('Đã lưu ' + label + ' ' + n + '%/tháng cho Phase — bảng Chỉ số vận hành & tài chính đã tính lại.'); render(); },
+        function (msg) { toast('Chưa lưu được ' + label + ': ' + msg); render(); });
+      return;
+    }
+    if (isNaN(n) || n < 0) { toast(label + ' phải là số từ 0 trở lên.'); render(); return; }
+    var moneyPatch = {};
+    moneyPatch[field] = n;
+    saveResult(sUpdate('phases', phaseId, moneyPatch),
+      function () { toast('Đã lưu ' + label + ' ' + fmtNum(n) + ' cho Phase — bảng Chỉ số vận hành & tài chính đã tính lại.'); render(); },
+      function (msg) { toast('Chưa lưu được ' + label + ': ' + msg); render(); });
+  }
+  function savePhaseOperatingRate(phaseId, field, raw) {
+    if (PHASE_OPERATING_RATE_FIELDS.indexOf(field) === -1) { render(); return; }
+    savePhaseOperatingField(phaseId, field, raw, true);
+  }
+  function savePhaseOperatingMoney(phaseId, field, raw) {
+    if (PHASE_OPERATING_MONEY_FIELDS.indexOf(field) === -1) { render(); return; }
+    savePhaseOperatingField(phaseId, field, raw, false);
+  }
+  function savePhaseOpening(phaseId, field, raw) {
+    if (PHASE_OPENING_FIELDS.indexOf(field) === -1) { render(); return; }
+    savePhaseOperatingField(phaseId, field, raw, false);
   }
   function savePhaseRate(phaseId, channel, field, raw) {
     if (!phaseSaveGuard()) return;
@@ -8424,6 +8681,9 @@
     // phaseSaveGuard (render lại để ô quay về giá trị đã lưu).
     if (ctxKind === 'kpi-phase') { UI.kpiPhaseFilter = t.value || 'all'; render(); return; }
     if (ctxKind === 'phase-uplift') { savePhaseUplift(t.getAttribute('data-phase-id'), t.value); return; }
+    if (ctxKind === 'phase-operating-rate') { savePhaseOperatingRate(t.getAttribute('data-phase-id'), t.getAttribute('data-field'), t.value); return; }
+    if (ctxKind === 'phase-operating-money') { savePhaseOperatingMoney(t.getAttribute('data-phase-id'), t.getAttribute('data-field'), t.value); return; }
+    if (ctxKind === 'phase-opening') { savePhaseOpening(t.getAttribute('data-phase-id'), t.getAttribute('data-field'), t.value); return; }
     if (ctxKind === 'phase-qty') { savePhaseQty(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'phase-unit-price') { savePhaseUnitPrice(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'planning-month-qty') { savePlanningMonthQty(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
