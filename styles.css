@@ -623,3 +623,10 @@ body.col-resize-dragging{cursor:col-resize;user-select:none}
 body.col-resize-dragging *{cursor:col-resize!important}
 table.col-resize-measuring{width:auto!important}
 table.col-resize-measuring th,table.col-resize-measuring td{white-space:nowrap!important}
+/* ===== Brand + Planning (bản bấm thử 17/11) ===== */
+.context-filter{margin:10px 0 14px;padding:10px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface-sunken)}
+.context-filter label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--color-text-secondary);margin-top:8px}
+.context-filter select{width:100%}
+.brand-swatch{display:inline-block;width:16px;height:16px;border-radius:5px;border:1px solid var(--color-border-strong);vertical-align:-3px}
+.brand-swatch-lg{width:28px;height:28px;vertical-align:-8px}
+.brand-identity p{margin:6px 0}

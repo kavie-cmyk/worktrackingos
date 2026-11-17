@@ -110,12 +110,12 @@
 
   var NAV_GROUPS = [
     ['Chung', [['overview', 'Overview'], ['my-work', 'Task của tôi']]],
-    ['Kế hoạch & content', [['campaigns', 'IMC & Campaigns'], ['timeline', 'Timeline'], ['content', 'Content'], ['tasks', 'Task'], ['approvals', 'Duyệt content']]],
+    ['Kế hoạch & content', [['campaigns', 'IMC & Campaigns'], ['timeline', 'Timeline'], ['planning', 'Planning'], ['content', 'Content'], ['tasks', 'Task'], ['approvals', 'Duyệt content']]],
     ['Thương hiệu', [['brand', 'Brand Hub']]],
     ['Hiệu quả', [['kpi', 'KPI & Ngân sách'], ['channels', 'Kênh & Post'], ['ads', 'Quảng cáo'], ['reports', 'Báo cáo']]],
     ['Tổ chức', [['team', 'Team & Workload'], ['settings', 'Thiết lập']]]
   ];
-  var ROUTES = ['overview', 'my-work', 'brand', 'campaigns', 'timeline', 'content', 'tasks', 'approvals', 'team', 'kpi', 'channels', 'ads', 'reports', 'settings'];
+  var ROUTES = ['overview', 'my-work', 'brand', 'campaigns', 'timeline', 'planning', 'content', 'tasks', 'approvals', 'team', 'kpi', 'channels', 'ads', 'reports', 'settings'];
 
   function mondayOf(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); var diff = (x.getDay() + 6) % 7; x.setDate(x.getDate() - diff); return x; }
   function isoOf(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -153,7 +153,15 @@
     taskTimelineGroupBy: 'campaign',
     contentFilter: { campaignId: 'all', platform: 'all', ownerId: 'all', status: 'all', pillarId: 'all', buProductId: 'all', product: 'all', format: 'all', channelAccountId: 'all', activityId: 'all', taskId: 'all', from: '', to: '' },
     contentMixUnit: 'content',
-    brandFilter: { ownerId: 'all', status: 'all', type: 'all' },
+    brandAssetFilter: { ownerId: 'all', status: 'all', type: 'all' },
+    // Brand + Planning (bản bấm thử): MỘT nguồn lọc ngữ cảnh duy nhất cho
+    // toàn app — brandFilter là id của collection brands hoặc 'all';
+    // segmentFilter là 'all' | 'b2c' | 'b2b'. Xem matchesBrandSegment().
+    brandFilter: 'all',
+    segmentFilter: 'all',
+    planningYear: 2027,
+    planningChannel: null,
+    brandDetailId: null,
     approvalsTab: 'mine',
     actionGroupBy: 'phase',
     activityDrawerId: null,
@@ -594,6 +602,185 @@
     try { all = Store.list(coll, { includeArchived: true }); } catch (e) { all = Store.list(coll); }
     return all.filter(isArchived);
   }
+  // ---------- Brand + Planning: ngữ cảnh Brand / Segment toàn cục ----------
+  // Nguồn lọc DUY NHẤT: UI.brandFilter (id brand hoặc 'all') +
+  // UI.segmentFilter ('all'|'b2c'|'b2b'). Quy tắc khớp (theo đặc tả giao):
+  // bản ghi KHÔNG có brand_id/segment chỉ hiện khi bộ lọc tương ứng đang
+  // ở "Tất cả". Các collection brands/benchmarks/plan_rows có thể chưa tồn
+  // tại (trước khi Executor A nạp demo data) — mọi truy cập đều phòng thủ.
+  function brandsList() { try { return Store.list('brands') || []; } catch (e) { return []; } }
+  function brandById(id) {
+    if (!id) return null;
+    var list = brandsList();
+    for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(id)) return list[i]; }
+    try { return Store.get('brands', id); } catch (e) { return null; }
+  }
+  function brandNameOf(id) { var b = brandById(id); return b ? (b.name || b.id) : (id ? String(id) : '—'); }
+  function recordBrandId(rec) {
+    if (!rec) return null;
+    var v = rec.brand_id !== undefined && rec.brand_id !== null ? rec.brand_id : (rec.brandId !== undefined && rec.brandId !== null ? rec.brandId : cfVal(rec, 'brandId'));
+    return (v === undefined || v === null || String(v) === '') ? null : v;
+  }
+  function recordSegment(rec) {
+    if (!rec) return null;
+    var v = rec.segment !== undefined && rec.segment !== null ? rec.segment : cfVal(rec, 'segment');
+    if (v === undefined || v === null || String(v).trim() === '') return null;
+    return String(v).trim().toLowerCase();
+  }
+  // fallbackRec: bản ghi cha để suy brand/segment khi bản ghi con chưa gắn
+  // trực tiếp (vd dòng ngân sách suy từ campaign của nó, task suy từ campaign).
+  function matchesBrandSegment(rec, fallbackRec) {
+    if (UI.brandFilter && UI.brandFilter !== 'all') {
+      var bid = recordBrandId(rec) || recordBrandId(fallbackRec);
+      if (!bid || String(bid) !== String(UI.brandFilter)) return false;
+    }
+    if (UI.segmentFilter && UI.segmentFilter !== 'all') {
+      var seg = recordSegment(rec) || recordSegment(fallbackRec);
+      if (!seg || seg !== UI.segmentFilter) return false;
+    }
+    return true;
+  }
+  function contextActive() { return (UI.brandFilter && UI.brandFilter !== 'all') || (UI.segmentFilter && UI.segmentFilter !== 'all'); }
+  function contextLabel() {
+    var parts = [];
+    if (UI.brandFilter && UI.brandFilter !== 'all') parts.push('Brand: ' + brandNameOf(UI.brandFilter));
+    if (UI.segmentFilter && UI.segmentFilter !== 'all') parts.push('Segment: ' + UI.segmentFilter.toUpperCase());
+    return parts.length ? parts.join(' · ') : 'Tất cả Brand · Tất cả Segment';
+  }
+  function contextBannerHtml() {
+    if (!contextActive()) return '';
+    return '<div class="notice info" data-context-banner="1">Đang lọc theo ngữ cảnh toàn cục — <strong>' + esc(contextLabel()) + '</strong>. Bản ghi không gắn Brand/Segment chỉ hiện khi chọn "Tất cả". Đổi bộ lọc ở thanh bên (Brand / Segment).</div>';
+  }
+  function contextSelectorHtml() {
+    var brands = brandsList();
+    var bOpts = '<option value="all"' + (UI.brandFilter === 'all' ? ' selected' : '') + '>Tất cả</option>' + brands.map(function (b) {
+      return '<option value="' + esc(b.id) + '"' + (String(UI.brandFilter) === String(b.id) ? ' selected' : '') + '>' + esc(b.name || b.id) + '</option>';
+    }).join('');
+    var sOpts = [['all', 'Tất cả'], ['b2c', 'B2C'], ['b2b', 'B2B']].map(function (p) {
+      return '<option value="' + p[0] + '"' + (UI.segmentFilter === p[0] ? ' selected' : '') + '>' + p[1] + '</option>';
+    }).join('');
+    return '<div class="context-filter" data-context-filter="1"><div class="nav-group-title">Ngữ cảnh</div>' +
+      '<label>Brand<select id="context-brand-select" data-action-change="context-brand" aria-label="Lọc theo Brand">' + bOpts + '</select></label>' +
+      '<label>Segment<select id="context-segment-select" data-action-change="context-segment" aria-label="Lọc theo Segment">' + sOpts + '</select></label></div>';
+  }
+  function filteredCampaigns() { return visibleList('campaigns').filter(function (c) { return matchesBrandSegment(c); }); }
+  function campaignContextFallback(campaignId) { return campaignId ? Store.get('campaigns', campaignId) : null; }
+  // --- Planning / Benchmark: truy cập phòng thủ + chuẩn hoá shape domain ---
+  function planRowsList() { try { return Store.list('plan_rows') || []; } catch (e) { return []; } }
+  function benchmarksList() { try { return Store.list('benchmarks') || []; } catch (e) { return []; } }
+  function filteredPlanRows() {
+    return planRowsList().filter(function (r) { return matchesBrandSegment(r); });
+  }
+  function filteredBenchmarks() {
+    return benchmarksList().filter(function (b) {
+      if (UI.brandFilter && UI.brandFilter !== 'all') {
+        var bid = recordBrandId(b);
+        if (!bid || String(bid) !== String(UI.brandFilter)) return false;
+      }
+      return true;
+    });
+  }
+  function planRowMonth(r) { return String((r && (r.month || r.monthKey || r.periodKey)) || '').slice(0, 7); }
+  function planRowQty(r) { var v = r ? (r.qty !== undefined ? r.qty : (r.quantity !== undefined ? r.quantity : r.count)) : null; return (v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v); }
+  function benchmarkForRow(row, benchmarks) {
+    var list = benchmarks || benchmarksList();
+    var bid = recordBrandId(row), ch = String((row && row.channel) || '');
+    var seg = recordSegment(row);
+    var best = null;
+    list.forEach(function (b) {
+      if (String(b.channel || '') !== ch) return;
+      var bb = recordBrandId(b);
+      if (bid && bb && String(bb) !== String(bid)) return;
+      if (bid && !bb) return;
+      var bs = recordSegment(b);
+      if (seg && bs && bs !== seg) return;
+      if (!best) best = b;
+      if (seg && bs === seg) best = b;
+    });
+    return best;
+  }
+  // Chuẩn hoá kết quả planBudget về [{month, total}] — chấp nhận nhiều shape:
+  // mảng {month,total|budget|amount|value}, {byMonth:[...]}, {byMonth:{'YYYY-MM':n}},
+  // {months:{...}}, {total, ...}. Không đọc được thì tính dự phòng từ plan rows.
+  function normalizePlanBudget(result, rows, benchmarks) {
+    var out = [];
+    function pushMonth(m, v) { if (/^\d{4}-\d{2}/.test(String(m)) && v !== null && v !== undefined && !isNaN(Number(v))) out.push({ month: String(m).slice(0, 7), total: Number(v) }); }
+    if (Array.isArray(result)) result.forEach(function (x) { if (x) pushMonth(x.month || x.monthKey || x.periodKey || x.key, x.total !== undefined ? x.total : (x.budget !== undefined ? x.budget : (x.amount !== undefined ? x.amount : x.value))); });
+    else if (result && typeof result === 'object') {
+      var src = result.byMonth || result.by_month || result.months || result.monthly || null;
+      if (Array.isArray(src)) src.forEach(function (x) { if (x) pushMonth(x.month || x.monthKey || x.key, x.total !== undefined ? x.total : (x.budget !== undefined ? x.budget : (x.amount !== undefined ? x.amount : x.value))); });
+      else if (src && typeof src === 'object') Object.keys(src).forEach(function (k) { var v = src[k]; pushMonth(k, (v && typeof v === 'object') ? (v.total !== undefined ? v.total : (v.budget !== undefined ? v.budget : v.amount)) : v); });
+      else if (Array.isArray(result.rows)) result.rows.forEach(function (x) { if (x) pushMonth(x.month || x.key, x.total !== undefined ? x.total : x.budget); });
+    }
+    out.sort(function (a, b) { return a.month.localeCompare(b.month); });
+    if (out.length) return out;
+    // Dự phòng: qty × unit_price của benchmark khớp, hoặc budget nhập thẳng trên dòng.
+    var byM = {};
+    (rows || []).forEach(function (r) {
+      var m = planRowMonth(r); if (!m) return;
+      var amt = (r.budget !== null && r.budget !== undefined && r.budget !== '' && !isNaN(Number(r.budget))) ? Number(r.budget) : null;
+      if (amt === null) { var bm = benchmarkForRow(r, benchmarks); var up = bm ? (bm.unit_price !== undefined ? bm.unit_price : bm.unitPrice) : null; amt = (up !== null && up !== undefined && !isNaN(Number(up))) ? planRowQty(r) * Number(up) : 0; }
+      byM[m] = (byM[m] || 0) + amt;
+    });
+    return Object.keys(byM).sort().map(function (m) { return { month: m, total: byM[m] }; });
+  }
+  function planBudgetFor(rows, benchmarks) {
+    var fn = (D && typeof D.planBudget === 'function') ? D.planBudget : null;
+    var result = null;
+    if (fn) { try { result = fn(rows, benchmarks); } catch (e) { result = null; } }
+    return normalizePlanBudget(result, rows, benchmarks);
+  }
+  // Chuẩn hoá kết quả forecastFunnel về [{label, value}] — chấp nhận:
+  // mảng {label|step|name, value|total}, {steps:[...]}, {totals:{reach:...}},
+  // hoặc object phẳng {reach, visits, signups, ...}.
+  function normalizeFunnelSteps(result, rows, benchmarks) {
+    var out = [];
+    function pushStep(label, v) { if (label && v !== null && v !== undefined && !isNaN(Number(v))) out.push({ label: String(label), value: Number(v) }); }
+    var FUNNEL_LABELS = { views: 'Views', reach: 'Reach', visits: 'Visits', signups: 'Signups', first: 'First starts', paid: 'Paid', leads: 'Leads' };
+    if (Array.isArray(result)) result.forEach(function (x) { if (x && typeof x === 'object') pushStep(x.label || x.step || x.name || x.key, x.value !== undefined ? x.value : x.total); });
+    else if (result && typeof result === 'object') {
+      var totals = result.totals || result.total || null;
+      // Shape thật của domain (A): { steps: ['views','visits',...], totals: {views, visits, signups, first, paid} }
+      if (totals && typeof totals === 'object' && !Array.isArray(totals)) {
+        var stepKeys = Array.isArray(result.steps) ? result.steps.filter(function (s) { return typeof s === 'string'; }) : Object.keys(totals);
+        stepKeys.forEach(function (k) { if (totals[k] !== undefined) pushStep(FUNNEL_LABELS[k] || k, totals[k]); });
+      }
+      var steps = result.steps || result.funnel || result.stages || null;
+      if (!out.length && Array.isArray(steps)) steps.forEach(function (x) { if (x && typeof x === 'object') pushStep(x.label || x.step || x.name || x.key, x.value !== undefined ? x.value : x.total); });
+      if (!out.length && totals && typeof totals === 'object' && !Array.isArray(totals)) Object.keys(totals).forEach(function (k) { pushStep(FUNNEL_LABELS[k] || k, totals[k]); });
+      if (!out.length) ['reach', 'views', 'visits', 'signups', 'firstStarts', 'first_starts', 'leads', 'paid', 'paidUsers', 'paid_users', 'conversions'].forEach(function (k) { if (result[k] !== undefined) pushStep(k, result[k]); });
+    }
+    if (out.length) return out;
+    // Dự phòng: cộng dồn funnel từ benchmark của từng dòng plan.
+    var agg = { reach: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+    var any = false;
+    (rows || []).forEach(function (r) {
+      var bm = benchmarkForRow(r, benchmarks); if (!bm) return;
+      var outPer = bm.output_per_unit !== undefined ? bm.output_per_unit : bm.outputPerUnit;
+      if (outPer === null || outPer === undefined || isNaN(Number(outPer))) return;
+      any = true;
+      var reach = planRowQty(r) * Number(outPer);
+      var visits = reach * (Number(bm.view_to_visit !== undefined ? bm.view_to_visit : bm.viewToVisit) || 0);
+      var signups = visits * (Number(bm.visit_to_signup !== undefined ? bm.visit_to_signup : bm.visitToSignup) || 0);
+      var first = signups * (Number(bm.signup_to_first !== undefined ? bm.signup_to_first : bm.signupToFirst) || 0);
+      var paid = first * (Number(bm.first_to_paid !== undefined ? bm.first_to_paid : bm.firstToPaid) || 0);
+      agg.reach += reach; agg.visits += visits; agg.signups += signups; agg.first += first; agg.paid += paid;
+    });
+    if (!any) return [];
+    return [
+      { label: 'Reach / Views', value: Math.round(agg.reach) },
+      { label: 'Visits', value: Math.round(agg.visits) },
+      { label: 'Signups / Leads', value: Math.round(agg.signups) },
+      { label: 'First starts', value: Math.round(agg.first) },
+      { label: 'Paid', value: Math.round(agg.paid) }
+    ].filter(function (s) { return s.value > 0; });
+  }
+  function forecastFunnelFor(rows, benchmarks) {
+    var fn = (D && typeof D.forecastFunnel === 'function') ? D.forecastFunnel : null;
+    var result = null;
+    if (fn) { try { result = fn(rows, benchmarks); } catch (e) { result = null; } }
+    return normalizeFunnelSteps(result, rows, benchmarks);
+  }
   function canSettings() { return can('settings.manage'); }
   function canMemberManage() { return can('member.manage'); }
   function brandStatusInfo(item) {
@@ -983,6 +1170,19 @@
           F('objective', 'Mục tiêu activity', 'textarea', ev('objective', a.objective), { wide: true }) +
           F('deliverables', 'Đầu ra cần bàn giao', 'textarea', ev('deliverables', a.deliverables || a.deliverable), { wide: true }),
           'Lưu activity');
+      }
+      case 'brandNew': {
+        return formShell('brandNew', 'Tạo Brand mới (demo)',
+          F('name', 'Tên Brand *', 'text', ev('name', ''), { required: true, wide: true }) +
+          F('color', 'Màu Brand (mã hex)', 'text', ev('color', '#2456a6'), { placeholder: '#2456a6' }) +
+          F('tagline', 'Tagline', 'text', ev('tagline', ''), { wide: true }) +
+          F('description', 'Mô tả', 'textarea', ev('description', ''), { wide: true }) +
+          F('market', 'Thị trường', 'text', ev('market', '')) +
+          F('palette', 'Palette (mỗi màu một dòng hoặc cách nhau bằng dấu phẩy)', 'textarea', ev('palette', ''), { wide: true }) +
+          F('voice', 'Voice', 'textarea', ev('voice', ''), { wide: true }) +
+          F('key_messages', 'Key messages (mỗi dòng một ý)', 'textarea', ev('key_messages', ''), { wide: true }) +
+          F('funnel_steps', 'Các bước Funnel (mỗi dòng một bước)', 'textarea', ev('funnel_steps', ''), { wide: true }),
+          'Tạo Brand');
       }
       case 'brandPage': {
         var bp = editorItem('brandPages') || {};
@@ -1481,6 +1681,18 @@
         if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
         var ao = { name: data.name, phaseId: data.phaseId || null, channel: data.channel || '', ownerId: data.ownerId || null, status: data.status || null, startDate: data.startDate || null, endDate: data.endDate || null, objective: data.objective || '', deliverables: data.deliverables || '', campaignId: e.context.campaignId || (editorItem('activities') || {}).campaignId || null };
         if (e.id) done(sUpdate('activities', e.id, ao), 'Đã lưu activity.'); else done(sCreate('activities', ao), 'Đã thêm activity.');
+        return;
+      }
+      case 'brandNew': {
+        req('name', 'tên Brand');
+        if (Object.keys(errors).length) return editorFail('Một số trường chưa hợp lệ.', errors);
+        function splitLinesOrCommas(v) { return String(v || '').split(/[\n,]/).map(function (x) { return x.trim(); }).filter(function (x) { return x; }); }
+        var newBrand = {
+          name: data.name, color: data.color || '#2456a6', tagline: data.tagline || '', description: data.description || '',
+          market: data.market || '', palette: splitLinesOrCommas(data.palette), voice: data.voice || '',
+          key_messages: splitLinesOrCommas(data.key_messages), funnel_steps: splitLinesOrCommas(data.funnel_steps)
+        };
+        done(sCreate('brands', newBrand), 'Đã tạo Brand mới — Brand đã hiện trong bộ chọn Brand toàn cục và danh sách Brand.');
         return;
       }
       case 'brandPage': {
@@ -2304,8 +2516,9 @@
 
   // ---------- Tổng quan ----------
   function viewOverview() {
-    var campaigns = visibleList('campaigns');
-    var tasks = visibleList('tasks');
+    var campaigns = filteredCampaigns();
+    var allTasksForContext = visibleList('tasks');
+    var tasks = allTasksForContext.filter(function (t) { return matchesBrandSegment(t, campaignContextFallback(t.campaignId)); });
     var approvals = Store.list('approvals').filter(function (a) { return a.status === 'pending' || a.status === 'needs_reapproval'; });
     var overdue = tasks.filter(isOverdue);
     var running = campaigns.filter(function (c) { return c.status === 'active'; });
@@ -2337,8 +2550,12 @@
     });
     var html = pageHead('Overview', 'Tình hình Marketing tại thời điểm hiện tại' + (Store.mode === 'demo' ? ' — dữ liệu minh họa' : '') + '.',
       canEdit() ? '<a class="btn" href="#/campaigns">+ Tạo campaign</a>' : '');
+    html += contextBannerHtml();
     html += collectionBanner('campaigns');
-    if (!collLoadingOrError('campaigns') && !campaigns.length) {
+    if (!collLoadingOrError('campaigns') && !campaigns.length && contextActive()) {
+      html += '<div class="state-box">Không có campaign nào khớp bộ lọc Brand/Segment hiện tại (' + esc(contextLabel()) + '). Đổi bộ lọc ở thanh bên để xem thêm.</div>';
+    }
+    if (!collLoadingOrError('campaigns') && !visibleList('campaigns').length) {
       html += emptyState('Workspace chưa có campaign nào', 'Bắt đầu bằng cách tạo campaign đầu tiên, sau đó thêm giai đoạn, task và content ngay trong trang chi tiết campaign.',
         '<p><a class="btn" href="#/campaigns">Tới mục IMC & Campaigns để tạo</a> <a class="btn secondary" href="#/settings">Thiết lập BU/sản phẩm trước</a></p>');
     }
@@ -2474,6 +2691,90 @@
     return html;
   }
 
+  // ---------- Planning (Brand + Planning, bản bấm thử) ----------
+  function viewPlanning() {
+    var year = UI.planningYear || 2027;
+    var allRows = filteredPlanRows();
+    var rows = allRows.filter(function (r) { return planRowMonth(r).indexOf(String(year) + '-') === 0; });
+    var benchmarks = filteredBenchmarks();
+    var months = [];
+    for (var mi = 1; mi <= 12; mi++) months.push(String(year) + '-' + String(mi).padStart(2, '0'));
+    var html = pageHead('Planning', 'Lưới kế hoạch Content theo Channel × tháng cho năm ' + year + ' — tôn trọng bộ lọc Brand/Segment toàn cục. Ô chỉ xem; bấm vào hàng Channel để xem chi tiết các dòng plan.',
+      '');
+    html += readonlyNote() + contextBannerHtml();
+    // Chọn năm
+    var yearOpts = [2026, 2027, 2028].map(function (y) { return '<option value="' + y + '"' + (year === y ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+    html += '<form class="inline" id="planning-year-form"><label>Năm Planning<select name="year">' + yearOpts + '</select></label><button class="btn secondary" type="submit">Xem năm</button>' +
+      '<span class="sub">Ngữ cảnh: ' + esc(contextLabel()) + '</span></form>';
+    if (!planRowsList().length) {
+      html += '<div class="state-box" data-planning-empty="1">Chưa có dòng Planning nào (collection plan_rows đang trống). Khi dữ liệu demo được nạp, lưới Channel × tháng sẽ hiện ở đây.</div>';
+      return html;
+    }
+    if (!rows.length) {
+      html += '<div class="state-box" data-planning-empty="1">Không có dòng Planning nào cho năm ' + esc(year) + ' khớp bộ lọc hiện tại (' + esc(contextLabel()) + '). Thử đổi năm hoặc bộ lọc Brand/Segment ở thanh bên.</div>';
+      return html;
+    }
+    // Gom nhóm theo group, trong nhóm gom theo channel.
+    var groupOrder = [], groupMap = {};
+    rows.forEach(function (r) {
+      var g = String(r.group || r.groupName || 'Chưa nhóm');
+      if (!groupMap[g]) { groupMap[g] = { name: g, channels: {}, channelOrder: [] }; groupOrder.push(g); }
+      var ch = String(r.channel || '—');
+      if (!groupMap[g].channels[ch]) { groupMap[g].channels[ch] = []; groupMap[g].channelOrder.push(ch); }
+      groupMap[g].channels[ch].push(r);
+    });
+    var colTotals = months.map(function () { return 0; });
+    var grand = 0;
+    var gridRowsHtml = '';
+    groupOrder.forEach(function (gName) {
+      var g = groupMap[gName];
+      gridRowsHtml += '<tr class="group-row"><td colspan="' + (months.length + 2) + '"><strong>' + esc(gName) + '</strong></td></tr>';
+      g.channelOrder.forEach(function (ch) {
+        var chRows = g.channels[ch];
+        var cells = months.map(function (m, idx) {
+          var sum = chRows.filter(function (r) { return planRowMonth(r) === m; }).reduce(function (s, r) { return s + planRowQty(r); }, 0);
+          colTotals[idx] += sum; grand += sum;
+          return '<td>' + (sum ? fmtNum(sum) : '—') + '</td>';
+        }).join('');
+        var rowTotal = chRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
+        gridRowsHtml += '<tr><td><button class="linklike" data-action="planning-channel" data-channel="' + esc(ch) + '" data-group="' + esc(gName) + '"><strong>' + esc(ch) + '</strong></button></td>' + cells + '<td><strong>' + fmtNum(rowTotal) + '</strong></td></tr>';
+      });
+    });
+    var footHtml = '<tr><td><strong>Tổng theo tháng</strong></td>' + colTotals.map(function (v) { return '<td><strong>' + fmtNum(v) + '</strong></td>'; }).join('') + '<td><strong>' + fmtNum(grand) + '</strong></td></tr>';
+    html += '<div class="cards"><div class="card viz-kpi-card" data-planning-grand="1"><span class="viz-kpi-label">Tổng Content toàn kỳ ' + esc(year) + '</span><span class="big">' + fmtNum(grand) + '</span><span class="sub">' + esc(rows.length) + ' dòng plan · ' + esc(contextLabel()) + '</span></div></div>';
+    html += '<h2>Lưới Planning — Channel × tháng (' + esc(year) + ')</h2>';
+    html += tbl('<tr><th>Channel</th>' + months.map(function (m) { return '<th>' + esc(vizMonthLabel(m)) + '</th>'; }).join('') + '<th>Tổng hàng</th></tr>' + gridRowsHtml + footHtml, 'planning-grid');
+    // Chi tiết channel đang chọn (drawer/panel dạng khối chi tiết dưới lưới)
+    if (UI.planningChannel) {
+      var selRows = rows.filter(function (r) { return String(r.channel || '—') === UI.planningChannel; });
+      html += '<div class="panel" data-planning-detail="1"><h3>Chi tiết Channel: ' + esc(UI.planningChannel) + ' (' + selRows.length + ' dòng plan)</h3>' +
+        '<p><button class="btn small secondary" data-action="planning-channel-close">Đóng chi tiết</button></p>' +
+        (selRows.length ? tbl('<tr><th>Tháng</th><th>Số lượng</th><th>Segment</th><th>Brand</th><th>Nhóm</th></tr>' + selRows.slice().sort(function (a, b) { return planRowMonth(a).localeCompare(planRowMonth(b)); }).map(function (r) {
+          return '<tr><td>' + esc(vizMonthLabel(planRowMonth(r))) + ' (' + esc(planRowMonth(r)) + ')</td><td>' + fmtNum(planRowQty(r)) + '</td><td>' + esc(recordSegment(r) ? recordSegment(r).toUpperCase() : 'Dùng chung') + '</td><td>' + esc(brandNameOf(recordBrandId(r))) + '</td><td>' + esc(r.group || '—') + '</td></tr>';
+        }).join(''), 'planning-detail') : '<p class="sub">Không có dòng plan nào của channel này trong kỳ/bộ lọc hiện tại.</p>') + '</div>';
+    }
+    // Chart ngân sách dự kiến theo tháng (planBudget)
+    var budgetMonthly = planBudgetFor(rows, benchmarks);
+    html += '<h2>Ngân sách dự kiến theo tháng</h2>';
+    if (budgetMonthly.length && budgetMonthly.some(function (x) { return x.total > 0; })) {
+      var bMax = Math.max.apply(null, budgetMonthly.map(function (x) { return x.total; }).concat([0]));
+      html += '<div class="viz-chart" data-viz="planning-budget-chart">' + budgetMonthly.map(function (x) { return vizBarRowHtml(vizMonthLabel(x.month), x.total, bMax, 'is-alloc', fmtMoney(x.total, 'VND')); }).join('') + '</div>';
+      html += tbl('<tr><th>Tháng</th><th>Ngân sách dự kiến</th></tr>' + budgetMonthly.map(function (x) { return '<tr><td>' + esc(vizMonthLabel(x.month)) + '</td><td>' + fmtMoney(x.total, 'VND') + '</td></tr>'; }).join(''), 'planning-budget');
+      html += '<p class="sub">Tổng ngân sách dự kiến cả kỳ: <strong>' + fmtMoney(budgetMonthly.reduce(function (s, x) { return s + x.total; }, 0), 'VND') + '</strong> (tính qua Forecast/Benchmark — hàm planBudget khi có, dự phòng qty × đơn giá Benchmark).</p>';
+    } else {
+      html += '<div class="state-box">Chưa tính được ngân sách dự kiến — chưa có Benchmark đơn giá khớp hoặc dòng plan chưa có ngân sách nhập thẳng.</div>';
+    }
+    // Chart funnel Forecast theo Benchmark
+    var funnelSteps = forecastFunnelFor(rows, benchmarks);
+    html += '<h2>Forecast — Funnel dự kiến theo Benchmark</h2>';
+    if (funnelSteps.length) {
+      html += '<div data-viz="planning-forecast-chart">' + vizFunnelHtml({ steps: funnelSteps, emptyText: 'Chưa có dữ liệu Forecast.' }) + '</div>';
+    } else {
+      html += '<div class="state-box">Chưa tính được Forecast — chưa có Benchmark khớp với các dòng Planning đang lọc (cần output_per_unit và chuỗi tỉ lệ chuyển đổi).</div>';
+    }
+    return html;
+  }
+
   // ---------- Brand Hub ----------
   function versionHistoryHtml(coll, item) {
     var hist = [];
@@ -2484,10 +2785,64 @@
     if (fromItem.length) return '<ul class="clean">' + fromItem.map(function (h) { return '<li>Phiên bản ' + esc(h.version || h) + '</li>'; }).join('') + '</ul>';
     return '<p class="sub">Hiện có phiên bản ' + esc(item.version || 1) + ' (' + esc(D.formatDateTimeVN(item.updatedAt)) + ').</p>';
   }
+  // Brand (collection brands): danh sách + thẻ Identity + số liệu tổng.
+  function brandSectionHtml(ed) {
+    var brands = brandsList();
+    var html = '<h2>Brand (' + brands.length + ')</h2>';
+    if (!brands.length) {
+      html += '<div class="state-box" data-brand-empty="1">Chưa có Brand nào trong collection brands. ' + (ed ? 'Bấm "+ Tạo Brand" để tạo Brand đầu tiên ở chế độ demo.' : '') + '</div>';
+      return html;
+    }
+    html += '<div class="cards">' + brands.map(function (b) {
+      var bRows = planRowsList().filter(function (r) { return String(recordBrandId(r) || '') === String(b.id); });
+      var bCamps = visibleList('campaigns').filter(function (c) { return String(recordBrandId(c) || '') === String(b.id); });
+      var totalQty = bRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
+      return '<div class="card" data-brand-card="' + esc(b.id) + '"><span class="brand-swatch" style="background:' + esc(b.color || '#2456a6') + '"></span> <strong>' + esc(b.name || b.id) + '</strong>' +
+        (b.tagline ? '<p class="sub">' + esc(b.tagline) + '</p>' : '') +
+        '<p class="sub">' + fmtNum(bCamps.length) + ' Campaign · ' + fmtNum(bRows.length) + ' dòng plan · ' + fmtNum(totalQty) + ' Content theo plan</p>' +
+        '<p><button class="btn small" data-action="brand-detail" data-id="' + esc(b.id) + '">Xem chi tiết Brand</button></p></div>';
+    }).join('') + '</div>';
+    var detailId = UI.brandDetailId || (ROUTE.name === 'brand' ? ROUTE.id : null);
+    if (detailId) {
+      var b2 = brandById(detailId);
+      if (b2) html += brandDetailHtml(b2);
+    }
+    return html;
+  }
+  function brandDetailHtml(b) {
+    var bRows = planRowsList().filter(function (r) { return String(recordBrandId(r) || '') === String(b.id); });
+    var bCamps = visibleList('campaigns').filter(function (c) { return String(recordBrandId(c) || '') === String(b.id); });
+    var bBenchmarks = benchmarksList().filter(function (x) { return String(recordBrandId(x) || '') === String(b.id); });
+    var totalQty = bRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
+    var budgetMonthly = planBudgetFor(bRows, bBenchmarks);
+    var budgetTotal = budgetMonthly.reduce(function (s, x) { return s + x.total; }, 0);
+    var palette = Array.isArray(b.palette) ? b.palette : [];
+    var messages = Array.isArray(b.key_messages) ? b.key_messages : (Array.isArray(b.keyMessages) ? b.keyMessages : []);
+    var funnel = Array.isArray(b.funnel_steps) ? b.funnel_steps : (Array.isArray(b.funnelSteps) ? b.funnelSteps : []);
+    var html = '<div class="panel" data-brand-detail="' + esc(b.id) + '"><h3>Brand: ' + esc(b.name || b.id) + '</h3>' +
+      '<p><button class="btn small secondary" data-action="brand-detail-close">Đóng chi tiết Brand</button></p>' +
+      '<div class="brand-identity"><p><span class="brand-swatch brand-swatch-lg" style="background:' + esc(b.color || '#2456a6') + '"></span> <strong>Màu Brand:</strong> ' + esc(b.color || '—') + '</p>' +
+      (b.tagline ? '<p><strong>Tagline:</strong> ' + esc(b.tagline) + '</p>' : '') +
+      (b.description ? '<p>' + esc(b.description) + '</p>' : '') +
+      (b.market ? '<p><strong>Thị trường:</strong> ' + esc(b.market) + '</p>' : '') +
+      (palette.length ? '<p><strong>Palette:</strong> ' + palette.map(function (c) { return '<span class="brand-swatch" title="' + esc(c) + '" style="background:' + esc(c) + '"></span> ' + esc(c); }).join(' · ') + '</p>' : '') +
+      (b.voice ? '<p><strong>Voice:</strong> ' + esc(b.voice) + '</p>' : '') +
+      (messages.length ? '<p><strong>Key messages:</strong></p><ul class="clean">' + messages.map(function (m) { return '<li>' + esc(m) + '</li>'; }).join('') + '</ul>' : '') +
+      (funnel.length ? '<p><strong>Các bước Funnel:</strong> ' + funnel.map(function (s) { return esc(typeof s === 'string' ? s : (s.label || s.name || '')); }).join(' → ') + '</p>' : '') +
+      '</div>' +
+      '<div class="cards">' +
+      vizKpiCardHtml({ label: 'Campaign của Brand', valueText: String(bCamps.length), tone: 'running', toneLabel: 'Campaign' }) +
+      vizKpiCardHtml({ label: 'Dòng plan / tổng Content', valueText: fmtNum(bRows.length) + ' / ' + fmtNum(totalQty), tone: 'neutral', toneLabel: 'Planning' }) +
+      vizKpiCardHtml({ label: 'Ngân sách dự kiến (Planning)', valueText: fmtMoney(budgetTotal, 'VND'), tone: 'pending', toneLabel: 'Forecast' }) +
+      '</div>' +
+      (bCamps.length ? '<h4>Campaign thuộc Brand</h4><ul class="clean">' + bCamps.map(function (c) { return '<li><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a> — ' + esc(recordSegment(c) ? recordSegment(c).toUpperCase() : 'Dùng chung') + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có Campaign nào gắn Brand này.</p>') +
+      '</div>';
+    return html;
+  }
   function viewBrand() {
     var q = UI.brandQuery.toLowerCase();
     function match(x) { return !q || JSON.stringify(x).toLowerCase().indexOf(q) !== -1; }
-    var bf = UI.brandFilter;
+    var bf = UI.brandAssetFilter;
     function matchAssetFilter(a) {
       if (bf.ownerId !== 'all' && a.ownerId !== bf.ownerId) return false;
       if (bf.status !== 'all') {
@@ -2502,9 +2857,10 @@
     var archPages = archivedList('brandPages').filter(match);
     var archAssets = archivedList('brandAssets').filter(match);
     var ed = canEdit();
-    var html = pageHead('Brand Hub', 'Trang thương hiệu và tài nguyên dùng chung cho toàn đội.',
-      (ed ? '<button class="btn" data-action="editor-open" data-kind="brandPage">+ Thêm trang</button> <button class="btn secondary" data-action="editor-open" data-kind="brandAsset">+ Thêm tài nguyên</button>' : ''));
-    html += readonlyNote() + collectionBanner('brandPages');
+    var html = pageHead('Brand', 'Brand Hub — danh sách Brand, thẻ Identity của từng Brand, cùng trang thương hiệu và tài nguyên dùng chung cho toàn đội.',
+      (ed ? '<button class="btn" data-action="editor-open" data-kind="brandNew">+ Tạo Brand</button> <button class="btn secondary" data-action="editor-open" data-kind="brandPage">+ Thêm trang</button> <button class="btn secondary" data-action="editor-open" data-kind="brandAsset">+ Thêm tài nguyên</button>' : ''));
+    html += readonlyNote() + contextBannerHtml() + collectionBanner('brandPages');
+    html += brandSectionHtml(ed);
     html += '<form class="inline" id="brand-search-form"><label>Tìm kiếm<input type="search" id="brand-query" value="' + esc(UI.brandQuery) + '" placeholder="Tên trang, tài nguyên, loại, thẻ…"></label><button class="btn" type="submit">Tìm</button>' +
       (UI.brandQuery ? ' <button class="btn secondary" type="button" data-action="brand-clear">Xóa lọc</button>' : '') + '</form>';
     // R2-29.2: lọc tài nguyên theo người phụ trách / trạng thái / loại.
@@ -2553,12 +2909,15 @@
 
   // ---------- IMC & Campaigns ----------
   function viewCampaigns() {
-    var campaigns = visibleList('campaigns');
+    var campaigns = filteredCampaigns();
     var ed = canEdit();
     if (ROUTE.id) return campaignDetailHtml(ROUTE.id);
     var html = pageHead('IMC & Campaigns', 'Kế hoạch truyền thông tích hợp: danh sách và chi tiết từng campaign. Xem biểu đồ chung ở mục Timeline.',
       ed ? '<button class="btn" data-action="editor-open" data-kind="campaign">+ Tạo campaign</button>' : '');
-    html += readonlyNote() + collectionBanner('campaigns');
+    html += readonlyNote() + contextBannerHtml() + collectionBanner('campaigns');
+    if (!campaigns.length && !collLoadingOrError('campaigns') && contextActive()) {
+      return html + '<div class="state-box">Không có campaign nào khớp bộ lọc Brand/Segment hiện tại (' + esc(contextLabel()) + ').</div>';
+    }
     if (!campaigns.length && !collLoadingOrError('campaigns')) {
       return html + emptyState('Chưa có campaign nào — bắt đầu tại đây',
         'Luồng bắt đầu: (1) vào Thiết lập để tạo BU/sản phẩm nếu cần → (2) tạo campaign → (3) trong trang chi tiết campaign, thêm giai đoạn, activity, task và content. Toàn bộ làm ngay trên giao diện.',
@@ -3438,7 +3797,7 @@
     return html;
   }
   function workspaceChartsHtml() {
-    var campaigns = visibleList('campaigns');
+    var campaigns = filteredCampaigns();
     var html = '<h2>Biểu đồ tổng quan workspace</h2>';
     // Ngân sách theo campaign (số qua summarizeBudgetScope ở summarizeCampaignBudget)
     var groups = [];
@@ -3458,14 +3817,14 @@
           return '<tr><td><a href="#/campaigns/' + esc(x.id) + '">' + esc(x.name) + '</a></td><td>' + esc(x.r.currency) + '</td><td>' + fmtMoney(x.r.allocated, x.r.currency) + '</td><td>' + fmtMoney(x.r.actualTotal, x.r.currency) + '</td><td>' + fmtMoney(x.r.openCommitments, x.r.currency) + '</td><td>' + fmtMoney(x.r.available, x.r.currency) + '</td></tr>';
         }).join(''), 'budget-by-campaign', 'campaign-action-plan');
     } else html += '<div class="state-box" data-viz="workspace-budget-empty">Chưa có dữ liệu ngân sách ở mức workspace để vẽ biểu đồ.</div>';
-    // KPI nổi bật (số qua rollupKpi ở kpiRollupFor)
-    var allKpis = Store.list('kpis');
+    // KPI nổi bật (số qua rollupKpi ở kpiRollupFor) — tôn trọng ngữ cảnh Brand/Segment.
+    var allKpis = Store.list('kpis').filter(function (k) { return matchesBrandSegment(k, campaignContextFallback(k.campaignId)); });
     var featured = allKpis.filter(function (k) { return kpiScopeType(k) === 'campaign'; });
     if (!featured.length) featured = allKpis;
     featured = featured.slice(0, 6);
     html += '<h3>Tiến độ KPI nổi bật</h3><div data-viz="workspace-kpi-chart">' + (featured.length ? vizKpiProgressHtml(featured) : '<div class="state-box">Chưa có KPI nào ở mức workspace.</div>') + '</div>';
-    // Content mix theo pillar (đúng đơn vị đếm người dùng đang chọn)
-    var mixItems = visibleList('contentItems');
+    // Content mix theo pillar (đúng đơn vị đếm người dùng đang chọn) — lọc theo campaign của content khi có ngữ cảnh.
+    var mixItems = visibleList('contentItems').filter(function (ci) { return matchesBrandSegment(ci, campaignContextFallback(ci.campaignId)); });
     var mixPubs = buildPublications();
     var mixUnit = UI.contentMixUnit === 'publication' ? 'publication' : 'content';
     var mix = contentMixRows(mixItems, mixPubs, mixUnit);
@@ -4805,12 +5164,13 @@
     var html = pageHead('KPI & Ngân sách', 'KPI theo mục tiêu/thực đạt/nguồn/thời điểm; ngân sách theo Kế hoạch / Đã duyệt / Đã chi / Cam kết chưa trả / Còn lại.',
       (ed ? '<button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button> ' : '') + (budgetEd ? '<button class="btn secondary" data-action="editor-open" data-kind="budgetLine">+ Tạo dòng ngân sách</button>' : '') + (can('budget.propose') ? ' <button type="button" class="btn secondary" data-action="editor-open" data-kind="budgetProposal">Đề xuất ngân sách</button>' : ''));
     html += readonlyNote();
+    html += contextBannerHtml();
     html += collectionBanner('kpis');
     html += '<nav class="inpage-nav" aria-label="Mục trong trang KPI & Ngân sách"><a href="#/kpi" data-kpi-anchor="kpi">KPI</a><a href="#/kpi" data-kpi-anchor="budget">Ngân sách</a><a href="#/kpi" data-kpi-anchor="cash">Thu–Chi</a></nav>';
     html += '<h2 id="kpi-sec-kpi">KPI</h2>';
     // AC22: export KPI của đúng tập đang hiển thị ở trang này (kèm IDs, scope, kỳ, đơn vị).
     html += '<p><button class="btn secondary" data-action="export-kpi-csv">Xuất CSV KPI (IDs, scope, kỳ, đơn vị)</button></p>';
-    var kpis = Store.list('kpis');
+    var kpis = Store.list('kpis').filter(function (k) { return matchesBrandSegment(k, campaignContextFallback(k.campaignId)); });
     var measurements = [];
     try { measurements = Store.list('measurements'); } catch (e) { measurements = []; }
     if (!kpis.length && !collLoadingOrError('kpis')) html += emptyState('Chưa có KPI nào', 'Tạo KPI đầu tiên và cập nhật số đo kèm nguồn để theo dõi thực đạt.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button></p>' : '');
@@ -4852,7 +5212,7 @@
     }
     // AC22: export ngân sách — chỉ tới được đây khi vai có quyền xem ngân sách (cùng cổng với khối số ở dưới).
     html += '<p><button class="btn secondary" data-action="export-budget-csv">Xuất CSV ngân sách (dòng + fact + tổng hợp theo scope)</button></p>';
-    var linesAll = visibleList('budgetLines');
+    var linesAll = visibleList('budgetLines').filter(function (b) { return matchesBrandSegment(b, campaignContextFallback(b.campaignId)); });
     var allCommits = Store.list('commitments');
     var allActuals = Store.list('actuals');
     if (!linesAll.length) html += emptyState('Chưa có dòng ngân sách nào', 'Tạo dòng ngân sách cho campaign, sau đó ghi cam kết và khoản chi thực tế ngay tại đây.', budgetEd ? '<p><button class="btn" data-action="editor-open" data-kind="budgetLine">+ Tạo dòng ngân sách</button></p>' : '');
@@ -4862,7 +5222,7 @@
     // (số qua summarizeBudgetScope) — bảng chi tiết theo tiền tệ ở ngay dưới.
     if (linesAll.length) {
       var cmpGroups = [];
-      visibleList('campaigns').forEach(function (c2) {
+      filteredCampaigns().forEach(function (c2) {
         summarizeCampaignBudget(c2).forEach(function (r) {
           if (r.allocated > 0 || r.actualTotal > 0 || r.openCommitments > 0) cmpGroups.push({ title: 'Campaign: ' + c2.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.allocated, r.actualTotal, r.openCommitments) });
         });
@@ -5457,7 +5817,7 @@
   // ---------- Router / khởi tạo ----------
   var VIEWS = {
     'overview': viewOverview, 'my-work': viewMyWork, 'brand': viewBrand, 'campaigns': viewCampaigns,
-    'timeline': viewTimeline, 'content': viewContent, 'tasks': viewTasks, 'approvals': viewApprovals, 'team': viewTeam,
+    'timeline': viewTimeline, 'planning': viewPlanning, 'content': viewContent, 'tasks': viewTasks, 'approvals': viewApprovals, 'team': viewTeam,
     'kpi': viewKpi, 'channels': viewChannels, 'ads': viewAds, 'reports': viewReports, 'settings': viewSettings
   };
   function authGateView() {
@@ -5475,7 +5835,7 @@
         return '<div class="nav-group"><div class="nav-group-title">' + esc(g[0]) + '</div>' + g[1].map(function (n) {
           return '<a href="#/' + n[0] + '"' + (route.name === n[0] ? ' class="active"' : '') + '>' + esc(n[1]) + '</a>';
         }).join('') + '</div>';
-      }).join('');
+      }).join('') + contextSelectorHtml();
     }
     var me = Store.currentUser ? Store.currentUser() : null;
     var userEl = document.getElementById('topbar-user');
@@ -5964,6 +6324,10 @@
       if (task) { var cl = (task.checklist || []).slice(); cl.splice(idx, 1); settle(sUpdate('tasks', id, { checklist: cl }), function () { render(); }); }
     }
     if (action === 'dep-remove') { captureTaskDraft(); settle(hasFn('remove') ? Store.remove('dependencies', id) : { ok: false, error: 'Tầng dữ liệu chưa hỗ trợ xóa quan hệ.' }, function () { render(); }); }
+    if (action === 'planning-channel') { UI.planningChannel = t.getAttribute('data-channel'); render(); }
+    if (action === 'planning-channel-close') { UI.planningChannel = null; render(); }
+    if (action === 'brand-detail') { UI.brandDetailId = id; render(); }
+    if (action === 'brand-detail-close') { UI.brandDetailId = null; render(); }
     if (action === 'brand-tab') { UI.brandTab = id; render(); }
     if (action === 'brand-open') { UI.brandOpenId = UI.brandOpenId === id ? null : id; render(); }
     if (action === 'brand-clear') { UI.brandQuery = ''; render(); }
@@ -6207,6 +6571,9 @@
   document.addEventListener('change', function (ev) {
     var t = ev.target;
     if (t.id === 'current-user-select') { Store.setCurrentUser(t.value); render(); return; }
+    var ctxKind = t.getAttribute && t.getAttribute('data-action-change');
+    if (ctxKind === 'context-brand') { UI.brandFilter = t.value || 'all'; render(); return; }
+    if (ctxKind === 'context-segment') { UI.segmentFilter = t.value || 'all'; render(); return; }
     if (t.hasAttribute && t.hasAttribute('data-editor-platform')) {
       var form = t.closest('form');
       captureEditorValues(form);
@@ -6325,7 +6692,7 @@
       render(); return;
     }
     if (f.id === 'brand-filter-form') {
-      UI.brandFilter = { ownerId: String(val('ownerId') || 'all'), status: String(val('status') || 'all'), type: String(val('type') || 'all') };
+      UI.brandAssetFilter = { ownerId: String(val('ownerId') || 'all'), status: String(val('status') || 'all'), type: String(val('type') || 'all') };
       render(); return;
     }
     if (f.id === 'task-panel-form') {
@@ -6383,6 +6750,7 @@
         function () { toast('Đã gửi bình luận.'); render(); });
       return;
     }
+    if (f.id === 'planning-year-form') { var py = Number(val('year')); if (py) UI.planningYear = py; render(); return; }
     if (f.id === 'brand-search-form') { UI.brandQuery = String(document.getElementById('brand-query').value || ''); render(); return; }
     if (f.id === 'cal-nav-form') {
       UI.calendarMonth = Math.min(12, Math.max(1, Number(document.getElementById('cal-month').value) || 1)) - 1;
