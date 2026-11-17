@@ -21,6 +21,9 @@ function approx(actual, expected, label) {
   assert.ok(Math.abs(actual - expected) < 1e-6, `${label}: expected ${expected}, got ${actual}`);
 }
 
+// Seed SAVA CAMP 01 (17/11): plan_rows nay gồm cả dòng SAVA META 2026 — các neo
+// Lumus dưới đây lọc đúng brand-lumus-ai (144 dòng FY2027) thay vì toàn bộ plan_rows.
+const lumusRows = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
 const brandPhases = demo.phases.filter((p) => p.brand_id);
 const lumusPhases = brandPhases.filter((p) => p.brand_id === 'brand-lumus-ai');
 const savaPhases = brandPhases.filter((p) => p.brand_id === 'brand-sava-meta');
@@ -70,9 +73,10 @@ test('PU [demo]: SAVA 3 phase PLAY/BUILD/CREATE — segment + campaign_id + kho�
   assert.equal(byId['phase-sava-build'].campaign_id, 'camp-build-unknown');
   assert.equal(byId['phase-sava-build'].start_month, '2026-11');
   assert.equal(byId['phase-sava-build'].end_month, '2027-01');
-  // CREATE: T2–T3/2027 theo sheet KPI & Budget của file IMC, chưa có campaign.
+  // CREATE: T2–T3/2027 theo sheet KPI & Budget của file IMC; campaign demo
+  // camp-create-unknown đã được seed (tổng 49.349.500đ) nên campaign_id trỏ tới đó.
   assert.equal(byId['phase-sava-create'].name, 'CREATE THE UNKNOWN');
-  assert.equal(byId['phase-sava-create'].campaign_id, null);
+  assert.equal(byId['phase-sava-create'].campaign_id, 'camp-create-unknown');
   assert.equal(byId['phase-sava-create'].start_month, '2027-02');
   assert.equal(byId['phase-sava-create'].end_month, '2027-03');
   // Uplift SAVA là số mẫu nhỏ 0–3%.
@@ -98,12 +102,14 @@ test('PU [demo]: phase_assumptions đủ 3 KOL x 4 phase Lumus, toàn bộ null 
   }
 });
 
-test('PU [demo]: plan_rows 144 dòng đều có phase_id suy từ khoảng tháng (kể cả Paid Ads)', () => {
-  assert.equal(demo.plan_rows.length, 144);
+test('PU [demo]: plan_rows Lumus 144 dòng đều có phase_id suy từ khoảng tháng (kể cả Paid Ads)', () => {
+  assert.equal(lumusRows.length, 144);
   const expected = (m) => (m <= '2027-02' ? 'phase-lumus-1' : m <= '2027-05' ? 'phase-lumus-2' : m <= '2027-09' ? 'phase-lumus-3' : 'phase-lumus-4');
-  for (const r of demo.plan_rows) assert.equal(r.phase_id, expected(r.month), `${r.id} sai phase`);
-  assert.ok(demo.plan_rows.filter((r) => r.channel === 'Meta Ads').every((r) => r.phase_id));
-  assert.ok(demo.plan_rows.filter((r) => r.channel === 'TikTok Ads').every((r) => r.phase_id));
+  for (const r of lumusRows) assert.equal(r.phase_id, expected(r.month), `${r.id} sai phase`);
+  assert.ok(lumusRows.filter((r) => r.channel === 'Meta Ads').every((r) => r.phase_id));
+  assert.ok(lumusRows.filter((r) => r.channel === 'TikTok Ads').every((r) => r.phase_id));
+  // Dòng SAVA CAMP 01 (seed 17/11) gắn phase-sava-play.
+  assert.ok(demo.plan_rows.filter((r) => r.brand_id === 'brand-sava-meta').every((r) => r.phase_id === 'phase-sava-play'));
 });
 
 test('PU [demo]: KPI Lumus (camp-live) đều có phase_id, trải đủ GĐ1–GĐ4', () => {
@@ -267,12 +273,12 @@ test('PU [domain]: không benchmark — assumption đủ tỉ lệ CHỈ tính �
 });
 
 test('PU [domain]: ctx rỗng / assumption vắng mặt -> hành vi v1 trên toàn bộ demo', () => {
-  const v1 = domain.forecastFunnel(demo.plan_rows, demo.benchmarks);
-  const v2 = domain.forecastFunnel(demo.plan_rows, demo.benchmarks, {});
+  const v1 = domain.forecastFunnel(lumusRows, demo.benchmarks);
+  const v2 = domain.forecastFunnel(lumusRows, demo.benchmarks, {});
   assert.deepEqual(v2.totals, v1.totals);
   assert.deepEqual(v2.byMonth, v1.byMonth);
-  // planBudget / summarize không đổi hành vi.
-  assert.equal(domain.planBudget(demo.plan_rows, demo.benchmarks).total, 65 * 1500000 + 60 * 5500000 + 12 * 30000000 + 546000000 + 182000000);
+  // planBudget / summarize không đổi hành vi (neo trên tập Lumus 144 dòng).
+  assert.equal(domain.planBudget(lumusRows, demo.benchmarks).total, 65 * 1500000 + 60 * 5500000 + 12 * 30000000 + 546000000 + 182000000);
 });
 
 // ---------------------------------------------------------------- store

@@ -21,6 +21,9 @@ function approx(actual, expected, label) {
 }
 
 const nanoJan = demo.plan_rows.find((r) => r.channel === 'KOL Nano' && r.month === '2027-01');
+// Seed SAVA CAMP 01 (17/11): plan_rows nay gồm cả 21 dòng SAVA META 2026-10/11 —
+// các neo FY2027 dưới đây lọc đúng brand-lumus-ai (144 dòng) thay vì toàn bộ plan_rows.
+const lumusRows = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
 
 // ---------------------------------------------------------------- demo-data
 test('BP [demo]: 2 brands với identity + funnel steps đúng mô hình', () => {
@@ -62,11 +65,11 @@ test('BP [demo]: benchmarks KOL đúng số 03 Inputs; Paid Ads là direct budge
   }
 });
 
-test('BP [demo]: plan_rows đủ ma trận 12 tháng x 12 channel = 144 dòng, tổng FY khớp file nguồn', () => {
-  assert.equal(demo.plan_rows.length, 144);
-  const months = [...new Set(demo.plan_rows.map((r) => r.month))].sort();
+test('BP [demo]: plan_rows Lumus đủ ma trận 12 tháng x 12 channel = 144 dòng, tổng FY khớp file nguồn', () => {
+  assert.equal(lumusRows.length, 144);
+  const months = [...new Set(lumusRows.map((r) => r.month))].sort();
   assert.deepEqual(months, Array.from({ length: 12 }, (_, i) => `2027-${String(i + 1).padStart(2, '0')}`));
-  const total = (ch) => demo.plan_rows.filter((r) => r.channel === ch).reduce((a, r) => a + (r.qty || 0), 0);
+  const total = (ch) => lumusRows.filter((r) => r.channel === ch).reduce((a, r) => a + (r.qty || 0), 0);
   assert.equal(total('KOL Nano'), 65);
   assert.equal(total('KOL Micro'), 60);
   assert.equal(total('KOL Expert'), 12);
@@ -83,7 +86,7 @@ test('BP [demo]: plan_rows đủ ma trận 12 tháng x 12 channel = 144 dòng, t
   assert.ok(demo.plan_rows.filter((r) => r.channel === 'LinkedIn Owned').every((r) => r.segment === 'b2b'));
   assert.ok(demo.plan_rows.filter((r) => r.channel === 'B2B Event').every((r) => r.segment === 'b2b'));
   // Paid Ads: budget thẳng, tổng năm = pool USD x FX 26.000.
-  const budgetTotal = (ch) => demo.plan_rows.filter((r) => r.channel === ch).reduce((a, r) => a + r.budget, 0);
+  const budgetTotal = (ch) => lumusRows.filter((r) => r.channel === ch).reduce((a, r) => a + r.budget, 0);
   assert.equal(budgetTotal('Meta Ads'), 21000 * 26000);
   assert.equal(budgetTotal('TikTok Ads'), 7000 * 26000);
 });
@@ -103,7 +106,7 @@ test('BP [demo]: campaigns/kpis/budgetLines hiện có gắn brand_id + segment;
 
 // ---------------------------------------------------------------- summarize
 test('BP [domain]: summarizePlanByMonth đủ 12 tháng + tổng khớp cộng tay', () => {
-  const s = domain.summarizePlanByMonth(demo.plan_rows);
+  const s = domain.summarizePlanByMonth(lumusRows);
   assert.equal(s.months.length, 12);
   assert.equal(s.byMonth['2027-01'].qty, 4 + 4 + 1 + 21 + 9 + 9 + 11 + 2 + 0 + 2); // 63
   assert.equal(s.byMonth['2027-01'].budget, 10920000 + 3640000);
@@ -112,7 +115,7 @@ test('BP [domain]: summarizePlanByMonth đủ 12 tháng + tổng khớp cộng t
 });
 
 test('BP [domain]: summarizePlanByChannel kèm group + tổng theo channel', () => {
-  const s = domain.summarizePlanByChannel(demo.plan_rows);
+  const s = domain.summarizePlanByChannel(lumusRows);
   const nano = s.byChannel['KOL Nano'];
   assert.equal(nano.qty, 65);
   assert.equal(nano.group, 'KOL');
@@ -137,7 +140,7 @@ test('BP [domain]: forecastFunnel CA SỐ NEO — KOL Nano 2027-01', () => {
 });
 
 test('BP [domain]: forecastFunnel toàn năm — tổng views KOL khớp cộng tay; byMonth đủ 12', () => {
-  const f = domain.forecastFunnel(demo.plan_rows, demo.benchmarks);
+  const f = domain.forecastFunnel(lumusRows, demo.benchmarks);
   assert.equal(f.months.length, 12);
   // 65x4000 + 60x15000 + 12x25000 = 260.000 + 900.000 + 300.000
   approx(f.totals.views, 1460000, 'total views');
@@ -166,7 +169,7 @@ test('BP [domain]: planBudget CA SỐ NEO — KOL Nano T1 = 4 x 1.500.000 = 6.00
 });
 
 test('BP [domain]: planBudget — Paid Ads lấy field budget trực tiếp; tổng kỳ khớp', () => {
-  const b = domain.planBudget(demo.plan_rows, demo.benchmarks);
+  const b = domain.planBudget(lumusRows, demo.benchmarks);
   const kolTotal = 65 * 1500000 + 60 * 5500000 + 12 * 30000000;
   assert.equal(b.totalUnitPrice, kolTotal);
   assert.equal(b.totalDirect, 546000000 + 182000000);
@@ -191,6 +194,24 @@ test('BP [domain]: an toàn với rows rỗng / thiếu benchmark — không thr
   const b = domain.planBudget([], null);
   assert.equal(b.total, 0);
   assert.equal(domain.planBudget([nanoJan], []).total, 0);
+});
+
+// ---------------------------------------------------------------- SAVA seed (17/11, file Action Plan CAMP 01 + IMC Game Chapter)
+test('BP [demo]: SAVA CAMP 01 seed từ file — 115 task / 24 content / 9 dòng ngân sách = 51.539.000đ', () => {
+  const tasks = demo.tasks.filter((t) => t.campaignId === 'camp-play-unknown');
+  assert.equal(tasks.length, 115, '66 dòng tab LP + Job Fair + 49 dòng tab HNĐT');
+  assert.ok(tasks.every((t) => t.assigneeId && t.startDate && t.dueDate && t.sourceRef));
+  assert.equal(demo.contentItems.filter((c) => c.campaignId === 'camp-play-unknown').length, 24);
+  const lines = demo.budgetLines.filter((b) => b.campaignId === 'camp-play-unknown');
+  assert.equal(lines.length, 9);
+  assert.equal(lines.reduce((a, b) => a + b.approved, 0), 51539000);
+  const savaPlan = demo.plan_rows.filter((r) => r.brand_id === 'brand-sava-meta');
+  assert.equal(savaPlan.reduce((a, r) => a + (r.budget || 0), 0), 51539000);
+  assert.equal(savaPlan.filter((r) => r.month === '2026-10' || r.month === '2026-11').length, savaPlan.length);
+  // CAMP 02/03 mức tổng theo file IMC.
+  assert.equal(demo.budgetLines.find((b) => b.id === 'budget-build-unknown').approved, 154200000);
+  assert.equal(demo.budgetLines.find((b) => b.id === 'budget-create-unknown').approved, 49349500);
+  assert.ok(demo.kpis.filter((k) => k.brand_id === 'brand-sava-meta').length >= 12);
 });
 
 // ---------------------------------------------------------------- store

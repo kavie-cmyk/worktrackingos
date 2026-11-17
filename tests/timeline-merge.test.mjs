@@ -157,14 +157,15 @@ test('TM [unit] (iii): timelineStateFromTaskFilter — chế độ Chỉ task + 
 });
 
 // ---------- [demo] ----------
-test('TM [demo]: dữ liệu demo chế độ cây — 36 hàng / 16 task có ngày / 1 chưa xếp lịch / 4 edges', () => {
+test('TM [demo]: dữ liệu demo chế độ cây — 155 hàng / 131 task có ngày / 1 chưa xếp lịch / 4 edges', () => {
   const r = domain.buildCampaignTreeTimeline(
     { campaigns: demo.campaigns, phases: demo.phases, activities: demo.activities, tasks: demo.tasks, dependencies: demo.dependencies, blockers: demo.blockers },
     { today: '2026-11-13' }
   );
-  assert.equal(r.rows.length, 36, '5 campaign (thêm PLAY/BUILD THE UNKNOWN của Brand+Planning 17/11) + 5 phase + 8 activity + 1 nhóm chưa gắn + 16 task + 1 nhóm độc lập');
-  assert.equal(r.datedCount, 16);
-  assert.equal(r.totalCount, 17);
+  // Neo cũ 36 hàng/16 task; seed CAMP 01 (17/11): +1 campaign (CREATE) + 3 activity + 115 task -> 155 hàng/131 task.
+  assert.equal(r.rows.length, 155, '6 campaign + 5 phase + 11 activity + 1 nhóm chưa gắn + 131 task + 1 nhóm độc lập');
+  assert.equal(r.datedCount, 131);
+  assert.equal(r.totalCount, 132);
   assert.deepEqual(r.unscheduled.map((t) => t.id), ['task-f']);
   assert.equal(r.edges.length, 4);
   const grp = r.rows.find((x) => x.key === 'grp:no-campaign');
@@ -270,10 +271,10 @@ test('TM [unit] FIX-TF: submit lọc Task với campaignId="" → UI.taskFilter.
   assert.deepEqual(tl.rows.filter((x) => x.kind === 'task').map((x) => x.id), ['tS1']);
 });
 
-test('TM [demo] FIX-TF: demo lọc Task độc lập = 1/17 và Timeline Chỉ task giữ "" = 1/1', () => {
+test('TM [demo] FIX-TF: demo lọc Task độc lập = 1/132 và Timeline Chỉ task giữ "" = 1/1', () => {
   const tf = { campaignId: resolveTaskFilterCampaignId(''), ownerId: 'all', status: 'all', priority: 'all', due: 'all', blocked: 'all', unassigned: false };
   const filtered = applyTaskListFilter(demo.tasks, tf);
-  assert.equal(demo.tasks.length, 17);
+  assert.equal(demo.tasks.length, 132);
   assert.deepEqual(filtered.map((t) => t.id), ['task-solo-1'], 'demo kỳ vọng đúng 1 task độc lập');
   const st = domain.timelineStateFromTaskFilter(tf);
   assert.equal(st.mode, 'tasks');

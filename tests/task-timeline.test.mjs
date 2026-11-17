@@ -165,14 +165,15 @@ test('TL [unit]: đếm Chưa xếp lịch — task thiếu một trong hai mố
 });
 
 // ---------- [demo] fixture thật của repo ----------
-test('TL [demo]: dữ liệu demo — 16/17 task có hàng Timeline, đúng 1 chưa xếp lịch, 4 edges vẽ được', () => {
+test('TL [demo]: dữ liệu demo — 131/132 task có hàng Timeline, đúng 1 chưa xếp lịch, 4 edges vẽ được', () => {
+  // Neo cũ 16/17; seed CAMP 01 (17/11) thêm 115 task đều có đủ ngày -> 131/132.
   const r = domain.buildTaskTimeline(demo.tasks, {
     campaigns: demo.campaigns, members: demo.members, blockers: demo.blockers,
     dependencies: demo.dependencies, groupBy: 'campaign', today: '2026-11-13'
   });
   assert.equal(r.totalCount, demo.tasks.length);
-  assert.equal(r.datedCount, 16);
-  assert.equal(taskRows(r).length, 16);
+  assert.equal(r.datedCount, 131);
+  assert.equal(taskRows(r).length, 131);
   assert.deepEqual(r.unscheduled.map((t) => t.id), ['task-f']);
   assert.equal(r.edges.length, demo.dependencies.length);
   assert.ok(groupRows(r).some((g) => g.title === 'Không thuộc campaign'), 'task độc lập phải có nhóm riêng');
@@ -180,7 +181,7 @@ test('TL [demo]: dữ liệu demo — 16/17 task có hàng Timeline, đúng 1 ch
     campaigns: demo.campaigns, members: demo.members, blockers: demo.blockers,
     dependencies: demo.dependencies, groupBy: 'assignee', today: '2026-11-13'
   });
-  assert.equal(taskRows(byAssignee).length, 16, 'đổi chế độ nhóm không được làm mất/thừa task nào');
+  assert.equal(taskRows(byAssignee).length, 131, 'đổi chế độ nhóm không được làm mất/thừa task nào');
 });
 
 // ---------- [static] bề mặt màn Task ----------

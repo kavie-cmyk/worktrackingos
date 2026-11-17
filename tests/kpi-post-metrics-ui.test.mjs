@@ -221,6 +221,19 @@ test('KPI-POST-UI [unit]: các KPI demo khác giữ nguyên id/actual/definition
     'kpi-live-guests': { actual: 2, dataSource: undefined },
     'kpi-live-ads-cpl': { actual: null, dataSource: undefined },
     'kpi-live-campaign-cpl': { actual: null, dataSource: undefined },
+    // Seed SAVA 17/11 (file Action Plan CAMP 01 + IMC Camp 2/3): KPI mới, actual null.
+    'kpi-camp01-brand-follows': { actual: null, dataSource: undefined },
+    'kpi-camp01-hndt-questions': { actual: null, dataSource: undefined },
+    'kpi-camp01-hndt-follows': { actual: null, dataSource: undefined },
+    'kpi-camp01-gamecu-entries': { actual: null, dataSource: undefined },
+    'kpi-camp01-gamecu-follows': { actual: null, dataSource: undefined },
+    'kpi-camp02-contact-leads': { actual: null, dataSource: undefined },
+    'kpi-camp02-rtg-applications': { actual: null, dataSource: undefined },
+    'kpi-camp02-market-tests': { actual: null, dataSource: undefined },
+    'kpi-camp02-winner': { actual: null, dataSource: undefined },
+    'kpi-camp03-follows': { actual: null, dataSource: undefined },
+    'kpi-camp03-questions': { actual: null, dataSource: undefined },
+    'kpi-camp03-game-ideas': { actual: null, dataSource: undefined },
   };
   const ids = demo.kpis.map((k) => k.id).sort();
   assert.deepEqual(ids, Object.keys(expected).concat(['kpi-auto-post-views']).sort(), 'tập id KPI demo chỉ thêm đúng KPI mẫu mới');
