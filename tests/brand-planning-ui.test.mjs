@@ -11,6 +11,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const src = readFileSync(new URL('../js/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
@@ -121,13 +124,13 @@ function cfValStub(obj, key) {
 }
 function loadHelpers({ storeList, storeGet, domain }) {
   const block = section('// ---------- Brand + Planning: ngữ cảnh Brand / Segment toàn cục ----------', 'function canSettings()');
-  const UI = { brandFilter: 'all', segmentFilter: 'all' };
+  const UI = { brandFilter: 'all', segmentFilter: 'all', kpiPhaseFilter: 'all' };
   const Store = {
     list: storeList || (() => []),
     get: storeGet || (() => null),
   };
   const factory = new Function('Store', 'D', 'UI', 'cfVal',
-    block + '\nreturn { UI: UI, brandsList: brandsList, filteredBrandsList: filteredBrandsList, approvalContextFallback: approvalContextFallback, matchesBrandSegment: matchesBrandSegment, planBudgetFor: planBudgetFor, forecastFunnelFor: forecastFunnelFor, filteredPlanRows: filteredPlanRows };');
+    block + '\nreturn { UI: UI, brandsList: brandsList, filteredBrandsList: filteredBrandsList, approvalContextFallback: approvalContextFallback, matchesBrandSegment: matchesBrandSegment, planBudgetFor: planBudgetFor, forecastFunnelFor: forecastFunnelFor, filteredPlanRows: filteredPlanRows, brandPhasesList: brandPhasesList, filteredBrandPhases: filteredBrandPhases, phaseAssumptionsList: phaseAssumptionsList, phaseCtx: phaseCtx, forecastRawFor: forecastRawFor, phaseMonths: phaseMonths, phaseRowsFor: phaseRowsFor, phaseAssumptionFor: phaseAssumptionFor, effectivePhaseRates: effectivePhaseRates, funnelTotalsFor: funnelTotalsFor, distributeQty: distributeQty, kpiMatchesPhase: kpiMatchesPhase, matchesPhaseFilter: matchesPhaseFilter, recordPhaseId: recordPhaseId };');
   return factory(Store, domain || {}, UI, cfValStub);
 }
 
@@ -217,4 +220,209 @@ test('BP-UI [unit]: approvalContextFallback — suy campaign qua contentItem/var
   assert.equal(h.matchesBrandSegment(viaContent, h.approvalContextFallback(viaContent)), false, 'campaign b2c phải ẩn khi lọc segment b2b');
   h.UI.segmentFilter = 'b2c';
   assert.equal(h.matchesBrandSegment(viaContent, h.approvalContextFallback(viaContent)), true);
+});
+
+// =====================================================================
+// Phase + Uplift (bổ sung) — Executor B2: Planning Theo phase + lọc KPI
+// theo Phase. Hợp đồng A2 (4a5cf63): brand phase lọc CỨNG brand_id +
+// start_month trong collection phases dùng chung với campaign phase.
+// =====================================================================
+
+// ---------- [static] Planning Theo phase ----------
+test('BP-UI [static]: state planningMode/kpiPhaseFilter + toggle [Theo tháng | Theo phase] + handler planning-mode', () => {
+  assert.match(src, /planningMode: 'month',\s*\n\s*kpiPhaseFilter: 'all',/);
+  const v = section('function viewPlanning()', '// ---------- Brand Hub ----------');
+  assert.match(v, /data-planning-mode-toggle="1"/);
+  assert.match(v, /data-action="planning-mode" data-id="month">Theo tháng</);
+  assert.match(v, /data-action="planning-mode" data-id="phase">Theo phase</);
+  assert.match(v, /var mode = UI\.planningMode === 'phase' \? 'phase' : 'month';/);
+  assert.match(v, /if \(mode === 'phase'\) \{ html \+= planningPhaseModeHtml\(year, rows, benchmarks\); return html; \}/);
+  assert.match(src, /if \(action === 'planning-mode'\) \{ UI\.planningMode = id === 'phase' \? 'phase' : 'month'; render\(\); \}/);
+});
+
+test('BP-UI [static]: brandPhasesList lọc CỨNG brand_id && start_month (không lọt campaign phase)', () => {
+  assert.match(src, /return !!p && !!recordBrandId\(p\) && !!phaseField\(p, 'start_month', 'startMonth'\);/);
+  // phaseCtx chỉ gồm brand phase + phase_assumptions, đúng hợp đồng engine.
+  assert.match(src, /return \{ phases: brandPhasesList\(\), phaseAssumptions: phaseAssumptionsList\(\) \};/);
+  // forecastRawFor truyền ctx vào forecastFunnel (chế độ Theo tháng cũng qua wrapper này).
+  assert.match(src, /return fn\(rows, benchmarks, phaseCtx\(\)\);/);
+});
+
+test('BP-UI [static]: khối Phase — uplift/qty/views/4 tỉ lệ là ô nhập change-lưu-ngay; funnel theo phase; khóa ở dữ liệu thật', () => {
+  const blk = section('function planningPhaseModeHtml(year, rows, benchmarks)', '// --- Lưu các ô nhập Theo phase');
+  assert.match(blk, /data-planning-phase="/);
+  assert.match(blk, /planningPhaseBlockHtml\(p, rows, benchmarks, editable, disAttr\)/);
+  const block = section('function planningPhaseBlockHtml(phase, rows, benchmarks, editable, disAttr)', '// --- Lưu các ô nhập Theo phase');
+  assert.match(block, /data-action-change="phase-uplift" data-phase-id=/);
+  assert.match(block, /data-action-change="phase-qty" data-phase-id=/);
+  assert.match(block, /data-action-change="phase-views" data-phase-id=/);
+  assert.match(block, /data-action-change="phase-rate" data-field=/);
+  assert.match(block, /data-viz="planning-phase-funnel" data-phase-id=/);
+  assert.match(block, /funnelTotalsFor\(chRows, benchmarks\)/);
+  assert.match(block, /funnelTotalsFor\(pRows, benchmarks\)/);
+  assert.match(block, /effectivePhaseRates\(phase, ch, benchmarks\)/);
+  // Khóa nhập ở chế độ thật: editable chỉ khi demo + canEdit; có banner khóa.
+  assert.match(src, /function planningInputsEditable\(\) \{ return Store\.mode === 'demo' && canEdit\(\); \}/);
+  assert.match(blk, /data-planning-phase-locked="1"/);
+  assert.match(blk, /data-planning-phase-empty="1"/);
+});
+
+test('BP-UI [static]: handler lưu Phase — uplift vào phases, tỉ lệ/đầu phễu vào phase_assumptions, số lượng phân bổ về plan_rows', () => {
+  assert.match(src, /if \(ctxKind === 'phase-uplift'\) \{ savePhaseUplift\(t\.getAttribute\('data-phase-id'\), t\.value\); return; \}/);
+  assert.match(src, /if \(ctxKind === 'phase-qty'\) \{ savePhaseQty\(t\.getAttribute\('data-phase-id'\), t\.getAttribute\('data-channel'\), t\.value\); return; \}/);
+  assert.match(src, /if \(ctxKind === 'phase-views'\) \{ savePhaseViews\(t\.getAttribute\('data-phase-id'\), t\.getAttribute\('data-channel'\), t\.value\); return; \}/);
+  assert.match(src, /if \(ctxKind === 'phase-rate'\) \{ savePhaseRate\(t\.getAttribute\('data-phase-id'\), t\.getAttribute\('data-channel'\), t\.getAttribute\('data-field'\), t\.value\); return; \}/);
+  assert.match(src, /sUpdate\('phases', phaseId, \{ uplift_percent_per_month: v \}\)/);
+  assert.match(src, /sUpdate\('phase_assumptions', existing\.id, patch\)/);
+  assert.match(src, /sCreate\('phase_assumptions', obj\)/);
+  assert.match(src, /patch\.top_funnel_override = v;/);
+  assert.match(src, /var news = distributeQty\(v, rows\.map\(planRowQty\)\);/);
+  assert.match(src, /sUpdate\('plan_rows', job\.id, \{ qty: job\.qty \}\)/);
+  // Guard chặn lưu ở dữ liệu thật trước mọi đường ghi.
+  assert.match(src, /function phaseSaveGuard\(\) \{\s*\n\s*if \(Store\.mode !== 'demo'\)/);
+});
+
+test('BP-UI [static]: KPI — bộ lọc Phase chỉ khi chọn đúng 1 Brand, lọc bằng kpiMatchesPhase trên phase_id', () => {
+  const kpi = section('function viewKpi()', '// ---------- Kênh & Bài đã đăng ----------');
+  assert.match(kpi, /data-kpi-phase-filter="1"/);
+  assert.match(kpi, /id="kpi-phase-select" data-action-change="kpi-phase"/);
+  assert.match(kpi, /var kpiPhases = \(UI\.brandFilter && UI\.brandFilter !== 'all'\) \? filteredBrandPhases\(\) : \[\];/);
+  assert.match(kpi, /if \(kpiPhaseSel !== 'all'\) kpis = kpis\.filter\(function \(k\) \{ return kpiMatchesPhase\(k, kpiPhaseSel\); \}\);/);
+  assert.match(src, /if \(ctxKind === 'kpi-phase'\) \{ UI\.kpiPhaseFilter = t\.value \|\| 'all'; render\(\); return; \}/);
+});
+
+test('BP-UI [static]: CSS cho toggle Planning + ô nhập Phase', () => {
+  assert.ok(css.includes('.planning-mode-toggle'), 'CSS thiếu .planning-mode-toggle');
+  assert.ok(css.includes('.phase-input'), 'CSS thiếu .phase-input');
+  assert.ok(css.includes('.planning-phase'), 'CSS thiếu .planning-phase');
+});
+
+// ---------- [unit] lọc brand phase theo shape A2 thật ----------
+const A2_PHASES_MIXED = [
+  { id: 'phase-1', campaignId: 'camp-1', name: 'Giai đoạn 1 — Khởi động', startDate: '2026-11-02', endDate: '2026-11-13' },
+  { id: 'phase-lumus-1', brand_id: 'brand-lumus-ai', name: 'Preparation', start_month: '2027-01', end_month: '2027-02', objective: 'Chuẩn bị', uplift_percent_per_month: 0 },
+  { id: 'phase-lumus-2', brand_id: 'brand-lumus-ai', name: 'Test & Validate', start_month: '2027-03', end_month: '2027-05', objective: 'Kiểm chứng', uplift_percent_per_month: 5 },
+  { id: 'phase-sava-play', brand_id: 'brand-sava-meta', segment: 'b2c', campaign_id: 'camp-play-unknown', name: 'PLAY THE UNKNOWN', start_month: '2026-10', end_month: '2026-11', objective: 'Mở phễu', uplift_percent_per_month: 1 },
+  { id: 'phase-thieu-start', brand_id: 'brand-lumus-ai', name: 'Thiếu start_month' },
+  { id: 'phase-thieu-brand', start_month: '2027-01', end_month: '2027-02', name: 'Thiếu brand_id' }
+];
+
+test('BP-UI [unit]: brandPhasesList — chỉ brand phase (brand_id + start_month); campaign phase/thiếu field bị loại', () => {
+  const h = loadHelpers({ storeList: (coll) => (coll === 'phases' ? A2_PHASES_MIXED : []) });
+  assert.deepEqual(h.brandPhasesList().map((p) => p.id), ['phase-lumus-1', 'phase-lumus-2', 'phase-sava-play']);
+  assert.deepEqual(h.filteredBrandPhases().map((p) => p.id), ['phase-lumus-1', 'phase-lumus-2', 'phase-sava-play']);
+  h.UI.brandFilter = 'brand-lumus-ai';
+  assert.deepEqual(h.filteredBrandPhases().map((p) => p.id), ['phase-lumus-1', 'phase-lumus-2'], 'đang chọn Lumus thì chỉ phase Lumus');
+  h.UI.brandFilter = 'brand-sava-meta';
+  assert.deepEqual(h.filteredBrandPhases().map((p) => p.id), ['phase-sava-play']);
+});
+
+test('BP-UI [unit]: phaseCtx chỉ chứa brand phase + phase_assumptions; forecastFunnelFor truyền ctx cho engine', () => {
+  let seenCtx = null;
+  const assumptions = [{ id: 'passump-lumus-1-kol-nano', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null }];
+  const domain = { forecastFunnel: (rows, benchmarks, ctx) => { seenCtx = ctx; return { steps: ['views'], totals: { views: 10 }, byMonth: {}, rows: [] }; } };
+  const h = loadHelpers({
+    storeList: (coll) => (coll === 'phases' ? A2_PHASES_MIXED : coll === 'phase_assumptions' ? assumptions : []),
+    domain
+  });
+  h.forecastFunnelFor([{ month: '2027-01', channel: 'KOL Nano', qty: 1 }], []);
+  assert.ok(seenCtx, 'engine phải nhận ctx');
+  assert.deepEqual(seenCtx.phases.map((p) => p.id), ['phase-lumus-1', 'phase-lumus-2', 'phase-sava-play'], 'ctx.phases không được chứa campaign phase');
+  assert.deepEqual(seenCtx.phaseAssumptions, assumptions);
+});
+
+test('BP-UI [unit]: phaseMonths + phaseRowsFor — ưu tiên phase_id, dự phòng khoảng tháng khi dòng chưa gắn', () => {
+  const h = loadHelpers({ storeList: (coll) => (coll === 'phases' ? A2_PHASES_MIXED : []) });
+  const p2 = A2_PHASES_MIXED[2];
+  assert.deepEqual(h.phaseMonths(p2), ['2027-03', '2027-04', '2027-05']);
+  assert.deepEqual(h.phaseMonths(A2_PHASES_MIXED[0]), [], 'campaign phase không có start_month -> không tháng nào');
+  const rows = [
+    { id: 'r1', brand_id: 'brand-lumus-ai', month: '2027-04', channel: 'KOL Nano', qty: 7, phase_id: 'phase-lumus-2' },
+    { id: 'r2', brand_id: 'brand-lumus-ai', month: '2027-01', channel: 'KOL Nano', qty: 4, phase_id: 'phase-lumus-1' },
+    { id: 'r3', brand_id: 'brand-lumus-ai', month: '2027-05', channel: 'KOL Micro', qty: 6 },
+    { id: 'r4', brand_id: 'brand-sava-meta', month: '2027-04', channel: 'X', qty: 1 }
+  ];
+  assert.deepEqual(h.phaseRowsFor(p2, rows).map((r) => r.id), ['r1', 'r3'], 'r1 theo phase_id; r3 suy theo tháng+brand; r4 khác brand bị loại dù cùng tháng');
+});
+
+test('BP-UI [unit]: effectivePhaseRates — assumption null kế thừa Benchmark; assumption có số thắng; không cả hai -> null', () => {
+  const benchmarks = [{ brand_id: 'brand-lumus-ai', channel: 'KOL Nano', output_per_unit: 4000, view_to_visit: 0.003, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055 }];
+  const seedNull = [{ id: 'a1', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null }];
+  const h = loadHelpers({ storeList: (coll) => (coll === 'phase_assumptions' ? seedNull : []) });
+  const phase = { id: 'phase-lumus-1', brand_id: 'brand-lumus-ai' };
+  let rates = h.effectivePhaseRates(phase, 'KOL Nano', benchmarks);
+  assert.equal(rates.view_to_visit.value, 0.003); assert.equal(rates.view_to_visit.source, 'benchmark');
+  assert.equal(rates.first_to_paid.value, 0.055);
+  const h2 = loadHelpers({ storeList: (coll) => (coll === 'phase_assumptions' ? [{ id: 'a2', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: 0.01, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null }] : []) });
+  rates = h2.effectivePhaseRates(phase, 'KOL Nano', benchmarks);
+  assert.equal(rates.view_to_visit.value, 0.01); assert.equal(rates.view_to_visit.source, 'assumption');
+  assert.equal(rates.visit_to_signup.source, 'benchmark', 'field assumption null vẫn kế thừa benchmark');
+  rates = h.effectivePhaseRates(phase, 'Facebook Owned', benchmarks);
+  assert.equal(rates.view_to_visit.value, null); assert.equal(rates.view_to_visit.source, null);
+  // phaseAssumptionFor tìm đúng dòng seed theo phase_id + channel (lưu tỉ lệ update đúng dòng, không tạo trùng).
+  assert.equal(h.phaseAssumptionFor('phase-lumus-1', 'KOL Nano').id, 'a1');
+  assert.equal(h.phaseAssumptionFor('phase-lumus-2', 'KOL Nano'), null);
+});
+
+test('BP-UI [unit]: distributeQty — largest remainder deterministic; tháng 0 giữ 0; tất cả 0 thì chia đều', () => {
+  const h = loadHelpers({});
+  assert.deepEqual(h.distributeQty(20, [4, 6]), [8, 12]);
+  assert.deepEqual(h.distributeQty(10, [0, 5]), [0, 10], 'tháng đang 0 giữ 0');
+  assert.deepEqual(h.distributeQty(7, [0, 0, 0]), [3, 2, 2], 'mọi tháng 0 -> chia đều, dư cho tháng sớm hơn');
+  assert.deepEqual(h.distributeQty(10, [1, 1, 1]), [4, 3, 3]);
+  assert.deepEqual(h.distributeQty(0, [4, 6]), [0, 0]);
+  assert.deepEqual(h.distributeQty(5, []), []);
+  const out = h.distributeQty(100, [4, 6, 7, 7, 7]);
+  assert.equal(out.reduce((s, v) => s + v, 0), 100, 'tổng luôn đúng bằng total');
+});
+
+test('BP-UI [unit]: kpiMatchesPhase — Tất cả hiện cả KPI không phase_id; chọn 1 phase chỉ hiện KPI của phase đó', () => {
+  const h = loadHelpers({});
+  const k1 = { id: 'kpi-live-ads-reg', phase_id: 'phase-lumus-1' };
+  const k2 = { id: 'kpi-live-seeding-reg', phase_id: 'phase-lumus-2' };
+  const bare = { id: 'kpi-cu' };
+  assert.equal(h.kpiMatchesPhase(bare, 'all'), true);
+  assert.equal(h.kpiMatchesPhase(k1, 'phase-lumus-1'), true);
+  assert.equal(h.kpiMatchesPhase(k2, 'phase-lumus-1'), false);
+  assert.equal(h.kpiMatchesPhase(bare, 'phase-lumus-1'), false, 'KPI không phase_id ẩn khi đã chọn 1 phase');
+  h.UI.kpiPhaseFilter = 'phase-lumus-2';
+  assert.equal(h.matchesPhaseFilter(k2), true);
+  assert.equal(h.matchesPhaseFilter(k1), false);
+});
+
+// ---------- [unit] đối chiếu engine + demo THẬT của A2 ----------
+test('BP-UI [unit]: funnelTotalsFor khớp engine A2 thật — phase totals = byPhase; toàn kỳ = totals; uplift áp đúng', () => {
+  const domain = require('../js/domain.js');
+  const demo = require('../js/demo-data.js');
+  const h = loadHelpers({
+    storeList: (coll) => demo[coll] || [],
+    domain
+  });
+  const lumusRows = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
+  // Toàn kỳ: funnelTotalsFor qua wrapper (có ctx) == totals của engine.
+  const ctx = { phases: demo.phases.filter((p) => p.brand_id && p.start_month), phaseAssumptions: demo.phase_assumptions };
+  const eng = domain.forecastFunnel(lumusRows, demo.benchmarks, ctx);
+  const mine = h.funnelTotalsFor(lumusRows, demo.benchmarks);
+  for (const k of ['views', 'visits', 'signups', 'first', 'paid']) {
+    assert.ok(Math.abs(mine[k] - eng.totals[k]) < 1e-6, 'toàn kỳ lệch ở ' + k + ': ' + mine[k] + ' vs ' + eng.totals[k]);
+  }
+  // Theo phase: funnelTotalsFor(rows của phase) == byPhase của engine.
+  for (const pid of ['phase-lumus-1', 'phase-lumus-2', 'phase-lumus-3', 'phase-lumus-4']) {
+    const rowsP = lumusRows.filter((r) => r.phase_id === pid);
+    const t = h.funnelTotalsFor(rowsP, demo.benchmarks);
+    const bp = eng.byPhase[pid];
+    assert.ok(bp, 'engine thiếu byPhase ' + pid);
+    for (const k of ['views', 'visits', 'signups', 'first', 'paid']) {
+      assert.ok(Math.abs(t[k] - bp[k]) < 1e-6, pid + ' lệch ở ' + k + ': ' + t[k] + ' vs ' + bp[k]);
+    }
+  }
+  // Uplift: KOL Nano 2027-04 thuộc phase-lumus-2 (uplift 5%, tháng thứ 2 -> n=1):
+  // visits = 7 x 4000 x (0.003 x 1.05) x (0.09 x 1.05) ... visits chỉ qua 1 bước uplift.
+  const apr = lumusRows.filter((r) => r.phase_id === 'phase-lumus-2' && r.channel === 'KOL Nano' && r.month === '2027-04');
+  const tApr = h.funnelTotalsFor(apr, demo.benchmarks);
+  assert.ok(Math.abs(tApr.views - 28000) < 1e-6, 'views không uplift: ' + tApr.views);
+  assert.ok(Math.abs(tApr.visits - 28000 * 0.003 * 1.05) < 1e-6, 'visits phải có uplift 5%: ' + tApr.visits);
+  // Channel không benchmark/assumption (Facebook Owned) -> null, không bịa số.
+  const fb = lumusRows.filter((r) => r.channel === 'Facebook Owned');
+  assert.equal(h.funnelTotalsFor(fb, demo.benchmarks), null);
 });

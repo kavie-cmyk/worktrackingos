@@ -161,6 +161,11 @@
     segmentFilter: 'all',
     planningYear: 2027,
     planningChannel: null,
+    // Phase + Uplift (bổ sung): chế độ xem Planning 'month' | 'phase' và
+    // bộ lọc Phase của view KPI (id phase hoặc 'all'; chỉ áp khi đang
+    // chọn đúng 1 Brand — xem viewKpi).
+    planningMode: 'month',
+    kpiPhaseFilter: 'all',
     brandDetailId: null,
     approvalsTab: 'mine',
     actionGroupBy: 'phase',
@@ -804,11 +809,239 @@
     ].filter(function (s) { return s.value > 0; });
   }
   function forecastFunnelFor(rows, benchmarks) {
-    var fn = (D && typeof D.forecastFunnel === 'function') ? D.forecastFunnel : null;
-    var result = null;
-    if (fn) { try { result = fn(rows, benchmarks); } catch (e) { result = null; } }
-    return normalizeFunnelSteps(result, rows, benchmarks);
+    return normalizeFunnelSteps(forecastRawFor(rows, benchmarks), rows, benchmarks);
   }
+  // --- Phase + Uplift (bổ sung): phases / phase_assumptions + forecast ctx ---
+  // Hợp đồng cố định với engine (Executor A2, commit 4a5cf63): collection
+  // `phases` KHÔNG phải collection mới — nó vốn là "giai đoạn campaign"
+  // (shape campaignId/startDate/endDate, có bảng Supabase thật). Brand
+  // phase nằm CHUNG collection đó và phân biệt RÕ bằng: có `brand_id` +
+  // `start_month`/`end_month` + objective + uplift_percent_per_month, và
+  // KHÔNG có campaignId (phase SAVA liên kết campaign ở field snake
+  // `campaign_id`, CREATE THE UNKNOWN có campaign_id = null).
+  // => brandPhasesList() lọc CỨNG `brand_id && start_month`: campaign
+  // phase cũ không có hai field này nên TUYỆT ĐỐI không lọt vào UI
+  // Planning Theo phase / ctx forecast / lọc KPI (chúng không có
+  // start_month/uplift — render vào sẽ vỡ layout/số). Ở chế độ dữ liệu
+  // thật, phases chỉ có campaign phase -> danh sách brand phase rỗng ->
+  // UI hiện trạng thái rỗng an toàn.
+  // Collection `phase_assumptions` mang {id, phase_id, channel,
+  // view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
+  // top_funnel_override}; field null = kế thừa Benchmark.
+  // Mọi truy cập đều phòng thủ: collection chưa tồn tại / Store.list ném
+  // lỗi -> mảng rỗng, không vỡ trang.
+  function brandPhasesList() {
+    var all;
+    try { all = Store.list('phases') || []; } catch (e) { all = []; }
+    return all.filter(function (p) {
+      return !!p && !!recordBrandId(p) && !!phaseField(p, 'start_month', 'startMonth');
+    });
+  }
+  function phaseAssumptionsList() { try { return Store.list('phase_assumptions') || []; } catch (e) { return []; } }
+  // Đọc field của Phase/Assumption ở cả dạng snake_case, camelCase và
+  // customFields (Store demo gói field chưa có cột thật vào customFields
+  // khi update — vd uplift_percent_per_month trên collection phases).
+  function phaseField(rec, snake, camel) {
+    if (!rec) return undefined;
+    if (rec[snake] !== undefined && rec[snake] !== null) return rec[snake];
+    if (camel && rec[camel] !== undefined && rec[camel] !== null) return rec[camel];
+    var v = cfVal(rec, snake);
+    if (v !== undefined && v !== null) return v;
+    if (camel) { v = cfVal(rec, camel); if (v !== undefined && v !== null) return v; }
+    return undefined;
+  }
+  function phaseStartMonth(p) { var v = phaseField(p, 'start_month', 'startMonth'); return v ? String(v).slice(0, 7) : ''; }
+  function phaseEndMonth(p) { var v = phaseField(p, 'end_month', 'endMonth'); return v ? String(v).slice(0, 7) : ''; }
+  function phaseUplift(p) { var v = phaseField(p, 'uplift_percent_per_month', 'upliftPercentPerMonth'); return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v); }
+  function phaseObjective(p) { var v = phaseField(p, 'objective', 'objective'); return v ? String(v) : ''; }
+  // Danh sách tháng 'YYYY-MM' trong khoảng phase (rỗng khi thiếu mốc;
+  // chặn tối đa 36 tháng để không vỡ vòng lặp khi dữ liệu lỗi).
+  function phaseMonths(p) {
+    var s = phaseStartMonth(p), e = phaseEndMonth(p);
+    if (!/^\d{4}-\d{2}$/.test(s) || !/^\d{4}-\d{2}$/.test(e) || e < s) return [];
+    var out = [];
+    var y = Number(s.slice(0, 4)), m = Number(s.slice(5, 7));
+    while (out.length < 36) {
+      var cur = y + '-' + String(m).padStart(2, '0');
+      out.push(cur);
+      if (cur >= e) break;
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return out;
+  }
+  // Phase theo ngữ cảnh Brand toàn cục: đang chọn 1 Brand thì chỉ Phase
+  // của Brand đó; Phase không gắn brand_id chỉ hiện khi lọc "Tất cả"
+  // (cùng quy tắc matchesBrandSegment). Phase không mang segment nên
+  // segmentFilter không lọc Phase ở tầng này — segment áp ở tầng plan row.
+  function filteredBrandPhases() {
+    return brandPhasesList().filter(function (p) {
+      if (UI.brandFilter && UI.brandFilter !== 'all') {
+        var bid = recordBrandId(p);
+        if (!bid || String(bid) !== String(UI.brandFilter)) return false;
+      }
+      return true;
+    });
+  }
+  function phaseById(id) {
+    if (!id) return null;
+    var list = brandPhasesList();
+    for (var i = 0; i < list.length; i++) { if (String(list[i].id) === String(id)) return list[i]; }
+    return null;
+  }
+  function recordPhaseId(rec) {
+    if (!rec) return null;
+    var v = phaseField(rec, 'phase_id', 'phaseId');
+    return (v === undefined || v === null || String(v) === '') ? null : v;
+  }
+  // Ngữ cảnh forecast cho engine: { phases, phaseAssumptions } theo đúng
+  // hợp đồng A2. Engine cũ (chưa nhận ctx) bỏ qua tham số thứ 3 — an toàn.
+  function phaseCtx() {
+    return { phases: brandPhasesList(), phaseAssumptions: phaseAssumptionsList() };
+  }
+  // Gọi domain.forecastFunnel KÈM ctx và trả kết quả THÔ (shape đầy đủ:
+  // steps/months/byMonth/totals/rows + byPhase khi engine có). Thiếu hàm /
+  // engine ném lỗi -> null (nơi gọi tự dự phòng), không crash.
+  function forecastRawFor(rows, benchmarks) {
+    var fn = (D && typeof D.forecastFunnel === 'function') ? D.forecastFunnel : null;
+    if (!fn) return null;
+    try { return fn(rows, benchmarks, phaseCtx()); } catch (e) { return null; }
+  }
+  // Dòng plan thuộc Phase: ưu tiên phase_id tường minh; dòng CHƯA gắn
+  // phase_id thì suy theo khoảng tháng của Phase + đúng Brand (dự phòng
+  // cho dữ liệu quá độ). Dòng đã gắn phase_id khác thì không suy đè.
+  function phaseRowsFor(phase, rows) {
+    if (!phase) return [];
+    var months = phaseMonths(phase);
+    var bid = recordBrandId(phase);
+    return (rows || []).filter(function (r) {
+      var pid = recordPhaseId(r);
+      if (pid) return String(pid) === String(phase.id);
+      if (!months.length) return false;
+      if (bid && String(recordBrandId(r) || '') !== String(bid)) return false;
+      return months.indexOf(planRowMonth(r)) !== -1;
+    });
+  }
+  function phaseAssumptionFor(phaseId, channel) {
+    var list = phaseAssumptionsList();
+    for (var i = 0; i < list.length; i++) {
+      if (String(recordPhaseId(list[i]) || '') === String(phaseId) && String(list[i].channel || '') === String(channel)) return list[i];
+    }
+    return null;
+  }
+  var PHASE_RATE_FIELDS = ['view_to_visit', 'visit_to_signup', 'signup_to_first', 'first_to_paid'];
+  var PHASE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid' };
+  // Tỉ lệ HIỆU DỤNG của (phase, channel) cho từng bước phễu: assumption
+  // khác null thắng; thiếu thì kế thừa Benchmark khớp brand+channel;
+  // cả hai đều thiếu -> value null (forecast của channel = null như engine).
+  function effectivePhaseRates(phase, channel, benchmarks) {
+    var asm = phase ? phaseAssumptionFor(phase.id, channel) : null;
+    var fakeRow = { brand_id: phase ? recordBrandId(phase) : null, channel: channel };
+    var bm = benchmarkForRow(fakeRow, benchmarks);
+    var out = {};
+    PHASE_RATE_FIELDS.forEach(function (f) {
+      var av = asm ? phaseField(asm, f, PHASE_RATE_CAMEL[f]) : undefined;
+      if (av !== undefined && av !== null && av !== '' && !isNaN(Number(av))) { out[f] = { value: Number(av), source: 'assumption' }; return; }
+      var bv = bm ? phaseField(bm, f, PHASE_RATE_CAMEL[f]) : undefined;
+      if (bv !== undefined && bv !== null && bv !== '' && !isNaN(Number(bv))) { out[f] = { value: Number(bv), source: 'benchmark' }; return; }
+      out[f] = { value: null, source: null };
+    });
+    return out;
+  }
+  function phaseTopFunnelOverride(phase, channel) {
+    var asm = phase ? phaseAssumptionFor(phase.id, channel) : null;
+    var v = asm ? phaseField(asm, 'top_funnel_override', 'topFunnelOverride') : undefined;
+    return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v);
+  }
+  // Giá trị forecast của 1 dòng chi tiết engine: chấp nhận cả shape lồng
+  // {forecast:{views,...}} (engine hiện tại) lẫn shape phẳng {views,...}
+  // (phòng thủ cho shape A2). forecast null/thiếu -> null.
+  function forecastDetailValues(detail) {
+    if (!detail) return null;
+    var f = detail.forecast || detail;
+    if (!f || typeof f !== 'object') return null;
+    if (f.views === undefined && f.visits === undefined && f.paid === undefined) return null;
+    function n(k) { var v = f[k]; return (v === null || v === undefined || v === '' || isNaN(Number(v))) ? 0 : Number(v); }
+    return { views: n('views'), visits: n('visits'), signups: n('signups'), first: n('first'), paid: n('paid') };
+  }
+  // Tổng forecast {views, visits, signups, first, paid} của đúng tập dòng
+  // truyền vào, tính QUA engine (forecastRawFor có ctx) — cộng chi tiết
+  // rows[] khớp theo rowId; engine không trả chi tiết khớp được thì dự
+  // phòng bằng totals của chính lần gọi đó (tập con -> totals của tập con).
+  // Không dòng nào có forecast -> null (không bịa số 0).
+  function funnelTotalsFor(rows, benchmarks) {
+    var list = rows || [];
+    if (!list.length) return null;
+    var raw = forecastRawFor(list, benchmarks);
+    if (raw && Array.isArray(raw.rows) && raw.rows.length) {
+      var ids = {};
+      list.forEach(function (r) { if (r && r.id !== undefined && r.id !== null) ids[String(r.id)] = true; });
+      var sum = { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+      var any = false, matched = 0;
+      raw.rows.forEach(function (d) {
+        if (!d) return;
+        var rid = (d.rowId !== undefined && d.rowId !== null) ? d.rowId : d.id;
+        if (rid !== undefined && rid !== null && Object.keys(ids).length && !ids[String(rid)]) return;
+        matched++;
+        var v = forecastDetailValues(d);
+        if (v) { any = true; sum.views += v.views; sum.visits += v.visits; sum.signups += v.signups; sum.first += v.first; sum.paid += v.paid; }
+      });
+      if (matched && any) return sum;
+      if (matched && !any) return null;
+    }
+    if (raw && raw.totals && typeof raw.totals === 'object') {
+      var t = raw.totals;
+      var has = ['views', 'visits', 'signups', 'first', 'paid'].some(function (k) { return t[k] !== undefined && t[k] !== null && Number(t[k]) !== 0; });
+      // totals toàn 0 có thể là "không forecast được" HOẶC forecast thật
+      // bằng 0 (qty 0) — phân biệt bằng byMonth.hasForecast khi engine có.
+      var flagged = false;
+      if (raw.byMonth && typeof raw.byMonth === 'object') Object.keys(raw.byMonth).forEach(function (k) { if (raw.byMonth[k] && raw.byMonth[k].hasForecast) flagged = true; });
+      if (has || flagged) return { views: Number(t.views) || 0, visits: Number(t.visits) || 0, signups: Number(t.signups) || 0, first: Number(t.first) || 0, paid: Number(t.paid) || 0 };
+      if (!has && !flagged && raw.byMonth) return null;
+      return { views: Number(t.views) || 0, visits: Number(t.visits) || 0, signups: Number(t.signups) || 0, first: Number(t.first) || 0, paid: Number(t.paid) || 0 };
+    }
+    // Engine chưa có / không trả shape đọc được: dự phòng qua lớp chuẩn
+    // hoá steps sẵn có (vẫn qua forecastFunnelFor — cùng một engine).
+    var steps = forecastFunnelFor(list, benchmarks);
+    if (!steps.length) return null;
+    var map = {};
+    steps.forEach(function (s) { map[String(s.label)] = s.value; });
+    return {
+      views: Number(map['Views'] !== undefined ? map['Views'] : map['Reach']) || 0,
+      visits: Number(map['Visits']) || 0,
+      signups: Number(map['Signups']) || 0,
+      first: Number(map['First starts']) || 0,
+      paid: Number(map['Paid']) || 0
+    };
+  }
+  // Phân bổ tổng Số lượng mới về các tháng theo tỉ lệ qty hiện tại —
+  // largest remainder, deterministic (phần dư lớn nhất trước; hòa thì
+  // tháng sớm hơn trước). Tháng đang 0 GIỮ 0; chỉ khi MỌI tháng đều 0
+  // mới chia đều (cũng largest remainder trên tỉ lệ đều). Tổng kết quả
+  // luôn đúng bằng total. Hàm thuần để kiểm thử độc lập.
+  function distributeQty(total, current) {
+    var t = Math.max(0, Math.round(Number(total) || 0));
+    var cur = (current || []).map(function (v) { var n = Number(v); return (isNaN(n) || n < 0) ? 0 : n; });
+    if (!cur.length) return [];
+    var sum = cur.reduce(function (s, v) { return s + v; }, 0);
+    var weights = sum > 0 ? cur.slice() : cur.map(function () { return 1; });
+    var wsum = weights.reduce(function (s, v) { return s + v; }, 0);
+    var exact = weights.map(function (w) { return t * w / wsum; });
+    var out = exact.map(function (x) { return Math.floor(x); });
+    var left = t - out.reduce(function (s, v) { return s + v; }, 0);
+    var order = exact.map(function (x, i) { return { i: i, frac: x - Math.floor(x) }; })
+      .sort(function (a, b) { return (b.frac - a.frac) || (a.i - b.i); });
+    for (var k = 0; k < order.length && left > 0; k++) { out[order[k].i]++; left--; }
+    return out;
+  }
+  // Lọc Phase cho KPI: 'all'/chưa chọn -> mọi KPI; chọn 1 Phase -> chỉ
+  // KPI gắn đúng phase_id đó (KPI không có phase_id bị ẩn — cùng quy tắc
+  // "không gắn chỉ hiện khi Tất cả" của matchesBrandSegment).
+  function kpiMatchesPhase(k, phaseId) {
+    if (!phaseId || phaseId === 'all') return true;
+    var pid = recordPhaseId(k);
+    return !!pid && String(pid) === String(phaseId);
+  }
+  function matchesPhaseFilter(k) { return kpiMatchesPhase(k, UI.kpiPhaseFilter); }
   function canSettings() { return can('settings.manage'); }
   function canMemberManage() { return can('member.manage'); }
   function brandStatusInfo(item) {
@@ -2727,13 +2960,18 @@
     var benchmarks = filteredBenchmarks();
     var months = [];
     for (var mi = 1; mi <= 12; mi++) months.push(String(year) + '-' + String(mi).padStart(2, '0'));
-    var html = pageHead('Planning', 'Lưới kế hoạch Content theo Channel × tháng cho năm ' + year + ' — tôn trọng bộ lọc Brand/Segment toàn cục. Ô chỉ xem; bấm vào hàng Channel để xem chi tiết các dòng plan.',
+    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng, chỉ xem) và Theo phase (nhập Uplift / Số lượng / Đầu phễu / Tỉ lệ chuyển đổi theo Phase ở chế độ demo). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục và dùng chung một Forecast.',
       '');
     html += readonlyNote() + contextBannerHtml();
     // Chọn năm
     var yearOpts = [2026, 2027, 2028].map(function (y) { return '<option value="' + y + '"' + (year === y ? ' selected' : '') + '>' + y + '</option>'; }).join('');
     html += '<form class="inline" id="planning-year-form"><label>Năm Planning<select name="year">' + yearOpts + '</select></label><button class="btn secondary" type="submit">Xem năm</button>' +
       '<span class="sub">Ngữ cảnh: ' + esc(contextLabel()) + '</span></form>';
+    // Chuyển chế độ [Theo tháng | Theo phase]
+    var mode = UI.planningMode === 'phase' ? 'phase' : 'month';
+    html += '<p class="planning-mode-toggle" data-planning-mode-toggle="1"><span class="sub">Chế độ xem:</span> ' +
+      '<button type="button" class="btn small ' + (mode === 'month' ? '' : 'secondary') + '" data-action="planning-mode" data-id="month">Theo tháng</button> ' +
+      '<button type="button" class="btn small ' + (mode === 'phase' ? '' : 'secondary') + '" data-action="planning-mode" data-id="phase">Theo phase</button></p>';
     if (!planRowsList().length) {
       html += '<div class="state-box" data-planning-empty="1">Chưa có dòng Planning nào (collection plan_rows đang trống). Khi dữ liệu demo được nạp, lưới Channel × tháng sẽ hiện ở đây.</div>';
       return html;
@@ -2742,6 +2980,7 @@
       html += '<div class="state-box" data-planning-empty="1">Không có dòng Planning nào cho năm ' + esc(year) + ' khớp bộ lọc hiện tại (' + esc(contextLabel()) + '). Thử đổi năm hoặc bộ lọc Brand/Segment ở thanh bên.</div>';
       return html;
     }
+    if (mode === 'phase') { html += planningPhaseModeHtml(year, rows, benchmarks); return html; }
     // Gom nhóm theo group, trong nhóm gom theo channel.
     var groupOrder = [], groupMap = {};
     rows.forEach(function (r) {
@@ -2801,6 +3040,193 @@
       html += '<div class="state-box">Chưa tính được Forecast — chưa có Benchmark khớp với các dòng Planning đang lọc (cần output_per_unit và chuỗi tỉ lệ chuyển đổi).</div>';
     }
     return html;
+  }
+
+  // ---------- Planning Theo phase (Phase + Uplift, bổ sung) ----------
+  // Ô nhập chỉ SỬA ĐƯỢC ở chế độ demo (Store.mode === 'demo') + có quyền
+  // sửa: phases/phase_assumptions/plan_rows chưa có bảng Supabase, nên ở
+  // chế độ dữ liệu thật các ô bị disabled ngay từ lúc render và handler
+  // lưu cũng chặn lại (phaseSaveGuard) — không gọi Store, không crash.
+  function planningInputsEditable() { return Store.mode === 'demo' && canEdit(); }
+  function phaseSaveGuard() {
+    if (Store.mode !== 'demo') { toast('Ở chế độ dữ liệu thật, Phase / Phase Assumption chưa có bảng dữ liệu nên chưa lưu được thay đổi này — hãy bật chế độ demo để thử nhập.'); render(); return false; }
+    if (!canEdit()) { toast('Vai trò hiện tại chỉ xem, không sửa được Planning theo Phase.'); render(); return false; }
+    return true;
+  }
+  // Tỉ lệ lưu dạng phân số (0.003) nhưng nhập/hiện dạng % (0.3).
+  function ratePctText(frac) {
+    if (frac === null || frac === undefined || frac === '' || isNaN(Number(frac))) return '';
+    return String(Math.round(Number(frac) * 100 * 10000) / 10000);
+  }
+  function planningPhaseModeHtml(year, rows, benchmarks) {
+    var editable = planningInputsEditable();
+    var disAttr = editable ? '' : ' disabled';
+    var html = '<h2>Planning theo Phase (' + esc(year) + ')</h2>';
+    if (Store.mode !== 'demo') {
+      html += '<div class="notice warn" data-planning-phase-locked="1">Đang ở chế độ dữ liệu thật: Phase và Phase Assumption chưa có bảng dữ liệu nên các ô nhập bên dưới đang bị khóa (không lưu) để tránh lỗi. Bật chế độ demo ở Thiết lập để bấm thử nhập liệu.</div>';
+    } else if (!canEdit()) {
+      html += '<div class="notice info" data-planning-phase-locked="1">Vai trò hiện tại chỉ xem nên các ô nhập Phase đang bị khóa.</div>';
+    } else {
+      html += '<p class="sub">Sửa ô rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay vào dữ liệu demo — Forecast tính lại sau mỗi lần lưu. Tỉ lệ để trống = xóa Assumption của bước đó, quay về kế thừa Benchmark. Số lượng là TỔNG của Channel trong cả Phase, được phân bổ lại về từng tháng theo tỉ lệ hiện tại.</p>';
+    }
+    var phases = filteredBrandPhases().filter(function (p) {
+      var months = phaseMonths(p);
+      if (!months.length) return true;
+      return months.some(function (m) { return m.indexOf(String(year) + '-') === 0; });
+    }).slice().sort(function (a, b) {
+      return (phaseStartMonth(a) || '9999').localeCompare(phaseStartMonth(b) || '9999') || String(a.name || '').localeCompare(String(b.name || ''), 'vi');
+    });
+    if (!phases.length) {
+      html += '<div class="state-box" data-planning-phase-empty="1">Chưa có Phase nào cho ngữ cảnh hiện tại (' + esc(contextLabel()) + '). Phase thuộc về một Brand (collection phases, kèm start_month/end_month) — khi dữ liệu Phase được nạp, mỗi Phase sẽ hiện một khối nhập liệu ở đây.</div>';
+      return html;
+    }
+    // Gom theo Brand khi đang xem tất cả Brand.
+    var groups = [];
+    var groupByBrand = {};
+    phases.forEach(function (p) {
+      var bid = String(recordBrandId(p) || '');
+      if (!groupByBrand[bid]) { groupByBrand[bid] = { brandId: bid, phases: [] }; groups.push(groupByBrand[bid]); }
+      groupByBrand[bid].phases.push(p);
+    });
+    var multiBrand = UI.brandFilter === 'all' && groups.length > 1;
+    groups.forEach(function (g) {
+      if (multiBrand || !UI.brandFilter || UI.brandFilter === 'all') {
+        html += '<h3 data-planning-phase-brand="' + esc(g.brandId) + '">Brand: ' + esc(g.brandId ? brandNameOf(g.brandId) : 'Chưa gắn Brand') + '</h3>';
+      }
+      g.phases.forEach(function (p) {
+        html += planningPhaseBlockHtml(p, rows, benchmarks, editable, disAttr);
+      });
+    });
+    return html;
+  }
+  function planningPhaseBlockHtml(phase, rows, benchmarks, editable, disAttr) {
+    var pRows = phaseRowsFor(phase, rows);
+    var months = phaseMonths(phase);
+    var rangeText = months.length ? (vizMonthLabel(months[0]) + ' – ' + vizMonthLabel(months[months.length - 1]) + ' (' + esc(months[0]) + ' → ' + esc(months[months.length - 1]) + ')') : 'Chưa rõ khoảng tháng';
+    var uplift = phaseUplift(phase);
+    var objective = phaseObjective(phase);
+    var html = '<div class="panel planning-phase" data-planning-phase="' + esc(phase.id) + '">';
+    html += '<h3>Phase: ' + esc(phase.name || phase.id) + '</h3>' +
+      '<p class="sub">' + esc(rangeText) + (objective ? ' · <strong>Mục tiêu:</strong> ' + esc(objective) : '') + ' · ' + fmtNum(pRows.length) + ' dòng plan · Tổng số lượng: ' + fmtNum(pRows.reduce(function (s, r) { return s + planRowQty(r); }, 0)) + '</p>';
+    // Ô nhập Uplift của Phase (%/tháng)
+    html += '<p class="phase-uplift-row"><label>Uplift (%/tháng)<input class="phase-input" type="number" step="any" min="0" name="uplift" value="' + esc(uplift === null ? '' : String(uplift)) + '" data-action-change="phase-uplift" data-phase-id="' + esc(phase.id) + '" data-phase-uplift="' + esc(phase.id) + '" aria-label="Uplift %/tháng của Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></label> ' +
+      '<span class="sub">Uplift áp vào 4 tỉ lệ chuyển đổi theo từng tháng trong Phase (tháng đầu hệ số 1) — do engine tính khi Forecast.</span></p>';
+    // Bảng Channel trong Phase
+    var channels = [];
+    pRows.forEach(function (r) { var ch = String(r.channel || '—'); if (channels.indexOf(ch) === -1) channels.push(ch); });
+    if (!channels.length) {
+      html += '<p class="sub">Phase này chưa có dòng plan nào khớp bộ lọc Brand/Segment hiện tại.</p>';
+    } else {
+      var rateHeads = [['view_to_visit', 'View→Visit (%)'], ['visit_to_signup', 'Visit→Signup (%)'], ['signup_to_first', 'Signup→First (%)'], ['first_to_paid', 'First→Paid (%)']];
+      var body = channels.map(function (ch) {
+        var chRows = pRows.filter(function (r) { return String(r.channel || '—') === ch; });
+        var qtyTotal = chRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
+        var totals = funnelTotalsFor(chRows, benchmarks);
+        var override = phaseTopFunnelOverride(phase, ch);
+        var viewsVal = totals ? totals.views : override;
+        var rates = effectivePhaseRates(phase, ch, benchmarks);
+        var cells = '<td><strong>' + esc(ch) + '</strong></td>' +
+          '<td><input class="phase-input" type="number" step="1" min="0" value="' + esc(String(qtyTotal)) + '" data-action-change="phase-qty" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Số lượng của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></td>' +
+          '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="' + esc(viewsVal === null || viewsVal === undefined ? '' : String(Math.round(Number(viewsVal) * 100) / 100)) + '" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Đầu phễu (Views) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' +
+          (override !== null ? '<br><span class="sub">Đang đặt thẳng (Assumption)</span>' : '') + '</td>';
+        rateHeads.forEach(function (rh) {
+          var eff = rates[rh[0]];
+          cells += '<td data-rate-source="' + esc(eff.source || 'none') + '"><input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(ratePctText(eff.value)) + '" placeholder="—" data-action-change="phase-rate" data-field="' + esc(rh[0]) + '" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Tỉ lệ ' + esc(rh[1]) + ' của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' +
+            '<br><span class="sub">' + (eff.source === 'assumption' ? 'Phase Assumption' : (eff.source === 'benchmark' ? 'Benchmark' : 'Không có')) + '</span></td>';
+        });
+        cells += '<td>' + (totals ? fmtNum(Math.round(totals.visits * 100) / 100) : '—') + '</td>' +
+          '<td>' + (totals ? fmtNum(Math.round(totals.signups * 100) / 100) : '—') + '</td>' +
+          '<td>' + (totals ? fmtNum(Math.round(totals.paid * 100) / 100) : '—') + '</td>';
+        return '<tr data-planning-phase-channel="' + esc(ch) + '">' + cells + '</tr>';
+      }).join('');
+      html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đầu phễu (Views)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Signups</th><th>Forecast Paid</th></tr>' + body, 'planning-phase-channels');
+      html += '<p class="sub">Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).</p>';
+    }
+    // Chart funnel theo Phase (totals của Phase qua cùng engine + ctx)
+    var pTotals = funnelTotalsFor(pRows, benchmarks);
+    html += '<h4>Forecast — Funnel của Phase</h4>';
+    if (pTotals && pTotals.views > 0) {
+      html += '<div data-viz="planning-phase-funnel" data-phase-id="' + esc(phase.id) + '">' + vizFunnelHtml({ steps: [
+        { label: 'Views', value: pTotals.views }, { label: 'Visits', value: pTotals.visits },
+        { label: 'Signups', value: pTotals.signups }, { label: 'First starts', value: pTotals.first },
+        { label: 'Paid', value: pTotals.paid }
+      ], emptyText: 'Chưa có dữ liệu Forecast cho Phase này.' }) + '</div>';
+    } else {
+      html += '<div class="state-box">Chưa tính được Forecast cho Phase này — chưa có Benchmark/Assumption khớp với các Channel trong Phase.</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  // --- Lưu các ô nhập Theo phase (chỉ chạy khi phaseSaveGuard cho qua) ---
+  function savePhaseAssumption(phaseId, channel, patch, okMsg) {
+    var existing = phaseAssumptionFor(phaseId, channel);
+    var done = function () { toast(okMsg); render(); };
+    var fail = function (msg) { toast('Chưa lưu được: ' + msg); render(); };
+    if (existing) { saveResult(sUpdate('phase_assumptions', existing.id, patch), done, fail); return; }
+    var obj = { phase_id: phaseId, channel: channel, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null };
+    Object.keys(patch).forEach(function (k) { obj[k] = patch[k]; });
+    saveResult(sCreate('phase_assumptions', obj), done, fail);
+  }
+  function savePhaseUplift(phaseId, raw) {
+    if (!phaseSaveGuard()) return;
+    var v = (raw === '' || raw === null || raw === undefined) ? null : Number(raw);
+    if (v === null || isNaN(v) || v < 0) { toast('Uplift phải là số %/tháng từ 0 trở lên.'); render(); return; }
+    saveResult(sUpdate('phases', phaseId, { uplift_percent_per_month: v }),
+      function () { toast('Đã lưu Uplift ' + v + '%/tháng cho Phase — Forecast đã tính lại.'); render(); },
+      function (msg) { toast('Chưa lưu được Uplift: ' + msg); render(); });
+  }
+  function savePhaseRate(phaseId, channel, field, raw) {
+    if (!phaseSaveGuard()) return;
+    if (PHASE_RATE_FIELDS.indexOf(field) === -1) { render(); return; }
+    var patch = {};
+    if (raw === '' || raw === null || raw === undefined) {
+      // Xóa Assumption của riêng field này -> kế thừa lại Benchmark.
+      patch[field] = null;
+      savePhaseAssumption(phaseId, channel, patch, 'Đã xóa tỉ lệ riêng của Phase cho ' + channel + ' — quay về kế thừa Benchmark.');
+      return;
+    }
+    var pct = Number(raw);
+    if (isNaN(pct) || pct < 0 || pct > 100) { toast('Tỉ lệ chuyển đổi phải là số % từ 0 đến 100.'); render(); return; }
+    patch[field] = pct / 100;
+    savePhaseAssumption(phaseId, channel, patch, 'Đã lưu tỉ lệ ' + field + ' = ' + pct + '% cho ' + channel + ' — Forecast đã tính lại.');
+  }
+  function savePhaseViews(phaseId, channel, raw) {
+    if (!phaseSaveGuard()) return;
+    var patch = {};
+    if (raw === '' || raw === null || raw === undefined) {
+      patch.top_funnel_override = null;
+      savePhaseAssumption(phaseId, channel, patch, 'Đã xóa Đầu phễu đặt thẳng cho ' + channel + ' — Forecast quay về qty × Benchmark.');
+      return;
+    }
+    var v = Number(raw);
+    if (isNaN(v) || v < 0) { toast('Đầu phễu (Views) phải là số từ 0 trở lên.'); render(); return; }
+    patch.top_funnel_override = v;
+    savePhaseAssumption(phaseId, channel, patch, 'Đã lưu Đầu phễu ' + fmtNum(v) + ' Views cho ' + channel + ' trong Phase — engine phân bổ về từng tháng theo Số lượng.');
+  }
+  function savePhaseQty(phaseId, channel, raw) {
+    if (!phaseSaveGuard()) return;
+    var v = Number(raw);
+    if (raw === '' || raw === null || raw === undefined || isNaN(v) || v < 0 || Math.round(v) !== v) { toast('Số lượng phải là số nguyên từ 0 trở lên.'); render(); return; }
+    var phase = phaseById(phaseId);
+    if (!phase) { toast('Không tìm thấy Phase để lưu Số lượng.'); render(); return; }
+    var rows = phaseRowsFor(phase, filteredPlanRows()).filter(function (r) { return String(r.channel || '—') === String(channel); })
+      .slice().sort(function (a, b) { return planRowMonth(a).localeCompare(planRowMonth(b)); });
+    if (!rows.length) { toast('Không có dòng plan nào của Channel này trong Phase để phân bổ Số lượng.'); render(); return; }
+    var news = distributeQty(v, rows.map(planRowQty));
+    var jobs = rows.filter(function (r, i) { return planRowQty(r) !== news[i]; })
+      .map(function (r) { return { id: r.id, qty: news[rows.indexOf(r)] }; });
+    if (!jobs.length) { render(); return; }
+    var idx = 0, failed = 0;
+    function next() {
+      if (idx >= jobs.length) {
+        if (failed) toast('Đã phân bổ Số lượng ' + fmtNum(v) + ' cho ' + channel + ' nhưng ' + failed + ' tháng chưa lưu được — hãy thử lại.');
+        else toast('Đã lưu Số lượng ' + fmtNum(v) + ' cho ' + channel + ' (phân bổ lại theo tỉ lệ tháng hiện tại) — Forecast đã tính lại.');
+        render(); return;
+      }
+      var job = jobs[idx++];
+      saveResult(sUpdate('plan_rows', job.id, { qty: job.qty }), function () { next(); }, function () { failed++; next(); });
+    }
+    next();
   }
 
   // ---------- Brand Hub ----------
@@ -5212,7 +5638,26 @@
     html += '<h2 id="kpi-sec-kpi">KPI</h2>';
     // AC22: export KPI của đúng tập đang hiển thị ở trang này (kèm IDs, scope, kỳ, đơn vị).
     html += '<p><button class="btn secondary" data-action="export-kpi-csv">Xuất CSV KPI (IDs, scope, kỳ, đơn vị)</button></p>';
+    // Lọc Phase cho KPI: CHỈ hiện khi đang chọn đúng 1 Brand (bộ lọc
+    // Brand toàn cục). Phase lấy từ filteredBrandPhases() — đã áp sẵn
+    // brandFilter nên chỉ còn Phase của Brand đó. Chọn 1 Phase thì chỉ
+    // KPI gắn đúng phase_id đó hiện; KPI không có phase_id chỉ hiện ở
+    // "Tất cả Phase" (kpiMatchesPhase — cùng quy tắc matchesBrandSegment).
+    var kpiPhases = (UI.brandFilter && UI.brandFilter !== 'all') ? filteredBrandPhases() : [];
+    var kpiPhaseSel = kpiPhases.some(function (p) { return String(p.id) === String(UI.kpiPhaseFilter); }) ? UI.kpiPhaseFilter : 'all';
+    if (kpiPhases.length) {
+      var kpiPhaseOpts = '<option value="all"' + (kpiPhaseSel === 'all' ? ' selected' : '') + '>Tất cả Phase</option>' + kpiPhases.map(function (p) {
+        return '<option value="' + esc(p.id) + '"' + (String(kpiPhaseSel) === String(p.id) ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
+      }).join('');
+      html += '<form class="inline" id="kpi-phase-filter-form" data-kpi-phase-filter="1"><label>Phase<select id="kpi-phase-select" data-action-change="kpi-phase" aria-label="Lọc KPI theo Phase">' + kpiPhaseOpts + '</select></label>' +
+        '<span class="sub">Áp cho Brand đang chọn: ' + esc(brandNameOf(UI.brandFilter)) + '. KPI không gắn Phase chỉ hiện khi chọn "Tất cả Phase".</span></form>';
+      if (kpiPhaseSel !== 'all') {
+        var selPhase = kpiPhases.find(function (p) { return String(p.id) === String(kpiPhaseSel); });
+        html += '<div class="notice info" data-kpi-phase-active="1">Đang lọc KPI theo Phase: <strong>' + esc(selPhase ? (selPhase.name || selPhase.id) : kpiPhaseSel) + '</strong>.</div>';
+      }
+    }
     var kpis = Store.list('kpis').filter(function (k) { return matchesBrandSegment(k, campaignContextFallback(k.campaignId)); });
+    if (kpiPhaseSel !== 'all') kpis = kpis.filter(function (k) { return kpiMatchesPhase(k, kpiPhaseSel); });
     var measurements = [];
     try { measurements = Store.list('measurements'); } catch (e) { measurements = []; }
     if (!kpis.length && !collLoadingOrError('kpis')) html += emptyState('Chưa có KPI nào', 'Tạo KPI đầu tiên và cập nhật số đo kèm nguồn để theo dõi thực đạt.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button></p>' : '');
@@ -6368,6 +6813,7 @@
     if (action === 'dep-remove') { captureTaskDraft(); settle(hasFn('remove') ? Store.remove('dependencies', id) : { ok: false, error: 'Tầng dữ liệu chưa hỗ trợ xóa quan hệ.' }, function () { render(); }); }
     if (action === 'planning-channel') { UI.planningChannel = t.getAttribute('data-channel'); render(); }
     if (action === 'planning-channel-close') { UI.planningChannel = null; render(); }
+    if (action === 'planning-mode') { UI.planningMode = id === 'phase' ? 'phase' : 'month'; render(); }
     if (action === 'brand-detail') { UI.brandDetailId = id; render(); }
     if (action === 'brand-detail-close') { UI.brandDetailId = null; render(); }
     if (action === 'brand-tab') { UI.brandTab = id; render(); }
@@ -6616,6 +7062,14 @@
     var ctxKind = t.getAttribute && t.getAttribute('data-action-change');
     if (ctxKind === 'context-brand') { UI.brandFilter = t.value || 'all'; render(); return; }
     if (ctxKind === 'context-segment') { UI.segmentFilter = t.value || 'all'; render(); return; }
+    // Phase + Uplift: ô nhập Planning Theo phase + lọc Phase ở KPI.
+    // Mỗi handler tự chặn ở chế độ dữ liệu thật / vai chỉ xem trong
+    // phaseSaveGuard (render lại để ô quay về giá trị đã lưu).
+    if (ctxKind === 'kpi-phase') { UI.kpiPhaseFilter = t.value || 'all'; render(); return; }
+    if (ctxKind === 'phase-uplift') { savePhaseUplift(t.getAttribute('data-phase-id'), t.value); return; }
+    if (ctxKind === 'phase-qty') { savePhaseQty(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
+    if (ctxKind === 'phase-views') { savePhaseViews(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
+    if (ctxKind === 'phase-rate') { savePhaseRate(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.getAttribute('data-field'), t.value); return; }
     if (t.hasAttribute && t.hasAttribute('data-editor-platform')) {
       var form = t.closest('form');
       captureEditorValues(form);
