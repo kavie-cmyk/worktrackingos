@@ -908,12 +908,95 @@
     var channel = String(list[0].channel || '');
     return paidObjectiveKeysForRows(list, channel).map(function (k) {
       var oRows = list.filter(function (r) { return planRowObjective(r) === k; });
+      var budget = oRows.reduce(function (s, r) { return s + planRowEffectiveBudget(r, null); }, 0);
+      // Audience + chia ngân sách B2C/B2B (CHỈ ĐỌC ở Theo phase — sửa
+      // ở bảng chi tiết Theo tháng): tỉ trọng B2B của từng dòng nhân
+      // với ngân sách của chính dòng đó rồi cộng lại.
+      var b2bBudget = oRows.reduce(function (s, r) { return s + planRowEffectiveBudget(r, null) * planRowB2bShare(r); }, 0);
       return {
         objective: k, label: paidObjectiveMeta(k).label, metric: paidObjectiveMeta(k).metric,
-        budget: oRows.reduce(function (s, r) { return s + planRowEffectiveBudget(r, null); }, 0),
+        budget: budget,
+        audience: oRows.length ? planRowEffectiveAudience(oRows[0]) : null,
+        b2cBudget: budget - b2bBudget, b2bBudget: b2bBudget,
         rowCount: oRows.length
       };
     });
+  }
+  // Ngân sách + audience của các dòng budget-driven Partnership/Event
+  // trong 1 Phase (CHỈ ĐỌC ở Theo phase như Objective của Paid): trả
+  // [{ channel, budget, audience, b2cBudget, b2bBudget, rowCount }]
+  // cho Channel có dòng budget-driven thuộc nhóm Partnership/Event.
+  function phaseBudgetDrivenBreakdowns(chRows) {
+    var list = (chRows || []).filter(function (r) {
+      return planRowIsBudgetDriven(r) && (planRowGroup(r) === 'Partnership' || planRowGroup(r) === 'Event');
+    });
+    if (!list.length) return [];
+    var channel = String(list[0].channel || '');
+    var budget = list.reduce(function (s, r) { return s + planRowEffectiveBudget(r, null); }, 0);
+    var b2bBudget = list.reduce(function (s, r) { return s + planRowEffectiveBudget(r, null) * planRowB2bShare(r); }, 0);
+    return [{
+      channel: channel, budget: budget,
+      audience: planRowEffectiveAudience(list[0]),
+      b2cBudget: budget - b2bBudget, b2bBudget: b2bBudget,
+      rowCount: list.length
+    }];
+  }
+  // --- Mô hình B2B bottom-up: audience trên dòng budget-driven ---
+  // plan_rows của kênh budget-driven (Paid Media theo Objective;
+  // Partnership; Event) mang field `audience` ('b2c'|'b2b'|'both') +
+  // `b2b_split_pct` (% ngân sách cho phần B2B khi 'both'). Engine tính
+  // ở domain.forecastFunnel (cầu nối Paid->B2B + Lead/Demo->Account +
+  // Partnership/Event trực tiếp); ở app chỉ đọc/ghi 2 field này và
+  // hiển thị tỉ trọng — KHÔNG fork công thức.
+  var PURE_B2C_OBJECTIVE_KEYS = { awareness: true, traffic: true, signup: true, remarketing: true };
+  var BUDGET_DRIVEN_GROUPS = { 'Paid Media': true, 'Partnership': true, 'Event': true };
+  // Dòng budget-driven thuộc phạm vi audience: qty null + thuộc 1 trong
+  // 3 nhóm Paid Media / Partnership / Event. Dòng content có qty
+  // KHÔNG bao giờ thuộc phạm vi này (không phân loại lại dòng content).
+  function planRowIsBudgetDriven(r) {
+    return !!r && !planRowHasQty(r) && !!BUDGET_DRIVEN_GROUPS[planRowGroup(r)];
+  }
+  function planRowAudience(r) {
+    if (!r) return null;
+    var v = r.audience !== undefined && r.audience !== null ? r.audience
+      : (r.audience_type !== undefined && r.audience_type !== null ? r.audience_type : (r.audienceType !== undefined && r.audienceType !== null ? r.audienceType : cfVal(r, 'audience')));
+    if (v === undefined || v === null || String(v).trim() === '') return null;
+    var k = String(v).trim().toLowerCase();
+    return (k === 'b2c' || k === 'b2b' || k === 'both') ? k : null;
+  }
+  function planRowB2bSplitPct(r) {
+    if (!r) return null;
+    var v = r.b2b_split_pct !== undefined && r.b2b_split_pct !== null ? r.b2b_split_pct
+      : (r.b2bSplitPct !== undefined && r.b2bSplitPct !== null ? r.b2bSplitPct : cfVal(r, 'b2b_split_pct'));
+    if (v === undefined || v === null || v === '' || isNaN(Number(v))) return null;
+    return Number(v);
+  }
+  // Audience HIỆU DỤNG để hiển thị/khóa lựa chọn: Objective thuần B2C
+  // -> luôn 'b2c'; có field audience -> dùng field; thiếu -> suy từ
+  // segment của dòng ('b2b' -> 'b2b', còn lại 'b2c') — khớp seed demo
+  // và khớp _audienceShare của engine.
+  function planRowEffectiveAudience(r) {
+    var obj = planRowObjective(r);
+    if (obj && PURE_B2C_OBJECTIVE_KEYS[obj]) return 'b2c';
+    var aud = planRowAudience(r);
+    if (aud) return aud;
+    return recordSegment(r) === 'b2b' ? 'b2b' : 'b2c';
+  }
+  // Tỉ trọng B2B hiệu dụng (0..1) của 1 dòng — CHỈ để hiển thị ở chế
+  // độ Theo phase (chỉ đọc); engine là nơi tính account thật.
+  function planRowB2bShare(r) {
+    var obj = planRowObjective(r);
+    if (obj && PURE_B2C_OBJECTIVE_KEYS[obj]) return 0;
+    var aud = planRowEffectiveAudience(r);
+    if (aud === 'b2b') return 1;
+    if (aud === 'both') {
+      var pct = planRowB2bSplitPct(r);
+      return pct === null ? 0 : Math.min(100, Math.max(0, pct)) / 100;
+    }
+    return 0;
+  }
+  function audienceLabel(aud) {
+    return aud === 'b2b' ? 'B2B' : (aud === 'both' ? 'Cả hai' : 'B2C');
   }
   // Đơn giá ĐẶT TAY riêng của 1 dòng plan: field unit_price (chấp nhận
   // cả unitPrice / customFields do Store gói) khác null/'' và đọc được
@@ -1134,7 +1217,7 @@
   function normalizeFunnelSteps(result, rows, benchmarks) {
     var out = [];
     function pushStep(label, v) { if (label && v !== null && v !== undefined && !isNaN(Number(v))) out.push({ label: String(label), value: Number(v) }); }
-    var FUNNEL_LABELS = { views: 'Views', reach: 'Reach', visits: 'Visits', signups: 'Signups', first: 'First starts', paid: 'Paid', leads: 'Leads' };
+    var FUNNEL_LABELS = { views: 'Views', reach: 'Reach', visits: 'Visits', signups: 'Signups', first: 'First starts', paid: 'Paid', leads: 'Leads', b2b: 'B2B Accounts' };
     if (Array.isArray(result)) result.forEach(function (x) { if (x && typeof x === 'object') pushStep(x.label || x.step || x.name || x.key, x.value !== undefined ? x.value : x.total); });
     else if (result && typeof result === 'object') {
       var totals = result.totals || result.total || null;
@@ -1142,6 +1225,9 @@
       if (totals && typeof totals === 'object' && !Array.isArray(totals)) {
         var stepKeys = Array.isArray(result.steps) ? result.steps.filter(function (s) { return typeof s === 'string'; }) : Object.keys(totals);
         stepKeys.forEach(function (k) { if (totals[k] !== undefined) pushStep(FUNNEL_LABELS[k] || k, totals[k]); });
+        // Tầng B2B Accounts (mô hình B2B bottom-up): totals.b2b không
+        // nằm trong steps của engine nên cộng tay ở cuối phễu khi > 0.
+        if (Number(totals.b2b) > 0) pushStep('B2B Accounts', totals.b2b);
       }
       var steps = result.steps || result.funnel || result.stages || null;
       if (!out.length && Array.isArray(steps)) steps.forEach(function (x) { if (x && typeof x === 'object') pushStep(x.label || x.step || x.name || x.key, x.value !== undefined ? x.value : x.total); });
@@ -1300,8 +1386,8 @@
     }
     return null;
   }
-  var PHASE_RATE_FIELDS = ['view_to_visit', 'visit_to_signup', 'signup_to_first', 'first_to_paid'];
-  var PHASE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid' };
+  var PHASE_RATE_FIELDS = ['view_to_visit', 'visit_to_signup', 'signup_to_first', 'first_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account'];
+  var PHASE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid', paid_to_b2b: 'paidToB2b', lead_to_account: 'leadToAccount', demo_to_account: 'demoToAccount' };
   // Tỉ lệ HIỆU DỤNG của (phase, channel) cho từng bước phễu: assumption
   // khác null thắng; thiếu thì kế thừa Benchmark khớp brand+channel;
   // cả hai đều thiếu -> value null (forecast của channel = null như engine).
@@ -1333,7 +1419,7 @@
     if (!f || typeof f !== 'object') return null;
     if (f.views === undefined && f.visits === undefined && f.paid === undefined) return null;
     function n(k) { var v = f[k]; return (v === null || v === undefined || v === '' || isNaN(Number(v))) ? 0 : Number(v); }
-    return { views: n('views'), visits: n('visits'), signups: n('signups'), first: n('first'), paid: n('paid') };
+    return { views: n('views'), visits: n('visits'), signups: n('signups'), first: n('first'), paid: n('paid'), b2b: n('b2b') };
   }
   // Tổng forecast {views, visits, signups, first, paid} của đúng tập dòng
   // truyền vào, tính QUA engine (forecastRawFor có ctx) — cộng chi tiết
@@ -1347,7 +1433,7 @@
     if (raw && Array.isArray(raw.rows) && raw.rows.length) {
       var ids = {};
       list.forEach(function (r) { if (r && r.id !== undefined && r.id !== null) ids[String(r.id)] = true; });
-      var sum = { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+      var sum = { views: 0, visits: 0, signups: 0, first: 0, paid: 0, b2b: 0 };
       var any = false, matched = 0;
       raw.rows.forEach(function (d) {
         if (!d) return;
@@ -1355,7 +1441,7 @@
         if (rid !== undefined && rid !== null && Object.keys(ids).length && !ids[String(rid)]) return;
         matched++;
         var v = forecastDetailValues(d);
-        if (v) { any = true; sum.views += v.views; sum.visits += v.visits; sum.signups += v.signups; sum.first += v.first; sum.paid += v.paid; }
+        if (v) { any = true; sum.views += v.views; sum.visits += v.visits; sum.signups += v.signups; sum.first += v.first; sum.paid += v.paid; sum.b2b += v.b2b; }
       });
       if (matched && any) return sum;
       if (matched && !any) return null;
@@ -1367,9 +1453,9 @@
       // bằng 0 (qty 0) — phân biệt bằng byMonth.hasForecast khi engine có.
       var flagged = false;
       if (raw.byMonth && typeof raw.byMonth === 'object') Object.keys(raw.byMonth).forEach(function (k) { if (raw.byMonth[k] && raw.byMonth[k].hasForecast) flagged = true; });
-      if (has || flagged) return { views: Number(t.views) || 0, visits: Number(t.visits) || 0, signups: Number(t.signups) || 0, first: Number(t.first) || 0, paid: Number(t.paid) || 0 };
+      if (has || flagged) return { views: Number(t.views) || 0, visits: Number(t.visits) || 0, signups: Number(t.signups) || 0, first: Number(t.first) || 0, paid: Number(t.paid) || 0, b2b: Number(t.b2b) || 0 };
       if (!has && !flagged && raw.byMonth) return null;
-      return { views: Number(t.views) || 0, visits: Number(t.visits) || 0, signups: Number(t.signups) || 0, first: Number(t.first) || 0, paid: Number(t.paid) || 0 };
+      return { views: Number(t.views) || 0, visits: Number(t.visits) || 0, signups: Number(t.signups) || 0, first: Number(t.first) || 0, paid: Number(t.paid) || 0, b2b: Number(t.b2b) || 0 };
     }
     // Engine chưa có / không trả shape đọc được: dự phòng qua lớp chuẩn
     // hoá steps sẵn có (vẫn qua forecastFunnelFor — cùng một engine).
@@ -1382,7 +1468,8 @@
       visits: Number(map['Visits']) || 0,
       signups: Number(map['Signups']) || 0,
       first: Number(map['First starts']) || 0,
-      paid: Number(map['Paid']) || 0
+      paid: Number(map['Paid']) || 0,
+      b2b: Number(map['B2B Accounts']) || 0
     };
   }
   // Steps phễu để vẽ từ một totals {views, visits, signups, first,
@@ -1393,18 +1480,23 @@
   function planningFunnelSteps(totals) {
     if (!totals) return [];
     function n(k) { var v = Number(totals[k]); return isNaN(v) ? 0 : v; }
+    // Tầng cuối của phễu (mô hình B2B bottom-up): B2B Accounts — chỉ
+    // thêm khi có account thật (> 0) từ cầu nối Paid->B2B /
+    // Lead/Demo->Account / Partnership/Event; chưa có tỉ lệ/đơn giá
+    // B2B thì tầng này không hiện (không bịa số 0 vào phễu).
+    var b2bTail = n('b2b') > 0 ? [{ label: 'B2B Accounts', value: n('b2b') }] : [];
     if (n('views') > 0) {
       return [
         { label: 'Views', value: n('views') }, { label: 'Visits', value: n('visits') },
         { label: 'Signups', value: n('signups') }, { label: 'First starts', value: n('first') },
         { label: 'Paid', value: n('paid') }
-      ];
+      ].concat(b2bTail);
     }
     if (n('visits') > 0) {
       return [
         { label: 'Visits', value: n('visits') }, { label: 'Signups', value: n('signups') },
         { label: 'First starts', value: n('first') }, { label: 'Paid', value: n('paid') }
-      ];
+      ].concat(b2bTail);
     }
     // Mô hình Objective: kết quả có thể bắt đầu ở tầng Signups / First /
     // Paid (Objective Signup / Demo / Remarketing) khi các tầng trên = 0
@@ -1413,16 +1505,19 @@
       return [
         { label: 'Signups', value: n('signups') }, { label: 'First starts', value: n('first') },
         { label: 'Paid', value: n('paid') }
-      ];
+      ].concat(b2bTail);
     }
     if (n('first') > 0) {
       return [
         { label: 'First starts', value: n('first') }, { label: 'Paid', value: n('paid') }
-      ];
+      ].concat(b2bTail);
     }
     if (n('paid') > 0) {
-      return [{ label: 'Paid', value: n('paid') }];
+      return [{ label: 'Paid', value: n('paid') }].concat(b2bTail);
     }
+    // Chỉ có B2B Accounts (vd Partnership/Event trực tiếp, phễu B2C
+    // trống): phễu chỉ gồm tầng B2B Accounts.
+    if (b2bTail.length) return b2bTail;
     return [];
   }
   // --- Planning Theo tháng: dữ liệu 3 bảng KPI chi tiết theo tháng ---
@@ -1482,9 +1577,9 @@
       var ch = String(r.channel || '—');
       var e = byChannel[ch];
       if (!e) {
-        e = byChannel[ch] = { channel: ch, group: planRowGroup(r), rows: [], months: {}, totals: { views: null, paid: null, budget: 0, hasForecast: false, cac: null } };
+        e = byChannel[ch] = { channel: ch, group: planRowGroup(r), rows: [], months: {}, totals: { views: null, paid: null, budget: 0, hasForecast: false, cac: null, b2b: null } };
         channelOrder.push(ch);
-        mlist.forEach(function (m) { e.months[m] = { views: null, paid: null, budget: 0, hasForecast: false, cac: null }; });
+        mlist.forEach(function (m) { e.months[m] = { views: null, paid: null, budget: 0, hasForecast: false, cac: null, b2b: null }; });
       }
       e.rows.push(r);
       var m = planRowMonth(r);
@@ -1497,10 +1592,13 @@
         cell.hasForecast = true;
         cell.views = (cell.views === null ? 0 : cell.views) + fv.views;
         cell.paid = (cell.paid === null ? 0 : cell.paid) + fv.paid;
+        // B2B Accounts MỚI sinh trong tháng (cả 3 nguồn qua engine:
+        // cầu nối Paid->B2B + Lead/Demo->Account + Partnership/Event).
+        cell.b2b = (cell.b2b === null ? 0 : cell.b2b) + fv.b2b;
       }
     });
-    var blended = { months: {}, totals: { budget: 0, paid: 0, cac: null, views: null, hasForecast: false, hasViews: false } };
-    mlist.forEach(function (m) { blended.months[m] = { budget: 0, paid: 0, cac: null, views: null, hasForecast: false, hasViews: false }; });
+    var blended = { months: {}, totals: { budget: 0, paid: 0, cac: null, views: null, hasForecast: false, hasViews: false, b2b: null } };
+    mlist.forEach(function (m) { blended.months[m] = { budget: 0, paid: 0, cac: null, views: null, hasForecast: false, hasViews: false, b2b: null }; });
     var channels = channelOrder.map(function (ch) {
       var e = byChannel[ch];
       e.isPaidMedia = planningChannelIsPaidMedia(e.rows, benchmarks);
@@ -1510,7 +1608,7 @@
       e.hasAwarenessPrice = e.isPaidMedia
         ? planBenchmarkCostPerResult(benchmarkForRow(e.rows[0], benchmarks), 'awareness') !== null
         : false;
-      var tViews = null, tPaid = null, tBudget = 0, tHas = false;
+      var tViews = null, tPaid = null, tBudget = 0, tHas = false, tB2b = null;
       mlist.forEach(function (m) {
         var cell = e.months[m];
         cell.cac = (cell.paid !== null && cell.paid > 0) ? cell.budget / cell.paid : null;
@@ -1519,18 +1617,21 @@
           tHas = true;
           tViews = (tViews === null ? 0 : tViews) + (cell.views || 0);
           tPaid = (tPaid === null ? 0 : tPaid) + (cell.paid || 0);
+          tB2b = (tB2b === null ? 0 : tB2b) + (cell.b2b || 0);
         }
         blended.months[m].budget += cell.budget;
         if (cell.paid !== null) blended.months[m].paid += cell.paid;
+        if (cell.b2b !== null) blended.months[m].b2b = (blended.months[m].b2b === null ? 0 : blended.months[m].b2b) + cell.b2b;
         if (cell.hasForecast) blended.months[m].hasForecast = true;
         if (cell.hasForecast && !(e.isPaidMedia && !e.hasAwarenessPrice) && cell.views !== null) {
           blended.months[m].views = (blended.months[m].views === null ? 0 : blended.months[m].views) + (cell.views || 0);
           blended.months[m].hasViews = true;
         }
       });
-      e.totals = { views: tViews, paid: tPaid, budget: tBudget, hasForecast: tHas, cac: (tPaid !== null && tPaid > 0) ? tBudget / tPaid : null };
+      e.totals = { views: tViews, paid: tPaid, budget: tBudget, hasForecast: tHas, cac: (tPaid !== null && tPaid > 0) ? tBudget / tPaid : null, b2b: tB2b };
       blended.totals.budget += tBudget;
       if (tPaid !== null) blended.totals.paid += tPaid;
+      if (tB2b !== null) blended.totals.b2b = (blended.totals.b2b === null ? 0 : blended.totals.b2b) + tB2b;
       if (tHas) blended.totals.hasForecast = true;
       if (tViews !== null && !(e.isPaidMedia && !e.hasAwarenessPrice)) {
         blended.totals.views = (blended.totals.views === null ? 0 : blended.totals.views) + tViews;
@@ -3704,6 +3805,7 @@
       var detailDisAttr = detailEditable ? '' : ' disabled';
       var selHasQty = selRows.some(planRowHasQty);
       var selHasPaid = selRows.some(planRowIsPaidMedia);
+      var selHasBudgetDrivenPE = selRows.some(function (r) { return planRowIsBudgetDriven(r) && (planRowGroup(r) === 'Partnership' || planRowGroup(r) === 'Event'); });
       var selHasPaidObjective = selRows.some(function (r) { return planRowIsPaidMedia(r) && planRowObjective(r); });
       var detailTotal = 0;
       var detailBudgetTotal = 0;
@@ -3756,9 +3858,19 @@
         // này có dòng Paid ở tháng khác cũng hiện ô nhập (nhập > 0 tạo
         // dòng Paid mới qua savePlanningMonthPaidBudget).
         var cellIsPaid = cellRows.some(planRowIsPaidMedia);
+        // Partnership/Event budget-driven (qty null): ô Ngân sách là Ô
+        // NHẬP trực tiếp (như Paid Media) + chọn Audience của tháng —
+        // mô hình B2B bottom-up. Dòng content có qty của 2 nhóm này
+        // KHÔNG vào nhánh này (ngân sách vẫn chỉ tự tính như cũ).
+        var cellBdRows = cellRows.filter(function (r) { return planRowIsBudgetDriven(r) && (planRowGroup(r) === 'Partnership' || planRowGroup(r) === 'Event'); });
+        var cellIsBudgetDrivenPE = cellBdRows.length > 0;
         var budgetCell;
         if (cellIsPaid || (!cellRows.length && selHasPaid)) {
           budgetCell = '<input class="phase-input planning-month-input planning-paid-budget-input" type="number" step="1" min="0" value="' + esc(cellRows.length ? String(budgetSum) : '') + '" placeholder="—" data-action-change="planning-month-paid-budget" data-channel="' + esc(selChannel) + '" data-group="' + esc(cellGroup) + '" data-month="' + esc(m) + '" aria-label="Ngân sách Paid Media của ' + esc(selChannel) + ' trong tháng ' + esc(m) + '"' + detailDisAttr + '> <span class="sub" data-planning-paid-budget-label="1">Paid Media — nhập ngân sách trực tiếp</span>';
+        } else if (cellIsBudgetDrivenPE || (!cellRows.length && selHasBudgetDrivenPE)) {
+          var peRep = cellBdRows[0] || selRows.filter(function (r) { return planRowIsBudgetDriven(r) && (planRowGroup(r) === 'Partnership' || planRowGroup(r) === 'Event'); })[0];
+          budgetCell = '<input class="phase-input planning-month-input planning-budget-driven-input" type="number" step="1" min="0" value="' + esc(cellRows.length ? String(budgetSum) : '') + '" placeholder="—" data-action-change="planning-driven-budget" data-channel="' + esc(selChannel) + '" data-group="' + esc(cellGroup) + '" data-month="' + esc(m) + '" aria-label="Ngân sách của ' + esc(selChannel) + ' trong tháng ' + esc(m) + '"' + detailDisAttr + '> <span class="sub" data-planning-budget-driven-label="1">' + esc(cellGroup) + ' — nhập ngân sách trực tiếp</span>' +
+            (cellBdRows.length && peRep ? '<br>' + planningAudienceControlsHtml({ channel: selChannel, group: cellGroup, month: m, objective: null, audience: planRowEffectiveAudience(peRep), splitPct: planRowB2bSplitPct(peRep), lockedPureB2c: false, disAttr: detailDisAttr }) : '');
         } else if (cellRows.length || selRows.length) {
           budgetCell = '<span data-planning-budget-value="1">' + fmtMoney(budgetSum, 'VND') + '</span>' +
             (!cellHasQty && cellRows.some(planRowHasBudget) ? ' <span class="sub" data-planning-budget-source="1">dữ liệu nguồn</span>' : '');
@@ -3802,7 +3914,16 @@
                 ? '<span data-planning-paid-objective-result="1" data-objective="' + esc(objKey) + '">—</span>'
                 : '<span data-planning-paid-objective-result="1" data-objective="' + esc(objKey) + '">' + esc(meta.metric) + ': ' + fmtNum(Math.round(primary * 10000) / 10000) + '</span>';
             }
-            return '<tr data-planning-paid-objective-row="1" data-month="' + esc(m) + '" data-objective="' + esc(objKey) + '"><td>↳ ' + esc(vizMonthLabel(m)) + ' — Objective: ' + esc(meta.label) + '</td><td>—</td><td>' + costCell + '</td><td><input class="phase-input planning-month-input planning-paid-budget-input planning-paid-objective-input" type="number" step="1" min="0" value="' + esc(String(oBudget)) + '" data-action-change="planning-month-paid-objective-budget" data-channel="' + esc(selChannel) + '" data-group="' + esc(cellGroup) + '" data-month="' + esc(m) + '" data-objective="' + esc(objKey) + '" aria-label="Ngân sách Objective ' + esc(meta.label) + ' của ' + esc(selChannel) + ' trong tháng ' + esc(m) + '"' + detailDisAttr + '> ' + resultHtml + '</td><td>' + esc(rep && recordSegment(rep) ? recordSegment(rep).toUpperCase() : 'Dùng chung') + '</td><td>' + esc(rep ? brandNameOf(recordBrandId(rep)) : '—') + '</td></tr>';
+            // Audience của dòng Objective (mô hình B2B bottom-up):
+            // chọn B2C / B2B / Cả hai + ô % B2B khi Cả hai — chỉ hiện
+            // khi tháng đó ĐÃ có dòng của Objective này. Objective
+            // thuần B2C bị khóa lựa chọn B2B ngay trong control.
+            var audienceHtml = '';
+            if (oRows.length) {
+              var audRep = oRows[0];
+              audienceHtml = '<br>' + planningAudienceControlsHtml({ channel: selChannel, group: cellGroup, month: m, objective: objKey, audience: planRowEffectiveAudience(audRep), splitPct: planRowB2bSplitPct(audRep), lockedPureB2c: !!PURE_B2C_OBJECTIVE_KEYS[objKey], disAttr: detailDisAttr });
+            }
+            return '<tr data-planning-paid-objective-row="1" data-month="' + esc(m) + '" data-objective="' + esc(objKey) + '"><td>↳ ' + esc(vizMonthLabel(m)) + ' — Objective: ' + esc(meta.label) + '</td><td>—</td><td>' + costCell + '</td><td><input class="phase-input planning-month-input planning-paid-budget-input planning-paid-objective-input" type="number" step="1" min="0" value="' + esc(String(oBudget)) + '" data-action-change="planning-month-paid-objective-budget" data-channel="' + esc(selChannel) + '" data-group="' + esc(cellGroup) + '" data-month="' + esc(m) + '" data-objective="' + esc(objKey) + '" aria-label="Ngân sách Objective ' + esc(meta.label) + ' của ' + esc(selChannel) + ' trong tháng ' + esc(m) + '"' + detailDisAttr + '> ' + resultHtml + audienceHtml + '</td><td>' + esc(rep && recordSegment(rep) ? recordSegment(rep).toUpperCase() : 'Dùng chung') + '</td><td>' + esc(rep ? brandNameOf(recordBrandId(rep)) : '—') + '</td></tr>';
           }).join('') +
             '<tr data-planning-paid-month-total-row="1" data-month="' + esc(m) + '"><td><strong>Tổng ngân sách tháng ' + esc(m) + '</strong></td><td></td><td></td><td data-planning-paid-month-total="1" data-month="' + esc(m) + '"><strong>' + fmtMoney(budgetSum, 'VND') + '</strong></td><td colspan="2"></td></tr>';
         }
@@ -3818,7 +3939,8 @@
         html += '<p class="sub" data-planning-detail-hint="1">Sửa ô Số lượng hoặc Đơn giá theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng ngân sách nguồn (Số lượng trống, vd Paid Ads) không sửa Số lượng và Đơn giá ở đây — riêng dòng Paid Media thì sửa trực tiếp ô Ngân sách theo tháng (xem chú thích Paid Media bên dưới).</p>' +
           '<p class="sub" data-planning-detail-price-hint="1">Đơn giá: ô hiện đơn giá hiệu dụng của tháng — nhãn "Benchmark" nghĩa là đang lấy đơn giá Benchmark, nhập số vào ô Đơn giá để chuyển tháng đó sang "đặt tay". Xoá trắng ô Đơn giá rồi ra khỏi ô để bỏ đơn giá đặt tay, quay về đơn giá Benchmark.</p>' +
           '<p class="sub" data-planning-detail-budget-hint="1">Ngân sách của dòng thường chỉ tự tính (không sửa được): Ngân sách của tháng = Số lượng × Đơn giá hiệu dụng (đơn giá đặt tay nếu có, không thì đơn giá Benchmark). Ngoại lệ duy nhất: dòng thuộc nhóm Paid Media nhập ngân sách trực tiếp theo tháng ở cột Ngân sách (dòng không thuộc Paid Media không có ô nhập ngân sách).</p>' +
-          (selHasPaid ? '<p class="sub" data-planning-paid-budget-hint="1">Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Theo mô hình Objective, mỗi tháng hiển thị theo từng Objective: mỗi Objective có ô nhập ngân sách riêng, kết quả đặt tại tầng của Objective đó (Awareness → Views, Traffic → Visits, Signup → Signups, Remarketing → Paid) = Ngân sách ÷ đơn giá kết quả (cost_per_result) của Benchmark rồi chảy xuống qua tỉ lệ Benchmark — KHÔNG suy ngược lên tầng trên. Objective chưa có đơn giá trong file nguồn (vd Awareness) hiển thị "chưa có đơn giá": ngân sách vẫn tính vào tổng tháng nhưng chưa ra chỉ số. Tổng ngân sách tháng ở dòng tháng là chỉ đọc, bằng cộng các Objective.</p>' : '');
+          (selHasPaid ? '<p class="sub" data-planning-paid-budget-hint="1">Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Theo mô hình Objective, mỗi tháng hiển thị theo từng Objective: mỗi Objective có ô nhập ngân sách riêng, kết quả đặt tại tầng của Objective đó (Awareness → Views, Traffic → Visits, Signup → Signups, Remarketing → Paid) = Ngân sách ÷ đơn giá kết quả (cost_per_result) của Benchmark rồi chảy xuống qua tỉ lệ Benchmark — KHÔNG suy ngược lên tầng trên. Objective chưa có đơn giá trong file nguồn (vd Awareness) hiển thị "chưa có đơn giá": ngân sách vẫn tính vào tổng tháng nhưng chưa ra chỉ số. Tổng ngân sách tháng ở dòng tháng là chỉ đọc, bằng cộng các Objective.</p>' : '') +
+          (selRows.some(planRowIsBudgetDriven) ? '<p class="sub" data-planning-audience-hint="1">Audience (mô hình B2B bottom-up): mỗi dòng Objective (Paid Media) và mỗi dòng tháng Partnership/Event có chọn B2C / B2B / Cả hai + ô % cho B2B khi chọn Cả hai. Phần B2C của Lead Gen/Demo đặt kết quả tại tầng Signups rồi chảy xuống; phần B2B thành B2B Account qua lead_to_account / demo_to_account; Partnership/Event: phần B2C ÷ cost per Signup, phần B2B ÷ cost per B2B Account. Mọi Paid User từ luồng B2C đều sinh thêm B2B Account qua cầu nối paid_to_b2b của Channel. Objective thuần B2C (Awareness/Traffic/Signup/Remarketing) chỉ chạy B2C — lựa chọn B2B bị khóa. Chưa có tỉ lệ/đơn giá B2B thì phần tương ứng cho 0 account.</p>' : '');
       }
       html += tbl('<tr><th>Tháng</th><th>Số lượng</th><th>Đơn giá (VNĐ)</th><th>Ngân sách (VNĐ)</th><th>Segment</th><th>Brand</th></tr>' + detailMonthRows + '<tr data-planning-detail-total="1"><td><strong>Tổng dòng</strong></td><td><strong>' + fmtNum(detailTotal) + '</strong></td><td></td><td data-planning-detail-budget-total="1"><strong>' + fmtMoney(detailBudgetTotal, 'VND') + '</strong></td><td colspan="2"></td></tr>', 'planning-detail');
       // Forecast của chính dòng này — dùng NGUYÊN cơ chế sẵn có của Theo
@@ -3891,7 +4013,7 @@
   // thêm 2 ô opening_free / opening_paid (số dư trước tháng 1), nhập
   // MỘT LẦN theo Brand x năm, lưu trên chính Phase đầu tiên đó.
   function planningPhaseOperatingHtml(phase, disAttr, showOpening) {
-    var CAMEL = { paid_churn_rate: 'paidChurnRate', free_churn_rate: 'freeChurnRate', arppu: 'arppu', cogs_per_user: 'cogsPerUser', fixed_cost: 'fixedCost', opening_free: 'openingFree', opening_paid: 'openingPaid' };
+    var CAMEL = { paid_churn_rate: 'paidChurnRate', free_churn_rate: 'freeChurnRate', arppu: 'arppu', cogs_per_user: 'cogsPerUser', fixed_cost: 'fixedCost', opening_free: 'openingFree', opening_paid: 'openingPaid', b2b_churn_rate: 'b2bChurnRate', arppu_b2b: 'arppuB2b', cogs_per_b2b_account: 'cogsPerB2bAccount', opening_b2b: 'openingB2b' };
     function rateVal(field) {
       var v = phaseNumField(phase, field, CAMEL[field]);
       return v === null ? '' : ratePctText(v);
@@ -3910,14 +4032,20 @@
       '<label>COGS / user (VNĐ/user/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('cogs_per_user')) + '" data-action-change="phase-operating-money" data-field="cogs_per_user" data-phase-id="' + pid + '" aria-label="COGS trên mỗi user của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>Chi phí cố định mỗi tháng (VNĐ)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('fixed_cost')) + '" data-action-change="phase-operating-money" data-field="fixed_cost" data-phase-id="' + pid + '" aria-label="Chi phí cố định mỗi tháng của Phase ' + pname + '"' + disAttr + '></label>' +
       '</p>' +
-      '<p class="sub">Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng) × tổng user cuối kỳ (Free EOM + Paid EOM) — không theo % doanh thu. Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0.</p>';
+      '<p class="phase-operating-row" data-planning-phase-operating-b2b="1">' +
+      '<label>B2B churn rate (%/tháng)<input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(rateVal('b2b_churn_rate')) + '" data-action-change="phase-operating-rate" data-field="b2b_churn_rate" data-phase-id="' + pid + '" aria-label="B2B churn rate %/tháng của Phase ' + pname + '"' + disAttr + '></label> ' +
+      '<label>ARPPU B2B (VNĐ/B2B account/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('arppu_b2b')) + '" data-action-change="phase-operating-money" data-field="arppu_b2b" data-phase-id="' + pid + '" aria-label="ARPPU B2B của Phase ' + pname + '"' + disAttr + '></label> ' +
+      '<label>COGS / B2B account (VNĐ/account/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('cogs_per_b2b_account')) + '" data-action-change="phase-operating-money" data-field="cogs_per_b2b_account" data-phase-id="' + pid + '" aria-label="COGS trên mỗi B2B account của Phase ' + pname + '"' + disAttr + '></label>' +
+      '</p>' +
+      '<p class="sub">Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng) × tổng user cuối kỳ (Free EOM + Paid EOM) — không theo % doanh thu. Tài chính B2B chạy chuỗi tồn riêng: Revenue B2B = ARPPU B2B × B2B EOM, COGS B2B = COGS/B2B account × B2B EOM, Profit tính trên tổng B2C + B2B. Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0 — ngoại trừ khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0.</p>';
     if (showOpening) {
       html += '<div class="planning-phase-opening" data-planning-phase-opening="1" data-phase-id="' + pid + '"><h4>Số dư đầu kỳ của Brand (trước tháng 1)</h4>' +
         '<p class="phase-operating-row">' +
         '<label>Free đầu kỳ (opening_free)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('opening_free')) + '" data-action-change="phase-opening" data-field="opening_free" data-phase-id="' + pid + '" aria-label="Free đầu kỳ của Brand (trước tháng 1)"' + disAttr + '></label> ' +
-        '<label>Paid đầu kỳ (opening_paid)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('opening_paid')) + '" data-action-change="phase-opening" data-field="opening_paid" data-phase-id="' + pid + '" aria-label="Paid đầu kỳ của Brand (trước tháng 1)"' + disAttr + '></label>' +
+        '<label>Paid đầu kỳ (opening_paid)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('opening_paid')) + '" data-action-change="phase-opening" data-field="opening_paid" data-phase-id="' + pid + '" aria-label="Paid đầu kỳ của Brand (trước tháng 1)"' + disAttr + '></label> ' +
+        '<label>B2B đầu kỳ (opening_b2b)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('opening_b2b')) + '" data-action-change="phase-opening" data-field="opening_b2b" data-phase-id="' + pid + '" aria-label="B2B đầu kỳ của Brand (trước tháng 1)"' + disAttr + '></label>' +
         '</p>' +
-        '<p class="sub">Nhập MỘT LẦN theo Brand × năm — đặt tại khối Phase đầu tiên của năm này và lưu trên chính Phase đó; các Phase sau không có 2 ô này.</p></div>';
+        '<p class="sub">Nhập MỘT LẦN theo Brand × năm — đặt tại khối Phase đầu tiên của năm này và lưu trên chính Phase đó; các Phase sau không có các ô này.</p></div>';
     }
     html += '</div>';
     return html;
@@ -3993,7 +4121,7 @@
     if (!channels.length) {
       html += '<p class="sub">Phase này chưa có dòng plan nào khớp bộ lọc Brand/Segment hiện tại.</p>';
     } else {
-      var rateHeads = [['view_to_visit', 'View→Visit (%)'], ['visit_to_signup', 'Visit→Signup (%)'], ['signup_to_first', 'Signup→First (%)'], ['first_to_paid', 'First→Paid (%)']];
+      var rateHeads = [['view_to_visit', 'View→Visit (%)'], ['visit_to_signup', 'Visit→Signup (%)'], ['signup_to_first', 'Signup→First (%)'], ['first_to_paid', 'First→Paid (%)'], ['paid_to_b2b', 'Paid→B2B (%)'], ['lead_to_account', 'Lead→Account (%)'], ['demo_to_account', 'Demo→Account (%)']];
       var body = channels.map(function (ch) {
         var chRows = pRows.filter(function (r) { return String(r.channel || '—') === ch; });
         var qtyTotal = chRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
@@ -4035,10 +4163,11 @@
         });
         cells += '<td>' + (totals ? fmtNum(Math.round(totals.visits * 100) / 100) : '—') + '</td>' +
           '<td>' + (totals ? fmtNum(Math.round(totals.signups * 100) / 100) : '—') + '</td>' +
-          '<td>' + (totals ? fmtNum(Math.round(totals.paid * 100) / 100) : '—') + '</td>';
+          '<td>' + (totals ? fmtNum(Math.round(totals.paid * 100) / 100) : '—') + '</td>' +
+          '<td>' + (totals ? fmtNum(Math.round((totals.b2b || 0) * 100) / 100) : '—') + '</td>';
         return '<tr data-planning-phase-channel="' + esc(ch) + '">' + cells + '</tr>';
       }).join('');
-      html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đơn giá mỗi bài (VNĐ)</th><th>Đầu phễu (Views)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Signups</th><th>Forecast Paid</th></tr>' + body, 'planning-phase-channels');
+      html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đơn giá mỗi bài (VNĐ)</th><th>Đầu phễu (Views)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Signups</th><th>Forecast Paid</th><th>Forecast B2B Accounts</th></tr>' + body, 'planning-phase-channels');
       // Paid Media trong Phase: ngân sách theo Objective (CHỈ ĐỌC từ
       // cùng các dòng plan_rows — sửa ngân sách Objective ở bảng chi
       // tiết Theo tháng, KHÔNG sửa ở chế độ Theo phase).
@@ -4047,11 +4176,28 @@
         var objs = phasePaidObjectiveBudgets(chRows);
         if (!objs.length) return '';
         return '<p class="sub" data-planning-phase-paid-objectives="1" data-channel="' + esc(ch) + '"><strong>' + esc(ch) + ' — Ngân sách theo Objective trong Phase:</strong> ' +
-          objs.map(function (o) { return esc(o.label) + ': ' + fmtMoney(o.budget, 'VND'); }).join(' · ') + '</p>';
+          objs.map(function (o) {
+            return esc(o.label) + ': ' + fmtMoney(o.budget, 'VND') +
+              (o.audience ? ' <span data-planning-phase-objective-audience="1" data-objective="' + esc(o.objective) + '">(Audience: ' + esc(audienceLabel(o.audience)) + ' · B2C ' + fmtMoney(o.b2cBudget, 'VND') + ' / B2B ' + fmtMoney(o.b2bBudget, 'VND') + ')</span>' : '');
+          }).join(' · ') + '</p>';
       }).join('');
       if (paidBreakdowns) {
         html += paidBreakdowns +
           '<p class="sub" data-planning-phase-paid-note="1">Ngân sách Paid theo Objective ở chế độ Theo phase chỉ HIỂN THỊ (đọc từ cùng các dòng plan_rows) — muốn sửa ngân sách của từng Objective, sửa ở bảng chi tiết Theo tháng.</p>';
+      }
+      // Partnership/Event trong Phase: ngân sách + audience + phần
+      // B2C/B2B cũng CHỈ ĐỌC tại đây (sửa ở bảng chi tiết Theo tháng).
+      var budgetDrivenBreakdowns = channels.map(function (ch) {
+        var chRows = pRows.filter(function (r) { return String(r.channel || '—') === ch; });
+        var bds = phaseBudgetDrivenBreakdowns(chRows);
+        if (!bds.length) return '';
+        var bd = bds[0];
+        return '<p class="sub" data-planning-phase-budget-audience="1" data-channel="' + esc(ch) + '"><strong>' + esc(ch) + ' — Ngân sách budget-driven trong Phase:</strong> ' +
+          fmtMoney(bd.budget, 'VND') + ' (Audience: ' + esc(audienceLabel(bd.audience)) + ' · B2C ' + fmtMoney(bd.b2cBudget, 'VND') + ' / B2B ' + fmtMoney(bd.b2bBudget, 'VND') + ')</p>';
+      }).join('');
+      if (budgetDrivenBreakdowns) {
+        html += budgetDrivenBreakdowns +
+          '<p class="sub" data-planning-phase-budget-audience-note="1">Ngân sách và Audience của Partnership/Event ở chế độ Theo phase chỉ HIỂN THỊ — muốn sửa ngân sách/Audience, sửa ở bảng chi tiết Theo tháng.</p>';
       }
       html += '<p class="sub">Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).</p>';
       html += '<p class="sub" data-planning-phase-price-hint="1">Đơn giá mỗi bài: ô hiện đơn giá HIỆU DỤNG của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang đơn giá đặt tay, "Benchmark" nghĩa là đang lấy đơn giá Benchmark. Nhập một giá vào ô sẽ ghi đơn giá đặt tay đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × đơn giá hiệu dụng như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ đơn giá đặt tay của cả Phase, quay về Benchmark. Nếu các tháng đang có đơn giá khác nhau (do sửa lẻ ở Theo tháng), ô để trống kèm ghi chú "khác nhau theo tháng".</p>';
@@ -4137,9 +4283,30 @@
     var cacHtml = planningKpiSectionHtml('cac', 'KPI chi tiết theo tháng — CAC (VNĐ / Paid User)',
       'CAC = Ngân sách dự kiến của Channel trong tháng ÷ Paid Users forecast của Channel trong tháng; Paid Users = 0 (hoặc chưa tính được) thì hiển thị "—". Hàng <strong>Tất cả</strong>: tổng ngân sách của tháng ÷ tổng Paid Users của tháng. Cột Tổng = tổng ngân sách cả kỳ ÷ tổng Paid Users cả kỳ của Channel (KHÔNG phải trung bình các CAC tháng). CAC làm tròn tới đồng.',
       tbl(head + cacBody, 'planning-kpi-cac'));
-    // 4) CHỈ SỐ VẬN HÀNH & TÀI CHÍNH — bảng thứ 4, thu gọn như 3 bảng trên.
+    // 4) B2B ACCOUNTS — bảng thứ 5 theo thứ tự hiển thị (sau CAC):
+    // số B2B Account MỚI sinh trong tháng theo Channel, cộng cả 3
+    // nguồn qua engine: cầu nối Paid->B2B (mọi Paid User của luồng
+    // B2C x paid_to_b2b của Channel) + Lead/Demo->Account (phần B2B
+    // của Objective Lead Gen/Demo) + Partnership/Event trực tiếp.
+    // Channel chưa có forecast tháng đó -> "—"; có forecast mà chưa
+    // có tỉ lệ/đơn giá B2B -> 0 (đúng số engine tính, không bịa).
+    var b2bBody = data.channels.map(function (ch) {
+      return rowHtml('b2b', ch,
+        function (cell) { return cell.hasForecast ? fmtPlanningPaid(cell.b2b) : '—'; },
+        function (tot) { return tot.hasForecast ? fmtPlanningPaid(tot.b2b) : '—'; });
+    }).join('');
+    var b2bBlendedCells = months.map(function (m) {
+      var b = data.blended.months[m];
+      return '<td data-planning-kpi-cell="b2b" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasForecast) ? fmtPlanningPaid(b.b2b) : '—') + '</td>';
+    }).join('');
+    b2bBody += '<tr data-planning-kpi-row="b2b" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + b2bBlendedCells +
+      '<td data-planning-kpi-total="b2b" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningPaid(data.blended.totals.b2b) : '—') + '</strong></td></tr>';
+    var b2bHtml = planningKpiSectionHtml('b2b', 'KPI chi tiết theo tháng — B2B Accounts (Forecast)',
+      'B2B Accounts MỚI sinh trong tháng theo Channel × tháng, từ cùng engine funnel — cộng cả 3 nguồn: (1) cầu nối Paid → B2B: mọi Paid User sinh ra từ luồng B2C (content, Paid Objective B2C, phần B2C của Lead Gen/Demo) × tỉ lệ paid_to_b2b của Channel; (2) phần B2B của Objective Lead Generation / Demo → Account qua lead_to_account / demo_to_account; (3) Partnership/Event trực tiếp = ngân sách B2B ÷ cost per B2B account. Chưa có tỉ lệ/đơn giá B2B thì nguồn đó cho 0 account (hiện "chưa có tỉ lệ"/"chưa có đơn giá" ở nơi nhập). Hàng <strong>Tất cả</strong>: tổng B2B Accounts của mọi Channel có forecast trong tháng. Số hiển thị làm tròn tối đa 4 chữ số thập phân như bảng Paid Users.',
+      tbl(head + b2bBody, 'planning-kpi-b2b'));
+    // 5) CHỈ SỐ VẬN HÀNH & TÀI CHÍNH — thu gọn như các bảng trên.
     var operatingHtml = planningOperatingTableHtml(rows, benchmarks, months);
-    return '<div data-planning-kpi-tables="1"><h2>KPI chi tiết theo tháng (' + esc(months.length ? months[0].slice(0, 4) : '') + ')</h2>' + viewsHtml + paidHtml + cacHtml + operatingHtml + '</div>';
+    return '<div data-planning-kpi-tables="1"><h2>KPI chi tiết theo tháng (' + esc(months.length ? months[0].slice(0, 4) : '') + ')</h2>' + viewsHtml + paidHtml + cacHtml + b2bHtml + operatingHtml + '</div>';
   }
   // --- Bảng Chỉ số vận hành & tài chính theo tháng (bảng thứ 4) ---
   // Số liệu: Budget từ planBudgetFor, funnel (Reach/Visits/Free user/
@@ -4151,7 +4318,7 @@
   // thuộc năm đang xem. Tính RIÊNG theo từng Brand rồi cộng theo tháng
   // (mỗi Brand một chuỗi tồn riêng); Brand nào thiếu đầu vào thì chỉ số
   // liên quan của tháng hiện "—" (gộp: null nếu bất kỳ Brand nào null).
-  var OPERATING_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'paidEom', 'freeEom', 'totalUsers', 'revenue', 'cogs', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt'];
+  var OPERATING_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'paidEom', 'freeEom', 'totalUsers', 'revenue', 'cogs', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt', 'newB2b', 'b2bChurn', 'b2bEom', 'revenueB2b', 'cogsB2b'];
   function planningOperatingData(rows, benchmarks, months) {
     try {
       if (!D || typeof D.computeOperatingFinancials !== 'function') return null;
@@ -4172,8 +4339,8 @@
         mlist.forEach(function (m) {
           var bm = raw && raw.byMonth ? raw.byMonth[m] : null;
           funnelByMonth[m] = bm
-            ? { views: bm.views || 0, visits: bm.visits || 0, signups: bm.signups || 0, first: bm.first || 0, paid: bm.paid || 0 }
-            : { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+            ? { views: bm.views || 0, visits: bm.visits || 0, signups: bm.signups || 0, first: bm.first || 0, paid: bm.paid || 0, b2b: bm.b2b || 0 }
+            : { views: 0, visits: 0, signups: 0, first: 0, paid: 0, b2b: 0 };
         });
         var budgetByMonth = {};
         planBudgetFor(bRows, benchmarks).forEach(function (x) { budgetByMonth[x.month] = x.total; });
@@ -4189,7 +4356,10 @@
               free_churn_rate: phaseNumField(ph, 'free_churn_rate', 'freeChurnRate'),
               arppu: phaseNumField(ph, 'arppu', 'arppu'),
               cogs_per_user: phaseNumField(ph, 'cogs_per_user', 'cogsPerUser'),
-              fixed_cost: phaseNumField(ph, 'fixed_cost', 'fixedCost')
+              fixed_cost: phaseNumField(ph, 'fixed_cost', 'fixedCost'),
+              b2b_churn_rate: phaseNumField(ph, 'b2b_churn_rate', 'b2bChurnRate'),
+              arppu_b2b: phaseNumField(ph, 'arppu_b2b', 'arppuB2b'),
+              cogs_per_b2b_account: phaseNumField(ph, 'cogs_per_b2b_account', 'cogsPerB2bAccount')
             };
           }
         });
@@ -4201,7 +4371,8 @@
           months: mlist, funnelByMonth: funnelByMonth, budgetByMonth: budgetByMonth,
           inputsByMonth: inputsByMonth,
           openingFree: firstPhase ? phaseNumField(firstPhase, 'opening_free', 'openingFree') : null,
-          openingPaid: firstPhase ? phaseNumField(firstPhase, 'opening_paid', 'openingPaid') : null
+          openingPaid: firstPhase ? phaseNumField(firstPhase, 'opening_paid', 'openingPaid') : null,
+          openingB2b: firstPhase ? phaseNumField(firstPhase, 'opening_b2b', 'openingB2b') : null
         });
       });
       var mergedMonths = mlist.map(function (m, i) {
@@ -4218,7 +4389,7 @@
       });
       var totals = {};
       OPERATING_KEYS.forEach(function (k) {
-        if (k === 'paidEom' || k === 'freeEom' || k === 'totalUsers') {
+        if (k === 'paidEom' || k === 'freeEom' || k === 'totalUsers' || k === 'b2bEom') {
           totals[k] = mergedMonths.length ? mergedMonths[mergedMonths.length - 1][k] : null;
           return;
         }
@@ -4227,19 +4398,22 @@
         totals[k] = ok ? sum : null;
       });
       var missing = { opening: false, paid_churn_rate: false, free_churn_rate: false, arppu: false, cogs_per_user: false, fixed_cost: false };
+      var missingB2b = { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false };
       perBrand.forEach(function (pb) {
         Object.keys(missing).forEach(function (k) { if (pb.missing && pb.missing[k]) missing[k] = true; });
+        Object.keys(missingB2b).forEach(function (k) { if (pb.missingB2b && pb.missingB2b[k]) missingB2b[k] = true; });
       });
-      return { months: mergedMonths, totals: totals, missing: missing };
+      return { months: mergedMonths, totals: totals, missing: missing, missingB2b: missingB2b };
     } catch (e) { return null; }
   }
   // Hàng của bảng theo ĐÚNG thứ tự bản gốc của Zac.
   var OPERATING_ROWS = [
     ['budget', 'Budget', 'money'], ['reach', 'Reach', 'num'], ['visits', 'Visits', 'num'],
     ['freeUser', 'Free user', 'num'], ['newPaid', 'New Paid', 'num'], ['newFree', 'New Free', 'num'],
-    ['paidChurn', 'Paid churn', 'num'], ['freeChurn', 'Free churn', 'num'],
-    ['paidEom', 'Paid EOM', 'num'], ['freeEom', 'Free EOM', 'num'], ['totalUsers', 'Total users', 'num'],
-    ['revenue', 'Revenue', 'money'],
+    ['newB2b', 'New B2B Accounts', 'num'],
+    ['paidChurn', 'Paid churn', 'num'], ['freeChurn', 'Free churn', 'num'], ['b2bChurn', 'B2B churn', 'num'],
+    ['paidEom', 'Paid EOM', 'num'], ['freeEom', 'Free EOM', 'num'], ['b2bEom', 'B2B EOM', 'num'], ['totalUsers', 'Total users', 'num'],
+    ['revenue', 'Revenue', 'money'], ['revenueB2b', 'Revenue B2B', 'money'], ['cogsB2b', 'COGS B2B', 'money'],
     ['profitAfterCogsMkt', 'Profit (after COGS + mkt cost)', 'money'],
     ['profitAfterCogsFixedMkt', 'Profit (after COGS + fixed cost + mkt cost)', 'money']
   ];
@@ -4247,6 +4421,10 @@
     opening: 'số dư đầu kỳ (Free đầu kỳ / Paid đầu kỳ)',
     paid_churn_rate: 'Paid churn rate', free_churn_rate: 'Free churn rate',
     arppu: 'ARPPU', cogs_per_user: 'COGS / user', fixed_cost: 'Chi phí cố định (fixed cost)'
+  };
+  var OPERATING_MISSING_B2B_LABELS = {
+    opening_b2b: 'B2B đầu kỳ (opening_b2b)',
+    b2b_churn_rate: 'B2B churn rate', arppu_b2b: 'ARPPU B2B', cogs_per_b2b_account: 'COGS / B2B account'
   };
   function planningOperatingTableHtml(rows, benchmarks, months) {
     var data = planningOperatingData(rows, benchmarks, months);
@@ -4269,21 +4447,170 @@
         '<td data-planning-operating-total="' + esc(key) + '"><strong>' + fmtVal(kind, data.totals[key]) + '</strong></td></tr>';
     }).join('');
     var missingLabels = Object.keys(OPERATING_MISSING_LABELS).filter(function (k) { return data.missing[k]; })
-      .map(function (k) { return OPERATING_MISSING_LABELS[k]; });
-    var note = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Paid/Free churn = tồn cuối tháng trước × churn rate của Phase chứa tháng; Free EOM = tồn trước + New Free − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn; Revenue = ARPPU × Paid EOM; COGS = COGS/user × Total users (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, churn, Revenue, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối.' +
+      .map(function (k) { return OPERATING_MISSING_LABELS[k]; })
+      .concat(Object.keys(OPERATING_MISSING_B2B_LABELS).filter(function (k) { return data.missingB2b && data.missingB2b[k]; })
+        .map(function (k) { return OPERATING_MISSING_B2B_LABELS[k]; }));
+    var note = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Paid/Free churn = tồn cuối tháng trước × churn rate của Phase chứa tháng; Free EOM = tồn trước + New Free − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn; Revenue = ARPPU × Paid EOM; COGS = COGS/user × Total users (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Chuỗi B2B chạy riêng: B2B churn = B2B EOM đầu kỳ × B2B churn rate của Phase; B2B EOM = đầu kỳ + New B2B Accounts − B2B churn (account chuyển đổi KHÔNG bị trừ khỏi Paid EOM); Revenue B2B = ARPPU B2B × B2B EOM; COGS B2B = COGS/B2B account × B2B EOM; hai dòng Profit tính trên TỔNG B2C + B2B (Revenue + Revenue B2B − COGS − COGS B2B − Budget [− fixed cost]). Khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0 kể cả chưa nhập ARPPU B2B / COGS B2B. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, New B2B Accounts, churn, Revenue, Revenue B2B, COGS B2B, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối; dòng tồn B2B EOM cũng lấy giá trị tháng cuối.' +
       (data.months.some(function (r) { return r.freeClamped; }) ? ' Có tháng Free EOM phải kẹp về 0 vì công thức cho số âm.' : '') +
       (missingLabels.length
         ? ' <strong>Thiếu đầu vào:</strong> ' + esc(missingLabels.join(', ')) + ' — các chỉ số liên quan hiện "—" (nhập ở chế độ Theo phase, khối "Chỉ số vận hành & tài chính"; số dư đầu kỳ nhập ở khối Phase đầu tiên của năm).'
         : ' Đủ đầu vào: churn rate / ARPPU / COGS / fixed cost theo Phase và số dư đầu kỳ đều đã nhập ở chế độ Theo phase.');
     return planningKpiSectionHtml('operating', 'Chỉ số vận hành & tài chính theo tháng', note, tbl(head + body, 'planning-operating'));
   }
+  // --- Audience trên dòng budget-driven (mô hình B2B bottom-up) ---
+  // Điều khiển chọn Audience (B2C / B2B / Cả hai) + ô % B2B dùng trong
+  // bảng chi tiết Theo tháng: cho từng dòng Objective của Paid Media
+  // (objective khác null) và cho từng dòng tháng Partnership/Event
+  // (objective null). Objective THUẦN B2C (Awareness/Traffic/Signup/
+  // Remarketing): 2 lựa chọn B2B/Cả hai bị KHÓA (disabled) kèm ghi chú
+  // "chỉ chạy B2C" — engine cũng ép phần B2B = 0 cho các Objective này.
+  function planningAudienceControlsHtml(o) {
+    var aud = o.audience || 'b2c';
+    var objAttr = o.objective ? ' data-objective="' + esc(o.objective) + '"' : '';
+    var disAttr = o.disAttr || '';
+    var sel = '<select class="phase-input planning-audience-select" data-action-change="planning-row-audience" data-channel="' + esc(o.channel) + '" data-group="' + esc(o.group) + '" data-month="' + esc(o.month) + '"' + objAttr + ' aria-label="Audience của dòng ngân sách trong tháng ' + esc(o.month) + '"' + disAttr + '>' +
+      ['b2c', 'b2b', 'both'].map(function (k) {
+        var dis = (o.lockedPureB2c && k !== 'b2c') ? ' disabled' : '';
+        return '<option value="' + k + '"' + (aud === k ? ' selected' : '') + dis + '>' + (k === 'both' ? 'Cả hai (B2C + B2B)' : k.toUpperCase()) + '</option>';
+      }).join('') + '</select>';
+    var split = '';
+    if (aud === 'both') {
+      split = ' <label class="sub">% cho B2B <input class="phase-input planning-b2b-split-input" type="number" step="any" min="0" max="100" value="' + esc(o.splitPct === null || o.splitPct === undefined ? '' : String(o.splitPct)) + '" placeholder="—" data-action-change="planning-row-b2b-split" data-channel="' + esc(o.channel) + '" data-group="' + esc(o.group) + '" data-month="' + esc(o.month) + '"' + objAttr + ' aria-label="% ngân sách cho phần B2B trong tháng ' + esc(o.month) + '"' + disAttr + '></label>';
+    }
+    return '<span data-planning-audience="1"' + objAttr + '>Audience: ' + sel + split +
+      (o.lockedPureB2c ? ' <span class="sub" data-planning-audience-locked="1">Objective thuần B2C — chỉ chạy B2C, không chọn được B2B</span>' : '') + '</span>';
+  }
+  // Các dòng plan ĐÍCH của 1 ô Audience: đúng ô Channel × Group × tháng,
+  // chỉ dòng budget-driven (qty null thuộc Paid Media/Partnership/
+  // Event); có objective thì lọc thêm đúng Objective đó.
+  function planningAudienceTargetRows(channel, group, month, objective) {
+    var yearPrefix = String(month || '').slice(0, 4) + '-';
+    var yearRows = filteredPlanRows().filter(function (r) { return planRowMonth(r).indexOf(yearPrefix) === 0; });
+    var cellRows = planMonthRows(yearRows, channel, group, month).filter(planRowIsBudgetDriven);
+    if (objective) return cellRows.filter(function (r) { return planRowObjective(r) === objective; });
+    return cellRows;
+  }
+  function runAudiencePatchJobs(jobs, patch, okMsg, failLabel) {
+    var idx = 0, failed = 0;
+    function next() {
+      if (idx >= jobs.length) {
+        if (failed) toast(failLabel + ' nhưng ' + failed + ' dòng chưa lưu được — hãy thử lại.');
+        else toast(okMsg);
+        render(); return;
+      }
+      var job = jobs[idx++];
+      var p = {}; Object.keys(patch).forEach(function (k) { p[k] = patch[k]; });
+      saveResult(sUpdate('plan_rows', job.id, p), function () { next(); }, function () { failed++; next(); });
+    }
+    next();
+  }
+  // Lưu Audience cho các dòng budget-driven của 1 ô (Objective × tháng
+  // hoặc tháng Partnership/Event). Cùng guard với mọi ô Planning Theo
+  // tháng (planningMonthSaveGuard). Objective thuần B2C bị khóa ở cả
+  // UI lẫn handler này: chọn B2B/Cả hai -> chặn, dữ liệu không đổi.
+  function savePlanningRowAudience(channel, group, month, objective, raw) {
+    if (!planningMonthSaveGuard()) return;
+    if (!/^\d{4}-\d{2}$/.test(String(month || ''))) { toast('Không xác định được tháng của ô Audience.'); render(); return; }
+    var aud = String(raw || '').trim().toLowerCase();
+    if (aud !== 'b2c' && aud !== 'b2b' && aud !== 'both') { toast('Audience phải là B2C, B2B hoặc Cả hai.'); render(); return; }
+    var objKey = objective ? planRowObjective({ objective: objective }) : null;
+    if (objKey && PURE_B2C_OBJECTIVE_KEYS[objKey] && aud !== 'b2c') {
+      toast('Objective ' + paidObjectiveMeta(objKey).label + ' là Objective thuần B2C — chỉ chạy B2C, không chọn được B2B.'); render(); return;
+    }
+    var targets = planningAudienceTargetRows(channel, group, month, objKey);
+    if (!targets.length) { toast('Không có dòng budget-driven nào trong tháng ' + month + ' để lưu Audience.'); render(); return; }
+    var jobs = targets.filter(function (r) { return planRowAudience(r) !== aud; });
+    if (!jobs.length) { render(); return; }
+    runAudiencePatchJobs(jobs, { audience: aud },
+      'Đã lưu Audience ' + audienceLabel(aud) + ' cho ' + channel + ' trong tháng ' + month + ' — Forecast B2B đã tính lại.',
+      'Đã lưu Audience cho ' + channel + ' trong tháng ' + month);
+  }
+  // Lưu % B2B (b2b_split_pct) cho các dòng budget-driven của 1 ô khi
+  // Audience = 'both': số % từ 0 đến 100 (lưu dạng % như field nguồn);
+  // xoá trắng = null (chưa chia -> engine tính phần B2B = 0).
+  function savePlanningRowB2bSplit(channel, group, month, objective, raw) {
+    if (!planningMonthSaveGuard()) return;
+    if (!/^\d{4}-\d{2}$/.test(String(month || ''))) { toast('Không xác định được tháng của ô % B2B.'); render(); return; }
+    var objKey = objective ? planRowObjective({ objective: objective }) : null;
+    var isClear = raw === '' || raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '');
+    var v = null;
+    if (!isClear) {
+      v = Number(raw);
+      if (isNaN(v) || v < 0 || v > 100) { toast('% B2B phải là số từ 0 đến 100.'); render(); return; }
+    }
+    var targets = planningAudienceTargetRows(channel, group, month, objKey);
+    if (!targets.length) { toast('Không có dòng budget-driven nào trong tháng ' + month + ' để lưu % B2B.'); render(); return; }
+    var jobs = targets.filter(function (r) { return planRowB2bSplitPct(r) !== v; });
+    if (!jobs.length) { render(); return; }
+    runAudiencePatchJobs(jobs, { b2b_split_pct: v },
+      v === null
+        ? 'Đã xoá % B2B cho ' + channel + ' trong tháng ' + month + ' — phần B2B tính là 0 cho tới khi nhập lại.'
+        : 'Đã lưu % B2B = ' + v + '% cho ' + channel + ' trong tháng ' + month + ' — Forecast B2B đã tính lại.',
+      'Đã lưu % B2B cho ' + channel + ' trong tháng ' + month);
+  }
+  // Lưu Ngân sách của 1 ô tháng Partnership/Event (dòng budget-driven
+  // KHÔNG thuộc Paid Media): cùng mẫu với savePlanningMonthPaidBudget
+  // (validate số nguyên >= 0; nhiều dòng trong ô thì phân bổ tổng mới
+  // theo tỉ lệ hiện tại bằng distributeQty; ô chưa có dòng thì tạo
+  // dòng mới budget-driven mang audience của dòng mẫu cùng Channel).
+  function savePlanningDrivenBudget(channel, group, month, raw) {
+    if (!planningMonthSaveGuard()) return;
+    if (!/^\d{4}-\d{2}$/.test(String(month || ''))) { toast('Không xác định được tháng của ô Ngân sách.'); render(); return; }
+    if (group !== 'Partnership' && group !== 'Event') { toast('Ô này không thuộc nhóm Partnership/Event nên không nhập ngân sách trực tiếp tại đây.'); render(); return; }
+    var v = parsePlanPaidBudget(raw);
+    if (v === null) { toast('Ngân sách phải là số nguyên từ 0 trở lên.'); render(); return; }
+    var yearPrefix = String(month).slice(0, 4) + '-';
+    var yearRows = filteredPlanRows().filter(function (r) { return planRowMonth(r).indexOf(yearPrefix) === 0; });
+    var cellRows = planMonthRows(yearRows, channel, group, month);
+    var bdRows = cellRows.filter(function (r) { return planRowIsBudgetDriven(r); });
+    if (bdRows.length) {
+      var news = distributeQty(v, bdRows.map(function (r) { var d = planRowDirectBudget(r); return d === null ? 0 : d; }));
+      var jobs = [];
+      bdRows.forEach(function (r, i) { var cur = planRowDirectBudget(r); if ((cur === null ? 0 : cur) !== news[i]) jobs.push({ id: r.id, budget: news[i] }); });
+      if (!jobs.length) { render(); return; }
+      var idx = 0, failed = 0;
+      function next() {
+        if (idx >= jobs.length) {
+          if (failed) toast('Đã lưu Ngân sách ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' nhưng ' + failed + ' dòng chưa lưu được — hãy thử lại.');
+          else toast('Đã lưu Ngân sách ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Tổng ngân sách và Forecast đã tính lại.');
+          render(); return;
+        }
+        var job = jobs[idx++];
+        saveResult(sUpdate('plan_rows', job.id, { budget: job.budget }), function () { next(); }, function () { failed++; next(); });
+      }
+      next();
+      return;
+    }
+    if (cellRows.length) { toast('Ô này chỉ có dòng Số lượng (content) nên ngân sách chỉ tự tính, không nhập trực tiếp được.'); render(); return; }
+    if (v === 0) { render(); return; }
+    var siblings = yearRows.filter(function (r) { return String(r.channel || '—') === String(channel) && planRowGroup(r) === String(group) && planRowIsBudgetDriven(r); });
+    if (!siblings.length) { toast('Không có dòng budget-driven nào của Channel này để tạo dòng cho tháng ' + month + '.'); render(); return; }
+    var tpl = siblings[0];
+    var objB = { month: String(month), channel: String(channel), group: planRowGroup(tpl), qty: null, budget: v, unit: null, audience: planRowEffectiveAudience(tpl), b2b_split_pct: planRowB2bSplitPct(tpl) };
+    if (tpl.brand_id !== undefined && tpl.brand_id !== null) objB.brand_id = tpl.brand_id;
+    else if (tpl.brandId !== undefined && tpl.brandId !== null) objB.brandId = tpl.brandId;
+    var segB = recordSegment(tpl);
+    if (segB) objB.segment = segB;
+    var tplBrandB = recordBrandId(tpl);
+    var newPhaseIdB = null;
+    brandPhasesList().forEach(function (p) {
+      if (newPhaseIdB) return;
+      if (tplBrandB && String(recordBrandId(p) || '') !== String(tplBrandB)) return;
+      if (phaseMonths(p).indexOf(String(month)) !== -1) newPhaseIdB = p.id;
+    });
+    if (newPhaseIdB) objB.phase_id = newPhaseIdB;
+    saveResult(sCreate('plan_rows', objB),
+      function () { toast('Đã tạo dòng budget-driven và lưu Ngân sách ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Tổng ngân sách và Forecast đã tính lại.'); render(); },
+      function (msg) { toast('Chưa lưu được Ngân sách: ' + msg); render(); });
+  }
+
   // --- Lưu các ô nhập Theo phase (chỉ chạy khi phaseSaveGuard cho qua) ---
   function savePhaseAssumption(phaseId, channel, patch, okMsg) {
     var existing = phaseAssumptionFor(phaseId, channel);
     var done = function () { toast(okMsg); render(); };
     var fail = function (msg) { toast('Chưa lưu được: ' + msg); render(); };
     if (existing) { saveResult(sUpdate('phase_assumptions', existing.id, patch), done, fail); return; }
-    var obj = { phase_id: phaseId, channel: channel, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null };
+    var obj = { phase_id: phaseId, channel: channel, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, top_funnel_override: null };
     Object.keys(patch).forEach(function (k) { obj[k] = patch[k]; });
     saveResult(sCreate('phase_assumptions', obj), done, fail);
   }
@@ -4302,13 +4629,15 @@
   // có (savePhaseRate); tiền/số dư là số >= 0. Xoá trắng ô = ghi null
   // (đầu vào thành "thiếu", bảng tài chính hiện "—" cho chỉ số liên
   // quan) — không điền 0 lặng lẽ.
-  var PHASE_OPERATING_RATE_FIELDS = ['paid_churn_rate', 'free_churn_rate'];
-  var PHASE_OPERATING_MONEY_FIELDS = ['arppu', 'cogs_per_user', 'fixed_cost'];
-  var PHASE_OPENING_FIELDS = ['opening_free', 'opening_paid'];
+  var PHASE_OPERATING_RATE_FIELDS = ['paid_churn_rate', 'free_churn_rate', 'b2b_churn_rate'];
+  var PHASE_OPERATING_MONEY_FIELDS = ['arppu', 'cogs_per_user', 'fixed_cost', 'arppu_b2b', 'cogs_per_b2b_account'];
+  var PHASE_OPENING_FIELDS = ['opening_free', 'opening_paid', 'opening_b2b'];
   var PHASE_OPERATING_LABELS = {
     paid_churn_rate: 'Paid churn rate', free_churn_rate: 'Free churn rate',
     arppu: 'ARPPU', cogs_per_user: 'COGS / user', fixed_cost: 'Chi phí cố định mỗi tháng',
-    opening_free: 'Free đầu kỳ', opening_paid: 'Paid đầu kỳ'
+    opening_free: 'Free đầu kỳ', opening_paid: 'Paid đầu kỳ',
+    b2b_churn_rate: 'B2B churn rate', arppu_b2b: 'ARPPU B2B', cogs_per_b2b_account: 'COGS / B2B account',
+    opening_b2b: 'B2B đầu kỳ'
   };
   function savePhaseOperatingField(phaseId, field, raw, isRate) {
     if (!phaseSaveGuard()) return;
@@ -4793,6 +5122,12 @@
     }
     var month = String(year) + '-01';
     var obj = { month: month, channel: channel, group: group, qty: 0, budget: null, brand_id: brandId, segment: segment, unit: null };
+    // Dòng MỚI ở nhóm Partnership/Event: mặc định BUDGET-DRIVEN (qty
+    // null, ngân sách nhập trực tiếp theo tháng ở bảng chi tiết) + có
+    // audience (mặc định 'b2c', sửa được ở bảng chi tiết Theo tháng) —
+    // mô hình B2B bottom-up. Các nhóm khác giữ nguyên dòng qty = 0.
+    var isBudgetDrivenGroup = group === 'Partnership' || group === 'Event';
+    if (isBudgetDrivenGroup) { obj.qty = null; obj.budget = 0; obj.audience = 'b2c'; obj.b2b_split_pct = null; }
     var phaseId = planningPhaseIdForNewRow(brandId, month);
     if (phaseId) obj.phase_id = phaseId;
     saveResult(sCreate('plan_rows', obj), function () {
@@ -4802,7 +5137,8 @@
       UI.planningChannelGroup = group;
       if (UI.brandFilter && UI.brandFilter !== 'all' && String(UI.brandFilter) !== brandId) UI.brandFilter = brandId;
       if (UI.segmentFilter && UI.segmentFilter !== 'all' && UI.segmentFilter !== segment) UI.segmentFilter = segment;
-      var doneMsg = 'Đã thêm dòng ' + channel + ' vào Planning ' + year + ' của ' + (brand.name || brandId) + ' — bấm tên Channel trong lưới (bảng chi tiết đang mở sẵn) để sửa Số lượng/Đơn giá từng tháng.';
+      var doneMsg = 'Đã thêm dòng ' + channel + ' vào Planning ' + year + ' của ' + (brand.name || brandId) + ' — bấm tên Channel trong lưới (bảng chi tiết đang mở sẵn) để sửa Số lượng/Đơn giá từng tháng.' +
+        (isBudgetDrivenGroup ? ' Dòng ' + group + ' mặc định budget-driven: nhập Ngân sách trực tiếp theo tháng và chọn Audience (B2C/B2B/Cả hai) trong bảng chi tiết.' : '');
       if (unitPrice === null) { toast(doneMsg); render(); return; }
       var existingBm = benchmarkForRow({ brand_id: brandId, channel: channel }, benchmarksList());
       if (existingBm) {
@@ -8714,6 +9050,9 @@
     if (ctxKind === 'planning-month-unit-price') { savePlanningMonthUnitPrice(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-paid-budget') { savePlanningMonthPaidBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-paid-objective-budget') { savePlanningMonthPaidObjectiveBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.getAttribute('data-objective'), t.value); return; }
+    if (ctxKind === 'planning-driven-budget') { savePlanningDrivenBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
+    if (ctxKind === 'planning-row-audience') { savePlanningRowAudience(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.getAttribute('data-objective'), t.value); return; }
+    if (ctxKind === 'planning-row-b2b-split') { savePlanningRowB2bSplit(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.getAttribute('data-objective'), t.value); return; }
     if (ctxKind === 'planning-add-brand') { UI.planningAddBrand = t.value || null; render(); return; }
     if (ctxKind === 'phase-views') { savePhaseViews(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'phase-rate') { savePhaseRate(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.getAttribute('data-field'), t.value); return; }

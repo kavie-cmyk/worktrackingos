@@ -238,10 +238,12 @@ test('POF [static]: khối Phase có 5 ô nhập operating + 2 ô opening (chỉ
   const save = section('function savePhaseOperatingField(phaseId, field, raw, isRate)', '// --- Lưu ô Số lượng trong BẢNG CHI TIẾT Theo tháng');
   assert.match(save, /phaseSaveGuard\(\)/);
   assert.match(save, /ratePatch\[field\] = n \/ 100/);
-  // Thứ tự hàng của bảng đúng bản gốc của Zac.
+  // Thứ tự hàng của bảng đúng bản gốc của Zac + 5 hàng B2B của mô hình
+  // B2B bottom-up (New B2B Accounts cạnh New Free; B2B churn cạnh churn
+  // B2C; B2B EOM cạnh các dòng tồn; Revenue B2B / COGS B2B cạnh Revenue).
   const rowsDef = section('var OPERATING_ROWS = [', 'var OPERATING_MISSING_LABELS');
-  const labels = [...rowsDef.matchAll(/'([a-zA-Z]+)', '([^']+)'/g)].map((m) => m[2]);
-  assert.deepEqual(labels, ['Budget', 'Reach', 'Visits', 'Free user', 'New Paid', 'New Free', 'Paid churn', 'Free churn', 'Paid EOM', 'Free EOM', 'Total users', 'Revenue', 'Profit (after COGS + mkt cost)', 'Profit (after COGS + fixed cost + mkt cost)']);
+  const labels = [...rowsDef.matchAll(/'([a-zA-Z0-9]+)', '([^']+)'/g)].map((m) => m[2]);
+  assert.deepEqual(labels, ['Budget', 'Reach', 'Visits', 'Free user', 'New Paid', 'New Free', 'New B2B Accounts', 'Paid churn', 'Free churn', 'B2B churn', 'Paid EOM', 'Free EOM', 'B2B EOM', 'Total users', 'Revenue', 'Revenue B2B', 'COGS B2B', 'Profit (after COGS + mkt cost)', 'Profit (after COGS + fixed cost + mkt cost)']);
   const kpi = section('function planningKpiTablesHtml(rows, benchmarks, months)', '// --- Bảng Chỉ số vận hành');
   assert.match(kpi, /planningOperatingTableHtml\(rows, benchmarks, months\)/);
   const tblFn = section('function planningOperatingTableHtml(rows, benchmarks, months)', '// --- Lưu các ô nhập Theo phase');
