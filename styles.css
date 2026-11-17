@@ -637,6 +637,7 @@ table.col-resize-measuring th,table.col-resize-measuring td{white-space:nowrap!i
 .planning-phase .phase-uplift-row label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--color-text-secondary)}
 .phase-input{width:92px;max-width:100%}
 .planning-month-input{width:64px}
+.planning-budget-input{width:118px}
 .phase-input-wide{width:120px}
 .phase-input:disabled{opacity:.55;cursor:not-allowed;background:var(--color-surface-sunken)}
 #kpi-phase-filter-form{margin:8px 0}
