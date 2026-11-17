@@ -76,7 +76,7 @@ test('PB2B [domain] (a2): cầu nối áp cho CẢ Paid Objective thuần B2C v�
 
 test('PB2B [domain] (a3): paid_to_b2b sửa theo Phase + uplift qua phase_assumptions như các tỉ lệ funnel khác', () => {
   const phases = [{ id: 'ph-1', brand_id: 'b1', start_month: '2027-01', end_month: '2027-02', uplift_percent_per_month: 10 }];
-  const assumptions = [{ phase_id: 'ph-1', channel: 'KOL X', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, paid_to_b2b: 0.2, lead_to_account: null, demo_to_account: null, top_funnel_override: null }];
+  const assumptions = [{ phase_id: 'ph-1', channel: 'KOL X', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, paid_to_b2b: 0.2, lead_to_account: null, demo_to_account: null, views_per_unit: null }];
   const bm = [{ brand_id: 'b1', channel: 'KOL X', group: 'KOL', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, paid_to_b2b: null, direct_budget: false }];
   const mk = (month) => [{ id: 'r-' + month, brand_id: 'b1', segment: 'b2c', month, channel: 'KOL X', group: 'KOL', qty: 10, budget: null, phase_id: 'ph-1' }];
   const ctx = { phases, phaseAssumptions: assumptions };
@@ -311,7 +311,7 @@ function makeHarness(rows, phases, benchmarks, assumptions, brands) {
   };
   const factory = new Function('Store', 'D', 'UI', 'cfVal', 'canEdit', 'toast', 'render', 'sUpdate', 'sCreate', 'saveResult', 'esc', 'fmtNum', 'fmtMoney', 'tbl', 'vizMonthLabel', 'vizFunnelHtml',
     helpers + '\n' + phaseBlock +
-    '\nreturn { UI: UI, planningKpiData: planningKpiData, planningKpiTablesHtml: planningKpiTablesHtml, planningOperatingData: planningOperatingData, planningOperatingTableHtml: planningOperatingTableHtml, planningAudienceControlsHtml: planningAudienceControlsHtml, savePlanningRowAudience: savePlanningRowAudience, savePlanningRowB2bSplit: savePlanningRowB2bSplit, savePlanningDrivenBudget: savePlanningDrivenBudget, savePhaseOperatingRate: savePhaseOperatingRate, savePhaseOperatingMoney: savePhaseOperatingMoney, savePhaseOpening: savePhaseOpening, savePhaseRate: savePhaseRate, planningPhaseBlockHtml: planningPhaseBlockHtml, phasePaidObjectiveBudgets: phasePaidObjectiveBudgets, phaseBudgetDrivenBreakdowns: phaseBudgetDrivenBreakdowns, savePlanningAddRow: savePlanningAddRow, planRowIsBudgetDriven: planRowIsBudgetDriven, planRowEffectiveAudience: planRowEffectiveAudience };');
+    '\nreturn { UI: UI, planningKpiData: planningKpiData, planningKpiTablesHtml: planningKpiTablesHtml, planningOperatingData: planningOperatingData, planningOperatingTableHtml: planningOperatingTableHtml, planningAudienceControlsHtml: planningAudienceControlsHtml, savePlanningRowAudience: savePlanningRowAudience, savePlanningRowB2bSplit: savePlanningRowB2bSplit, savePlanningDrivenBudget: savePlanningDrivenBudget, savePhaseOperatingRate: savePhaseOperatingRate, savePhaseOperatingMoney: savePhaseOperatingMoney, savePhaseOpening: savePhaseOpening, savePhaseRate: savePhaseRate, savePhaseViews: savePhaseViews, planningPhaseBlockHtml: planningPhaseBlockHtml, phasePaidObjectiveBudgets: phasePaidObjectiveBudgets, phaseBudgetDrivenBreakdowns: phaseBudgetDrivenBreakdowns, savePlanningAddRow: savePlanningAddRow, planRowIsBudgetDriven: planRowIsBudgetDriven, planRowEffectiveAudience: planRowEffectiveAudience };');
   const h = factory(Store, domain, UI, cfValStub,
     () => true,
     (m) => state.toasts.push(m),
@@ -463,6 +463,31 @@ test('PB2B [app unit]: Theo phase — 3 tỉ lệ B2B sửa được tại cùng
   assert.ok(block.includes('Forecast B2B Accounts'), 'bảng Channel Phase phải có cột Forecast B2B Accounts');
   assert.ok(block.includes('data-field="b2b_churn_rate"'), 'khối Phase phải có ô B2B churn rate');
   assert.ok(block.includes('data-field="opening_b2b"'), 'Phase đầu phải có ô opening_b2b');
+  // Views mỗi bài (đổi ngữ nghĩa 17/11/2026): cột theo nhãn mới; KOL X
+  // hiện giá trị MỖI BÀI hiệu dụng của Benchmark (output 200) kèm nhãn
+  // Benchmark — KHÔNG phải tổng views cả Phase; Ads B2B (Paid, không
+  // dòng qty) -> ô phase-views disabled hiện "—".
+  assert.ok(block.includes('<th>Views mỗi bài (đầu phễu)</th>'), 'cột Views phải theo nhãn mới');
+  const kolViews = /data-action-change="phase-views" data-phase-id="ph-1" data-channel="KOL X"[^>]*value="200"/.test(block)
+    || /value="200"[^>]*data-action-change="phase-views" data-phase-id="ph-1" data-channel="KOL X"/.test(block);
+  assert.ok(kolViews, 'ô Views mỗi bài của KOL X phải hiện 200 (Benchmark output mỗi bài)');
+  const paidViews = block.match(/<input[^>]*data-action-change="phase-views"[^>]*data-channel="Ads B2B"[^>]*>/);
+  assert.ok(paidViews && /disabled/.test(paidViews[0]) && /placeholder="—"/.test(paidViews[0]), 'ô Views mỗi bài của Paid (không qty) phải disabled và hiện —');
+});
+
+test('PB2B [app unit]: savePhaseViews — lưu views_per_unit vào phase_assumptions + toast ngữ nghĩa mỗi bài; xoá trắng quay về Benchmark', () => {
+  const rows = b2bRows();
+  const phases = JSON.parse(JSON.stringify(B2B_PHASES));
+  const assumptions = [];
+  const { h, state } = makeHarness(rows, phases, B2B_BENCH, assumptions);
+  h.savePhaseViews('ph-1', 'KOL X', '5000');
+  const asm = assumptions.find((a) => a.channel === 'KOL X');
+  assert.ok(asm, 'savePhaseViews phải tạo phase_assumptions');
+  assert.equal(asm.views_per_unit, 5000, 'nhập 5000 lưu views_per_unit = 5000');
+  assert.ok(state.toasts.some((t) => t.includes('Views mỗi bài 5.000') && t.includes('Forecast tháng = Số lượng × Views mỗi bài')), 'toast lưu phải nêu rõ ngữ nghĩa mỗi bài, got: ' + state.toasts.join(' | '));
+  h.savePhaseViews('ph-1', 'KOL X', '');
+  assert.equal(asm.views_per_unit, null, 'xoá trắng -> views_per_unit = null');
+  assert.ok(state.toasts.some((t) => t.includes('quay về Views mỗi bài của Benchmark')), 'toast xoá phải nói quay về Views mỗi bài của Benchmark');
 });
 
 test('PB2B [app unit]: bảng tài chính Theo tháng có đủ hàng B2B và tính đúng ca (c) qua đường app — New B2B Accounts / B2B churn / B2B EOM / Revenue B2B / COGS B2B', () => {

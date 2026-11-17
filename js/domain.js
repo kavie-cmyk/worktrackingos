@@ -2361,7 +2361,7 @@
   // ctx = { phases: [{id, brand_id, start_month, end_month,
   //   uplift_percent_per_month}], phaseAssumptions: [{phase_id, channel,
   //   view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
-  //   top_funnel_override}] } — cả hai đều tuỳ chọn; không truyền ctx thì
+  //   views_per_unit}] } — cả hai đều tuỳ chọn; không truyền ctx thì
   // forecastFunnel giữ nguyên hành vi v1.
 
   /**
@@ -2452,8 +2452,8 @@
     if (!a) return null;
     return _planNum(a[snake] !== undefined && a[snake] !== null ? a[snake] : a[camel]);
   }
-  function _assumpOverride(a) {
-    return _assumpField(a, 'top_funnel_override', 'topFunnelOverride');
+  function _assumpViewsPerUnit(a) {
+    return _assumpField(a, 'views_per_unit', 'viewsPerUnit');
   }
 
   /**
@@ -2469,17 +2469,20 @@
    *   phase.uplift_percent_per_month ?? 0, n) với n = số tháng từ
    *   start_month của phase tới tháng của row (tháng đầu phase n = 0).
    *   Uplift CHỈ áp vào 4 tỉ lệ chuyển đổi — không áp qty/output_per_unit.
-   * - top_funnel_override của assumption(phase, channel) là TỔNG đầu phễu
-   *   (views) của cả phase cho channel đó: phân bổ về từng tháng tỉ lệ theo
-   *   qty của các row trong phase×channel (qty 0 → 0; mọi qty đều 0 → chia
-   *   đều theo số row). Cách làm tròn: override nguyên → largest remainder
-   *   (phần nguyên theo sàn, phần dư 1 đơn vị cho các tháng có phần lẻ lớn
-   *   nhất, hòa thì theo thứ tự row) nên tổng các tháng ĐÚNG bằng override;
-   *   override không nguyên → chia tỉ lệ thuần và dồn phần dư vào tháng
-   *   cuối có row của nhóm.
+   * - views_per_unit của assumption(phase, channel) là số Views MỖI BÀI
+   *   (đầu phễu trên 1 KOL/content) cho phase×channel đó: row thuộc phase
+   *   có assumption.views_per_unit khác null → views của row =
+   *   qty × views_per_unit; ngược lại views = qty × benchmark
+   *   .output_per_unit như v1. Uplift KHÔNG áp vào views_per_unit/qty
+   *   (như không áp vào output_per_unit). ĐỔI NGỮ NGHĨA 17/11/2026:
+   *   trường này thay cơ chế cũ (lưu ở cùng cột DB top_funnel_override)
+   *   vốn hiểu giá trị lưu là TỔNG views của cả phase rồi phân bổ ngược
+   *   về từng tháng theo tỉ trọng qty — cơ chế phân bổ đó ĐÃ BỎ hẳn.
+   *   Giá trị đã lưu theo ngữ nghĩa cũ đều là null (seed/demo và
+   *   production đều chưa từng đặt) nên đổi ngữ nghĩa không mất dữ liệu.
    * - Channel không benchmark VÀ không assumption đủ tỉ lệ → null như v1.
    *   Assumption đủ 4 tỉ lệ nhưng không benchmark: chỉ tính được khi có
-   *   top_funnel_override (có đầu phễu); thiếu đầu phễu → null.
+   *   views_per_unit (để suy views = qty × views_per_unit); thiếu → null.
    * - Paid Media (benchmark direct_budget) — MÔ HÌNH OBJECTIVE: mỗi
    *   dòng Paid mang field `objective`; kết quả của objective đặt TẠI
    *   tầng của nó: result = budget ÷ cost_per_result[objective] của
@@ -2512,51 +2515,11 @@
       byMonth[m] = { month: m, views: 0, visits: 0, signups: 0, first: 0, paid: 0, b2b: 0, hasForecast: false };
     });
     var totals = { views: 0, visits: 0, signups: 0, first: 0, paid: 0, b2b: 0 };
-    // Tiền xử lý: resolve phase cho mọi row + phân bổ top_funnel_override.
+    // Tiền xử lý: resolve phase cho mọi row (views mỗi bài của phase
+    // được áp trực tiếp tại từng row ở dưới — không còn bước phân bổ).
     var resolved = list.map(function (r) {
       return _resolvePhase(phases, r || {}, _planMonth(r));
     });
-    var overrideViews = {}; // index của row trong list -> views được phân bổ
-    (function allocateOverrides() {
-      var groups = {};
-      list.forEach(function (r, i) {
-        var pid = resolved[i].phaseId;
-        if (!pid || !r || !r.channel) return;
-        var a = assumpIdx[pid + '|' + String(r.channel)];
-        if (!a) return;
-        var ov = _assumpOverride(a);
-        if (ov === null) return;
-        var key = pid + '|' + String(r.channel);
-        if (!groups[key]) groups[key] = { override: ov, items: [] };
-        groups[key].items.push(i);
-      });
-      Object.keys(groups).forEach(function (key) {
-        var g = groups[key];
-        var totalQty = 0;
-        g.items.forEach(function (i) { totalQty += _planNum(list[i] && list[i].qty) || 0; });
-        var raw = g.items.map(function (i) {
-          if (totalQty > 0) return g.override * ((_planNum(list[i] && list[i].qty) || 0) / totalQty);
-          return g.override / g.items.length;
-        });
-        var alloc;
-        if (Number.isInteger(g.override)) {
-          // Largest remainder: sàn + phát phần dư theo phần lẻ lớn nhất.
-          alloc = raw.map(function (v) { return Math.floor(v); });
-          var rem = g.override - alloc.reduce(function (s, v) { return s + v; }, 0);
-          var order = g.items.map(function (_, k) { return k; }).sort(function (x, y) {
-            var fx = raw[x] - Math.floor(raw[x]);
-            var fy = raw[y] - Math.floor(raw[y]);
-            return fy - fx || x - y;
-          });
-          for (var t = 0; t < rem && t < order.length; t++) alloc[order[t]] += 1;
-        } else {
-          alloc = raw.slice();
-          var sum = alloc.reduce(function (s, v) { return s + v; }, 0);
-          alloc[alloc.length - 1] += g.override - sum;
-        }
-        g.items.forEach(function (rowIdx, k) { overrideViews[rowIdx] = alloc[k]; });
-      });
-    })();
     var byPhase = {};
     var detail = list.map(function (r, i) {
       var res = resolved[i];
@@ -2596,7 +2559,8 @@
       if ((b && (b.direct_budget || b.directBudget)) || (_qty0 === null && _budget0 !== null && _isBudgetGroup)) {
         // Dòng budget-driven (qty null): Paid Media theo MÔ HÌNH
         // OBJECTIVE + Partnership/Event trực tiếp (xem doc ở đầu hàm).
-        // top_funnel_override (đầu phễu Views) KHÔNG áp cho các dòng này.
+        // views_per_unit (Views mỗi bài) KHÔNG áp cho các dòng này —
+        // chúng không có qty/content để nhân views mỗi bài.
         var budget = _budget0;
         var objKey = _rowObjective(r);
         base.objective = objKey;
@@ -2691,7 +2655,10 @@
       }
       var qty = _planNum(r && r.qty);
       var output = b ? _benchField(b, 'output_per_unit', 'outputPerUnit') : null;
-      if (overrideViews[i] !== undefined) views = overrideViews[i];
+      // Views mỗi bài của Phase (assumption.views_per_unit) thắng
+      // output_per_unit của Benchmark khi khác null; uplift không áp.
+      var viewsPerUnit = assumption ? _assumpViewsPerUnit(assumption) : null;
+      if (qty !== null && viewsPerUnit !== null) views = qty * viewsPerUnit;
       else if (qty !== null && output !== null) views = qty * output;
       else return base;
       var rates0 = {

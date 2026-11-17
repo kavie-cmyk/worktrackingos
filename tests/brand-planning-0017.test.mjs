@@ -133,11 +133,19 @@ test('0017 [round-trip]: plan_rows — qty/unit_price/budget/objective/phase_id/
 
 test('0017 [round-trip]: phase_assumptions + phases Brand (kèm field tài chính app ghi)', () => {
   for (const p of demo.phase_assumptions) {
-    const { payload } = roundTrip('phase_assumptions', p);
+    const { payload, back } = roundTrip('phase_assumptions', p);
     assert.equal(payload.phase_id, p.phase_id);
     assert.equal(payload.channel, p.channel);
-    assert.equal(payload.top_funnel_override, p.top_funnel_override);
+    // Đổi ngữ nghĩa 17/11/2026: field JS là views_per_unit (Views mỗi
+    // bài), cột DB vẫn là top_funnel_override (0017 đã áp production)
+    // — ánh xạ qua FIELD_ALIASES của store-core, hai chiều không rớt.
+    assert.equal(payload.top_funnel_override, p.views_per_unit);
+    assert.equal(back.views_per_unit, p.views_per_unit);
   }
+  // Giá trị khác null cũng phải qua đúng ánh xạ hai chiều:
+  const vpuPayload = Core.toDbPayload('phase_assumptions', { phase_id: 'ph-x', channel: 'KOL Nano', views_per_unit: 5000 }, { forInsert: true });
+  assert.equal(vpuPayload.top_funnel_override, 5000, 'views_per_unit 5000 -> cột top_funnel_override 5000');
+  assert.equal(Core.fromDbRow('phase_assumptions', vpuPayload).views_per_unit, 5000, 'cột top_funnel_override đọc về thành views_per_unit');
   for (const ph of demo.phases) {
     const { payload, back } = roundTrip('phases', ph);
     assert.equal(payload.brand_id, ph.brand_id);

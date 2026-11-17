@@ -3,7 +3,7 @@
 // Bao phủ: demo-data (brand phases trong collection `phases`,
 // phase_assumptions, plan_rows.phase_id, kpis.phase_id), forecast engine
 // v2 (effectiveRate, uplift lũy kế, assumption override benchmark,
-// top_funnel_override, byPhase) và hợp đồng store cho phase_assumptions.
+// views_per_unit, byPhase) và hợp đồng store cho phase_assumptions.
 // Ca neo bắt buộc: effectiveRate(0.003, 10, 2) = 0,00363; chuỗi forecast
 // có uplift tính tay; ca neo v1 KOL Nano 2027-01 giữ nguyên.
 
@@ -99,7 +99,7 @@ test('PU [demo]: phase_assumptions đủ 3 KOL x 4 phase Lumus, toàn bộ null 
     assert.equal(a.visit_to_signup, null);
     assert.equal(a.signup_to_first, null);
     assert.equal(a.first_to_paid, null);
-    assert.equal(a.top_funnel_override, null);
+    assert.equal(a.views_per_unit, null);
   }
 });
 
@@ -176,7 +176,7 @@ test('PU [domain]: row.phase_id được ưu tiên hơn khớp theo tháng khi h
 test('PU [domain]: assumption khác null ghi đè benchmark theo từng bước; null thì kế thừa', () => {
   const benchmarks = [{ brand_id: 'b1', channel: 'X', output_per_unit: 1000, view_to_visit: 0.01, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, direct_budget: false }];
   const phases = [{ id: 'ph-a', brand_id: 'b1', start_month: '2027-01', end_month: '2027-12', uplift_percent_per_month: 0 }];
-  const assumptions = [{ phase_id: 'ph-a', channel: 'X', view_to_visit: 0.02, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null }];
+  const assumptions = [{ phase_id: 'ph-a', channel: 'X', view_to_visit: 0.02, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: null }];
   const f = domain.forecastFunnel([{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'X', qty: 1 }], benchmarks, { phases, phaseAssumptions: assumptions });
   const fc = f.rows[0].forecast;
   approx(fc.views, 1000, 'views');
@@ -238,36 +238,59 @@ test('PU [domain]: ca neo v1 giữ nguyên khi KHÔNG truyền ctx và khi CÓ c
   assert.deepEqual(plain.byPhase, {});
 });
 
-test('PU [domain]: top_funnel_override phân bổ theo qty, tổng đúng bằng override (largest remainder)', () => {
-  const benchmarks = [{ brand_id: 'b1', channel: 'Y', output_per_unit: 100, view_to_visit: 0.1, visit_to_signup: 0.1, signup_to_first: 0.1, first_to_paid: 0.1, direct_budget: false }];
-  const phases = [{ id: 'ph-ov', brand_id: 'b1', start_month: '2027-01', end_month: '2027-03', uplift_percent_per_month: 0 }];
-  const mkRows = (qtys) => qtys.map((q, i) => ({ id: `r${i}`, brand_id: 'b1', month: `2027-0${i + 1}`, channel: 'Y', qty: q, phase_id: 'ph-ov' }));
-  // Tỉ lệ theo qty 1:3:0 với override 1000 -> 250 / 750 / 0.
-  let assumptions = [{ phase_id: 'ph-ov', channel: 'Y', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: 1000 }];
-  let f = domain.forecastFunnel(mkRows([1, 3, 0]), benchmarks, { phases, phaseAssumptions: assumptions });
-  assert.deepEqual(f.rows.map((r) => r.forecast.views), [250, 750, 0]);
-  approx(f.totals.views, 1000, 'tổng = override');
-  // Largest remainder: override 100 chia 3 row qty bằng nhau -> 34/33/33.
-  assumptions = [{ ...assumptions[0], top_funnel_override: 100 }];
-  f = domain.forecastFunnel(mkRows([1, 1, 1]), benchmarks, { phases, phaseAssumptions: assumptions });
-  assert.deepEqual(f.rows.map((r) => r.forecast.views), [34, 33, 33]);
-  approx(f.totals.views, 100, 'tổng vẫn đúng override');
-  // Mọi qty đều 0 -> chia đều theo số row.
-  assumptions = [{ ...assumptions[0], top_funnel_override: 90 }];
-  f = domain.forecastFunnel(mkRows([0, 0]), benchmarks, { phases, phaseAssumptions: assumptions });
-  assert.deepEqual(f.rows.map((r) => r.forecast.views), [45, 45]);
+test('PU [domain]: views_per_unit = Views MỖI BÀI của Phase — views tháng = qty × views_per_unit (đổi ngữ nghĩa 17/11/2026)', () => {
+  // Ca kiểm bắt buộc: phase 2 tháng qty 4 và 5, benchmark output 4000,
+  // views_per_unit đặt 5000 -> views 2 tháng = 20.000 / 25.000,
+  // tổng phase 45.000 (KHÔNG còn phân bổ tổng phase theo qty như cũ).
+  const benchmarks = [{ brand_id: 'b1', channel: 'KOL Nano', output_per_unit: 4000, view_to_visit: 0.01, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, direct_budget: false }];
+  const phases = [{ id: 'ph-vpu', brand_id: 'b1', start_month: '2027-01', end_month: '2027-02', uplift_percent_per_month: 0 }];
+  const rows = [
+    { id: 'r1', brand_id: 'b1', month: '2027-01', channel: 'KOL Nano', qty: 4, phase_id: 'ph-vpu' },
+    { id: 'r2', brand_id: 'b1', month: '2027-02', channel: 'KOL Nano', qty: 5, phase_id: 'ph-vpu' }
+  ];
+  const withVpu = [{ phase_id: 'ph-vpu', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: 5000 }];
+  let f = domain.forecastFunnel(rows, benchmarks, { phases, phaseAssumptions: withVpu });
+  assert.deepEqual(f.rows.map((r) => r.forecast.views), [20000, 25000]);
+  approx(f.totals.views, 45000, 'tổng phase = 45.000');
+  approx(f.byPhase['ph-vpu'].views, 45000, 'byPhase = 45.000');
+  // Uplift KHÔNG áp vào views_per_unit: phase uplift 10%/tháng vẫn
+  // cho views y hệt (chỉ tỉ lệ chuyển đổi mới được uplift).
+  const phasesUp = [{ ...phases[0], uplift_percent_per_month: 10 }];
+  f = domain.forecastFunnel(rows, benchmarks, { phases: phasesUp, phaseAssumptions: withVpu });
+  assert.deepEqual(f.rows.map((r) => r.forecast.views), [20000, 25000], 'uplift không áp vào views mỗi bài');
+  // Xoá override (views_per_unit = null) -> về benchmark 4000:
+  // 16.000 / 20.000.
+  f = domain.forecastFunnel(rows, benchmarks, { phases, phaseAssumptions: [{ ...withVpu[0], views_per_unit: null }] });
+  assert.deepEqual(f.rows.map((r) => r.forecast.views), [16000, 20000]);
+  approx(f.totals.views, 36000, 'xoá override -> tổng về benchmark');
 });
 
-test('PU [domain]: không benchmark — assumption đủ tỉ lệ CHỈ tính được khi có top_funnel_override', () => {
+test('PU [domain]: không views_per_unit ở đâu -> mọi số neo cũ giữ nguyên', () => {
+  // Toàn bộ phase_assumptions demo đều views_per_unit = null nên
+  // forecast có ctx phải cho đúng ca neo v1 (KOL Nano T1/2027).
+  const nanoJan = demo.plan_rows.find((r) => r.channel === 'KOL Nano' && r.month === '2027-01');
+  const f = domain.forecastFunnel([nanoJan], demo.benchmarks, CTX);
+  approx(f.rows[0].forecast.views, 16000, 'KOL Nano T1 views neo');
+  approx(f.rows[0].forecast.paid, 0.1188, 'KOL Nano T1 paid neo');
+  // Cùng phases (uplift giữ nguyên) nhưng BỎ HẲN assumptions so với
+  // assumptions toàn null: kết quả phải giống hệt nhau — views_per_unit
+  // null không được đổi bất kỳ số nào (kể cả views).
+  const year = domain.forecastFunnel(lumusRows, demo.benchmarks, CTX);
+  const yearNoAsm = domain.forecastFunnel(lumusRows, demo.benchmarks, { phases: brandPhases });
+  assert.deepEqual(year.totals, yearNoAsm.totals, 'assumption toàn null -> totals bằng khi không có assumption');
+  approx(year.totals.views, 1460000, 'tổng views Lumus giữ nguyên neo');
+});
+
+test('PU [domain]: không benchmark — assumption đủ tỉ lệ CHỈ tính được khi có views_per_unit', () => {
   const phases = [{ id: 'ph-z', brand_id: 'b1', start_month: '2027-01', end_month: '2027-12', uplift_percent_per_month: 0 }];
   const rows = [{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'Z', qty: 5, phase_id: 'ph-z' }];
-  const base = { phase_id: 'ph-z', channel: 'Z', view_to_visit: 0.2, visit_to_signup: 0.5, signup_to_first: 0.5, first_to_paid: 0.4, top_funnel_override: null };
+  const base = { phase_id: 'ph-z', channel: 'Z', view_to_visit: 0.2, visit_to_signup: 0.5, signup_to_first: 0.5, first_to_paid: 0.4, views_per_unit: null };
   const noOv = domain.forecastFunnel(rows, [], { phases, phaseAssumptions: [base] });
-  assert.equal(noOv.rows[0].forecast, null, 'thiếu đầu phễu -> null, không bịa');
-  const withOv = domain.forecastFunnel(rows, [], { phases, phaseAssumptions: [{ ...base, top_funnel_override: 500 }] });
+  assert.equal(noOv.rows[0].forecast, null, 'thiếu Views mỗi bài -> null, không bịa');
+  const withOv = domain.forecastFunnel(rows, [], { phases, phaseAssumptions: [{ ...base, views_per_unit: 100 }] });
   const fc = withOv.rows[0].forecast;
   assert.ok(fc);
-  approx(fc.views, 500, 'views = override');
+  approx(fc.views, 500, 'views = qty 5 × views_per_unit 100');
   approx(fc.visits, 100, 'visits');
   approx(fc.signups, 50, 'signups');
   approx(fc.first, 25, 'first');

@@ -176,7 +176,12 @@
     approvals: { requestedAt: 'created_at' },
     // 0017: field `group` (app/demo) ↔ cột channel_group (GROUP là từ khóa PG).
     benchmarks: { group: 'channel_group' },
-    plan_rows: { group: 'channel_group' }
+    plan_rows: { group: 'channel_group' },
+    // Đổi ngữ nghĩa 17/11/2026: field JS `views_per_unit` (Views MỖI BÀI
+    // của phase×channel) ↔ cột DB `top_funnel_override`. Cột giữ nguyên
+    // tên vì migration 0017 đã áp production (đổi cột là việc khác);
+    // giá trị đã lưu ở cột đều null nên đổi ngữ nghĩa không mất dữ liệu.
+    phase_assumptions: { views_per_unit: 'top_funnel_override', viewsPerUnit: 'top_funnel_override' }
   };
   // Trường chỉ để hiển thị ở frontend, không bao giờ gửi lên server.
   function isLabelField(camelKey) { return /Label$/.test(camelKey); }

@@ -1278,7 +1278,9 @@
   // UI hiện trạng thái rỗng an toàn.
   // Collection `phase_assumptions` mang {id, phase_id, channel,
   // view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
-  // top_funnel_override}; field null = kế thừa Benchmark.
+  // views_per_unit}; field null = kế thừa Benchmark. views_per_unit là
+  // Views MỖI BÀI của phase×channel (đổi ngữ nghĩa 17/11/2026; ở tầng DB
+  // nó vẫn lưu vào cột top_funnel_override — xem store-core).
   // Mọi truy cập đều phòng thủ: collection chưa tồn tại / Store.list ném
   // lỗi -> mảng rỗng, không vỡ trang.
   function brandPhasesList() {
@@ -1405,10 +1407,22 @@
     });
     return out;
   }
-  function phaseTopFunnelOverride(phase, channel) {
+  function phaseViewsPerUnitOverride(phase, channel) {
     var asm = phase ? phaseAssumptionFor(phase.id, channel) : null;
-    var v = asm ? phaseField(asm, 'top_funnel_override', 'topFunnelOverride') : undefined;
+    var v = asm ? phaseField(asm, 'views_per_unit', 'viewsPerUnit') : undefined;
     return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v);
+  }
+  // Views mỗi bài HIỆU DỤNG của (phase, channel): assumption
+  // views_per_unit khác null thắng; thiếu thì kế thừa output_per_unit
+  // của Benchmark khớp brand+channel; cả hai đều thiếu -> value null.
+  function effectivePhaseViewsPerUnit(phase, channel, benchmarks) {
+    var ov = phaseViewsPerUnitOverride(phase, channel);
+    if (ov !== null) return { value: ov, source: 'assumption' };
+    var fakeRow = { brand_id: phase ? recordBrandId(phase) : null, channel: channel };
+    var bm = benchmarkForRow(fakeRow, benchmarks);
+    var bv = bm ? phaseField(bm, 'output_per_unit', 'outputPerUnit') : undefined;
+    if (bv !== undefined && bv !== null && bv !== '' && !isNaN(Number(bv))) return { value: Number(bv), source: 'benchmark' };
+    return { value: null, source: null };
   }
   // Giá trị forecast của 1 dòng chi tiết engine: chấp nhận cả shape lồng
   // {forecast:{views,...}} (engine hiện tại) lẫn shape phẳng {views,...}
@@ -3714,7 +3728,7 @@
     var benchmarks = filteredBenchmarks();
     var months = [];
     for (var mi = 1; mi <= 12; mi++) months.push(String(year) + '-' + String(mi).padStart(2, '0'));
-    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Đầu phễu / Tỉ lệ chuyển đổi theo Phase). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.',
+    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Views mỗi bài / Tỉ lệ chuyển đổi theo Phase). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.',
       '');
     html += readonlyNote() + contextBannerHtml();
     // Chọn năm
@@ -4126,11 +4140,6 @@
         var chRows = pRows.filter(function (r) { return String(r.channel || '—') === ch; });
         var qtyTotal = chRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
         var totals = funnelTotalsFor(chRows, benchmarks);
-        var override = phaseTopFunnelOverride(phase, ch);
-        // Paid Media: totals.views = 0 (không suy Views từ tiền) nhưng
-        // Visits > 0 — ô Đầu phễu (Views) để trống, không hiện 0 gây
-        // hiểu nhầm là đã đặt Views; Visits hiện ở cột Forecast Visits.
-        var viewsVal = totals ? (totals.views > 0 ? totals.views : (totals.visits > 0 ? null : totals.views)) : override;
         var rates = effectivePhaseRates(phase, ch, benchmarks);
         var cells = '<td><strong>' + esc(ch) + '</strong></td>' +
           '<td><input class="phase-input" type="number" step="1" min="0" value="' + esc(String(qtyTotal)) + '" data-action-change="phase-qty" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Số lượng của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></td>' +
@@ -4154,8 +4163,19 @@
             }
             return '<td><input class="phase-input planning-price-input phase-unit-price-input" type="number" step="1" min="0" value="' + esc(priceInfo.value === null ? '' : String(priceInfo.value)) + '" placeholder="—" data-action-change="phase-unit-price" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Đơn giá mỗi bài của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' + priceLabel + '</td>';
           })() +
-          '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="' + esc(viewsVal === null || viewsVal === undefined ? '' : String(Math.round(Number(viewsVal) * 100) / 100)) + '" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Đầu phễu (Views) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' +
-          (override !== null ? '<br><span class="sub">Đang đặt thẳng (Assumption)</span>' : '') + '</td>';
+          (function () {
+            // Ô Views mỗi bài (đầu phễu): hiện giá trị HIỆU DỤNG MỖI BÀI
+            // = assumption.views_per_unit ?? benchmark.output_per_unit,
+            // kèm nhãn nguồn như các ô tỉ lệ. Channel không có dòng Số
+            // lượng (Paid Media — views không suy từ tiền) -> ô disabled
+            // hiện "—", không cho đặt Views mỗi bài.
+            if (!chRows.some(planRowHasQty)) {
+              return '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Views mỗi bài (đầu phễu) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '" disabled></td>';
+            }
+            var viewsInfo = effectivePhaseViewsPerUnit(phase, ch, benchmarks);
+            var viewsLabel = '<br><span class="sub">' + (viewsInfo.source === 'assumption' ? 'Phase Assumption' : (viewsInfo.source === 'benchmark' ? 'Benchmark' : 'Không có')) + '</span>';
+            return '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="' + esc(viewsInfo.value === null ? '' : String(Math.round(Number(viewsInfo.value) * 100) / 100)) + '" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Views mỗi bài (đầu phễu) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' + viewsLabel + '</td>';
+          })();
         rateHeads.forEach(function (rh) {
           var eff = rates[rh[0]];
           cells += '<td data-rate-source="' + esc(eff.source || 'none') + '"><input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(ratePctText(eff.value)) + '" placeholder="—" data-action-change="phase-rate" data-field="' + esc(rh[0]) + '" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Tỉ lệ ' + esc(rh[1]) + ' của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' +
@@ -4167,7 +4187,7 @@
           '<td>' + (totals ? fmtNum(Math.round((totals.b2b || 0) * 100) / 100) : '—') + '</td>';
         return '<tr data-planning-phase-channel="' + esc(ch) + '">' + cells + '</tr>';
       }).join('');
-      html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đơn giá mỗi bài (VNĐ)</th><th>Đầu phễu (Views)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Signups</th><th>Forecast Paid</th><th>Forecast B2B Accounts</th></tr>' + body, 'planning-phase-channels');
+      html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đơn giá mỗi bài (VNĐ)</th><th>Views mỗi bài (đầu phễu)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Signups</th><th>Forecast Paid</th><th>Forecast B2B Accounts</th></tr>' + body, 'planning-phase-channels');
       // Paid Media trong Phase: ngân sách theo Objective (CHỈ ĐỌC từ
       // cùng các dòng plan_rows — sửa ngân sách Objective ở bảng chi
       // tiết Theo tháng, KHÔNG sửa ở chế độ Theo phase).
@@ -4201,6 +4221,7 @@
       }
       html += '<p class="sub">Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).</p>';
       html += '<p class="sub" data-planning-phase-price-hint="1">Đơn giá mỗi bài: ô hiện đơn giá HIỆU DỤNG của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang đơn giá đặt tay, "Benchmark" nghĩa là đang lấy đơn giá Benchmark. Nhập một giá vào ô sẽ ghi đơn giá đặt tay đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × đơn giá hiệu dụng như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ đơn giá đặt tay của cả Phase, quay về Benchmark. Nếu các tháng đang có đơn giá khác nhau (do sửa lẻ ở Theo tháng), ô để trống kèm ghi chú "khác nhau theo tháng".</p>';
+      html += '<p class="sub" data-planning-phase-views-hint="1">Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về Views mỗi bài của Benchmark.</p>';
     }
     // Chart funnel theo Phase (totals của Phase qua cùng engine + ctx)
     var pTotals = funnelTotalsFor(pRows, benchmarks);
@@ -4610,7 +4631,7 @@
     var done = function () { toast(okMsg); render(); };
     var fail = function (msg) { toast('Chưa lưu được: ' + msg); render(); };
     if (existing) { saveResult(sUpdate('phase_assumptions', existing.id, patch), done, fail); return; }
-    var obj = { phase_id: phaseId, channel: channel, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, top_funnel_override: null };
+    var obj = { phase_id: phaseId, channel: channel, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, views_per_unit: null };
     Object.keys(patch).forEach(function (k) { obj[k] = patch[k]; });
     saveResult(sCreate('phase_assumptions', obj), done, fail);
   }
@@ -4699,14 +4720,14 @@
     if (!phaseSaveGuard()) return;
     var patch = {};
     if (raw === '' || raw === null || raw === undefined) {
-      patch.top_funnel_override = null;
-      savePhaseAssumption(phaseId, channel, patch, 'Đã xóa Đầu phễu đặt thẳng cho ' + channel + ' — Forecast quay về qty × Benchmark.');
+      patch.views_per_unit = null;
+      savePhaseAssumption(phaseId, channel, patch, 'Đã xóa Views mỗi bài riêng của Phase cho ' + channel + ' — quay về Views mỗi bài của Benchmark.');
       return;
     }
     var v = Number(raw);
-    if (isNaN(v) || v < 0) { toast('Đầu phễu (Views) phải là số từ 0 trở lên.'); render(); return; }
-    patch.top_funnel_override = v;
-    savePhaseAssumption(phaseId, channel, patch, 'Đã lưu Đầu phễu ' + fmtNum(v) + ' Views cho ' + channel + ' trong Phase — engine phân bổ về từng tháng theo Số lượng.');
+    if (isNaN(v) || v < 0) { toast('Views mỗi bài phải là số từ 0 trở lên.'); render(); return; }
+    patch.views_per_unit = v;
+    savePhaseAssumption(phaseId, channel, patch, 'Đã lưu Views mỗi bài ' + fmtNum(v) + ' cho ' + channel + ' trong Phase — Forecast tháng = Số lượng × Views mỗi bài.');
   }
   function savePhaseQty(phaseId, channel, raw) {
     if (!phaseSaveGuard()) return;

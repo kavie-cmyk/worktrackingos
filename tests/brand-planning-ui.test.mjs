@@ -130,7 +130,7 @@ function loadHelpers({ storeList, storeGet, domain }) {
     get: storeGet || (() => null),
   };
   const factory = new Function('Store', 'D', 'UI', 'cfVal',
-    block + '\nreturn { UI: UI, brandsList: brandsList, filteredBrandsList: filteredBrandsList, approvalContextFallback: approvalContextFallback, matchesBrandSegment: matchesBrandSegment, planBudgetFor: planBudgetFor, forecastFunnelFor: forecastFunnelFor, filteredPlanRows: filteredPlanRows, brandPhasesList: brandPhasesList, filteredBrandPhases: filteredBrandPhases, phaseAssumptionsList: phaseAssumptionsList, phaseCtx: phaseCtx, forecastRawFor: forecastRawFor, phaseMonths: phaseMonths, phaseRowsFor: phaseRowsFor, phaseAssumptionFor: phaseAssumptionFor, effectivePhaseRates: effectivePhaseRates, funnelTotalsFor: funnelTotalsFor, distributeQty: distributeQty, kpiMatchesPhase: kpiMatchesPhase, matchesPhaseFilter: matchesPhaseFilter, recordPhaseId: recordPhaseId };');
+    block + '\nreturn { UI: UI, brandsList: brandsList, filteredBrandsList: filteredBrandsList, approvalContextFallback: approvalContextFallback, matchesBrandSegment: matchesBrandSegment, planBudgetFor: planBudgetFor, forecastFunnelFor: forecastFunnelFor, filteredPlanRows: filteredPlanRows, brandPhasesList: brandPhasesList, filteredBrandPhases: filteredBrandPhases, phaseAssumptionsList: phaseAssumptionsList, phaseCtx: phaseCtx, forecastRawFor: forecastRawFor, phaseMonths: phaseMonths, phaseRowsFor: phaseRowsFor, phaseAssumptionFor: phaseAssumptionFor, effectivePhaseRates: effectivePhaseRates, phaseViewsPerUnitOverride: phaseViewsPerUnitOverride, effectivePhaseViewsPerUnit: effectivePhaseViewsPerUnit, funnelTotalsFor: funnelTotalsFor, distributeQty: distributeQty, kpiMatchesPhase: kpiMatchesPhase, matchesPhaseFilter: matchesPhaseFilter, recordPhaseId: recordPhaseId };');
   return factory(Store, domain || {}, UI, cfValStub);
 }
 
@@ -261,13 +261,26 @@ test('BP-UI [static]: khối Phase — uplift/qty/views/4 tỉ lệ là ô nhậ
   assert.match(block, /funnelTotalsFor\(chRows, benchmarks\)/);
   assert.match(block, /funnelTotalsFor\(pRows, benchmarks\)/);
   assert.match(block, /effectivePhaseRates\(phase, ch, benchmarks\)/);
+  // Views mỗi bài (đổi ngữ nghĩa 17/11/2026): cột + aria-label theo nhãn
+  // mới, ô hiện giá trị HIỆU DỤNG mỗi bài qua effectivePhaseViewsPerUnit,
+  // KHÔNG còn hiển thị tổng views cả phase hay nhãn "Đang đặt thẳng".
+  assert.match(block, /<th>Views mỗi bài \(đầu phễu\)<\/th>/);
+  assert.match(block, /aria-label="Views mỗi bài \(đầu phễu\) của /);
+  assert.match(block, /effectivePhaseViewsPerUnit\(phase, ch, benchmarks\)/);
+  const phaseBlockOnly = section('function planningPhaseBlockHtml(phase, rows, benchmarks, editable, disAttr)', '// --- 3 bảng KPI chi tiết theo tháng (chế độ Theo tháng) ---');
+  assert.doesNotMatch(phaseBlockOnly, /Đang đặt thẳng/);
+  assert.doesNotMatch(phaseBlockOnly, /totals\.views/);
+  assert.match(block, /data-planning-phase-views-hint="1"/);
+  // Toast lưu/xoá của savePhaseViews theo ngữ nghĩa mỗi bài.
+  assert.match(src, /Forecast tháng = Số lượng × Views mỗi bài/);
+  assert.match(src, /quay về Views mỗi bài của Benchmark/);
   // Editable khi (demo hoặc supabase) + canEdit (0017: Planning có bảng thật); vai chỉ xem có banner khóa.
   assert.match(src, /function planningInputsEditable\(\) \{ return \(Store\.mode === 'demo' \|\| Store\.mode === 'supabase'\) && canEdit\(\); \}/);
   assert.match(blk, /data-planning-phase-locked="1"/);
   assert.match(blk, /data-planning-phase-empty="1"/);
 });
 
-test('BP-UI [static]: handler lưu Phase — uplift vào phases, tỉ lệ/đầu phễu vào phase_assumptions, số lượng phân bổ về plan_rows', () => {
+test('BP-UI [static]: handler lưu Phase — uplift vào phases, tỉ lệ/Views mỗi bài vào phase_assumptions, số lượng phân bổ về plan_rows', () => {
   assert.match(src, /if \(ctxKind === 'phase-uplift'\) \{ savePhaseUplift\(t\.getAttribute\('data-phase-id'\), t\.value\); return; \}/);
   assert.match(src, /if \(ctxKind === 'phase-qty'\) \{ savePhaseQty\(t\.getAttribute\('data-phase-id'\), t\.getAttribute\('data-channel'\), t\.value\); return; \}/);
   assert.match(src, /if \(ctxKind === 'phase-views'\) \{ savePhaseViews\(t\.getAttribute\('data-phase-id'\), t\.getAttribute\('data-channel'\), t\.value\); return; \}/);
@@ -275,7 +288,8 @@ test('BP-UI [static]: handler lưu Phase — uplift vào phases, tỉ lệ/đầ
   assert.match(src, /sUpdate\('phases', phaseId, \{ uplift_percent_per_month: v \}\)/);
   assert.match(src, /sUpdate\('phase_assumptions', existing\.id, patch\)/);
   assert.match(src, /sCreate\('phase_assumptions', obj\)/);
-  assert.match(src, /patch\.top_funnel_override = v;/);
+  assert.match(src, /patch\.views_per_unit = v;/);
+  assert.match(src, /patch\.views_per_unit = null;/);
   assert.match(src, /var news = distributeQty\(v, rows\.map\(planRowQty\)\);/);
   assert.match(src, /sUpdate\('plan_rows', job\.id, \{ qty: job\.qty \}\)/);
   // Guard chặn lưu khi vai chỉ xem, trước mọi đường ghi.
@@ -319,7 +333,7 @@ test('BP-UI [unit]: brandPhasesList — chỉ brand phase (brand_id + start_mont
 
 test('BP-UI [unit]: phaseCtx chỉ chứa brand phase + phase_assumptions; forecastFunnelFor truyền ctx cho engine', () => {
   let seenCtx = null;
-  const assumptions = [{ id: 'passump-lumus-1-kol-nano', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null }];
+  const assumptions = [{ id: 'passump-lumus-1-kol-nano', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: null }];
   const domain = { forecastFunnel: (rows, benchmarks, ctx) => { seenCtx = ctx; return { steps: ['views'], totals: { views: 10 }, byMonth: {}, rows: [] }; } };
   const h = loadHelpers({
     storeList: (coll) => (coll === 'phases' ? A2_PHASES_MIXED : coll === 'phase_assumptions' ? assumptions : []),
@@ -347,13 +361,13 @@ test('BP-UI [unit]: phaseMonths + phaseRowsFor — ưu tiên phase_id, dự phò
 
 test('BP-UI [unit]: effectivePhaseRates — assumption null kế thừa Benchmark; assumption có số thắng; không cả hai -> null', () => {
   const benchmarks = [{ brand_id: 'brand-lumus-ai', channel: 'KOL Nano', output_per_unit: 4000, view_to_visit: 0.003, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055 }];
-  const seedNull = [{ id: 'a1', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null }];
+  const seedNull = [{ id: 'a1', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: null }];
   const h = loadHelpers({ storeList: (coll) => (coll === 'phase_assumptions' ? seedNull : []) });
   const phase = { id: 'phase-lumus-1', brand_id: 'brand-lumus-ai' };
   let rates = h.effectivePhaseRates(phase, 'KOL Nano', benchmarks);
   assert.equal(rates.view_to_visit.value, 0.003); assert.equal(rates.view_to_visit.source, 'benchmark');
   assert.equal(rates.first_to_paid.value, 0.055);
-  const h2 = loadHelpers({ storeList: (coll) => (coll === 'phase_assumptions' ? [{ id: 'a2', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: 0.01, visit_to_signup: null, signup_to_first: null, first_to_paid: null, top_funnel_override: null }] : []) });
+  const h2 = loadHelpers({ storeList: (coll) => (coll === 'phase_assumptions' ? [{ id: 'a2', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: 0.01, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: null }] : []) });
   rates = h2.effectivePhaseRates(phase, 'KOL Nano', benchmarks);
   assert.equal(rates.view_to_visit.value, 0.01); assert.equal(rates.view_to_visit.source, 'assumption');
   assert.equal(rates.visit_to_signup.source, 'benchmark', 'field assumption null vẫn kế thừa benchmark');
@@ -362,6 +376,21 @@ test('BP-UI [unit]: effectivePhaseRates — assumption null kế thừa Benchmar
   // phaseAssumptionFor tìm đúng dòng seed theo phase_id + channel (lưu tỉ lệ update đúng dòng, không tạo trùng).
   assert.equal(h.phaseAssumptionFor('phase-lumus-1', 'KOL Nano').id, 'a1');
   assert.equal(h.phaseAssumptionFor('phase-lumus-2', 'KOL Nano'), null);
+});
+
+test('BP-UI [unit]: effectivePhaseViewsPerUnit — views_per_unit null kế thừa output_per_unit Benchmark; có số thắng; không cả hai -> null', () => {
+  const benchmarks = [{ brand_id: 'brand-lumus-ai', channel: 'KOL Nano', output_per_unit: 4000, view_to_visit: 0.003, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055 }];
+  const phase = { id: 'phase-lumus-1', brand_id: 'brand-lumus-ai' };
+  const hNull = loadHelpers({ storeList: (coll) => (coll === 'phase_assumptions' ? [{ id: 'a1', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: null }] : []) });
+  assert.equal(hNull.phaseViewsPerUnitOverride(phase, 'KOL Nano'), null);
+  let info = hNull.effectivePhaseViewsPerUnit(phase, 'KOL Nano', benchmarks);
+  assert.equal(info.value, 4000); assert.equal(info.source, 'benchmark');
+  const hSet = loadHelpers({ storeList: (coll) => (coll === 'phase_assumptions' ? [{ id: 'a2', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: 5000 }] : []) });
+  assert.equal(hSet.phaseViewsPerUnitOverride(phase, 'KOL Nano'), 5000);
+  info = hSet.effectivePhaseViewsPerUnit(phase, 'KOL Nano', benchmarks);
+  assert.equal(info.value, 5000); assert.equal(info.source, 'assumption');
+  info = hNull.effectivePhaseViewsPerUnit(phase, 'Facebook Owned', benchmarks);
+  assert.equal(info.value, null); assert.equal(info.source, null);
 });
 
 test('BP-UI [unit]: distributeQty — largest remainder deterministic; tháng 0 giữ 0; tất cả 0 thì chia đều', () => {

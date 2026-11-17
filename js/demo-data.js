@@ -476,8 +476,9 @@
   ];
   // phase_assumptions: tỉ lệ null = kế thừa benchmark của brand×channel.
   // File nguồn 03 Inputs KHÔNG ghi tỉ lệ riêng theo phase → toàn bộ 12
-  // dòng KOL (3 channel × 4 phase Lumus) để null hết, top_funnel_override
-  // cũng null (engine/UI phải chạy đúng khi assumption toàn null).
+  // dòng KOL (3 channel × 4 phase Lumus) để null hết, views_per_unit
+  // (Views mỗi bài của Phase, đổi ngữ nghĩa 17/11/2026) cũng null
+  // (engine/UI phải chạy đúng khi assumption toàn null).
   var PHASE_ASSUMPTIONS = (function () {
     var out = [];
     var kolChannels = ['KOL Nano', 'KOL Micro', 'KOL Expert'];
@@ -488,7 +489,7 @@
           phase_id: pid, channel: ch,
           view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null,
           paid_to_b2b: null, lead_to_account: null, demo_to_account: null,
-          top_funnel_override: null
+          views_per_unit: null
         });
       });
     });
