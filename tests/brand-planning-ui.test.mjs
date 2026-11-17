@@ -86,6 +86,26 @@ test('BP-UI [static]: trang Brand — danh sách, thẻ Identity (palette swatch
   assert.match(src, /case 'brandNew': \{[\s\S]*?sCreate\('brands', newBrand\)/);
 });
 
+test('BP-UI [static]: trang Brand áp bộ lọc Brand toàn cục cho danh sách thẻ; số liệu thẻ/chi tiết qua tập đã lọc Segment', () => {
+  const sec = section('function brandSectionHtml(ed)', 'function brandDetailHtml(b)');
+  // Danh sách thẻ KHÔNG còn lấy brandsList() thô chưa lọc.
+  assert.match(sec, /var brands = filteredBrandsList\(\)/);
+  assert.doesNotMatch(sec, /var brands = brandsList\(\)/);
+  // Số liệu trên thẻ (campaign / dòng plan) lấy từ tập đã áp matchesBrandSegment.
+  assert.match(sec, /filteredPlanRows\(\)\.filter/);
+  assert.match(sec, /filteredCampaigns\(\)\.filter/);
+  // Chi tiết deep-link vẫn tra trên toàn bộ danh sách Brand (brandById), không bị bộ lọc chặn.
+  assert.match(sec, /brandById\(detailId\)/);
+  const det = section('function brandDetailHtml(b)', 'function viewBrand()');
+  assert.match(det, /filteredPlanRows\(\)\.filter/);
+  assert.match(det, /filteredCampaigns\(\)\.filter/);
+});
+
+test('BP-UI [static]: Overview — approvals chờ duyệt áp matchesBrandSegment kèm fallback campaign qua content', () => {
+  const ov = section('function viewOverview()', '// ---------- Việc của tôi ----------');
+  assert.match(ov, /matchesBrandSegment\(a, approvalContextFallback\(a\)\)/);
+});
+
 test('BP-UI [static]: CSS có lớp cho bộ lọc ngữ cảnh + swatch Brand', () => {
   assert.ok(css.includes('.context-filter'), 'CSS thiếu .context-filter');
   assert.ok(css.includes('.brand-swatch'), 'CSS thiếu .brand-swatch');
@@ -99,15 +119,15 @@ function cfValStub(obj, key) {
   if (obj.custom_fields && obj.custom_fields[key] !== undefined) return obj.custom_fields[key];
   return undefined;
 }
-function loadHelpers({ storeList, domain }) {
+function loadHelpers({ storeList, storeGet, domain }) {
   const block = section('// ---------- Brand + Planning: ngữ cảnh Brand / Segment toàn cục ----------', 'function canSettings()');
   const UI = { brandFilter: 'all', segmentFilter: 'all' };
   const Store = {
     list: storeList || (() => []),
-    get: () => null,
+    get: storeGet || (() => null),
   };
   const factory = new Function('Store', 'D', 'UI', 'cfVal',
-    block + '\nreturn { UI: UI, brandsList: brandsList, matchesBrandSegment: matchesBrandSegment, planBudgetFor: planBudgetFor, forecastFunnelFor: forecastFunnelFor, filteredPlanRows: filteredPlanRows };');
+    block + '\nreturn { UI: UI, brandsList: brandsList, filteredBrandsList: filteredBrandsList, approvalContextFallback: approvalContextFallback, matchesBrandSegment: matchesBrandSegment, planBudgetFor: planBudgetFor, forecastFunnelFor: forecastFunnelFor, filteredPlanRows: filteredPlanRows };');
   return factory(Store, domain || {}, UI, cfValStub);
 }
 
@@ -161,4 +181,40 @@ test('BP-UI [unit]: forecastFunnelFor dự phòng từ benchmark khi domain chư
   assert.equal(steps[0].value, 16000);
   assert.equal(steps[1].value, 48);
   assert.deepEqual(h.forecastFunnelFor(rows, []), []);
+});
+
+test('BP-UI [unit]: filteredBrandsList — thẻ Brand chỉ lọc theo brandFilter (id của Brand); segmentFilter KHÔNG lọc thẻ', () => {
+  const brands = [{ id: 'brand-sava-meta', name: 'SAVA META' }, { id: 'brand-lumus-ai', name: 'Lumus AI' }];
+  const h = loadHelpers({ storeList: (coll) => (coll === 'brands' ? brands : []) });
+  assert.deepEqual(h.filteredBrandsList().map((b) => b.id), ['brand-sava-meta', 'brand-lumus-ai']);
+  h.UI.brandFilter = 'brand-lumus-ai';
+  assert.deepEqual(h.filteredBrandsList().map((b) => b.id), ['brand-lumus-ai'], 'đặt lọc Lumus AI thì trang Brand chỉ còn thẻ Lumus AI');
+  h.UI.brandFilter = 'all'; h.UI.segmentFilter = 'b2b';
+  assert.deepEqual(h.filteredBrandsList().map((b) => b.id), ['brand-sava-meta', 'brand-lumus-ai'], 'Brand không mang segment — segmentFilter không được ẩn thẻ Brand');
+});
+
+test('BP-UI [unit]: approvalContextFallback — suy campaign qua contentItem/variant; không liên kết thì matchesBrandSegment chỉ cho hiện khi lọc Tất cả', () => {
+  const camps = { 'camp-1': { id: 'camp-1', brand_id: 'brand-lumus-ai', segment: 'b2c' } };
+  const items = { 'ci-1': { id: 'ci-1', campaignId: 'camp-1' } };
+  const variants = { 'v-1': { id: 'v-1', contentItemId: 'ci-1' } };
+  const h = loadHelpers({
+    storeList: () => [],
+    storeGet: (coll, id) => (coll === 'campaigns' ? camps[id] : coll === 'contentItems' ? items[id] : coll === 'variants' ? variants[id] : null) || null,
+  });
+  const viaContent = { id: 'a1', contentItemId: 'ci-1', status: 'pending' };
+  const viaVariant = { id: 'a2', variantId: 'v-1', status: 'pending' };
+  const orphan = { id: 'a3', status: 'pending' };
+  assert.equal(h.approvalContextFallback(viaContent).id, 'camp-1');
+  assert.equal(h.approvalContextFallback(viaVariant).id, 'camp-1');
+  assert.equal(h.approvalContextFallback(orphan), null);
+  h.UI.brandFilter = 'brand-lumus-ai';
+  assert.equal(h.matchesBrandSegment(viaContent, h.approvalContextFallback(viaContent)), true);
+  assert.equal(h.matchesBrandSegment(viaVariant, h.approvalContextFallback(viaVariant)), true);
+  assert.equal(h.matchesBrandSegment(orphan, h.approvalContextFallback(orphan)), false, 'approval không suy được ngữ cảnh phải ẩn khi đã chọn Brand');
+  h.UI.brandFilter = 'brand-sava-meta';
+  assert.equal(h.matchesBrandSegment(viaContent, h.approvalContextFallback(viaContent)), false);
+  h.UI.brandFilter = 'all'; h.UI.segmentFilter = 'b2b';
+  assert.equal(h.matchesBrandSegment(viaContent, h.approvalContextFallback(viaContent)), false, 'campaign b2c phải ẩn khi lọc segment b2b');
+  h.UI.segmentFilter = 'b2c';
+  assert.equal(h.matchesBrandSegment(viaContent, h.approvalContextFallback(viaContent)), true);
 });

@@ -665,6 +665,34 @@
   }
   function filteredCampaigns() { return visibleList('campaigns').filter(function (c) { return matchesBrandSegment(c); }); }
   function campaignContextFallback(campaignId) { return campaignId ? Store.get('campaigns', campaignId) : null; }
+  // Danh sách Brand cho trang Brand: Brand tự thân KHÔNG mang segment nên
+  // chỉ áp brandFilter (khớp id của chính Brand đó); segment được áp ở tầng
+  // số liệu (campaign/plan) qua filteredCampaigns()/filteredPlanRows().
+  function filteredBrandsList() {
+    var list = brandsList();
+    if (!UI.brandFilter || UI.brandFilter === 'all') return list;
+    return list.filter(function (b) { return String(b.id) === String(UI.brandFilter); });
+  }
+  // Ngữ cảnh suy ra cho 1 yêu cầu duyệt: approval hiếm khi gắn brand/segment
+  // trực tiếp — suy qua content (contentItemId, hoặc variantId → content)
+  // rồi tới campaign cha của content đó (đúng pattern campaignContextFallback
+  // của task/KPI). Không suy được campaign thì trả content (nếu có) hoặc null;
+  // khi đó matchesBrandSegment áp quy tắc mặc định: chỉ hiện khi lọc "Tất cả".
+  function approvalContextFallback(a) {
+    if (!a) return null;
+    var ci = a.contentItemId ? Store.get('contentItems', a.contentItemId) : null;
+    var campId = a.campaignId || cfVal(a, 'campaignId') || null;
+    if (!ci && a.variantId) {
+      var v = Store.get('variants', a.variantId);
+      if (v) {
+        campId = campId || cfVal(v, 'campaignId') || null;
+        if (v.contentItemId) ci = Store.get('contentItems', v.contentItemId);
+      }
+    }
+    if (!campId && ci) campId = ci.campaignId || cfVal(ci, 'campaignId') || null;
+    if (campId) return campaignContextFallback(campId);
+    return ci || null;
+  }
   // --- Planning / Benchmark: truy cập phòng thủ + chuẩn hoá shape domain ---
   function planRowsList() { try { return Store.list('plan_rows') || []; } catch (e) { return []; } }
   function benchmarksList() { try { return Store.list('benchmarks') || []; } catch (e) { return []; } }
@@ -2519,7 +2547,7 @@
     var campaigns = filteredCampaigns();
     var allTasksForContext = visibleList('tasks');
     var tasks = allTasksForContext.filter(function (t) { return matchesBrandSegment(t, campaignContextFallback(t.campaignId)); });
-    var approvals = Store.list('approvals').filter(function (a) { return a.status === 'pending' || a.status === 'needs_reapproval'; });
+    var approvals = Store.list('approvals').filter(function (a) { return (a.status === 'pending' || a.status === 'needs_reapproval') && matchesBrandSegment(a, approvalContextFallback(a)); });
     var overdue = tasks.filter(isOverdue);
     var running = campaigns.filter(function (c) { return c.status === 'active'; });
     var openBlockers = Store.list('blockers').filter(function (b) { return b.status === 'open'; });
@@ -2787,21 +2815,32 @@
   }
   // Brand (collection brands): danh sách + thẻ Identity + số liệu tổng.
   function brandSectionHtml(ed) {
-    var brands = brandsList();
+    var allBrands = brandsList();
+    // Thẻ Brand tôn trọng bộ lọc Brand toàn cục qua filteredBrandsList()
+    // (chỉ brandFilter; Brand không mang segment nên không lọc thẻ theo
+    // segment). Số liệu trên thẻ lấy từ tập ĐÃ lọc Brand/Segment
+    // (filteredPlanRows()/filteredCampaigns()) để khớp ngữ cảnh đang chọn.
+    var brands = filteredBrandsList();
     var html = '<h2>Brand (' + brands.length + ')</h2>';
-    if (!brands.length) {
+    if (!allBrands.length) {
       html += '<div class="state-box" data-brand-empty="1">Chưa có Brand nào trong collection brands. ' + (ed ? 'Bấm "+ Tạo Brand" để tạo Brand đầu tiên ở chế độ demo.' : '') + '</div>';
       return html;
     }
+    if (!brands.length) {
+      html += '<div class="state-box" data-brand-filtered-empty="1">Không có Brand nào khớp bộ lọc Brand hiện tại (' + esc(contextLabel()) + '). Đổi bộ lọc ở thanh bên để xem thêm.</div>';
+    } else {
     html += '<div class="cards">' + brands.map(function (b) {
-      var bRows = planRowsList().filter(function (r) { return String(recordBrandId(r) || '') === String(b.id); });
-      var bCamps = visibleList('campaigns').filter(function (c) { return String(recordBrandId(c) || '') === String(b.id); });
+      var bRows = filteredPlanRows().filter(function (r) { return String(recordBrandId(r) || '') === String(b.id); });
+      var bCamps = filteredCampaigns().filter(function (c) { return String(recordBrandId(c) || '') === String(b.id); });
       var totalQty = bRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
       return '<div class="card" data-brand-card="' + esc(b.id) + '"><span class="brand-swatch" style="background:' + esc(b.color || '#2456a6') + '"></span> <strong>' + esc(b.name || b.id) + '</strong>' +
         (b.tagline ? '<p class="sub">' + esc(b.tagline) + '</p>' : '') +
         '<p class="sub">' + fmtNum(bCamps.length) + ' Campaign · ' + fmtNum(bRows.length) + ' dòng plan · ' + fmtNum(totalQty) + ' Content theo plan</p>' +
         '<p><button class="btn small" data-action="brand-detail" data-id="' + esc(b.id) + '">Xem chi tiết Brand</button></p></div>';
     }).join('') + '</div>';
+    }
+    // Chi tiết mở trực tiếp (#/brand/<id> hoặc nút "Xem chi tiết") KHÔNG bị
+    // bộ lọc chặn: tra brandById trên TOÀN BỘ brandsList, như chi tiết campaign.
     var detailId = UI.brandDetailId || (ROUTE.name === 'brand' ? ROUTE.id : null);
     if (detailId) {
       var b2 = brandById(detailId);
@@ -2810,8 +2849,11 @@
     return html;
   }
   function brandDetailHtml(b) {
-    var bRows = planRowsList().filter(function (r) { return String(recordBrandId(r) || '') === String(b.id); });
-    var bCamps = visibleList('campaigns').filter(function (c) { return String(recordBrandId(c) || '') === String(b.id); });
+    // Số liệu chi tiết (campaign / dòng plan / ngân sách suy từ plan) áp bộ
+    // lọc Segment toàn cục qua filteredPlanRows()/filteredCampaigns();
+    // Benchmark chỉ là bảng tra đơn giá theo Brand nên vẫn lấy theo Brand.
+    var bRows = filteredPlanRows().filter(function (r) { return String(recordBrandId(r) || '') === String(b.id); });
+    var bCamps = filteredCampaigns().filter(function (c) { return String(recordBrandId(c) || '') === String(b.id); });
     var bBenchmarks = benchmarksList().filter(function (x) { return String(recordBrandId(x) || '') === String(b.id); });
     var totalQty = bRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
     var budgetMonthly = planBudgetFor(bRows, bBenchmarks);
