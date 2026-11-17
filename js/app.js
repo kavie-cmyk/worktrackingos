@@ -1185,7 +1185,7 @@
     if (name === 'calendar') { UI.contentTab = 'calendar'; name = 'content'; }
     // Gộp Duyệt content vào Content: route cũ #/approvals chuyển hướng
     // sang Content với tab Duyệt đang mở; đích mới có dạng #/content/approvals.
-    if (name === 'approvals') { UI.contentMainTab = 'approvals'; name = 'content'; parts[1] = null; }
+    if (name === 'approvals') { UI.contentMainTab = 'approvals'; name = 'content'; parts[1] = null; try { if (window.history && window.history.replaceState) window.history.replaceState(null, '', '#/content/approvals'); } catch (e) { /* URL giữ nguyên vẫn render đúng tab */ } }
     if (name === 'content' && parts[1] === 'approvals') { UI.contentMainTab = 'approvals'; parts[1] = null; }
     if (ROUTES.indexOf(name) === -1) name = 'overview';
     var route = { name: name, id: parts[1] ? decodeURIComponent(parts[1]) : null, sub: parts[2] ? decodeURIComponent(parts[2]) : null };

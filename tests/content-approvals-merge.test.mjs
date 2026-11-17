@@ -49,18 +49,21 @@ test('MERGE [static]: ROUTES không còn approvals như route độc lập; VIEW
 function makeParseRoute(hash, mainTab) {
   const UI = { contentTab: 'calendar', contentMainTab: mainTab || 'list', campaignTab: 'overview' };
   const ROUTES = ['overview', 'my-work', 'brand', 'campaigns', 'timeline', 'planning', 'content', 'tasks', 'team', 'kpi', 'channels', 'ads', 'reports', 'settings'];
-  const windowStub = { location: { hash } };
+  const replaced = [];
+  const windowStub = { location: { hash }, history: { replaceState: (a, b, url) => replaced.push(url) } };
   const fnSrc = section('function parseRoute()', 'var ROUTE =');
   const parseRoute = new Function('window', 'UI', 'ROUTES', fnSrc + '\nreturn parseRoute;')(windowStub, UI, ROUTES);
-  return { parseRoute, UI };
+  return { parseRoute, UI, replaced };
 }
 
 test('MERGE [unit]: #/approvals chuyển hướng sang content với tab Duyệt đang mở', () => {
-  const { parseRoute, UI } = makeParseRoute('#/approvals', 'list');
+  const { parseRoute, UI, replaced } = makeParseRoute('#/approvals', 'list');
   const r = parseRoute();
   assert.equal(r.name, 'content');
   assert.equal(r.id, null);
   assert.equal(UI.contentMainTab, 'approvals');
+  // URL thật được thay bằng đích mới (replaceState, không thêm history entry).
+  assert.deepEqual(replaced, ['#/content/approvals']);
 });
 
 test('MERGE [unit]: #/content/approvals (đích mới của mọi link hộp duyệt) mở tab Duyệt', () => {
