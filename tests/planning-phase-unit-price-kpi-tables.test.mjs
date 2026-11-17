@@ -223,7 +223,7 @@ test('PPUP-KPI [unit]: ca lẫn lộn render trung thực (ô trống + "khác n
   assert.deepEqual(h.phaseChannelUnitPriceInfo(chRows, BENCH1), { value: 2500000, source: 'manual' });
 });
 
-test('PPUP-KPI [unit]: validate đơn giá Phase — âm/chữ/thập phân bị chặn, dữ liệu không đổi; guard dữ liệu thật chặn lưu', () => {
+test('PPUP-KPI [unit]: validate đơn giá Phase — âm/chữ/thập phân bị chặn, dữ liệu không đổi; chế độ supabase (0017) lưu bình thường', () => {
   for (const bad of ['-100', 'abc', '1.5']) {
     const rows = baseRows1();
     const { h, state } = makeHarness(rows, PHASES1, BENCH1);
@@ -232,12 +232,14 @@ test('PPUP-KPI [unit]: validate đơn giá Phase — âm/chữ/thập phân bị
     assert.equal(rows[0].unit_price, undefined);
     assert.ok(state.toasts.some((t) => t.includes('số nguyên từ 0 trở lên')), 'toast lỗi validate cho ' + bad);
   }
+  // 0017: plan_rows CÓ bảng thật — chế độ supabase + có quyền thì lưu
+  // bình thường (guard chỉ còn chặn vai chỉ xem, xem phaseSaveGuard).
   const rows = baseRows1();
   const hz = makeHarness(rows, PHASES1, BENCH1);
-  hz.Store.mode = 'real';
+  hz.Store.mode = 'supabase';
   hz.h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '2000000');
-  assert.equal(hz.state.updates.length, 0, 'chế độ dữ liệu thật không được lưu');
-  assert.equal(rows[0].unit_price, undefined);
+  assert.ok(hz.state.updates.length > 0, 'chế độ supabase phải lưu được sau 0017');
+  assert.equal(rows[0].unit_price, 2000000);
 });
 
 // ---------- [static] Phần 2 ----------

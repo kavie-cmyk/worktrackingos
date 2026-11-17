@@ -1992,7 +1992,7 @@
           'Lưu activity');
       }
       case 'brandNew': {
-        return formShell('brandNew', 'Tạo Brand mới (demo)',
+        return formShell('brandNew', 'Tạo Brand mới',
           F('name', 'Tên Brand *', 'text', ev('name', ''), { required: true, wide: true }) +
           F('color', 'Màu Brand (mã hex)', 'text', ev('color', '#2456a6'), { placeholder: '#2456a6' }) +
           F('tagline', 'Tagline', 'text', ev('tagline', ''), { wide: true }) +
@@ -3581,9 +3581,7 @@
     var defSeg = (UI.segmentFilter === 'b2c' || UI.segmentFilter === 'b2b') ? UI.segmentFilter : 'b2c';
     var segOpts = [['b2c', 'B2C'], ['b2b', 'B2B']].map(function (p) { return '<option value="' + p[0] + '"' + (defSeg === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('');
     html += '<div class="panel" data-planning-add-form-panel="1"><h3>Thêm dòng Planning — năm ' + esc(year) + '</h3>';
-    if (Store.mode !== 'demo') {
-      html += '<div class="notice warn" data-planning-add-locked="1">Đang ở chế độ dữ liệu thật: plan_rows/benchmarks chưa có bảng dữ liệu nên chưa thêm dòng được. Bật chế độ demo ở Thiết lập để bấm thử.</div>';
-    } else if (!canEdit()) {
+    if (!canEdit()) {
       html += '<div class="notice info" data-planning-add-locked="1">Vai trò hiện tại chỉ xem nên không thêm dòng Planning được.</div>';
     } else {
       html += '<p class="sub">Dòng mới được tạo với Số lượng 0 ở tháng 1/' + esc(year) + ' — sau khi thêm, bấm tên Channel trong lưới để mở bảng chi tiết và sửa Số lượng/Đơn giá từng tháng. Nếu nhập Đơn giá ban đầu và Brand × Channel chưa có Benchmark, hệ thống tạo Benchmark chỉ gồm đơn giá này (các tỉ lệ phễu để trống nên Forecast của kênh mới sẽ báo chưa tính được cho tới khi có tỉ lệ).</p>';
@@ -3615,7 +3613,7 @@
     var benchmarks = filteredBenchmarks();
     var months = [];
     for (var mi = 1; mi <= 12; mi++) months.push(String(year) + '-' + String(mi).padStart(2, '0'));
-    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng ở chế độ demo (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Đầu phễu / Tỉ lệ chuyển đổi theo Phase ở chế độ demo). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.',
+    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Đầu phễu / Tỉ lệ chuyển đổi theo Phase). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.',
       '');
     html += readonlyNote() + contextBannerHtml();
     // Chọn năm
@@ -3814,12 +3812,10 @@
         '<p class="sub">' + esc(selRows.length) + ' dòng plan · Tổng số lượng của dòng: <strong>' + fmtNum(detailTotal) + '</strong> (tự cộng từ 12 tháng) · Tổng ngân sách của dòng: <strong>' + fmtMoney(detailBudgetTotal, 'VND') + '</strong></p>' +
         '<p><button class="btn small secondary" data-action="planning-channel-close">Đóng chi tiết</button> <span class="sub">Hoặc bấm lại tên Channel đang mở ở lưới để đóng.</span></p>' +
         (selRows.length ? '' : '<p class="sub">Không có dòng plan nào của dòng này trong kỳ/bộ lọc hiện tại.</p>');
-      if (Store.mode !== 'demo') {
-        html += '<div class="notice warn" data-planning-detail-locked="1">Đang ở chế độ dữ liệu thật: plan_rows chưa có bảng dữ liệu nên các ô Số lượng, Đơn giá và Ngân sách Paid Media trong bảng chi tiết đang bị khóa (không lưu) để tránh lỗi. Bật chế độ demo ở Thiết lập để bấm thử nhập liệu.</div>';
-      } else if (!canEdit()) {
+      if (!canEdit()) {
         html += '<div class="notice info" data-planning-detail-locked="1">Vai trò hiện tại chỉ xem nên các ô Số lượng, Đơn giá và Ngân sách Paid Media trong bảng chi tiết đang bị khóa.</div>';
       } else {
-        html += '<p class="sub" data-planning-detail-hint="1">Sửa ô Số lượng hoặc Đơn giá theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay vào dữ liệu demo — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng ngân sách nguồn (Số lượng trống, vd Paid Ads) không sửa Số lượng và Đơn giá ở đây — riêng dòng Paid Media thì sửa trực tiếp ô Ngân sách theo tháng (xem chú thích Paid Media bên dưới).</p>' +
+        html += '<p class="sub" data-planning-detail-hint="1">Sửa ô Số lượng hoặc Đơn giá theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng ngân sách nguồn (Số lượng trống, vd Paid Ads) không sửa Số lượng và Đơn giá ở đây — riêng dòng Paid Media thì sửa trực tiếp ô Ngân sách theo tháng (xem chú thích Paid Media bên dưới).</p>' +
           '<p class="sub" data-planning-detail-price-hint="1">Đơn giá: ô hiện đơn giá hiệu dụng của tháng — nhãn "Benchmark" nghĩa là đang lấy đơn giá Benchmark, nhập số vào ô Đơn giá để chuyển tháng đó sang "đặt tay". Xoá trắng ô Đơn giá rồi ra khỏi ô để bỏ đơn giá đặt tay, quay về đơn giá Benchmark.</p>' +
           '<p class="sub" data-planning-detail-budget-hint="1">Ngân sách của dòng thường chỉ tự tính (không sửa được): Ngân sách của tháng = Số lượng × Đơn giá hiệu dụng (đơn giá đặt tay nếu có, không thì đơn giá Benchmark). Ngoại lệ duy nhất: dòng thuộc nhóm Paid Media nhập ngân sách trực tiếp theo tháng ở cột Ngân sách (dòng không thuộc Paid Media không có ô nhập ngân sách).</p>' +
           (selHasPaid ? '<p class="sub" data-planning-paid-budget-hint="1">Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Theo mô hình Objective, mỗi tháng hiển thị theo từng Objective: mỗi Objective có ô nhập ngân sách riêng, kết quả đặt tại tầng của Objective đó (Awareness → Views, Traffic → Visits, Signup → Signups, Remarketing → Paid) = Ngân sách ÷ đơn giá kết quả (cost_per_result) của Benchmark rồi chảy xuống qua tỉ lệ Benchmark — KHÔNG suy ngược lên tầng trên. Objective chưa có đơn giá trong file nguồn (vd Awareness) hiển thị "chưa có đơn giá": ngân sách vẫn tính vào tổng tháng nhưng chưa ra chỉ số. Tổng ngân sách tháng ở dòng tháng là chỉ đọc, bằng cộng các Objective.</p>' : '');
@@ -3869,13 +3865,13 @@
   }
 
   // ---------- Planning Theo phase (Phase + Uplift, bổ sung) ----------
-  // Ô nhập chỉ SỬA ĐƯỢC ở chế độ demo (Store.mode === 'demo') + có quyền
-  // sửa: phases/phase_assumptions/plan_rows chưa có bảng Supabase, nên ở
-  // chế độ dữ liệu thật các ô bị disabled ngay từ lúc render và handler
-  // lưu cũng chặn lại (phaseSaveGuard) — không gọi Store, không crash.
-  function planningInputsEditable() { return Store.mode === 'demo' && canEdit(); }
+  // Ô nhập SỬA ĐƯỢC khi có quyền sửa ở cả hai chế độ dữ liệu (demo và
+  // supabase): từ migration 0017, phases/phase_assumptions/plan_rows CÓ
+  // bảng Supabase thật nên chế độ dữ liệu thật lưu bình thường qua Store;
+  // vai chỉ xem thì ô bị disabled ngay từ lúc render và handler lưu cũng
+  // chặn lại (phaseSaveGuard).
+  function planningInputsEditable() { return (Store.mode === 'demo' || Store.mode === 'supabase') && canEdit(); }
   function phaseSaveGuard() {
-    if (Store.mode !== 'demo') { toast('Ở chế độ dữ liệu thật, Phase / Phase Assumption chưa có bảng dữ liệu nên chưa lưu được thay đổi này — hãy bật chế độ demo để thử nhập.'); render(); return false; }
     if (!canEdit()) { toast('Vai trò hiện tại chỉ xem, không sửa được Planning theo Phase.'); render(); return false; }
     return true;
   }
@@ -3930,12 +3926,10 @@
     var editable = planningInputsEditable();
     var disAttr = editable ? '' : ' disabled';
     var html = '<h2>Planning theo Phase (' + esc(year) + ')</h2>';
-    if (Store.mode !== 'demo') {
-      html += '<div class="notice warn" data-planning-phase-locked="1">Đang ở chế độ dữ liệu thật: Phase và Phase Assumption chưa có bảng dữ liệu nên các ô nhập bên dưới đang bị khóa (không lưu) để tránh lỗi. Bật chế độ demo ở Thiết lập để bấm thử nhập liệu.</div>';
-    } else if (!canEdit()) {
+    if (!canEdit()) {
       html += '<div class="notice info" data-planning-phase-locked="1">Vai trò hiện tại chỉ xem nên các ô nhập Phase đang bị khóa.</div>';
     } else {
-      html += '<p class="sub">Sửa ô rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay vào dữ liệu demo — Forecast tính lại sau mỗi lần lưu. Tỉ lệ để trống = xóa Assumption của bước đó, quay về kế thừa Benchmark. Số lượng là TỔNG của Channel trong cả Phase, được phân bổ lại về từng tháng theo tỉ lệ hiện tại.</p>';
+      html += '<p class="sub">Sửa ô rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay — Forecast tính lại sau mỗi lần lưu. Tỉ lệ để trống = xóa Assumption của bước đó, quay về kế thừa Benchmark. Số lượng là TỔNG của Channel trong cả Phase, được phân bổ lại về từng tháng theo tỉ lệ hiện tại.</p>';
     }
     var phases = filteredBrandPhases().filter(function (p) {
       var months = phaseMonths(p);
@@ -4469,11 +4463,10 @@
       'Đã lưu Đơn giá mỗi bài ' + fmtNum(v) + ' cho ' + channel + ' trong Phase ' + (phase.name || phase.id));
   }
   // --- Lưu ô Số lượng trong BẢNG CHI TIẾT Theo tháng (guard như Theo phase) ---
-  // plan_rows chưa có bảng Supabase nên chỉ lưu ở chế độ demo + có quyền
-  // sửa; ở dữ liệu thật / vai chỉ xem, ô trong bảng chi tiết đã disabled
-  // từ lúc render và handler này cũng chặn lại — không gọi Store, không crash.
+  // plan_rows CÓ bảng Supabase từ migration 0017 nên lưu được ở cả demo và
+  // dữ liệu thật khi có quyền sửa; vai chỉ xem thì ô trong bảng chi tiết đã
+  // disabled từ lúc render và handler này cũng chặn lại.
   function planningMonthSaveGuard() {
-    if (Store.mode !== 'demo') { toast('Ở chế độ dữ liệu thật, plan_rows chưa có bảng dữ liệu nên chưa lưu được thay đổi Planning — hãy bật chế độ demo để thử nhập.'); render(); return false; }
     if (!canEdit()) { toast('Vai trò hiện tại chỉ xem, không sửa được Planning.'); render(); return false; }
     return true;
   }

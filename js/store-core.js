@@ -69,7 +69,12 @@
     budgetProposals: 'budget_proposals',
     cashAccounts: 'cash_accounts',
     cashCategories: 'cash_categories',
-    cashTransactions: 'cash_transactions'
+    cashTransactions: 'cash_transactions',
+    // 0017 (Brand + Planning): bảng thật từ migration 0017_brand_planning.sql.
+    brands: 'brands',
+    benchmarks: 'benchmarks',
+    plan_rows: 'plan_rows',
+    phase_assumptions: 'phase_assumptions'
   };
 
   // ---------- Cột thật của từng bảng (trích từ 0001_schema.sql) ----------
@@ -82,8 +87,8 @@
     channel_accounts: ['id', 'workspace_id', 'brand_page_id', 'platform', 'external_id', 'display_name', 'handle', 'profile_url', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     assets: ['id', 'workspace_id', 'name', 'asset_type', 'storage_bucket', 'storage_path', 'external_url', 'mime_type', 'size_bytes', 'width', 'height', 'duration_sec', 'tags', 'rights_note', 'status', 'approval_status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     asset_versions: ['id', 'workspace_id', 'asset_id', 'version_no', 'storage_bucket', 'storage_path', 'external_url', 'change_note', 'created_by', 'created_at'],
-    campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'budget_ceiling_amount', 'budget_ceiling_currency', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'archived_at', 'created_by', 'created_at', 'updated_at', 'approved_by', 'approved_at', 'approved_via_proposal_id'],
-    phases: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'sort_order', 'start_date', 'end_date', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at', 'baseline'],
+    campaigns: ['id', 'workspace_id', 'plan_id', 'product_id', 'name', 'objectives', 'audiences', 'insights', 'big_idea', 'key_message', 'cta', 'offer', 'kv_direction', 'custom_fields', 'budget_ceiling_amount', 'budget_ceiling_currency', 'baseline', 'baseline_timeline', 'status', 'risk_note', 'owner_id', 'start_date', 'end_date', 'archived_at', 'created_by', 'created_at', 'updated_at', 'approved_by', 'approved_at', 'approved_via_proposal_id', 'brand_id', 'segment'],
+    phases: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'name', 'sort_order', 'start_date', 'end_date', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at', 'baseline', 'brand_id', 'segment', 'start_month', 'end_month', 'objective', 'uplift_percent_per_month', 'note', 'paid_churn_rate', 'free_churn_rate', 'arppu', 'cogs_per_user', 'fixed_cost', 'opening_free', 'opening_paid', 'b2b_churn_rate', 'arppu_b2b', 'cogs_per_b2b_account', 'opening_b2b'],
     activities: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'phase_id', 'name', 'description', 'sort_order', 'start_date', 'end_date', 'status', 'owner_id', 'channel', 'deliverables', 'objective', 'archived_at', 'created_by', 'created_at', 'updated_at', 'baseline'],
     tasks: ['id', 'workspace_id', 'campaign_id', 'phase_id', 'activity_id', 'content_item_id', 'parent_id', 'title', 'description', 'owner_id', 'collaborators', 'approver_id', 'start_date', 'due_date', 'completed_at', 'priority', 'effort_hours', 'progress_percent', 'status', 'is_blocked', 'is_milestone', 'sort_order', 'custom_fields', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     task_dependencies: ['id', 'workspace_id', 'predecessor_id', 'successor_id', 'type', 'lag_days', 'created_by', 'created_at'],
@@ -97,9 +102,9 @@
     external_posts: ['id', 'workspace_id', 'channel_account_id', 'platform', 'external_post_id', 'external_url', 'post_type', 'caption_snapshot', 'media_snapshot', 'published_at', 'author_external_id', 'raw', 'source', 'archived_at', 'first_synced_at', 'last_synced_at', 'created_at', 'updated_at'],
     post_content_mappings: ['id', 'workspace_id', 'external_post_id', 'variant_id', 'content_item_id', 'campaign_id', 'mapping_source', 'confidence', 'created_by', 'created_at'],
     metric_observations: ['id', 'workspace_id', 'source', 'object_type', 'object_id', 'metric_code', 'value', 'period_start', 'period_end', 'period_grain', 'scope', 'dimensions', 'definition_version', 'currency', 'observed_at', 'sync_run_id', 'created_at'],
-    kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'definition', 'scope_type', 'activity_id', 'task_id', 'content_item_id', 'bu_product_id', 'pillar_id', 'aggregation_mode', 'target_version', 'direction', 'numerator', 'denominator', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    kpis: ['id', 'workspace_id', 'campaign_id', 'plan_id', 'product_id', 'metric_code', 'name', 'target_value', 'unit', 'period_start', 'period_end', 'owner_id', 'definition', 'scope_type', 'activity_id', 'task_id', 'content_item_id', 'bu_product_id', 'pillar_id', 'aggregation_mode', 'target_version', 'direction', 'numerator', 'denominator', 'archived_at', 'created_by', 'created_at', 'updated_at', 'brand_id', 'segment', 'phase_id', 'period_key', 'source'],
     measurements: ['id', 'workspace_id', 'kpi_id', 'measured_at', 'period_start', 'period_end', 'value', 'source', 'note', 'created_by', 'created_at'],
-    budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'activity_id', 'task_id', 'name', 'category', 'planned_amount', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'archived_at', 'created_by', 'created_at', 'updated_at', 'approved_by', 'approved_at', 'approved_via_proposal_id'],
+    budget_lines: ['id', 'workspace_id', 'plan_id', 'campaign_id', 'activity_id', 'task_id', 'name', 'category', 'planned_amount', 'approved_amount', 'currency', 'period_start', 'period_end', 'owner_id', 'note', 'archived_at', 'created_by', 'created_at', 'updated_at', 'approved_by', 'approved_at', 'approved_via_proposal_id', 'brand_id', 'segment'],
     budget_commitments: ['id', 'workspace_id', 'budget_line_id', 'description', 'amount', 'currency', 'vendor', 'status', 'settled_amount', 'committed_at', 'expected_at', 'idempotency_key', 'created_by', 'created_at', 'updated_at', 'archived_at', 'approval_status', 'approved_by', 'approved_at', 'approval_note'],
     budget_actuals: ['id', 'workspace_id', 'budget_line_id', 'commitment_id', 'ad_spend_source_id', 'title', 'description', 'idempotency_key', 'amount', 'currency', 'spent_at', 'source', 'created_by', 'created_at', 'updated_at', 'approval_status', 'approved_by', 'approved_at', 'approval_note'],
     budget_proposals: ['id', 'workspace_id', 'target_type', 'campaign_id', 'budget_line_id', 'proposed_amount', 'currency', 'reason', 'proposer_id', 'status', 'decided_by', 'decided_at', 'decision_note', 'revision', 'created_at', 'updated_at'],
@@ -124,7 +129,13 @@
     cash_accounts: ['id', 'workspace_id', 'name', 'currency', 'opening_balance', 'status', 'created_by', 'created_at', 'updated_at'],
     cash_categories: ['id', 'workspace_id', 'name', 'kind', 'created_by', 'created_at'],
     cash_transactions: ['id', 'workspace_id', 'account_id', 'category_id', 'direction', 'amount', 'occurred_on', 'campaign_id', 'activity_id', 'note', 'evidence_ref', 'idempotency_key', 'created_by', 'created_at', 'updated_at'],
-    cash_account_balances: ['account_id', 'workspace_id', 'currency', 'balance']
+    cash_account_balances: ['account_id', 'workspace_id', 'currency', 'balance'],
+    // 0017: Brand + Planning. `group` của app/demo ánh xạ cột channel_group
+    // (GROUP là từ khóa PostgreSQL) — xem FIELD_ALIASES bên dưới.
+    brands: ['id', 'workspace_id', 'code', 'name', 'tagline', 'description', 'market', 'primary_color', 'color', 'palette', 'voice', 'key_messages', 'funnel_steps', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    benchmarks: ['id', 'workspace_id', 'brand_id', 'segment', 'channel', 'channel_group', 'unit_price', 'currency', 'output_per_unit', 'view_to_visit', 'visit_to_signup', 'signup_to_first', 'first_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account', 'cost_per_result', 'direct_budget', 'confidence', 'source', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    plan_rows: ['id', 'workspace_id', 'brand_id', 'segment', 'month', 'channel', 'channel_group', 'unit', 'qty', 'audience', 'b2b_split_pct', 'unit_price', 'budget', 'objective', 'phase_id', 'campaign_id', 'activity_id', 'archived_at', 'created_by', 'created_at', 'updated_at'],
+    phase_assumptions: ['id', 'workspace_id', 'phase_id', 'channel', 'view_to_visit', 'visit_to_signup', 'signup_to_first', 'first_to_paid', 'top_funnel_override', 'created_by', 'created_at', 'updated_at']
   };
 
   // Bảng có cột custom_fields → trường giao diện chưa có cột thật được gói vào đây.
@@ -132,7 +143,7 @@
   // Bảng có archived_at (xoá mềm); các bảng mapped còn lại không có nên xoá thật.
   var SOFT_DELETE_COLUMNS = { workspaces: 'archived_at' };
   // R31: entity chính có archived_at — remove = archive (không hard-delete).
-  var ARCHIVABLE_TABLES = { bu_products: true, brand_pages: true, assets: true, campaigns: true, phases: true, activities: true, tasks: true, content_items: true, content_variants: true, channel_accounts: true, kpis: true, budget_lines: true, external_posts: true, ads_change_requests: true, marketing_requests: true, content_pillars: true };
+  var ARCHIVABLE_TABLES = { bu_products: true, brand_pages: true, assets: true, campaigns: true, phases: true, activities: true, tasks: true, content_items: true, content_variants: true, channel_accounts: true, kpis: true, budget_lines: true, external_posts: true, ads_change_requests: true, marketing_requests: true, content_pillars: true, brands: true, benchmarks: true, plan_rows: true };
 
   // ---------- Alias trường: tên ở frontend (camel) → cột thật (snake) ----------
   // Chỉ khai báo khi tên tự động camel→snake KHÔNG ra đúng cột, hoặc ngữ nghĩa khác.
@@ -162,7 +173,10 @@
     // proposedAmount, proposerId, decidedBy, decidedAt, decisionNote…) đổi
     // tên đúng bằng cơ chế camel→snake mặc định nên không cần alias riêng.
     budgetProposals: {},
-    approvals: { requestedAt: 'created_at' }
+    approvals: { requestedAt: 'created_at' },
+    // 0017: field `group` (app/demo) ↔ cột channel_group (GROUP là từ khóa PG).
+    benchmarks: { group: 'channel_group' },
+    plan_rows: { group: 'channel_group' }
   };
   // Trường chỉ để hiển thị ở frontend, không bao giờ gửi lên server.
   function isLabelField(camelKey) { return /Label$/.test(camelKey); }

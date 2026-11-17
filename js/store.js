@@ -60,14 +60,12 @@
     'contentPillars', 'kpiTargetVersions', 'kpiContributions', 'brandPageVersions',
     'campaignBaselines', 'campaignAssets', 'budgetAllocations', 'budgetProposals',
     'cashAccounts', 'cashCategories', 'cashTransactions',
-    // Brand + Planning (17/11, bản bấm thử): CHƯA có bảng Supabase tương ứng
-    // (không migration) — _loadCollection không thấy ánh xạ bảng trong
-    // store-core nên tự trả [] ở chế độ thật, không gọi Supabase, không crash.
-    // Đợt Phase + Uplift (17/11): 'phase_assumptions' cũng theo đúng cơ chế
-    // này. Riêng 'phases' VỐN là collection cũ (giai đoạn campaign, CÓ bảng
-    // thật) nên không nằm ở đây — phase Brand + Planning chỉ là dữ liệu
-    // demo thêm trong mảng `phases` của demo-data (phân biệt bằng
-    // brand_id/start_month), chế độ thật không có dữ liệu đó thì thôi.
+    // Brand + Planning: từ migration 0017 (0017_brand_planning.sql) các
+    // collection này CÓ bảng thật (brands/benchmarks/plan_rows/
+    // phase_assumptions) và store-core đã có ánh xạ — chế độ supabase đồng bộ
+    // REST hai chiều như mọi collection khác. 'phases' dùng CHUNG bảng
+    // phases: phase campaign (campaign_id + start/end_date) và phase Brand
+    // (brand_id + start/end_month + các cột tài chính 0017) cùng một bảng.
     'brands', 'benchmarks', 'plan_rows', 'phase_assumptions'];
 
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -240,6 +238,9 @@
         }
         case 'publishJobs': return 'publish.create';
         case 'members': case 'businessUnits': return 'settings.manage';
+        // 0017: Brand + Planning ghi bằng data.edit (owner/lead/member có,
+        // ceo không — khớp RLS 0017 has_permission('edit')).
+        case 'brands': case 'benchmarks': case 'plan_rows': case 'phase_assumptions': return 'data.edit';
         default: return 'data.edit';
       }
     },

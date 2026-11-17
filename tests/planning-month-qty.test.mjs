@@ -190,7 +190,7 @@ test('PMQ [static]: handler change planning-month-qty gọi savePlanningMonthQty
   assert.match(save, /var v = parsePlanQty\(raw\);/);
   assert.match(save, /sUpdate\('plan_rows', job\.id, \{ qty: job\.qty \}\)/);
   assert.match(save, /sCreate\('plan_rows', obj\)/);
-  assert.match(src, /function planningMonthSaveGuard\(\) \{\s*\n\s*if \(Store\.mode !== 'demo'\)/);
+  assert.match(src, /function planningMonthSaveGuard\(\) \{\s*\n\s*if \(!canEdit\(\)\)/);
   assert.ok(css.includes('.planning-month-input'), 'CSS thiếu .planning-month-input');
 });
 

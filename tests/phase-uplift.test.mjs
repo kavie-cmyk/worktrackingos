@@ -289,11 +289,17 @@ test('PU [domain]: ctx rỗng / assumption vắng mặt -> hành vi v1 trên to�
 });
 
 // ---------------------------------------------------------------- store
-test('PU [store]: COLLECTIONS có phase_assumptions; chế độ thật an toàn (không ánh xạ bảng)', () => {
+test('PU [store]: COLLECTIONS có phase_assumptions; 0017 đã có ánh xạ bảng phase_assumptions', () => {
   assert.ok(Store.COLLECTIONS.includes('phase_assumptions'));
   assert.ok(Store.COLLECTIONS.includes('phases'), 'phases vốn đã có từ trước');
-  assert.equal(core.COLLECTION_TO_TABLE.phase_assumptions, undefined, 'phase_assumptions chưa được có bảng ở bản bấm thử');
+  assert.equal(core.COLLECTION_TO_TABLE.phase_assumptions, 'phase_assumptions', 'phase_assumptions phải có bảng sau 0017');
+  const q = { eq: () => q, order: () => q, range: () => Promise.resolve({ data: [{ id: '22222222-2222-4222-8222-222222222222', workspace_id: 'a0870eed-cbdc-4fde-a3da-0b09d83d83b6', phase_id: '11111111-1111-4111-8111-111111111111', channel: 'KOL Nano', view_to_visit: 0.003, created_at: '2026-11-17T00:00:00Z', updated_at: '2026-11-17T00:00:00Z' }], error: null }) };
+  const prevClient = Store.supabaseClient; const prevWs = Store.workspaceId;
+  Store.supabaseClient = { from: () => ({ select: () => q }) };
+  Store.workspaceId = 'a0870eed-cbdc-4fde-a3da-0b09d83d83b6';
   return Store._loadCollection('phase_assumptions').then(() => {
-    assert.deepEqual(Store.state.phase_assumptions, []);
+    assert.equal(Store.state.phase_assumptions.length, 1);
+    assert.equal(Store.state.phase_assumptions[0].channel, 'KOL Nano');
+    Store.supabaseClient = prevClient; Store.workspaceId = prevWs;
   });
 });

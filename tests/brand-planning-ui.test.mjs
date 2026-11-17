@@ -85,7 +85,7 @@ test('BP-UI [static]: trang Brand — danh sách, thẻ Identity (palette swatch
   assert.match(det, /Các bước Funnel:/);
   assert.match(det, /Ngân sách dự kiến \(Planning\)/);
   // Form tạo Brand ở editor + lưu qua sCreate('brands').
-  assert.match(src, /case 'brandNew': \{[\s\S]*?formShell\('brandNew', 'Tạo Brand mới \(demo\)'/);
+  assert.match(src, /case 'brandNew': \{[\s\S]*?formShell\('brandNew', 'Tạo Brand mới'/);
   assert.match(src, /case 'brandNew': \{[\s\S]*?sCreate\('brands', newBrand\)/);
 });
 
@@ -261,8 +261,8 @@ test('BP-UI [static]: khối Phase — uplift/qty/views/4 tỉ lệ là ô nhậ
   assert.match(block, /funnelTotalsFor\(chRows, benchmarks\)/);
   assert.match(block, /funnelTotalsFor\(pRows, benchmarks\)/);
   assert.match(block, /effectivePhaseRates\(phase, ch, benchmarks\)/);
-  // Khóa nhập ở chế độ thật: editable chỉ khi demo + canEdit; có banner khóa.
-  assert.match(src, /function planningInputsEditable\(\) \{ return Store\.mode === 'demo' && canEdit\(\); \}/);
+  // Editable khi (demo hoặc supabase) + canEdit (0017: Planning có bảng thật); vai chỉ xem có banner khóa.
+  assert.match(src, /function planningInputsEditable\(\) \{ return \(Store\.mode === 'demo' \|\| Store\.mode === 'supabase'\) && canEdit\(\); \}/);
   assert.match(blk, /data-planning-phase-locked="1"/);
   assert.match(blk, /data-planning-phase-empty="1"/);
 });
@@ -278,8 +278,8 @@ test('BP-UI [static]: handler lưu Phase — uplift vào phases, tỉ lệ/đầ
   assert.match(src, /patch\.top_funnel_override = v;/);
   assert.match(src, /var news = distributeQty\(v, rows\.map\(planRowQty\)\);/);
   assert.match(src, /sUpdate\('plan_rows', job\.id, \{ qty: job\.qty \}\)/);
-  // Guard chặn lưu ở dữ liệu thật trước mọi đường ghi.
-  assert.match(src, /function phaseSaveGuard\(\) \{\s*\n\s*if \(Store\.mode !== 'demo'\)/);
+  // Guard chặn lưu khi vai chỉ xem, trước mọi đường ghi.
+  assert.match(src, /function phaseSaveGuard\(\) \{\s*\n\s*if \(!canEdit\(\)\)/);
 });
 
 test('BP-UI [static]: KPI — bộ lọc Phase chỉ khi chọn đúng 1 Brand, lọc bằng kpiMatchesPhase trên phase_id', () => {

@@ -266,17 +266,21 @@ test('BP [demo]: SAVA CAMP 01 seed từ file — 115 task / 24 content / 9 dòng
 });
 
 // ---------------------------------------------------------------- store
-test('BP [store]: COLLECTIONS có brands/benchmarks/plan_rows; chế độ thật an toàn (không ánh xạ bảng)', () => {
+test('BP [store]: COLLECTIONS có brands/benchmarks/plan_rows; 0017 đã có ánh xạ bảng + nạp được ở chế độ thật', () => {
   for (const c of ['brands', 'benchmarks', 'plan_rows']) {
     assert.ok(Store.COLLECTIONS.includes(c), `COLLECTIONS thiếu ${c}`);
-    // Không có bảng Supabase tương ứng: _loadCollection trả [] ngay,
-    // không gọi Supabase -> chế độ thật không crash khi thiếu dữ liệu.
-    assert.equal(core.COLLECTION_TO_TABLE[c], undefined, `${c} chưa được có bảng ở bản bấm thử`);
+    // 0017: đã có bảng Supabase tương ứng trong store-core.
+    assert.equal(core.COLLECTION_TO_TABLE[c], c, `${c} phải ánh xạ sang bảng cùng tên sau 0017`);
   }
+  // Nạp qua client giả: 1 dòng brands snake_case → item camelCase trong state.
+  const q = { eq: () => q, order: () => q, range: () => Promise.resolve({ data: [{ id: '11111111-1111-4111-8111-111111111111', workspace_id: 'a0870eed-cbdc-4fde-a3da-0b09d83d83b6', code: 'SAVA', name: 'SAVA META', key_messages: ['a'], funnel_steps: ['Reach'], palette: ['#fff'], status: 'active', created_at: '2026-11-17T00:00:00Z', updated_at: '2026-11-17T00:00:00Z' }], error: null }) };
+  const prevClient = Store.supabaseClient; const prevWs = Store.workspaceId;
+  Store.supabaseClient = { from: () => ({ select: () => q }) };
+  Store.workspaceId = 'a0870eed-cbdc-4fde-a3da-0b09d83d83b6';
   return Store._loadCollection('brands').then(() => {
-    assert.deepEqual(Store.state.brands, []);
-    return Store._loadCollection('plan_rows');
-  }).then(() => {
-    assert.deepEqual(Store.state.plan_rows, []);
+    assert.equal(Store.state.brands.length, 1);
+    assert.equal(Store.state.brands[0].name, 'SAVA META');
+    assert.deepEqual(Store.state.brands[0].keyMessages, ['a']);
+    Store.supabaseClient = prevClient; Store.workspaceId = prevWs;
   });
 });
