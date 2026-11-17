@@ -6345,7 +6345,15 @@
       '<label>Email<input type="email" name="email" required autocomplete="username"></label>' +
       '<label>Mật khẩu<input type="password" name="password" required autocomplete="current-password"></label>' +
       '<button class="btn" type="submit">Đăng nhập</button></form>' +
-      '<p class="sub">Chưa có tài khoản? Tài khoản do Owner mời qua email — hãy mở liên kết trong email mời để đặt mật khẩu lần đầu. Quên mật khẩu: nhờ Owner gửi liên kết đặt lại, hoặc dùng tính năng khôi phục của hệ thống tài khoản nếu đã bật.</p></div>';
+      '<p class="sub">Chưa có tài khoản? Tài khoản do Owner mời qua email — hãy mở liên kết trong email mời để đặt mật khẩu lần đầu. Quên mật khẩu: nhờ Owner gửi liên kết đặt lại, hoặc dùng tính năng khôi phục của hệ thống tài khoản nếu đã bật.</p>' +
+      // Lối vào dữ liệu mẫu NGAY tại màn hình đăng nhập (không cần tài
+      // khoản): dùng ĐÚNG action demo-on-planning đã có — handler chạy
+      // Store.setDemoEnabled(true) + hash #/planning + reload, tức cùng
+      // một cơ chế demo với nút "Xem dữ liệu mẫu" ở Planning / Brand và
+      // nút bật demo ở Thiết lập, không chế cơ chế mới.
+      '<div class="login-demo-entry" data-login-demo="1"><p><strong>Chỉ muốn xem thử trước?</strong></p>' +
+      '<p class="sub">Xem dữ liệu mẫu (dữ liệu minh họa, không phải dữ liệu thật) — không cần tài khoản. Thoát chế độ mẫu bất cứ lúc nào ở mục Thiết lập bằng nút "Tắt chế độ demo".</p>' +
+      '<p><button type="button" class="btn secondary" data-action="demo-on-planning">Xem dữ liệu mẫu</button></p></div></div>';
   }
   function viewNoMembership() {
     return pageHead('Tài khoản chưa được gán quyền', 'Bạn đã đăng nhập nhưng chưa thuộc workspace nào.') +
@@ -6361,6 +6369,15 @@
     'kpi': viewKpi, 'channels': viewChannels, 'ads': viewAds, 'reports': viewReports, 'settings': viewSettings
   };
   function authGateView() {
+    // Chế độ demo là lối vào KHÔNG cần đăng nhập: khi cờ demo đã bật,
+    // Store.load() nạp dữ liệu mẫu và Store.mode === 'demo' — cổng này
+    // phải cho qua thẳng (kể cả khi state.authRequired còn sót true từ
+    // phiên/trạng thái trước), nếu không màn hình đăng nhập sẽ chặn cả
+    // người xem dữ liệu mẫu. Khi demo TẮT (mode khác 'demo'), mọi nhánh
+    // dưới giữ nguyên tuyệt đối như trước: chưa đăng nhập vẫn bị chặn ở
+    // màn hình đăng nhập và dữ liệu thật không lộ qua đường này, vì chế
+    // độ demo chỉ nạp dữ liệu minh họa từ js/demo-data.js.
+    if (Store.mode === 'demo') return null;
     if (Store.pendingInvite && Store.pendingInvite.expired) return viewInviteExpired();
     if (Store.pendingInvite) return viewSetPassword();
     if (Store.state.noMembership) return viewNoMembership();
