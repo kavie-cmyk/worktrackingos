@@ -2361,7 +2361,8 @@
 
   // ---------- Forecast v2: Phase + Uplift (bổ sung 17/11/2026) ----------
   // ctx = { phases: [{id, brand_id, start_month, end_month,
-  //   uplift_percent_per_month}], phaseAssumptions: [{phase_id, channel,
+  //   uplift_percent_per_month, views_uplift_percent_per_month}],
+  //   phaseAssumptions: [{phase_id, channel,
   //   view_to_visit, visit_to_freemium, freemium_to_paid,
   //   views_per_unit}] } — cả hai đều tuỳ chọn; không truyền ctx thì
   // forecastFunnel giữ nguyên hành vi v1.
@@ -2397,6 +2398,15 @@
     if (!p) return 0;
     var v = _planNum(p.uplift_percent_per_month !== undefined && p.uplift_percent_per_month !== null
       ? p.uplift_percent_per_month : p.upliftPercentPerMonth);
+    return v === null ? 0 : v;
+  }
+  // Uplift Views RIÊNG của Phase (0019): % tăng trưởng/tháng áp vào
+  // VIEWS MỖI BÀI của đường Content — song song với _phaseUplift (áp
+  // vào tỉ lệ). Cùng quy ước đọc/lưu: dạng % 0–100, null/thiếu -> 0.
+  function _phaseViewsUplift(p) {
+    if (!p) return 0;
+    var v = _planNum(p.views_uplift_percent_per_month !== undefined && p.views_uplift_percent_per_month !== null
+      ? p.views_uplift_percent_per_month : p.viewsUpliftPercentPerMonth);
     return v === null ? 0 : v;
   }
   function _rowPhaseId(r) {
@@ -2477,13 +2487,19 @@
    *   ngược lại benchmark. Tỉ lệ hiệu dụng = effectiveRate(tỉ lệ gốc,
    *   phase.uplift_percent_per_month ?? 0, n) với n = số tháng từ
    *   start_month của phase tới tháng của row (tháng đầu phase n = 0).
-   *   Uplift CHỈ áp vào các tỉ lệ chuyển đổi — không áp qty/output_per_unit.
+   *   Uplift tỉ lệ CHỈ áp vào các tỉ lệ chuyển đổi — không áp qty.
+   *   Uplift Views RIÊNG (phase.views_uplift_percent_per_month, 0019)
+   *   áp vào VIEWS MỖI BÀI của đường Content với CÙNG n: views mỗi bài
+   *   hiệu dụng = views mỗi bài gốc × (1 + vu/100)^n, áp TRƯỚC khi
+   *   nhân qty; KHÔNG áp cho dòng budget-driven, KHÔNG áp vào qty/tỉ lệ.
    * - views_per_unit của assumption(phase, channel) là số Views MỖI BÀI
    *   (đầu phễu trên 1 KOL/content) cho phase×channel đó: row thuộc phase
    *   có assumption.views_per_unit khác null → views của row =
    *   qty × views_per_unit; ngược lại views = qty × benchmark
-   *   .output_per_unit như v1. Uplift KHÔNG áp vào views_per_unit/qty
-   *   (như không áp vào output_per_unit). ĐỔI NGỮ NGHĨA 17/11/2026:
+   *   .output_per_unit như v1. Uplift TỈ LỆ không áp vào
+   *   views_per_unit/qty (như không áp vào output_per_unit); riêng
+   *   Uplift Views (views_uplift_percent_per_month) áp vào views mỗi
+   *   bài gốc ở cả hai nguồn trên. ĐỔI NGỮ NGHĨA 17/11/2026:
    *   trường này thay cơ chế cũ (lưu ở cùng cột DB top_funnel_override)
    *   vốn hiểu giá trị lưu là TỔNG views của cả phase rồi phân bổ ngược
    *   về từng tháng theo tỉ trọng qty — cơ chế phân bổ đó ĐÃ BỎ hẳn.
@@ -2574,13 +2590,21 @@
           d2a: baseRate('demo_to_account', 'demoToAccount')
         };
       }
+      // n = số tháng từ tháng đầu phase tới tháng của row (tháng đầu
+      // phase n = 0; không resolve được phase/mốc -> 0). DÙNG CHUNG cho
+      // uplift tỉ lệ (upliftRates) và Uplift Views (đường Content) —
+      // một cơ chế đếm duy nhất, không đếm riêng từng đường.
+      function monthOffset() {
+        if (!res.phase) return 0;
+        var startIdx = _monthIndex(_phaseMonth(res.phase, 'start_month', 'startMonth'));
+        var rowIdx = _monthIndex(base.month);
+        return (startIdx !== null && rowIdx !== null) ? Math.max(0, rowIdx - startIdx) : 0;
+      }
       // Uplift của phase áp vào các tỉ lệ chuyển đổi được truyền vào
       // (không áp vào qty/output/ngân sách/visits suy từ ngân sách).
       function upliftRates(rates) {
         if (!res.phase) return rates;
-        var startIdx = _monthIndex(_phaseMonth(res.phase, 'start_month', 'startMonth'));
-        var rowIdx = _monthIndex(base.month);
-        var n = (startIdx !== null && rowIdx !== null) ? Math.max(0, rowIdx - startIdx) : 0;
+        var n = monthOffset();
         var uplift = _phaseUplift(res.phase);
         var out = {};
         Object.keys(rates).forEach(function (k) { out[k] = effectiveRate(rates[k], uplift, n); });
@@ -2595,7 +2619,8 @@
         // Dòng budget-driven (qty null): Paid Media theo MÔ HÌNH
         // OBJECTIVE + Partnership/Event trực tiếp (xem doc ở đầu hàm).
         // views_per_unit (Views mỗi bài) KHÔNG áp cho các dòng này —
-        // chúng không có qty/content để nhân views mỗi bài.
+        // chúng không có qty/content để nhân views mỗi bài; Uplift
+        // Views (0019) cũng KHÔNG áp — views ở đây suy từ ngân sách.
         var budget = _budget0;
         var objKey = _rowObjective(r);
         base.objective = objKey;
@@ -2685,12 +2710,16 @@
       }
       var qty = _planNum(r && r.qty);
       var output = b ? _benchField(b, 'output_per_unit', 'outputPerUnit') : null;
-      // Views mỗi bài của Phase (assumption.views_per_unit) thắng
-      // output_per_unit của Benchmark khi khác null; uplift không áp.
+      // Views mỗi bài GỐC của Phase (assumption.views_per_unit) thắng
+      // output_per_unit của Benchmark khi khác null.
       var viewsPerUnit = assumption ? _assumpViewsPerUnit(assumption) : null;
-      if (qty !== null && viewsPerUnit !== null) views = qty * viewsPerUnit;
-      else if (qty !== null && output !== null) views = qty * output;
-      else return base;
+      var baseViewsPerUnit = viewsPerUnit !== null ? viewsPerUnit : output;
+      if (qty === null || baseViewsPerUnit === null) return base;
+      // Uplift Views RIÊNG của Phase (0019): views mỗi bài HIỆU DỤNG =
+      // gốc x (1 + vu/100)^n với CÙNG n của uplift tỉ lệ (monthOffset),
+      // áp TRƯỚC khi nhân qty. Uplift tỉ lệ KHÔNG áp vào views mỗi bài;
+      // đường budget-driven ở trên đã return nên không chạm vào đây.
+      views = qty * effectiveRate(baseViewsPerUnit, _phaseViewsUplift(res.phase), monthOffset());
       var rates0 = funnelRates();
       if (rates0.v2v === null || rates0.v2f === null || rates0.f2p === null) return base;
       var rates = upliftRates(rates0);
