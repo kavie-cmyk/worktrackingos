@@ -208,7 +208,9 @@ test('PU [domain]: byPhase = tổng đúng các row thuộc phase (cộng từ c
   }
   // GĐ1 (uplift 0): views KOL T1–T2 = (4+6)x4000 + (4+5)x15000 + (1+1)x25000.
   approx(f.byPhase['phase-lumus-1'].views, 40000 + 135000 + 50000, 'GĐ1 views');
-  assert.equal(f.byPhase['phase-lumus-1'].rowCount, 6, 'GĐ1 chỉ 6 row KOL có forecast (3 channel x 2 tháng)');
+  // SỬA PHẠM VI Đợt Paid Media: GĐ1 nay có thêm 4 row Paid có forecast
+  // (Meta Ads + TikTok Ads x T1–T2, suy Visits từ ngân sách) -> 6 + 4 = 10.
+  assert.equal(f.byPhase['phase-lumus-1'].rowCount, 10, 'GĐ1: 6 row KOL + 4 row Paid Media có forecast');
   // Bỏ phase_id trên row -> khớp theo tháng phải cho cùng byPhase.
   const stripped = demo.plan_rows.map((r) => ({ ...r, phase_id: undefined }));
   const f2 = domain.forecastFunnel(stripped, demo.benchmarks, CTX);

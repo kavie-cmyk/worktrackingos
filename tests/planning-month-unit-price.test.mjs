@@ -131,7 +131,7 @@ function budgetTotalViaApp(h, rows) {
 }
 
 // ---------- [static] wiring bảng chi tiết ----------
-test('PMUP [static]: bảng chi tiết có cột Đơn giá + ô sửa planning-month-unit-price, nhãn đặt tay/Benchmark, chú thích xoá trắng; cột Ngân sách CHỈ HIỂN THỊ, không còn ô sửa ngân sách', () => {
+test('PMUP [static]: bảng chi tiết có cột Đơn giá + ô sửa planning-month-unit-price, nhãn đặt tay/Benchmark, chú thích xoá trắng; cột Ngân sách CHỈ HIỂN THỊ cho dòng thường, không còn ô sửa ngân sách TỔNG QUÁT (ngoại lệ Paid Media ở file planning-paid-budget riêng)', () => {
   const v = section('function viewPlanning()', '// ---------- Planning Theo phase');
   const detail = v.slice(v.indexOf('// Bảng chi tiết của dòng đang chọn'), v.indexOf('// Chart ngân sách dự kiến theo tháng'));
   assert.ok(detail.length > 0);
@@ -144,10 +144,14 @@ test('PMUP [static]: bảng chi tiết có cột Đơn giá + ô sửa planning-
   assert.match(detail, /data-planning-detail-price-hint="1"/);
   assert.match(detail, /Xoá trắng ô Đơn giá/);
   assert.match(detail, /quay về đơn giá Benchmark/);
-  // Ngân sách: chỉ hiển thị qua span, kèm chú thích "chỉ tự tính".
+  // Ngân sách dòng THƯỜNG: chỉ hiển thị qua span, kèm chú thích "chỉ tự
+  // tính". (SỬA PHẠM VI Đợt Paid Media: câu chữ nay nói rõ "dòng thường"
+  // vì Paid Media là ngoại lệ nhập trực tiếp — khoá riêng ở
+  // tests/planning-paid-budget.test.mjs; nhánh span này vẫn là đường
+  // render của mọi dòng không phải Paid Media.)
   assert.match(detail, /<span data-planning-budget-value="1">/);
   assert.match(detail, /data-planning-detail-budget-hint="1"/);
-  assert.match(detail, /Ngân sách chỉ tự tính \(không sửa được\)/);
+  assert.match(detail, /Ngân sách của dòng thường chỉ tự tính \(không sửa được\)/);
   assert.match(detail, /data-planning-budget-source="1">dữ liệu nguồn</);
   assert.match(detail, /data-planning-detail-budget-total="1"/);
   assert.match(detail, /detailBudgetTotal \+= budgetSum;/);

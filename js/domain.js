@@ -2133,7 +2133,9 @@
   //             thắng đơn giá của benchmark khớp khi tính ngân sách.
   // benchmark: { brand_id, channel, unit_price, output_per_unit,
   //   view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
-  //   direct_budget } — chấp nhận cả khóa camelCase tương ứng.
+  //   direct_budget, traffic_share, cost_per_visit } — chấp nhận cả khóa
+  //   camelCase tương ứng. traffic_share + cost_per_visit CHỈ có ở
+  //   benchmark Paid Media (suy Visits từ ngân sách, xem forecastFunnel).
   // Mọi hàm an toàn với rows rỗng/thiếu benchmark: trả 0/null, không throw.
   // =====================================================================
   var FUNNEL_STEPS = ['views', 'visits', 'signups', 'first', 'paid'];
@@ -2346,6 +2348,17 @@
    * - Channel không benchmark VÀ không assumption đủ tỉ lệ → null như v1.
    *   Assumption đủ 4 tỉ lệ nhưng không benchmark: chỉ tính được khi có
    *   top_funnel_override (có đầu phễu); thiếu đầu phễu → null.
+   * - Paid Media (benchmark direct_budget): forecast bắt đầu ở VISITS,
+   *   suy từ ngân sách của dòng theo đúng công thức sheet 04 Monthly của
+   *   file Lumus 2027 Master Forecast: Visits = budget (VNĐ) ×
+   *   traffic_share ÷ cost_per_visit (03 Inputs cột M/N: Meta 0,6 /
+   *   20.000đ — R59; TikTok 0,7 / 22.000đ — R60), rồi áp chuỗi hạ nguồn
+   *   visit→signup / signup→first / first→paid của benchmark/assumption
+   *   (R59/R60: 0,09 / 0,5 / 0,055; uplift phase áp vào 3 tỉ lệ này như
+   *   kênh thường). Views của Paid = 0 trong tổng (file nguồn để trống
+   *   REACH/VIEWS cho Paid — KHÔNG suy Views từ tiền, không bịa số).
+   *   Benchmark direct_budget THIẾU traffic_share / cost_per_visit /
+   *   chuỗi hạ nguồn → forecast null như trước (không bịa số).
    * - Trả thêm byPhase: { [phase_id]: { phase_id, views, visits, signups,
    *   first, paid, rowCount } } cộng từ CÙNG kết quả từng row đã tính
    *   (rowCount = số row có forecast thuộc phase); row chi tiết thêm
@@ -2421,36 +2434,76 @@
         forecast: null
       };
       var b = _benchmarkFor(idx, r || {});
-      if (b && (b.direct_budget || b.directBudget)) return base;
       var assumption = (res.phaseId && r && r.channel)
         ? assumpIdx[res.phaseId + '|' + String(r.channel)] || null : null;
-      var qty = _planNum(r && r.qty);
-      var output = b ? _benchField(b, 'output_per_unit', 'outputPerUnit') : null;
-      var views;
-      if (overrideViews[i] !== undefined) views = overrideViews[i];
-      else if (qty !== null && output !== null) views = qty * output;
-      else return base;
       function baseRate(snake, camel) {
         var av = _assumpField(assumption, snake, camel);
         if (av !== null) return av;
         return b ? _benchField(b, snake, camel) : null;
       }
-      var v2v = baseRate('view_to_visit', 'viewToVisit');
-      var v2s = baseRate('visit_to_signup', 'visitToSignup');
-      var s2f = baseRate('signup_to_first', 'signupToFirst');
-      var f2p = baseRate('first_to_paid', 'firstToPaid');
-      if (v2v === null || v2s === null || s2f === null || f2p === null) return base;
-      if (res.phase) {
+      // Uplift của phase áp vào các tỉ lệ chuyển đổi được truyền vào
+      // (không áp vào qty/output/ngân sách/visits suy từ ngân sách).
+      function upliftRates(rates) {
+        if (!res.phase) return rates;
         var startIdx = _monthIndex(_phaseMonth(res.phase, 'start_month', 'startMonth'));
         var rowIdx = _monthIndex(base.month);
         var n = (startIdx !== null && rowIdx !== null) ? Math.max(0, rowIdx - startIdx) : 0;
         var uplift = _phaseUplift(res.phase);
-        v2v = effectiveRate(v2v, uplift, n);
-        v2s = effectiveRate(v2s, uplift, n);
-        s2f = effectiveRate(s2f, uplift, n);
-        f2p = effectiveRate(f2p, uplift, n);
+        var out = {};
+        Object.keys(rates).forEach(function (k) { out[k] = effectiveRate(rates[k], uplift, n); });
+        return out;
       }
-      var visits = views * v2v;
+      var views, visits;
+      if (b && (b.direct_budget || b.directBudget)) {
+        // Paid Media: đầu phễu là Visits suy từ ngân sách (xem doc ở
+        // đầu hàm). top_funnel_override (đầu phễu Views) KHÔNG áp cho
+        // Paid — file nguồn không có Views cho Paid.
+        var budget = _planNum(r && r.budget);
+        var trafficShare = _benchField(b, 'traffic_share', 'trafficShare');
+        var costPerVisit = _benchField(b, 'cost_per_visit', 'costPerVisit');
+        if (budget === null || trafficShare === null || costPerVisit === null || costPerVisit <= 0) return base;
+        var pRates0 = {
+          v2s: baseRate('visit_to_signup', 'visitToSignup'),
+          s2f: baseRate('signup_to_first', 'signupToFirst'),
+          f2p: baseRate('first_to_paid', 'firstToPaid')
+        };
+        if (pRates0.v2s === null || pRates0.s2f === null || pRates0.f2p === null) return base;
+        var pRates = upliftRates(pRates0);
+        views = 0;
+        visits = budget * trafficShare / costPerVisit;
+        var pSignups = visits * pRates.v2s;
+        var pFirst = pSignups * pRates.s2f;
+        var pPaid = pFirst * pRates.f2p;
+        base.forecast = { views: views, visits: visits, signups: pSignups, first: pFirst, paid: pPaid };
+        var bmP = base.month && byMonth[base.month];
+        if (bmP) {
+          bmP.views += views; bmP.visits += visits; bmP.signups += pSignups; bmP.first += pFirst; bmP.paid += pPaid;
+          bmP.hasForecast = true;
+        }
+        totals.views += views; totals.visits += visits; totals.signups += pSignups; totals.first += pFirst; totals.paid += pPaid;
+        if (res.phaseId) {
+          var bpP = byPhase[res.phaseId];
+          if (!bpP) bpP = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, signups: 0, first: 0, paid: 0, rowCount: 0 };
+          bpP.views += views; bpP.visits += visits; bpP.signups += pSignups; bpP.first += pFirst; bpP.paid += pPaid;
+          bpP.rowCount += 1;
+        }
+        return base;
+      }
+      var qty = _planNum(r && r.qty);
+      var output = b ? _benchField(b, 'output_per_unit', 'outputPerUnit') : null;
+      if (overrideViews[i] !== undefined) views = overrideViews[i];
+      else if (qty !== null && output !== null) views = qty * output;
+      else return base;
+      var rates0 = {
+        v2v: baseRate('view_to_visit', 'viewToVisit'),
+        v2s: baseRate('visit_to_signup', 'visitToSignup'),
+        s2f: baseRate('signup_to_first', 'signupToFirst'),
+        f2p: baseRate('first_to_paid', 'firstToPaid')
+      };
+      if (rates0.v2v === null || rates0.v2s === null || rates0.s2f === null || rates0.f2p === null) return base;
+      var rates = upliftRates(rates0);
+      var v2v = rates.v2v, v2s = rates.v2s, s2f = rates.s2f, f2p = rates.f2p;
+      visits = views * v2v;
       var signups = visits * v2s;
       var first = signups * s2f;
       var paid = first * f2p;
@@ -2485,8 +2538,11 @@
    *      hiện không có dòng nào vừa có qty vừa có budget).
    *   2) Dòng KHÔNG có số lượng (qty null — ngoại lệ dữ liệu nguồn Paid
    *      Ads): ngân sách = field budget đã lưu trong dữ liệu nguồn, vì
-   *      không có qty × đơn giá để tính. Đây không phải đường sửa của
-   *      người dùng.
+   *      không có qty × đơn giá để tính. NGOẠI LỆ UI (chốt bổ sung của
+   *      Zac): riêng dòng thuộc nhóm "Paid Media" được nhập ngân sách
+   *      trực tiếp theo tháng vào chính field budget này (xem
+   *      savePlanningMonthPaidBudget ở app.js) vì chỉ số Paid suy ra từ
+   *      ngân sách; công thức đọc ở đây KHÔNG đổi — vẫn lấy field budget.
    * Trả tổng theo tháng + kỳ; source của dòng: 'manual_unit_price' /
    * 'unit_price' / 'direct' / null. totalUnitPrice gồm cả hai nguồn đơn
    * giá (đặt tay + Benchmark); thêm totalManualUnitPrice tách phần đặt tay.

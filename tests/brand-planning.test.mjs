@@ -146,18 +146,30 @@ test('BP [domain]: forecastFunnel toàn năm — tổng views KOL khớp cộng 
   const f = domain.forecastFunnel(lumusRows, demo.benchmarks);
   assert.equal(f.months.length, 12);
   // 65x4000 + 60x15000 + 12x25000 = 260.000 + 900.000 + 300.000
+  // Views KHÔNG đổi khi nối Forecast Paid (Paid không suy Views từ tiền).
   approx(f.totals.views, 1460000, 'total views');
-  approx(f.totals.visits, 780 + 3600 + 1500, 'total visits');
+  // Visits = KOL (780 + 3600 + 1500) + Paid suy từ ngân sách (đợt Paid
+  // Media: Meta 546tr x 0,6 / 20.000 = 16.380; TikTok 182tr x 0,7 /
+  // 22.000 = 5.790,909… — khớp sheet 02 KPI Budget của file nguồn).
+  approx(f.totals.visits, 780 + 3600 + 1500 + 16380 + 182000000 * 0.7 / 22000, 'total visits');
 });
 
-test('BP [domain]: forecastFunnel — channel không benchmark / Paid Ads -> forecast null, không bịa số', () => {
+test('BP [domain]: forecastFunnel — channel không benchmark -> forecast null, không bịa số; Paid Ads nay tính từ ngân sách (đợt Paid Media)', () => {
   const fb = demo.plan_rows.filter((r) => r.channel === 'Facebook Owned' && r.month === '2027-01');
   const f1 = domain.forecastFunnel(fb, demo.benchmarks);
   assert.equal(f1.rows[0].forecast, null);
   assert.equal(f1.totals.views, 0);
+  // SỬA PHẠM VI Đợt Paid Media (trước đây Paid -> null): Benchmark Paid
+  // nay có traffic_share + cost_per_visit từ 03 Inputs R59/R60 của file
+  // nguồn nên forecast Paid tính được từ Visits (Views vẫn 0/không suy).
+  // Ca số đầy đủ khoá ở tests/planning-paid-budget.test.mjs.
   const meta = demo.plan_rows.filter((r) => r.channel === 'Meta Ads' && r.month === '2027-01');
   const f2 = domain.forecastFunnel(meta, demo.benchmarks);
-  assert.equal(f2.rows[0].forecast, null);
+  assert.ok(f2.rows[0].forecast, 'Paid Ads có căn cứ file nguồn thì phải tính được forecast');
+  approx(f2.rows[0].forecast.visits, 327.6, 'Meta T1 visits = 10.920.000 x 0,6 / 20.000');
+  // Direct budget THIẾU traffic_share/cost_per_visit -> vẫn null.
+  const fNoCost = domain.forecastFunnel(meta, [{ brand_id: 'brand-lumus-ai', channel: 'Meta Ads', direct_budget: true, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055 }]);
+  assert.equal(fNoCost.rows[0].forecast, null);
   // Benchmark lạ không khớp brand -> null.
   const f3 = domain.forecastFunnel([nanoJan], [{ brand_id: 'brand-khac', channel: 'KOL Nano', unit_price: 1, output_per_unit: 1, view_to_visit: 1, visit_to_signup: 1, signup_to_first: 1, first_to_paid: 1 }]);
   assert.equal(f3.rows[0].forecast, null);

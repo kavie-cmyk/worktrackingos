@@ -441,14 +441,24 @@
     // Benchmark = brand × channel (sheet 03 Inputs). Chuỗi hạ nguồn
     // visit→signup 0,09 / signup→first 0,5 / first→paid 0,055 DÙNG CHUNG
     // cho cả 3 KOL trong file nguồn (R44–R46) — chỉ view→visit khác nhau.
-    // Paid Ads: direct_budget = true, unit_price/output/rates = null
-    // (ngân sách nhập thẳng ở plan_rows.budget, KHÔNG forecast bịa số).
+    // Paid Ads: direct_budget = true, unit_price/output/view→visit = null
+    // (ngân sách nhập thẳng ở plan_rows.budget). Forecast Paid KHÔNG suy
+    // Views (cột REACH/VIEWS của file nguồn để trống cho Paid) mà suy
+    // Visits từ ngân sách theo đúng công thức sheet 04 Monthly của file:
+    // Visits = Ngân sách VNĐ × traffic_share ÷ cost_per_visit, với
+    // traffic_share (cột M) + cost_per_visit = COST/LP VISIT VND (cột N)
+    // ở 03 Inputs R59 (Meta: 0,6 / 20.000đ) và R60 (TikTok: 0,7 / 22.000đ);
+    // hạ nguồn visit→signup 0,09 / signup→first 0,5 / first→paid 0,055
+    // lấy từ chính R59/R60 (cột H/I/J). Kiểm chứng: Meta cả năm
+    // 546.000.000 × 0,6 ÷ 20.000 = 16.380 Visits và TikTok
+    // 182.000.000 × 0,7 ÷ 22.000 = 5.790,909… Visits — khớp sheet
+    // 02 KPI Budget R23/R24 của file nguồn.
     benchmarks: [
       { id: 'bench-lumus-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', group: 'KOL', unit_price: 1500000, currency: 'VND', output_per_unit: 4000, view_to_visit: 0.003, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
       { id: 'bench-lumus-kol-micro', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Micro', group: 'KOL', unit_price: 5500000, currency: 'VND', output_per_unit: 15000, view_to_visit: 0.004, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
       { id: 'bench-lumus-kol-expert', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Expert', group: 'KOL', unit_price: 30000000, currency: 'VND', output_per_unit: 25000, view_to_visit: 0.005, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
-      { id: 'bench-lumus-meta-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs — Paid Media pool 21.000 USD/năm, ngân sách thẳng theo tháng' },
-      { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs — Paid Media pool 7.000 USD/năm, ngân sách thẳng theo tháng' }
+      { id: 'bench-lumus-meta-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, traffic_share: 0.6, cost_per_visit: 20000, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R59 — Paid Media pool 21.000 USD/năm, ngân sách thẳng theo tháng; traffic share 60% + cost/LP visit 20.000đ (cột M/N), hạ nguồn 0,09/0,5/0,055 (cột H/I/J)' },
+      { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, traffic_share: 0.7, cost_per_visit: 22000, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R60 — Paid Media pool 7.000 USD/năm, ngân sách thẳng theo tháng; traffic share 70% + cost/LP visit 22.000đ (cột M/N), hạ nguồn 0,09/0,5/0,055 (cột H/I/J)' }
     ],
     plan_rows: PLAN_ROWS,
     phase_assumptions: PHASE_ASSUMPTIONS,
