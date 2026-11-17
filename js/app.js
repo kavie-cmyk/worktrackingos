@@ -162,6 +162,7 @@
     segmentFilter: 'all',
     planningYear: 2027,
     planningChannel: null,
+    planningChannelGroup: null,
     // Phase + Uplift (bổ sung): chế độ xem Planning 'month' | 'phase' và
     // bộ lọc Phase của view KPI (id phase hoặc 'all'; chỉ áp khi đang
     // chọn đúng 1 Brand — xem viewKpi).
@@ -742,6 +743,48 @@
     return { year: bestYear, changed: true, from: isNaN(cur) ? currentYear : cur };
   }
   function planRowQty(r) { var v = r ? (r.qty !== undefined ? r.qty : (r.quantity !== undefined ? r.quantity : r.count)) : null; return (v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v); }
+  // --- Planning Theo tháng: helper THUẦN cho ô tháng (không UI/Store) ---
+  // Nhóm của 1 dòng plan — cùng quy tắc gom nhóm của lưới Theo tháng.
+  function planRowGroup(r) { return String((r && (r.group || r.groupName)) || 'Chưa nhóm'); }
+  // Dòng có mang Số lượng thật hay không: qty/quantity/count khác null/''
+  // mới tính là dòng số lượng; dòng chỉ có budget (qty null, vd Paid Ads)
+  // KHÔNG phải ô Số lượng sửa được trong bảng chi tiết Theo tháng.
+  function planRowHasQty(r) {
+    if (!r) return false;
+    var v = r.qty !== undefined ? r.qty : (r.quantity !== undefined ? r.quantity : r.count);
+    return v !== null && v !== undefined && v !== '';
+  }
+  // Các dòng plan thuộc ĐÚNG 1 ô của lưới Theo tháng (Channel × Group × tháng).
+  function planMonthRows(rows, channel, group, month) {
+    return (rows || []).filter(function (r) {
+      return String((r && r.channel) || '—') === String(channel) && planRowGroup(r) === String(group) && planRowMonth(r) === String(month);
+    });
+  }
+  // Số lượng của 1 ô tháng = TỔNG CỘNG qty của các dòng plan trong ô đó.
+  // Mọi tổng của Planning (tổng hàng / tổng tháng / tổng kỳ) đều cộng từ
+  // các ô tháng này — không đọc trường tổng lưu sẵn ở bất kỳ đâu.
+  function planMonthQty(rows, channel, group, month) {
+    return planMonthRows(rows, channel, group, month).reduce(function (s, r) { return s + planRowQty(r); }, 0);
+  }
+  // Parse Số lượng nhập ở bảng chi tiết: chỉ số nguyên >= 0; còn lại
+  // (trống, chữ, âm, thập phân) -> null để handler chặn lưu và báo lỗi.
+  function parsePlanQty(raw) {
+    if (raw === '' || raw === null || raw === undefined) return null;
+    var v = Number(raw);
+    if (isNaN(v) || v < 0 || Math.round(v) !== v) return null;
+    return v;
+  }
+  // Toggle bảng chi tiết Planning Theo tháng: bấm 1 dòng (Channel × Group)
+  // đang chưa mở -> mở đúng dòng đó; bấm dòng khác -> chuyển chi tiết sang
+  // dòng đó (tại một thời điểm chỉ mở MỘT dòng); bấm lại dòng đang mở ->
+  // đóng. Hàm thuần để kiểm thử độc lập; handler click chỉ áp kết quả này
+  // vào UI.planningChannel / UI.planningChannelGroup.
+  function planningDetailToggle(curChannel, curGroup, channel, group) {
+    if (curChannel !== null && curChannel !== undefined && String(curChannel) === String(channel) && String(curGroup || '') === String(group || '')) {
+      return { channel: null, group: null };
+    }
+    return { channel: channel, group: group };
+  }
   function benchmarkForRow(row, benchmarks) {
     var list = benchmarks || benchmarksList();
     var bid = recordBrandId(row), ch = String((row && row.channel) || '');
@@ -3041,7 +3084,7 @@
     var benchmarks = filteredBenchmarks();
     var months = [];
     for (var mi = 1; mi <= 12; mi++) months.push(String(year) + '-' + String(mi).padStart(2, '0'));
-    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng, chỉ xem) và Theo phase (nhập Uplift / Số lượng / Đầu phễu / Tỉ lệ chuyển đổi theo Phase ở chế độ demo). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục và dùng chung một Forecast.',
+    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng theo từng tháng ở chế độ demo) và Theo phase (nhập Uplift / Số lượng / Đầu phễu / Tỉ lệ chuyển đổi theo Phase ở chế độ demo). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.',
       '');
     html += readonlyNote() + contextBannerHtml();
     // Chọn năm
@@ -3074,15 +3117,23 @@
       return html;
     }
     if (mode === 'phase') { html += planningPhaseModeHtml(year, rows, benchmarks); return html; }
+    // Theo tháng: lưới CHỈ HIỂN THỊ số lượng (chỉ đọc). Muốn sửa thì bấm
+    // vào tên Channel ở đầu dòng -> mở BẢNG CHI TIẾT của đúng dòng đó ngay
+    // bên dưới lưới (xem khối data-planning-detail ở dưới); trong bảng chi
+    // tiết mới có ô sửa Số lượng theo từng tháng.
+    html += '<p class="sub" data-planning-grid-hint="1">Bấm vào tên Channel ở đầu một dòng để mở bảng chi tiết của dòng đó ngay bên dưới lưới — trong bảng chi tiết mới sửa được Số lượng theo từng tháng. Bấm dòng khác để chuyển chi tiết sang dòng đó; bấm lại dòng đang mở (hoặc nút "Đóng chi tiết") để đóng.</p>';
     // Gom nhóm theo group, trong nhóm gom theo channel.
     var groupOrder = [], groupMap = {};
     rows.forEach(function (r) {
-      var g = String(r.group || r.groupName || 'Chưa nhóm');
+      var g = planRowGroup(r);
       if (!groupMap[g]) { groupMap[g] = { name: g, channels: {}, channelOrder: [] }; groupOrder.push(g); }
       var ch = String(r.channel || '—');
       if (!groupMap[g].channels[ch]) { groupMap[g].channels[ch] = []; groupMap[g].channelOrder.push(ch); }
       groupMap[g].channels[ch].push(r);
     });
+    // Mọi tổng của lưới đều CỘNG TỪ CÁC Ô THÁNG: tổng tháng (cột) = tổng
+    // các ô trong cột, Tổng hàng = tổng các ô tháng của hàng đó, tổng kỳ
+    // (grand) = tổng các Tổng hàng — không đọc trường tổng lưu sẵn nào.
     var colTotals = months.map(function () { return 0; });
     var grand = 0;
     var gridRowsHtml = '';
@@ -3091,27 +3142,83 @@
       gridRowsHtml += '<tr class="group-row"><td colspan="' + (months.length + 2) + '"><strong>' + esc(gName) + '</strong></td></tr>';
       g.channelOrder.forEach(function (ch) {
         var chRows = g.channels[ch];
+        var rowTotal = 0;
         var cells = months.map(function (m, idx) {
-          var sum = chRows.filter(function (r) { return planRowMonth(r) === m; }).reduce(function (s, r) { return s + planRowQty(r); }, 0);
-          colTotals[idx] += sum; grand += sum;
+          var sum = planMonthQty(chRows, ch, gName, m);
+          colTotals[idx] += sum; rowTotal += sum;
           return '<td>' + (sum ? fmtNum(sum) : '—') + '</td>';
         }).join('');
-        var rowTotal = chRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
-        gridRowsHtml += '<tr><td><button class="linklike" data-action="planning-channel" data-channel="' + esc(ch) + '" data-group="' + esc(gName) + '"><strong>' + esc(ch) + '</strong></button></td>' + cells + '<td><strong>' + fmtNum(rowTotal) + '</strong></td></tr>';
+        grand += rowTotal;
+        var isOpen = UI.planningChannel !== null && UI.planningChannel !== undefined && String(UI.planningChannel) === ch && String(UI.planningChannelGroup || '') === gName;
+        gridRowsHtml += '<tr' + (isOpen ? ' data-planning-row-open="1"' : '') + '><td><button class="linklike" data-action="planning-channel" data-channel="' + esc(ch) + '" data-group="' + esc(gName) + '" aria-expanded="' + (isOpen ? 'true' : 'false') + '"><strong>' + esc(ch) + '</strong></button></td>' + cells + '<td><strong>' + fmtNum(rowTotal) + '</strong></td></tr>';
       });
     });
     var footHtml = '<tr><td><strong>Tổng theo tháng</strong></td>' + colTotals.map(function (v) { return '<td><strong>' + fmtNum(v) + '</strong></td>'; }).join('') + '<td><strong>' + fmtNum(grand) + '</strong></td></tr>';
     html += '<div class="cards"><div class="card viz-kpi-card" data-planning-grand="1"><span class="viz-kpi-label">Tổng Content toàn kỳ ' + esc(year) + '</span><span class="big">' + fmtNum(grand) + '</span><span class="sub">' + esc(rows.length) + ' dòng plan · ' + esc(contextLabel()) + '</span></div></div>';
     html += '<h2>Lưới Planning — Channel × tháng (' + esc(year) + ')</h2>';
     html += tbl('<tr><th>Channel</th>' + months.map(function (m) { return '<th>' + esc(vizMonthLabel(m)) + '</th>'; }).join('') + '<th>Tổng hàng</th></tr>' + gridRowsHtml + footHtml, 'planning-grid');
-    // Chi tiết channel đang chọn (drawer/panel dạng khối chi tiết dưới lưới)
+    // Bảng chi tiết của dòng đang chọn — NGAY BÊN DƯỚI lưới, chỉ mở MỘT
+    // dòng tại một thời điểm (UI.planningChannel + UI.planningChannelGroup
+    // xác định đúng dòng Channel × Group đã bấm). Đây là nơi DUY NHẤT sửa
+    // Số lượng ở chế độ Theo tháng: 12 ô tháng, lưu khi rời ô / Enter qua
+    // sự kiện change (đúng mẫu Theo phase), tổng dòng tự cộng từ 12 ô.
     if (UI.planningChannel) {
-      var selRows = rows.filter(function (r) { return String(r.channel || '—') === UI.planningChannel; });
-      html += '<div class="panel" data-planning-detail="1"><h3>Chi tiết Channel: ' + esc(UI.planningChannel) + ' (' + selRows.length + ' dòng plan)</h3>' +
-        '<p><button class="btn small secondary" data-action="planning-channel-close">Đóng chi tiết</button></p>' +
-        (selRows.length ? tbl('<tr><th>Tháng</th><th>Số lượng</th><th>Segment</th><th>Brand</th><th>Nhóm</th></tr>' + selRows.slice().sort(function (a, b) { return planRowMonth(a).localeCompare(planRowMonth(b)); }).map(function (r) {
-          return '<tr><td>' + esc(vizMonthLabel(planRowMonth(r))) + ' (' + esc(planRowMonth(r)) + ')</td><td>' + fmtNum(planRowQty(r)) + '</td><td>' + esc(recordSegment(r) ? recordSegment(r).toUpperCase() : 'Dùng chung') + '</td><td>' + esc(brandNameOf(recordBrandId(r))) + '</td><td>' + esc(r.group || '—') + '</td></tr>';
-        }).join(''), 'planning-detail') : '<p class="sub">Không có dòng plan nào của channel này trong kỳ/bộ lọc hiện tại.</p>') + '</div>';
+      var selChannel = String(UI.planningChannel);
+      var selGroup = UI.planningChannelGroup;
+      var selRows = rows.filter(function (r) {
+        return String(r.channel || '—') === selChannel && (selGroup === null || selGroup === undefined || planRowGroup(r) === String(selGroup));
+      });
+      var detailEditable = planningInputsEditable();
+      var detailDisAttr = detailEditable ? '' : ' disabled';
+      var selHasQty = selRows.some(planRowHasQty);
+      var detailTotal = 0;
+      var detailMonthRows = months.map(function (m) {
+        // selRows đã lọc đúng Channel × Group của dòng đang mở nên ô tháng
+        // chỉ cần lọc theo tháng; tổng ô = cộng qty các dòng plan của ô.
+        var cellRows = selRows.filter(function (r) { return planRowMonth(r) === m; });
+        var sum = cellRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
+        detailTotal += sum;
+        var rep = cellRows[0] || selRows[0] || null;
+        var cellHasQty = cellRows.some(planRowHasQty);
+        var qtyCell;
+        // Ô sửa được khi: tháng có dòng Số lượng, hoặc tháng chưa có dòng
+        // nào nhưng dòng này có Số lượng ở tháng khác (nhập > 0 sẽ tạo
+        // dòng plan mới qua savePlanningMonthQty). Tháng chỉ có dòng Ngân
+        // sách (qty trống, vd Paid Ads) giữ '—', không sửa Số lượng.
+        if (cellHasQty || (!cellRows.length && selHasQty)) {
+          qtyCell = '<input class="phase-input planning-month-input" type="number" step="1" min="0" value="' + esc(String(sum)) + '" data-action-change="planning-month-qty" data-channel="' + esc(selChannel) + '" data-group="' + esc(selGroup === null || selGroup === undefined ? (rep ? planRowGroup(rep) : '') : selGroup) + '" data-month="' + esc(m) + '" aria-label="Số lượng của ' + esc(selChannel) + ' trong tháng ' + esc(m) + '"' + detailDisAttr + '>';
+        } else {
+          qtyCell = '—';
+        }
+        return '<tr><td>' + esc(vizMonthLabel(m)) + ' (' + esc(m) + ')</td><td>' + qtyCell + '</td><td>' + esc(rep && recordSegment(rep) ? recordSegment(rep).toUpperCase() : 'Dùng chung') + '</td><td>' + esc(rep ? brandNameOf(recordBrandId(rep)) : '—') + '</td></tr>';
+      }).join('');
+      html += '<div class="panel" data-planning-detail="1" data-planning-detail-channel="' + esc(selChannel) + '" data-planning-detail-group="' + esc(selGroup || '') + '"><h3>Chi tiết dòng: ' + esc(selChannel) + (selGroup ? ' — ' + esc(selGroup) : '') + ' (' + esc(year) + ')</h3>' +
+        '<p class="sub">' + esc(selRows.length) + ' dòng plan · Tổng số lượng của dòng: <strong>' + fmtNum(detailTotal) + '</strong> (tự cộng từ 12 tháng)</p>' +
+        '<p><button class="btn small secondary" data-action="planning-channel-close">Đóng chi tiết</button> <span class="sub">Hoặc bấm lại tên Channel đang mở ở lưới để đóng.</span></p>' +
+        (selRows.length ? '' : '<p class="sub">Không có dòng plan nào của dòng này trong kỳ/bộ lọc hiện tại.</p>');
+      if (Store.mode !== 'demo') {
+        html += '<div class="notice warn" data-planning-detail-locked="1">Đang ở chế độ dữ liệu thật: plan_rows chưa có bảng dữ liệu nên các ô Số lượng trong bảng chi tiết đang bị khóa (không lưu) để tránh lỗi. Bật chế độ demo ở Thiết lập để bấm thử nhập liệu.</div>';
+      } else if (!canEdit()) {
+        html += '<div class="notice info" data-planning-detail-locked="1">Vai trò hiện tại chỉ xem nên các ô Số lượng trong bảng chi tiết đang bị khóa.</div>';
+      } else {
+        html += '<p class="sub" data-planning-detail-hint="1">Sửa ô Số lượng theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay vào dữ liệu demo — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng Ngân sách (Số lượng trống, vd Paid Ads) không sửa Số lượng ở đây.</p>';
+      }
+      html += tbl('<tr><th>Tháng</th><th>Số lượng</th><th>Segment</th><th>Brand</th></tr>' + detailMonthRows + '<tr data-planning-detail-total="1"><td><strong>Tổng dòng</strong></td><td><strong>' + fmtNum(detailTotal) + '</strong></td><td colspan="2"></td></tr>', 'planning-detail');
+      // Forecast của chính dòng này — dùng NGUYÊN cơ chế sẵn có của Theo
+      // phase (funnelTotalsFor qua forecastFunnel + ctx), không thêm logic
+      // tính mới. Không có Benchmark khớp thì báo rõ, không bịa số.
+      var detailTotals = funnelTotalsFor(selRows, benchmarks);
+      html += '<h4>Forecast của dòng này</h4>';
+      if (detailTotals && detailTotals.views > 0) {
+        html += '<div data-viz="planning-detail-forecast">' + vizFunnelHtml({ steps: [
+          { label: 'Views', value: detailTotals.views }, { label: 'Visits', value: detailTotals.visits },
+          { label: 'Signups', value: detailTotals.signups }, { label: 'First starts', value: detailTotals.first },
+          { label: 'Paid', value: detailTotals.paid }
+        ], emptyText: 'Chưa có dữ liệu Forecast cho dòng này.' }) + '</div>';
+      } else {
+        html += '<div class="state-box">Chưa tính được Forecast cho dòng này — chưa có Benchmark/Assumption khớp với Channel này.</div>';
+      }
+      html += '</div>';
     }
     // Chart ngân sách dự kiến theo tháng (planBudget)
     var budgetMonthly = planBudgetFor(rows, benchmarks);
@@ -3320,6 +3427,72 @@
       saveResult(sUpdate('plan_rows', job.id, { qty: job.qty }), function () { next(); }, function () { failed++; next(); });
     }
     next();
+  }
+  // --- Lưu ô Số lượng trong BẢNG CHI TIẾT Theo tháng (guard như Theo phase) ---
+  // plan_rows chưa có bảng Supabase nên chỉ lưu ở chế độ demo + có quyền
+  // sửa; ở dữ liệu thật / vai chỉ xem, ô trong bảng chi tiết đã disabled
+  // từ lúc render và handler này cũng chặn lại — không gọi Store, không crash.
+  function planningMonthSaveGuard() {
+    if (Store.mode !== 'demo') { toast('Ở chế độ dữ liệu thật, plan_rows chưa có bảng dữ liệu nên chưa lưu được Số lượng Planning — hãy bật chế độ demo để thử nhập.'); render(); return false; }
+    if (!canEdit()) { toast('Vai trò hiện tại chỉ xem, không sửa được Planning.'); render(); return false; }
+    return true;
+  }
+  // Lưu Số lượng của ĐÚNG 1 ô tháng (Channel × Group × tháng) vào chính
+  // các dòng plan_rows của ô đó — cùng nguồn với Theo phase nên sửa ở
+  // đây thì Theo phase thấy số mới và ngược lại, không tạo bản sao.
+  // Ô có nhiều dòng Số lượng: phân bổ tổng mới theo tỉ lệ hiện tại
+  // (distributeQty, như savePhaseQty). Ô chỉ có dòng Ngân sách: không
+  // lưu. Ô chưa có dòng nào: nhập > 0 thì tạo 1 dòng plan mới suy
+  // Brand/Segment/Unit/Phase từ các dòng khác của cùng Channel.
+  function savePlanningMonthQty(channel, group, month, raw) {
+    if (!planningMonthSaveGuard()) return;
+    var v = parsePlanQty(raw);
+    if (v === null) { toast('Số lượng phải là số nguyên từ 0 trở lên.'); render(); return; }
+    if (!/^\d{4}-\d{2}$/.test(String(month || ''))) { toast('Không xác định được tháng của ô Số lượng.'); render(); return; }
+    var yearPrefix = String(month).slice(0, 4) + '-';
+    var yearRows = filteredPlanRows().filter(function (r) { return planRowMonth(r).indexOf(yearPrefix) === 0; });
+    var cellRows = planMonthRows(yearRows, channel, group, month);
+    var qtyRows = cellRows.filter(planRowHasQty);
+    if (qtyRows.length) {
+      var news = distributeQty(v, qtyRows.map(planRowQty));
+      var jobs = [];
+      qtyRows.forEach(function (r, i) { if (planRowQty(r) !== news[i]) jobs.push({ id: r.id, qty: news[i] }); });
+      if (!jobs.length) { render(); return; }
+      var idx = 0, failed = 0;
+      function next() {
+        if (idx >= jobs.length) {
+          if (failed) toast('Đã lưu Số lượng ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' nhưng ' + failed + ' dòng chưa lưu được — hãy thử lại.');
+          else toast('Đã lưu Số lượng ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Tổng, Budget và Forecast đã tính lại.');
+          render(); return;
+        }
+        var job = jobs[idx++];
+        saveResult(sUpdate('plan_rows', job.id, { qty: job.qty }), function () { next(); }, function () { failed++; next(); });
+      }
+      next();
+      return;
+    }
+    if (cellRows.length) { toast('Ô này chỉ có dòng Ngân sách (chưa có Số lượng) nên không sửa Số lượng tại đây.'); render(); return; }
+    if (v === 0) { render(); return; }
+    var siblings = yearRows.filter(function (r) { return String(r.channel || '—') === String(channel) && planRowGroup(r) === String(group) && planRowHasQty(r); });
+    if (!siblings.length) { toast('Không có dòng plan nào của Channel này để tạo dòng cho tháng ' + month + '.'); render(); return; }
+    var tpl = siblings[0];
+    var obj = { month: String(month), channel: String(channel), group: planRowGroup(tpl), qty: v, budget: null };
+    if (tpl.brand_id !== undefined && tpl.brand_id !== null) obj.brand_id = tpl.brand_id;
+    else if (tpl.brandId !== undefined && tpl.brandId !== null) obj.brandId = tpl.brandId;
+    var seg = recordSegment(tpl);
+    if (seg) obj.segment = seg;
+    if (tpl.unit !== undefined) obj.unit = tpl.unit;
+    var tplBrand = recordBrandId(tpl);
+    var newPhaseId = null;
+    brandPhasesList().forEach(function (p) {
+      if (newPhaseId) return;
+      if (tplBrand && String(recordBrandId(p) || '') !== String(tplBrand)) return;
+      if (phaseMonths(p).indexOf(String(month)) !== -1) newPhaseId = p.id;
+    });
+    if (newPhaseId) obj.phase_id = newPhaseId;
+    saveResult(sCreate('plan_rows', obj),
+      function () { toast('Đã tạo dòng plan và lưu Số lượng ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Tổng, Budget và Forecast đã tính lại.'); render(); },
+      function (msg) { toast('Chưa lưu được Số lượng: ' + msg); render(); });
   }
 
   // ---------- Brand Hub ----------
@@ -6947,8 +7120,8 @@
       if (task) { var cl = (task.checklist || []).slice(); cl.splice(idx, 1); settle(sUpdate('tasks', id, { checklist: cl }), function () { render(); }); }
     }
     if (action === 'dep-remove') { captureTaskDraft(); settle(hasFn('remove') ? Store.remove('dependencies', id) : { ok: false, error: 'Tầng dữ liệu chưa hỗ trợ xóa quan hệ.' }, function () { render(); }); }
-    if (action === 'planning-channel') { UI.planningChannel = t.getAttribute('data-channel'); render(); }
-    if (action === 'planning-channel-close') { UI.planningChannel = null; render(); }
+    if (action === 'planning-channel') { var detailSel = planningDetailToggle(UI.planningChannel, UI.planningChannelGroup, t.getAttribute('data-channel'), t.getAttribute('data-group')); UI.planningChannel = detailSel.channel; UI.planningChannelGroup = detailSel.group; render(); }
+    if (action === 'planning-channel-close') { UI.planningChannel = null; UI.planningChannelGroup = null; render(); }
     if (action === 'planning-mode') { UI.planningMode = id === 'phase' ? 'phase' : 'month'; render(); }
     if (action === 'brand-detail') { UI.brandDetailId = id; render(); }
     if (action === 'brand-detail-close') { UI.brandDetailId = null; render(); }
@@ -7209,6 +7382,7 @@
     if (ctxKind === 'kpi-phase') { UI.kpiPhaseFilter = t.value || 'all'; render(); return; }
     if (ctxKind === 'phase-uplift') { savePhaseUplift(t.getAttribute('data-phase-id'), t.value); return; }
     if (ctxKind === 'phase-qty') { savePhaseQty(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
+    if (ctxKind === 'planning-month-qty') { savePlanningMonthQty(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'phase-views') { savePhaseViews(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'phase-rate') { savePhaseRate(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.getAttribute('data-field'), t.value); return; }
     if (t.hasAttribute && t.hasAttribute('data-editor-platform')) {
