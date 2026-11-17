@@ -169,11 +169,11 @@ test('BP-UI [unit]: planBudgetFor dự phòng qty × unit_price khi domain chưa
 });
 
 test('BP-UI [unit]: forecastFunnelFor nối đúng shape thật của domain A ({steps:[tên], totals:{...}})', () => {
-  const domain = { forecastFunnel: () => ({ steps: ['views', 'visits', 'signups', 'first', 'paid'], totals: { views: 16000, visits: 48, signups: 4.32, first: 2.16, paid: 0.1188 }, byMonth: {}, rows: [] }) };
+  const domain = { forecastFunnel: () => ({ steps: ['views', 'visits', 'freemium', 'paid'], totals: { views: 16000, visits: 48, freemium: 4.32, paid: 0.1188 }, byMonth: {}, rows: [] }) };
   const h = loadHelpers({ domain });
   const steps = h.forecastFunnelFor([{ month: '2027-01', channel: 'KOL Nano', qty: 4 }], []);
-  assert.deepEqual(steps.map((s) => s.label), ['Views', 'Visits', 'Signups', 'First starts', 'Paid']);
-  assert.deepEqual(steps.map((s) => s.value), [16000, 48, 4.32, 2.16, 0.1188]);
+  assert.deepEqual(steps.map((s) => s.label), ['Views', 'Visits', 'Freemium', 'Paid']);
+  assert.deepEqual(steps.map((s) => s.value), [16000, 48, 4.32, 0.1188]);
 });
 
 test('BP-UI [unit]: forecastFunnelFor dự phòng từ benchmark khi domain chưa có hàm; không benchmark thì rỗng, không crash', () => {
@@ -366,11 +366,16 @@ test('BP-UI [unit]: effectivePhaseRates — assumption null kế thừa Benchmar
   const phase = { id: 'phase-lumus-1', brand_id: 'brand-lumus-ai' };
   let rates = h.effectivePhaseRates(phase, 'KOL Nano', benchmarks);
   assert.equal(rates.view_to_visit.value, 0.003); assert.equal(rates.view_to_visit.source, 'benchmark');
-  assert.equal(rates.first_to_paid.value, 0.055);
+  // Phễu Freemium: visit_to_freemium fallback key cũ visit_to_signup;
+  // freemium_to_paid fallback GỘP signup_to_first x first_to_paid.
+  assert.equal(rates.visit_to_freemium.value, 0.09); assert.equal(rates.visit_to_freemium.source, 'benchmark');
+  assert.ok(Math.abs(rates.freemium_to_paid.value - 0.0275) < 1e-9, 'freemium_to_paid fallback gộp = 0,5 x 0,055 = 0,0275, got ' + rates.freemium_to_paid.value);
+  assert.equal(rates.freemium_to_paid.source, 'benchmark');
   const h2 = loadHelpers({ storeList: (coll) => (coll === 'phase_assumptions' ? [{ id: 'a2', phase_id: 'phase-lumus-1', channel: 'KOL Nano', view_to_visit: 0.01, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: null }] : []) });
   rates = h2.effectivePhaseRates(phase, 'KOL Nano', benchmarks);
   assert.equal(rates.view_to_visit.value, 0.01); assert.equal(rates.view_to_visit.source, 'assumption');
-  assert.equal(rates.visit_to_signup.source, 'benchmark', 'field assumption null vẫn kế thừa benchmark');
+  assert.equal(rates.visit_to_freemium.source, 'benchmark', 'field assumption null vẫn kế thừa benchmark (qua fallback key cũ visit_to_signup)');
+  assert.equal(rates.visit_to_freemium.value, 0.09);
   rates = h.effectivePhaseRates(phase, 'Facebook Owned', benchmarks);
   assert.equal(rates.view_to_visit.value, null); assert.equal(rates.view_to_visit.source, null);
   // phaseAssumptionFor tìm đúng dòng seed theo phase_id + channel (lưu tỉ lệ update đúng dòng, không tạo trùng).
@@ -432,7 +437,7 @@ test('BP-UI [unit]: funnelTotalsFor khớp engine A2 thật — phase totals = b
   const ctx = { phases: demo.phases.filter((p) => p.brand_id && p.start_month), phaseAssumptions: demo.phase_assumptions };
   const eng = domain.forecastFunnel(lumusRows, demo.benchmarks, ctx);
   const mine = h.funnelTotalsFor(lumusRows, demo.benchmarks);
-  for (const k of ['views', 'visits', 'signups', 'first', 'paid']) {
+  for (const k of ['views', 'visits', 'freemium', 'paid']) {
     assert.ok(Math.abs(mine[k] - eng.totals[k]) < 1e-6, 'toàn kỳ lệch ở ' + k + ': ' + mine[k] + ' vs ' + eng.totals[k]);
   }
   // Theo phase: funnelTotalsFor(rows của phase) == byPhase của engine.
@@ -441,7 +446,7 @@ test('BP-UI [unit]: funnelTotalsFor khớp engine A2 thật — phase totals = b
     const t = h.funnelTotalsFor(rowsP, demo.benchmarks);
     const bp = eng.byPhase[pid];
     assert.ok(bp, 'engine thiếu byPhase ' + pid);
-    for (const k of ['views', 'visits', 'signups', 'first', 'paid']) {
+    for (const k of ['views', 'visits', 'freemium', 'paid']) {
       assert.ok(Math.abs(t[k] - bp[k]) < 1e-6, pid + ' lệch ở ' + k + ': ' + t[k] + ' vs ' + bp[k]);
     }
   }

@@ -266,35 +266,30 @@ test('PPB (ii): dòng KHÔNG-paid gọi lưu ngân sách trực tiếp đều b�
 });
 
 // ---------- (iv) forecast Paid suy từ ngân sách ----------
-test('PPB (iv) [domain]: ca số Objective — Meta Ads T1 theo từng Objective (Traffic 5.460.000đ -> Visits 273; Signup 3.276.000đ -> Signups 14,742; tổng Paid T1 = 1,08108); cả năm Meta/TikTok theo Objective (SỬA PHẠM VI đợt Paid Objective)', () => {
+test('PPB (iv) [domain]: ca số Objective — Meta Ads T1 theo từng Objective (Traffic 5.460.000đ -> Visits 273; Signup 3.276.000đ -> Freemium 14,742; tổng Paid T1 = 1,08108); cả năm Meta/TikTok theo Objective (SỬA PHẠM VI đợt Paid Objective)', () => {
   const metaJanRows = demo.plan_rows.filter((r) => r.channel === 'Meta Ads' && r.month === '2027-01');
   assert.equal(metaJanRows.reduce((a, r) => a + r.budget, 0), 10920000, 'tổng tháng T1 không đổi');
   const f = domain.forecastFunnel(metaJanRows, demo.benchmarks);
   const byObj = Object.fromEntries(f.rows.map((r) => [r.objective, r.forecast]));
   assert.equal(byObj.awareness, null, 'Awareness chưa có đơn giá -> forecast null');
   approx(byObj.traffic.visits, 273, 'Traffic visits = 5.460.000 / 20.000');
-  approx(byObj.traffic.signups, 24.57, 'Traffic signups = 273 x 0,09');
-  approx(byObj.traffic.first, 12.285, 'Traffic first');
+  approx(byObj.traffic.freemium, 24.57, 'Traffic freemium = 273 x 0,09 (tầng Freemium, trước là Signups — số không đổi)');
   approx(byObj.traffic.paid, 0.675675, 'Traffic paid');
-  approx(byObj.signup.signups, 14.742, 'Signup signups = 3.276.000 / (20.000 / 0,09)');
-  approx(byObj.signup.first, 7.371, 'Signup first');
+  approx(byObj.signup.freemium, 14.742, 'Signup freemium = 3.276.000 / (20.000 / 0,09) (đặt tại Freemium)');
   approx(byObj.signup.paid, 0.405405, 'Signup paid');
   approx(f.totals.views, 0, 'Views Paid = 0 (Awareness chưa có đơn giá, không suy từ tiền)');
   approx(f.totals.visits, 273, 'tổng visits T1');
-  approx(f.totals.signups, 39.312, 'tổng signups T1');
-  approx(f.totals.first, 19.656, 'tổng first T1');
+  approx(f.totals.freemium, 39.312, 'tổng freemium T1');
   approx(f.totals.paid, 1.08108, 'tổng Paid Meta T1 = 0,675675 + 0,405405');
   // Cả năm theo Objective (tính tay từ ngân sách từng Objective — xem
   // bảng delta trong tests/planning-paid-objective.test.mjs).
   const metaYear = domain.forecastFunnel(demo.plan_rows.filter((r) => r.channel === 'Meta Ads'), demo.benchmarks);
   approx(metaYear.totals.visits, 6415.5, 'Meta FY visits = 128.310.000 / 20.000');
-  approx(metaYear.totals.signups, 1732.185, 'Meta FY signups');
-  approx(metaYear.totals.first, 866.0925, 'Meta FY first');
+  approx(metaYear.totals.freemium, 1732.185, 'Meta FY freemium');
   approx(metaYear.totals.paid, 57.7702125, 'Meta FY paid');
   const tikYear = domain.forecastFunnel(demo.plan_rows.filter((r) => r.channel === 'TikTok Ads'), demo.benchmarks);
   approx(tikYear.totals.visits, 2523.181818181818, 'TikTok FY visits = 55.510.000 / 22.000');
-  approx(tikYear.totals.signups, 524.9045454545455, 'TikTok FY signups');
-  approx(tikYear.totals.first, 262.4522727272727, 'TikTok FY first');
+  approx(tikYear.totals.freemium, 524.9045454545455, 'TikTok FY freemium');
   approx(tikYear.totals.paid, 14.434875, 'TikTok FY paid');
   // Benchmark Paid đã seed đúng đơn giá Objective; cơ chế cũ đã gỡ.
   const byChannel = Object.fromEntries(demo.benchmarks.map((b) => [b.channel, b]));
@@ -307,9 +302,8 @@ test('PPB (iv) [domain]: ca số Objective — Meta Ads T1 theo từng Objective
   assert.equal(byChannel['Meta Ads'].traffic_share, undefined, 'traffic_share đã gỡ khỏi benchmark');
   assert.equal(byChannel['Meta Ads'].cost_per_visit, undefined, 'cost_per_visit đã gỡ khỏi benchmark');
   for (const ch of ['Meta Ads', 'TikTok Ads']) {
-    approx(byChannel[ch].visit_to_signup, 0.09, ch + ' v2s');
-    approx(byChannel[ch].signup_to_first, 0.5, ch + ' s2f');
-    approx(byChannel[ch].first_to_paid, 0.055, ch + ' f2p');
+    approx(byChannel[ch].visit_to_freemium, 0.09, ch + ' v2f');
+    approx(byChannel[ch].freemium_to_paid, 0.0275, ch + ' f2p (gộp 0,5 x 0,055)');
     assert.equal(byChannel[ch].view_to_visit, null, ch + ' không có view->visit (không suy ngược)');
     assert.equal(byChannel[ch].output_per_unit, null);
   }
@@ -333,17 +327,16 @@ test('PPB (iv): sửa ngân sách Paid qua hàm lưu THẬT -> Forecast (funnelT
   assert.equal(rows.reduce((a, r) => a + r.budget, 0), 21840000, 'tổng các dòng Objective sau lưu đúng bằng số nhập');
   const after = h.funnelTotalsFor(rows, demo.benchmarks);
   approx(after.visits, 546, 'sau: visits gấp đôi đúng tỉ lệ ngân sách');
-  approx(after.signups, 78.624, 'sau: signups gấp đôi');
-  approx(after.first, 39.312, 'sau: first gấp đôi');
+  approx(after.freemium, 78.624, 'sau: freemium gấp đôi');
   approx(after.paid, 2.16216, 'sau: paid gấp đôi');
   approx(after.views, 0, 'sau: views vẫn 0 — không bịa Views từ tiền');
   // Steps vẽ phễu cho Paid-only: bắt đầu ở Visits, KHÔNG có bước Views.
   const steps = h.planningFunnelSteps(after);
-  assert.deepEqual(steps.map((s) => s.label), ['Visits', 'Signups', 'First starts', 'Paid']);
+  assert.deepEqual(steps.map((s) => s.label), ['Visits', 'Freemium', 'Paid']);
   approx(steps[0].value, 546, 'bước đầu phễu Paid là Visits');
   // Totals có Views (KOL) thì steps giữ nguyên bắt đầu ở Views như cũ.
-  const kolSteps = h.planningFunnelSteps({ views: 16000, visits: 48, signups: 4.32, first: 2.16, paid: 0.1188 });
-  assert.deepEqual(kolSteps.map((s) => s.label), ['Views', 'Visits', 'Signups', 'First starts', 'Paid']);
+  const kolSteps = h.planningFunnelSteps({ views: 16000, visits: 48, freemium: 4.32, paid: 0.1188 });
+  assert.deepEqual(kolSteps.map((s) => s.label), ['Views', 'Visits', 'Freemium', 'Paid']);
 });
 
 test('PPB (iv): kênh KHÔNG có căn cứ vẫn "chưa tính được" — funnelTotalsFor = null, planningFunnelSteps = [], không crash (Facebook Owned + direct budget thiếu cost)', () => {
@@ -352,7 +345,7 @@ test('PPB (iv): kênh KHÔNG có căn cứ vẫn "chưa tính được" — funn
   const { h } = makeHarness(fb, phases, demo.benchmarks, demo.phase_assumptions);
   assert.equal(h.funnelTotalsFor(fb, demo.benchmarks), null);
   assert.deepEqual(h.planningFunnelSteps(null), []);
-  assert.deepEqual(h.planningFunnelSteps({ views: 0, visits: 0, signups: 0, first: 0, paid: 0 }), []);
+  assert.deepEqual(h.planningFunnelSteps({ views: 0, visits: 0, freemium: 0, paid: 0 }), []);
   // Direct budget nhưng benchmark thiếu cost_per_result -> null.
   const meta = demo.plan_rows.filter((r) => r.channel === 'Meta Ads' && r.month === '2027-01');
   const f = domain.forecastFunnel(meta, [{ brand_id: 'brand-lumus-ai', channel: 'Meta Ads', direct_budget: true, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055 }]);

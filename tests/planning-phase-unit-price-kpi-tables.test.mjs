@@ -315,10 +315,13 @@ test('PPUP-KPI [unit]: CAC cột Tổng = tổng ngân sách ÷ tổng paid, KH�
   const data = h.planningKpiData(rows, benchmarks, ['2027-01', '2027-02', '2027-03']);
   const ch = data.channels[0];
   approx(ch.months['2027-01'].cac, 10000, 'CAC T1 = 1.000 ÷ 0,1');
-  approx(ch.months['2027-03'].cac, 4665.07380209733, 'CAC T3 (uplift n=2)');
-  approx(ch.totals.cac, 4902.859183006886, 'CAC Tổng = 11.000 ÷ (0,1 + 2,14358881)');
+  // Phễu Freemium (căn chỉnh): uplift lũy kế áp trên 3 tỉ lệ hiệu
+  // dụng (v2v / v2f / f2p GỘP) thay vì 4 tỉ lệ cũ — paid T3 =
+  // 10.000 views x 0,0121 x 0,121 x 0,121 = 1,771561.
+  approx(ch.months['2027-03'].cac, 5644.739300537771, 'CAC T3 (uplift n=2, phễu Freemium)');
+  approx(ch.totals.cac, 5877.446687551191, 'CAC Tổng = 11.000 ÷ (0,1 + 1,771561)');
   const mean = (ch.months['2027-01'].cac + ch.months['2027-03'].cac) / 2;
-  assert.ok(Math.abs(ch.totals.cac - mean) > 2000, 'CAC Tổng phải khác rõ trung bình CAC tháng (' + mean + ')');
+  assert.ok(Math.abs(ch.totals.cac - mean) > 1000, 'CAC Tổng phải khác rõ trung bình CAC tháng (' + mean + ')');
 });
 
 // ---------- [unit] Phần 2: thu gọn ----------
@@ -358,7 +361,7 @@ test('PPUP-KPI [static]: planningKpiTablesHtml có hàng Tất cả cho Views + 
 });
 
 // ---------- [unit] Phần 2b: hàng Tất cả Views / Paid Users — số neo + tổng ----------
-test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 Views = tổng Views content (101.000, Paid "—" không cộng), T1 Paid = tổng Paid mọi Channel có forecast (2,308); cột Tổng = tổng cả kỳ (Views 1.460.000 / Paid 95,8106); CAC không đổi', () => {
+test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 Views = tổng Views content (101.000, Paid "—" không cộng), T1 Paid = tổng Paid mọi Channel có forecast (2,308); cột Tổng = tổng cả kỳ (Views 1.460.000 / Paid 92,1879 — phễu Freemium); CAC T1 không đổi', () => {
   const { h } = demoHarness();
   const rows = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
   const data = h.planningKpiData(rows, demo.benchmarks, MONTHS_2027);
@@ -390,7 +393,10 @@ test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 View
   approx(data.blended.totals.views, 1460000, 'blended totals views neo: 260.000 + 900.000 + 300.000');
   approx(data.blended.totals.paid, sumPaidByMonth, 'blended totals paid = tổng Paid theo tháng (cùng tổng đã phục vụ blended CAC)');
   approx(data.blended.totals.paid, sumPaidByChannel, 'blended totals paid = tổng Paid theo Channel');
-  approx(data.blended.totals.paid, 95.81059904256077, 'blended totals paid neo');
+  // Neo paid cả kỳ tính lại theo phễu Freemium: uplift lũy kế áp
+  // trên f2p GỘP (một lần) thay vì s2f + f2p riêng (hai lần) như
+  // phễu cũ — tổng Paid cả kỳ giảm từ 95,8106 xuống 92,1879.
+  approx(data.blended.totals.paid, 92.18790756785299, 'blended totals paid neo (phễu Freemium)');
   // (a) + render: hàng Tất cả tồn tại trong cả 3 bảng, ô T1 + cột Tổng đúng.
   const html = h.planningKpiTablesHtml(rows, demo.benchmarks, MONTHS_2027);
   assert.ok(html.includes('data-planning-kpi-row="views" data-channel="Tất cả"'), 'bảng Views phải có hàng Tất cả');
@@ -400,7 +406,7 @@ test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 View
   assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), '2,308', 'Paid Tất cả T1 = fmtPlanningPaid(2,308005)');
   assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), h.fmtPlanningPaid(sumPaidT1), 'Paid Tất cả T1 render = fmtPlanningPaid(tổng Paid T1 chưa làm tròn)');
   assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.460.000', 'Views Tất cả cột Tổng = tổng Views cả kỳ');
-  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '95,8106', 'Paid Tất cả cột Tổng = fmtPlanningPaid(tổng Paid cả kỳ)');
+  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '92,1879', 'Paid Tất cả cột Tổng = fmtPlanningPaid(tổng Paid cả kỳ)');
   assert.equal(kpiTotal(html, 'paid', 'Tất cả'), h.fmtPlanningPaid(data.blended.totals.paid), 'Paid Tất cả cột Tổng render từ cùng blended.totals.paid');
   // (e) CAC và mọi số cũ không đổi.
   assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '31.438.407 VND', 'CAC Tất cả T1 không đổi');
