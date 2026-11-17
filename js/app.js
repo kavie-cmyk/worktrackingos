@@ -2952,6 +2952,49 @@
     return html;
   }
 
+  // ---------- Planning / Brand: trạng thái rỗng có lời ----------
+  // planningEmptyStateHtml(kind, opts): HTML khối rỗng của Planning.
+  // kind: 'no-data' (toàn tập plan_rows trống) | 'filtered' (rỗng do bộ
+  // lọc Brand/Segment) | 'year' (có dòng khớp lọc nhưng khác năm).
+  // opts: { isDemo, year, contextLabel, total } — hàm chỉ phụ thuộc esc()
+  // để test render/string trích xuất được độc lập.
+  // Nút "Xem dữ liệu mẫu" CHỈ hiện khi chưa ở demo (isDemo=false): bấm
+  // nút chạy action demo-on-planning (Store.setDemoEnabled(true) +
+  // hash #/planning + reload) — xem handler ở cuối file.
+  function planningEmptyStateHtml(kind, opts) {
+    opts = opts || {};
+    var isDemo = !!opts.isDemo;
+    var demoBtn = isDemo ? '' : '<p><button class="btn" data-action="demo-on-planning">Xem dữ liệu mẫu</button></p>';
+    if (kind === 'filtered') {
+      return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="filtered"><p><strong>Không có dòng Planning nào khớp bộ lọc Brand/Segment hiện tại</strong></p>' +
+        '<p>Đang lọc theo <strong>' + esc(opts.contextLabel || '') + '</strong>. Dữ liệu Planning vẫn có ' + esc(opts.total != null ? String(opts.total) : 'một số') + ' dòng ngoài ngữ cảnh đang chọn — hãy đổi Brand / Segment sang "Tất cả" ở thanh bên để nới lọc và xem thêm.</p>' + demoBtn + '</div>';
+    }
+    if (kind === 'year') {
+      return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="year"><p><strong>Không có dòng Planning nào cho năm ' + esc(opts.year != null ? String(opts.year) : '') + '</strong></p>' +
+        '<p>Các dòng khớp bộ lọc hiện tại (' + esc(opts.contextLabel || '') + ') thuộc năm khác. Thử đổi năm ở ô "Năm Planning" phía trên để xem.</p></div>';
+    }
+    // no-data: toàn bộ tập plan_rows trống (chưa có dữ liệu ở bất kỳ lọc/năm nào).
+    return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="no-data"><p><strong>Chưa có dòng Planning nào</strong></p>' +
+      '<p>' + (isDemo
+        ? 'Chế độ demo hiện cũng chưa có dòng Planning nào — dữ liệu mẫu chưa được nạp cho Planning.'
+        : 'Dữ liệu thật hiện chưa có dòng kế hoạch nào — bản này đang chờ nhập dữ liệu Planning. Dữ liệu mẫu chỉ có ở chế độ demo, không nằm trong dữ liệu thật.') + '</p>' + demoBtn + '</div>';
+  }
+  // brandEmptyStateHtml(opts): khối rỗng toàn tập của mục Brand trong
+  // trang Brand (collection brands trống). opts: { isDemo, canEditBrand }.
+  // Ở dữ liệu thật: giải thích đang chờ nhập dữ liệu + nút xem mẫu
+  // (action demo-on-brand, hạ cánh #/brand). Ở demo: giữ hướng dẫn tạo
+  // Brand như trước, không hiện nút demo (đã ở demo rồi).
+  function brandEmptyStateHtml(opts) {
+    opts = opts || {};
+    var isDemo = !!opts.isDemo;
+    if (isDemo) {
+      return '<div class="state-box" data-brand-empty="1" data-brand-empty-kind="no-data">Chưa có Brand nào trong collection brands. ' + (opts.canEditBrand ? 'Bấm "+ Tạo Brand" để tạo Brand đầu tiên ở chế độ demo.' : '') + '</div>';
+    }
+    return '<div class="state-box" data-brand-empty="1" data-brand-empty-kind="no-data"><p><strong>Chưa có Brand nào</strong></p>' +
+      '<p>Dữ liệu thật hiện chưa có Brand nào — bản này đang chờ nhập dữ liệu Brand. Dữ liệu mẫu chỉ có ở chế độ demo, không nằm trong dữ liệu thật.</p>' +
+      '<p><button class="btn" data-action="demo-on-brand">Xem dữ liệu mẫu</button></p></div>';
+  }
+
   // ---------- Planning (Brand + Planning, bản bấm thử) ----------
   function viewPlanning() {
     var year = UI.planningYear || 2027;
@@ -2972,12 +3015,21 @@
     html += '<p class="planning-mode-toggle" data-planning-mode-toggle="1"><span class="sub">Chế độ xem:</span> ' +
       '<button type="button" class="btn small ' + (mode === 'month' ? '' : 'secondary') + '" data-action="planning-mode" data-id="month">Theo tháng</button> ' +
       '<button type="button" class="btn small ' + (mode === 'phase' ? '' : 'secondary') + '" data-action="planning-mode" data-id="phase">Theo phase</button></p>';
-    if (!planRowsList().length) {
-      html += '<div class="state-box" data-planning-empty="1">Chưa có dòng Planning nào (collection plan_rows đang trống). Khi dữ liệu demo được nạp, lưới Channel × tháng sẽ hiện ở đây.</div>';
+    var allPlanRows = planRowsList();
+    var isDemo = false; try { isDemo = Store.mode === 'demo'; } catch (e) { isDemo = false; }
+    if (!allPlanRows.length) {
+      html += planningEmptyStateHtml('no-data', { isDemo: isDemo, year: year, contextLabel: contextLabel() });
       return html;
     }
     if (!rows.length) {
-      html += '<div class="state-box" data-planning-empty="1">Không có dòng Planning nào cho năm ' + esc(year) + ' khớp bộ lọc hiện tại (' + esc(contextLabel()) + '). Thử đổi năm hoặc bộ lọc Brand/Segment ở thanh bên.</div>';
+      // Phân biệt rỗng-do-lọc (tập đã lọc Brand/Segment trống hẳn) với
+      // rỗng-do-năm (đã lọc còn dòng nhưng không thuộc năm đang xem) —
+      // không gộp chung một câu để tránh khẳng định sai nguyên nhân.
+      if (!allRows.length) {
+        html += planningEmptyStateHtml('filtered', { isDemo: isDemo, year: year, contextLabel: contextLabel(), total: allPlanRows.length });
+      } else {
+        html += planningEmptyStateHtml('year', { isDemo: isDemo, year: year, contextLabel: contextLabel(), total: allRows.length });
+      }
       return html;
     }
     if (mode === 'phase') { html += planningPhaseModeHtml(year, rows, benchmarks); return html; }
@@ -3249,7 +3301,8 @@
     var brands = filteredBrandsList();
     var html = '<h2>Brand (' + brands.length + ')</h2>';
     if (!allBrands.length) {
-      html += '<div class="state-box" data-brand-empty="1">Chưa có Brand nào trong collection brands. ' + (ed ? 'Bấm "+ Tạo Brand" để tạo Brand đầu tiên ở chế độ demo.' : '') + '</div>';
+      var brandIsDemo = false; try { brandIsDemo = Store.mode === 'demo'; } catch (e) { brandIsDemo = false; }
+      html += brandEmptyStateHtml({ isDemo: brandIsDemo, canEditBrand: ed });
       return html;
     }
     if (!brands.length) {
@@ -7051,6 +7104,10 @@
     if (action === 'export-budget-csv') exportBudgetCsv();
     if (action === 'export-cash-csv') exportCashCsv();
     if (action === 'demo-on') { Store.setDemoEnabled(true); window.location.hash = '#/overview'; window.location.reload(); }
+    // Từ trạng thái rỗng của Planning / Brand: cùng cơ chế bật demo như
+    // demo-on nhưng HẠ CÁNH Ở ĐÚNG VIEW ĐANG XEM (không về Overview).
+    if (action === 'demo-on-planning') { Store.setDemoEnabled(true); window.location.hash = '#/planning'; window.location.reload(); }
+    if (action === 'demo-on-brand') { Store.setDemoEnabled(true); window.location.hash = '#/brand'; window.location.reload(); }
     if (action === 'demo-off') { Store.setDemoEnabled(false); window.location.hash = '#/settings'; window.location.reload(); }
     if (action === 'demo-reset') { Store.resetDemo(); render(); toast('Đã đặt lại dữ liệu minh họa về trạng thái ban đầu.'); }
     if (action === 'team-week-now') { UI.teamWeek = isoOf(mondayOf(new Date())); render(); }
