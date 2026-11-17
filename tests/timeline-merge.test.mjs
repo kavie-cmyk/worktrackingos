@@ -7,7 +7,7 @@
 // - [unit] (iii) D.timelineStateFromTaskFilter: nút "Mở Timeline" mang
 //   đúng 3 lọc campaign/người phụ trách/trạng thái của màn Task sang view
 //   Timeline ở chế độ "Chỉ task" (lọc phụ không đi theo).
-// - [demo] fixture demo: chế độ cây không lọc = 34 hàng / 16 task có ngày /
+// - [demo] fixture demo: chế độ cây không lọc = 36 hàng / 16 task có ngày /
 //   1 chưa xếp lịch / 4 edges — khớp số của Gantt tổng thể cũ cộng nhóm độc
 //   lập đổi tên.
 // - [static] nav/route/VIEWS có Timeline; view có 2 chế độ + 1 bộ lọc
@@ -157,12 +157,12 @@ test('TM [unit] (iii): timelineStateFromTaskFilter — chế độ Chỉ task + 
 });
 
 // ---------- [demo] ----------
-test('TM [demo]: dữ liệu demo chế độ cây — 34 hàng / 16 task có ngày / 1 chưa xếp lịch / 4 edges', () => {
+test('TM [demo]: dữ liệu demo chế độ cây — 36 hàng / 16 task có ngày / 1 chưa xếp lịch / 4 edges', () => {
   const r = domain.buildCampaignTreeTimeline(
     { campaigns: demo.campaigns, phases: demo.phases, activities: demo.activities, tasks: demo.tasks, dependencies: demo.dependencies, blockers: demo.blockers },
     { today: '2026-11-13' }
   );
-  assert.equal(r.rows.length, 34, '3 campaign + 5 phase + 8 activity + 1 nhóm chưa gắn + 16 task + 1 nhóm độc lập');
+  assert.equal(r.rows.length, 36, '5 campaign (thêm PLAY/BUILD THE UNKNOWN của Brand+Planning 17/11) + 5 phase + 8 activity + 1 nhóm chưa gắn + 16 task + 1 nhóm độc lập');
   assert.equal(r.datedCount, 16);
   assert.equal(r.totalCount, 17);
   assert.deepEqual(r.unscheduled.map((t) => t.id), ['task-f']);

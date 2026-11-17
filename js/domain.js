@@ -2124,7 +2124,200 @@
     return { value: total, postCount: rows.length, latestObservedAt: latestObservedAt, rows: rows };
   }
 
+  // =====================================================================
+  // Brand + Planning (17/11/2026) — hàm THUẦN cho bản bấm thử, dữ liệu demo.
+  // plan row: { brand_id, segment, month: 'YYYY-MM', channel, group, qty,
+  //             budget } — budget chỉ có ở dòng ngân sách thẳng (Paid Ads).
+  // benchmark: { brand_id, channel, unit_price, output_per_unit,
+  //   view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
+  //   direct_budget } — chấp nhận cả khóa camelCase tương ứng.
+  // Mọi hàm an toàn với rows rỗng/thiếu benchmark: trả 0/null, không throw.
+  // =====================================================================
+  var FUNNEL_STEPS = ['views', 'visits', 'signups', 'first', 'paid'];
+
+  function _planNum(v) {
+    if (v === null || v === undefined || v === '') return null;
+    var n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+  function _planMonth(row) {
+    if (!row) return null;
+    var m = row.month || row.periodKey || row.period_key || null;
+    return (typeof m === 'string' && /^\d{4}-\d{2}/.test(m)) ? m.slice(0, 7) : null;
+  }
+  function _planBrandId(x) {
+    if (!x) return null;
+    var v = x.brand_id !== undefined && x.brand_id !== null ? x.brand_id : x.brandId;
+    return (v === undefined || v === null || v === '') ? null : String(v);
+  }
+  function _planMonthsOf(rows) {
+    // Đủ 12 tháng của (các) năm xuất hiện trong dữ liệu, đã sắp xếp.
+    var years = {};
+    (rows || []).forEach(function (r) {
+      var m = _planMonth(r);
+      if (m) years[m.slice(0, 4)] = true;
+    });
+    var out = [];
+    Object.keys(years).sort().forEach(function (y) {
+      for (var i = 1; i <= 12; i++) out.push(y + '-' + String(i).padStart(2, '0'));
+    });
+    return out;
+  }
+  function _benchmarkIndex(benchmarks) {
+    var idx = {};
+    (benchmarks || []).forEach(function (b) {
+      if (!b || !b.channel) return;
+      idx[_planBrandId(b) + '|' + String(b.channel)] = b;
+    });
+    return idx;
+  }
+  function _benchmarkFor(idx, row) {
+    if (!row || !row.channel) return null;
+    return idx[_planBrandId(row) + '|' + String(row.channel)] || null;
+  }
+  function _benchField(b, snake, camel) {
+    if (!b) return null;
+    return _planNum(b[snake] !== undefined && b[snake] !== null ? b[snake] : b[camel]);
+  }
+
+  /** Tổng qty (+ budget trực tiếp nếu có) theo từng tháng; đủ 12 tháng/năm. */
+  function summarizePlanByMonth(rows) {
+    var list = rows || [];
+    var months = _planMonthsOf(list);
+    var byMonth = {};
+    months.forEach(function (m) { byMonth[m] = { month: m, qty: 0, budget: 0, rowCount: 0 }; });
+    var totalQty = 0, totalBudget = 0;
+    list.forEach(function (r) {
+      var m = _planMonth(r);
+      if (!m || !byMonth[m]) return;
+      var q = _planNum(r.qty) || 0;
+      var b = _planNum(r.budget) || 0;
+      byMonth[m].qty += q; byMonth[m].budget += b; byMonth[m].rowCount += 1;
+      totalQty += q; totalBudget += b;
+    });
+    return { months: months, byMonth: byMonth, totalQty: totalQty, totalBudget: totalBudget };
+  }
+
+  /** Tổng theo channel (kèm group của channel). */
+  function summarizePlanByChannel(rows) {
+    var list = rows || [];
+    var byChannel = {};
+    var totalQty = 0, totalBudget = 0;
+    list.forEach(function (r) {
+      if (!r || !r.channel) return;
+      var key = String(r.channel);
+      var e = byChannel[key];
+      if (!e) e = byChannel[key] = { channel: key, group: r.group || null, qty: 0, budget: 0, rowCount: 0, months: {} };
+      if (!e.group && r.group) e.group = r.group;
+      var q = _planNum(r.qty) || 0;
+      var b = _planNum(r.budget) || 0;
+      e.qty += q; e.budget += b; e.rowCount += 1;
+      var m = _planMonth(r);
+      if (m) e.months[m] = (e.months[m] || 0) + q;
+      totalQty += q; totalBudget += b;
+    });
+    var channels = Object.keys(byChannel).sort().map(function (k) { return byChannel[k]; });
+    return { channels: channels, byChannel: byChannel, totalQty: totalQty, totalBudget: totalBudget };
+  }
+
+  /**
+   * Forecast funnel: views = qty × output_per_unit → visits → signups →
+   * first → paid theo chuỗi tỉ lệ của benchmark khớp brand+channel.
+   * Row không có benchmark (hoặc benchmark thiếu output/tỉ lệ, vd Paid Ads
+   * direct budget) → forecast = null ở chi tiết dòng, không cộng vào tổng.
+   */
+  function forecastFunnel(rows, benchmarks) {
+    var list = rows || [];
+    var idx = _benchmarkIndex(benchmarks);
+    var months = _planMonthsOf(list);
+    var byMonth = {};
+    months.forEach(function (m) {
+      byMonth[m] = { month: m, views: 0, visits: 0, signups: 0, first: 0, paid: 0, hasForecast: false };
+    });
+    var totals = { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+    var detail = list.map(function (r) {
+      var base = {
+        rowId: r && r.id !== undefined ? r.id : null,
+        brand_id: _planBrandId(r), segment: r ? (r.segment || null) : null,
+        month: _planMonth(r), channel: r ? (r.channel || null) : null,
+        group: r ? (r.group || null) : null, qty: r ? _planNum(r.qty) : null,
+        forecast: null
+      };
+      var b = _benchmarkFor(idx, r || {});
+      var qty = _planNum(r && r.qty);
+      if (!b || qty === null) return base;
+      if (b.direct_budget || b.directBudget) return base;
+      var output = _benchField(b, 'output_per_unit', 'outputPerUnit');
+      var v2v = _benchField(b, 'view_to_visit', 'viewToVisit');
+      var v2s = _benchField(b, 'visit_to_signup', 'visitToSignup');
+      var s2f = _benchField(b, 'signup_to_first', 'signupToFirst');
+      var f2p = _benchField(b, 'first_to_paid', 'firstToPaid');
+      if (output === null || v2v === null || v2s === null || s2f === null || f2p === null) return base;
+      var views = qty * output;
+      var visits = views * v2v;
+      var signups = visits * v2s;
+      var first = signups * s2f;
+      var paid = first * f2p;
+      base.forecast = { views: views, visits: visits, signups: signups, first: first, paid: paid };
+      var bm = base.month && byMonth[base.month];
+      if (bm) {
+        bm.views += views; bm.visits += visits; bm.signups += signups; bm.first += first; bm.paid += paid;
+        bm.hasForecast = true;
+      }
+      totals.views += views; totals.visits += visits; totals.signups += signups; totals.first += first; totals.paid += paid;
+      return base;
+    });
+    return { steps: FUNNEL_STEPS.slice(), months: months, byMonth: byMonth, totals: totals, rows: detail };
+  }
+
+  /**
+   * Ngân sách dự kiến: dòng có field budget → lấy thẳng (Paid Ads);
+   * còn lại qty × unit_price của benchmark khớp. Trả tổng theo tháng + kỳ.
+   */
+  function planBudget(rows, benchmarks) {
+    var list = rows || [];
+    var idx = _benchmarkIndex(benchmarks);
+    var months = _planMonthsOf(list);
+    var byMonth = {};
+    months.forEach(function (m) { byMonth[m] = { month: m, amount: 0, directBudget: 0, unitPriceBudget: 0 }; });
+    var total = 0, totalDirect = 0, totalUnitPrice = 0;
+    var detail = list.map(function (r) {
+      var entry = {
+        rowId: r && r.id !== undefined ? r.id : null,
+        month: _planMonth(r), channel: r ? (r.channel || null) : null,
+        amount: 0, source: null
+      };
+      var direct = r ? _planNum(r.budget) : null;
+      if (direct !== null) {
+        entry.amount = direct; entry.source = 'direct';
+      } else {
+        var b = _benchmarkFor(idx, r || {});
+        var price = b ? _benchField(b, 'unit_price', 'unitPrice') : null;
+        var qty = _planNum(r && r.qty);
+        if (price !== null && qty !== null) { entry.amount = qty * price; entry.source = 'unit_price'; }
+      }
+      var bm = entry.month && byMonth[entry.month];
+      if (bm && entry.source) {
+        bm.amount += entry.amount;
+        if (entry.source === 'direct') bm.directBudget += entry.amount; else bm.unitPriceBudget += entry.amount;
+      }
+      if (entry.source === 'direct') totalDirect += entry.amount;
+      if (entry.source === 'unit_price') totalUnitPrice += entry.amount;
+      total += entry.amount;
+      return entry;
+    });
+    return {
+      months: months, byMonth: byMonth,
+      total: total, totalDirect: totalDirect, totalUnitPrice: totalUnitPrice,
+      rows: detail
+    };
+  }
+
   var api = {
+    summarizePlanByMonth: summarizePlanByMonth,
+    summarizePlanByChannel: summarizePlanByChannel,
+    forecastFunnel: forecastFunnel,
+    planBudget: planBudget,
     wouldCreateCycle: wouldCreateCycle,
     taskReadiness: taskReadiness,
     previewDependencyImpact: previewDependencyImpact,

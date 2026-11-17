@@ -17,6 +17,67 @@
   var ADS_REG_KEYS = regKeys(1, 100);
   var SEEDING_REG_KEYS = regKeys(81, 100).concat(regKeys(101, 140));
 
+  // =====================================================================
+  // Brand + Planning (bản bấm thử 17/11/2026) — CHỈ dữ liệu demo.
+  // Nguồn: Lumus 2027 Master Forecast (.xlsm): sheet "01 Execution" (ma
+  // trận channel × tháng), sheet "03 Inputs" (benchmark/đơn giá/tỉ lệ),
+  // sheet "04 Monthly" (Paid Ads T1–T2 đối chiếu); Draft IMC Game Chapter
+  // (.xlsm): campaign PLAY/BUILD THE UNKNOWN + tổng ngân sách từng camp.
+  // Xem tài liệu mô hình: MO-HINH-BRAND-PLANNING.md.
+  // =====================================================================
+  var PLAN_MONTHS_2027 = ['2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06',
+    '2027-07', '2027-08', '2027-09', '2027-10', '2027-11', '2027-12'];
+  // Ma trận sản lượng Lumus AI theo sheet 01 Execution (T1..T12).
+  // Website Articles: 11 ở 10 tháng đầu, 10 ở T11–T12 (tổng 130, khớp file).
+  var PLAN_MATRIX = [
+    { channel: 'KOL Nano', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [4, 6, 7, 7, 7, 3, 4, 4, 3, 10, 8, 2] },
+    { channel: 'KOL Micro', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [4, 5, 6, 7, 6, 3, 3, 3, 3, 9, 9, 2] },
+    { channel: 'KOL Expert', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [1, 1, 1, 2, 1, 0, 1, 0, 1, 2, 2, 0] },
+    { channel: 'Facebook Owned', group: 'Owned Social', segment: 'b2c', unit: 'posts', qty: [21, 20, 20, 21, 20, 20, 21, 20, 20, 21, 20, 20] },
+    { channel: 'TikTok Owned', group: 'Owned Social', segment: 'b2c', unit: 'videos', qty: [9, 9, 8, 9, 9, 8, 9, 9, 8, 9, 9, 8] },
+    { channel: 'LinkedIn Owned', group: 'Owned Social', segment: 'b2b', unit: 'posts', qty: [9, 9, 8, 9, 9, 8, 9, 9, 8, 9, 9, 8] },
+    { channel: 'Website Articles', group: 'Content', segment: 'b2c', unit: 'articles', qty: [11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 10, 10] },
+    { channel: 'Email Sends', group: 'Email', segment: 'b2c', unit: 'sends', qty: [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2] },
+    { channel: 'B2B Event', group: 'Event', segment: 'b2b', unit: 'events', qty: [0, 0, 1, 1, 1, 0, 0, 1, 0, 1, 1, 0] },
+    { channel: 'Paid Community', group: 'Community', segment: 'b2c', unit: 'activities', qty: [2, 2, 3, 3, 3, 1, 1, 2, 2, 4, 3, 1] }
+  ];
+  // Paid Ads: ngân sách THẲNG theo tháng (VNĐ), không có qty/đơn giá.
+  // Cách quy ra tháng từ file nguồn (03 Inputs): quỹ Paid Media 31.200 USD
+  // (Meta 21.000 / TikTok 7.000) × ADS pace theo phase (GĐ1 5% / GĐ2 40% /
+  // GĐ3 15% / GĐ4 40%) × stage split trong phase (GĐ1: 40/60; GĐ2: 30/40/30;
+  // GĐ3: 20/25/25/30; GĐ4: 46/46/8) × FX 26.000 VNĐ/USD. Đối chiếu: T1 Meta
+  // 420 USD / TikTok 140 USD và T2 Meta 630 / TikTok 210 KHỚP sheet 04
+  // Monthly; tổng năm Meta 546.000.000đ (=21.000 USD), TikTok 182.000.000đ.
+  var PAID_BUDGET_VND = {
+    'Meta Ads': [10920000, 16380000, 65520000, 87360000, 65520000, 16380000, 20475000, 20475000, 24570000, 100464000, 100464000, 17472000],
+    'TikTok Ads': [3640000, 5460000, 21840000, 29120000, 21840000, 5460000, 6825000, 6825000, 8190000, 33488000, 33488000, 5824000]
+  };
+  function planSlug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+  function buildPlanRows() {
+    var rows = [];
+    PLAN_MATRIX.forEach(function (m) {
+      PLAN_MONTHS_2027.forEach(function (month, i) {
+        rows.push({
+          id: 'plan-lumus-' + month + '-' + planSlug(m.channel),
+          brand_id: 'brand-lumus-ai', segment: m.segment, month: month,
+          channel: m.channel, group: m.group, unit: m.unit, qty: m.qty[i], budget: null
+        });
+      });
+    });
+    Object.keys(PAID_BUDGET_VND).forEach(function (channel) {
+      PLAN_MONTHS_2027.forEach(function (month, i) {
+        rows.push({
+          id: 'plan-lumus-' + month + '-' + planSlug(channel),
+          brand_id: 'brand-lumus-ai', segment: 'b2c', month: month,
+          channel: channel, group: 'Paid Media', unit: null, qty: null,
+          budget: PAID_BUDGET_VND[channel][i]
+        });
+      });
+    });
+    return rows;
+  }
+  var PLAN_ROWS = buildPlanRows();
+
   var data = {
     demoLabel: 'Dữ liệu minh họa — không phải dữ liệu thật',
     holidays: ['2026-11-19'],
@@ -33,9 +94,53 @@
       { id: 'bu-metaverse', name: 'Metaverse', products: ['Trải nghiệm VR mẫu'] },
       { id: 'bu-publishing', name: 'Publishing', products: ['Dịch vụ phát hành mẫu'] }
     ],
+    // Brand + Planning (17/11): identity của Lumus AI rút từ file forecast
+    // (sản phẩm AI/productivity/quản lý công việc; LinkedIn 100% English);
+    // tagline/palette/voice của cả 2 brand là ĐIỀN TẠM hợp lý cho bản bấm
+    // thử (trừ màu chủ đạo SAVA #066DBD là màu xanh SAVA đã dùng ở CRM),
+    // chờ đội Brand chốt chính thức. funnel_steps theo tài liệu mô hình.
+    brands: [
+      {
+        id: 'brand-sava-meta', code: 'SAVA', name: 'SAVA META',
+        tagline: 'Play the Unknown. Build the Unknown.',
+        description: 'Thương hiệu SAVA META — Game Studio & Publishing: xây tệp Game Audience (B2C) và mở cơ hội hợp tác Publishing với Studio/Creator (B2B) qua Game Chapter / Road to Global.',
+        market: 'Việt Nam',
+        primary_color: '#066DBD', color: '#066DBD',
+        palette: ['#066DBD', '#0B2A4A', '#F5A623', '#FFFFFF'],
+        voice: 'Tiên phong, bản lĩnh, gần gũi với cộng đồng game thủ và giới làm game.',
+        key_messages: ['PLAY THE UNKNOWN — chơi và khám phá điều chưa biết', 'BUILD THE UNKNOWN — đưa game Việt ra thị trường toàn cầu', 'CREATE THE UNKNOWN — cộng đồng sáng tạo game'],
+        funnel_steps: ['Reach', 'Follow', 'Participation', 'Lead', 'Application'],
+        status: 'active'
+      },
+      {
+        id: 'brand-lumus-ai', code: 'LUMUS', name: 'Lumus AI',
+        tagline: 'AI cho công việc hiệu quả hơn.',
+        description: 'Lumus AI — sản phẩm AI hỗ trợ productivity và quản lý công việc; funnel B2C từ Reach tới Paid User, kênh B2B (LinkedIn, B2B Event, ads B2B) tách theo segment.',
+        market: 'Việt Nam (B2C) + thị trường nói tiếng Anh (B2B, LinkedIn 100% English)',
+        primary_color: '#6C4CF1', color: '#6C4CF1',
+        palette: ['#6C4CF1', '#1E1B4B', '#38BDF8', '#FFFFFF'],
+        voice: 'Chuyên môn, rõ ràng, hướng tới hiệu quả đo được.',
+        key_messages: ['AI hỗ trợ quản lý công việc và năng suất cá nhân', 'Bắt đầu miễn phí, nâng cấp khi thấy giá trị', 'Nội dung chuyên môn AI/productivity từ KOL Expert'],
+        funnel_steps: ['Reach', 'Visit', 'Signup', 'First', 'Paid'],
+        status: 'active'
+      }
+    ],
+    // Benchmark = brand × channel (sheet 03 Inputs). Chuỗi hạ nguồn
+    // visit→signup 0,09 / signup→first 0,5 / first→paid 0,055 DÙNG CHUNG
+    // cho cả 3 KOL trong file nguồn (R44–R46) — chỉ view→visit khác nhau.
+    // Paid Ads: direct_budget = true, unit_price/output/rates = null
+    // (ngân sách nhập thẳng ở plan_rows.budget, KHÔNG forecast bịa số).
+    benchmarks: [
+      { id: 'bench-lumus-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', group: 'KOL', unit_price: 1500000, currency: 'VND', output_per_unit: 4000, view_to_visit: 0.003, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
+      { id: 'bench-lumus-kol-micro', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Micro', group: 'KOL', unit_price: 5500000, currency: 'VND', output_per_unit: 15000, view_to_visit: 0.004, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
+      { id: 'bench-lumus-kol-expert', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Expert', group: 'KOL', unit_price: 30000000, currency: 'VND', output_per_unit: 25000, view_to_visit: 0.005, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
+      { id: 'bench-lumus-meta-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs — Paid Media pool 21.000 USD/năm, ngân sách thẳng theo tháng' },
+      { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs — Paid Media pool 7.000 USD/năm, ngân sách thẳng theo tháng' }
+    ],
+    plan_rows: PLAN_ROWS,
     campaigns: [
       {
-        id: 'camp-1', name: 'Ra mắt tính năng mới — Mùa lễ hội', businessUnitId: 'bu-game', product: 'Game di động mẫu A',
+        id: 'camp-1', brand_id: 'brand-sava-meta', segment: 'b2c', name: 'Ra mắt tính năng mới — Mùa lễ hội', businessUnitId: 'bu-game', product: 'Game di động mẫu A',
         status: 'active', statusLabel: 'Đang chạy', startDate: '2026-11-02', endDate: '2026-11-30',
         ownerId: 'member-lead', baselineStartDate: '2026-11-02', baselineEndDate: '2026-11-27',
         why: 'Tận dụng mùa lễ hội để tăng người chơi mới và giữ chân người chơi hiện tại.',
@@ -54,7 +159,7 @@
         lessons: ''
       },
       {
-        id: 'camp-2', name: 'Giới thiệu trải nghiệm VR cho đối tác', businessUnitId: 'bu-metaverse', product: 'Trải nghiệm VR mẫu',
+        id: 'camp-2', brand_id: 'brand-sava-meta', segment: 'b2b', name: 'Giới thiệu trải nghiệm VR cho đối tác', businessUnitId: 'bu-metaverse', product: 'Trải nghiệm VR mẫu',
         status: 'planning', statusLabel: 'Đang chuẩn bị', startDate: '2026-11-16', endDate: '2026-12-11',
         ownerId: 'member-owner', baselineStartDate: '2026-11-16', baselineEndDate: '2026-12-11',
         why: 'Tạo nhu cầu trải nghiệm thử ở nhóm đối tác giáo dục và sản xuất.',
@@ -72,7 +177,7 @@
       {
         // Fixture R3.1 D.1/D.2 — campaign livestream: hạn mức 32tr; phân bổ
         // 8/15/5/2 = 30tr; thực chi 20,5tr; cam kết còn mở 7,5tr.
-        id: 'camp-live', name: 'Livestream giới thiệu giải pháp (minh họa R3.1)', businessUnitId: 'bu-ai', product: 'Nền tảng AI mẫu',
+        id: 'camp-live', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Livestream giới thiệu giải pháp (minh họa R3.1)', businessUnitId: 'bu-ai', product: 'Nền tảng AI mẫu',
         status: 'active', statusLabel: 'Đang chạy', startDate: '2026-11-16', endDate: '2026-11-29',
         ownerId: 'member-lead', budgetCeiling: 32000000, budgetCeilingCurrency: 'VND', approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null,
         why: 'Fixture minh họa cho Action Plan / KPI / ngân sách theo đặc tả R3.1 (số liệu D.1/D.2).',
@@ -85,6 +190,45 @@
         keyMessage: 'Đăng ký một lần, xem trực tiếp buổi giới thiệu giải pháp.',
         creativeDirection: 'Creative quảng cáo + landing page đăng ký gắn với hoạt động Chạy ads.',
         risks: 'Trùng đăng ký giữa hai nguồn nếu thiếu khóa định danh.',
+        lessons: ''
+      },
+      {
+        // Game Chapter Camp 1 (file IMC thật): T10–T11/2026, tổng ngân sách
+        // 60.391.500đ; KPI chính: >=6.300 lượt theo dõi mới, 200–300 câu hỏi
+        // hợp lệ HNĐT #02. Tệp Game Audience -> segment b2c.
+        id: 'camp-play-unknown', brand_id: 'brand-sava-meta', segment: 'b2c', name: 'PLAY THE UNKNOWN — Game Chapter (Camp 1)', businessUnitId: 'bu-publishing', product: 'Game Chapter',
+        status: 'planning', statusLabel: 'Đang chuẩn bị', startDate: '2026-10-01', endDate: '2026-11-30',
+        ownerId: 'member-lead', budgetCeiling: 60391500, budgetCeilingCurrency: 'VND',
+        why: 'Xây dựng tệp khách hàng, mở phễu: tập hợp đúng Game Audience bằng conversation, ký ức và trải nghiệm chung quanh Game.',
+        businessGoal: 'Đạt >=6.300 lượt theo dõi mới và 200–300 câu hỏi hợp lệ cho Hỏi Ngay – Đáp Thật #02 (số từ file IMC).',
+        marketingGoal: 'Brand Content/Game Culture + HNĐT #02 + Game Cũ - Chuyện Cũ trên Meta Ads, Fanpage, PR GameK và Seeding.',
+        desiredOutcome: 'Phễu B2C SAVA META: Reach -> Follow -> Participation.',
+        audiences: [{ name: 'Game Audience — người chơi trẻ quan tâm Game', description: 'Tiếp cận qua nội dung văn hóa game và ký ức game thủ.' }],
+        audienceInsights: 'Nội dung ký ức game (Game Cũ) kéo tương tác tự nhiên tốt (theo file IMC).',
+        bigIdea: 'PLAY THE UNKNOWN — Dấn bước tiên phong.',
+        keyMessage: 'Chơi điều chưa biết cùng SAVA META.',
+        creativeDirection: 'Nội dung conversation + livestream hỏi đáp + thử thách ký ức game.',
+        risks: 'Ngân sách Ads phục vụ đồng thời Follower Growth và Submit câu hỏi, chưa chia riêng hai mục tiêu (ghi chú file IMC).',
+        lessons: ''
+      },
+      {
+        // Game Chapter Camp 2 (file IMC thật): T11/2026–T1/2027, tổng ngân
+        // sách 154.200.000đ (chưa gồm Market Test Fund 10.000 USD quản lý
+        // riêng); KPI: 200 Contact Leads, 40 RTG Applications, 3 Market
+        // Tests, 1 Winner. Tệp Studio/Creator -> segment b2b.
+        id: 'camp-build-unknown', brand_id: 'brand-sava-meta', segment: 'b2b', name: 'BUILD THE UNKNOWN — Game Chapter (Camp 2)', businessUnitId: 'bu-publishing', product: 'Road to Global',
+        status: 'planning', statusLabel: 'Đang chuẩn bị', startDate: '2026-11-01', endDate: '2027-01-31',
+        ownerId: 'member-owner', budgetCeiling: 154200000, budgetCeilingCurrency: 'VND',
+        why: 'Sàng lọc cơ hội kinh doanh, chuyển đổi phễu: đưa Studio/Creator có Project thật vào quy trình đánh giá, Market Test và mở cơ hội hợp tác Publishing.',
+        businessGoal: '200 Contact Leads mới, 40 RTG Applications, 3 Market Tests, 1 Winner, 3–5 Publishing Opportunities (số từ file IMC).',
+        marketingGoal: 'Studio Outreach x Gameforum + Road to Global (Announcement -> Education -> Submission) + Qualification & Pitch.',
+        desiredOutcome: 'Phễu B2B SAVA META: Lead -> Application -> Market Test.',
+        audiences: [{ name: 'Studio / Indie Developer / Game Creator', description: 'Có project thật, quan tâm Publishing và thị trường toàn cầu.' }],
+        audienceInsights: 'Contact Leads phải khử trùng, có quyền liên hệ phù hợp; không mặc định 200 leads đều đủ điều kiện RTG (ghi chú file IMC).',
+        bigIdea: 'BUILD THE UNKNOWN — Bản lĩnh mở lối toàn cầu.',
+        keyMessage: 'Đưa game Việt ra thị trường toàn cầu cùng SAVA Publishing.',
+        creativeDirection: 'PR CafeF/CafeBiz + nội dung giáo dục Road to Global + seeding cộng đồng indie developer.',
+        risks: 'Market Test Fund 10.000 USD quản lý riêng, không cộng vào ngân sách campaign này.',
         lessons: ''
       }
     ],
@@ -235,16 +379,18 @@
       { id: 'obs-6', externalPostId: 'post-3', metric: 'reach', value: 800, observedAt: '2026-11-09T09:00:00+07:00', source: 'Nhập tay (minh họa)', enteredBy: 'member-content' }
     ],
     budgetLines: [
-      { id: 'budget-1', campaignId: 'camp-1', name: 'Sản xuất nội dung', currency: 'VND', planned: 60000000, approved: 50000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
-      { id: 'budget-2', campaignId: 'camp-1', name: 'Quảng cáo Meta', currency: 'VND', planned: 90000000, approved: 80000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
-      { id: 'budget-3', campaignId: 'camp-2', name: 'Trang giới thiệu và trải nghiệm', currency: 'VND', planned: 40000000, approved: 30000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
-      { id: 'budget-4', campaignId: 'camp-2', name: 'Sự kiện trải nghiệm (USD mẫu)', currency: 'USD', planned: 2000, approved: 1500, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-1', campaignId: 'camp-1', name: 'Sản xuất nội dung', brand_id: 'brand-sava-meta', segment: 'b2c', currency: 'VND', planned: 60000000, approved: 50000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-2', campaignId: 'camp-1', name: 'Quảng cáo Meta', brand_id: 'brand-sava-meta', segment: 'b2c', currency: 'VND', planned: 90000000, approved: 80000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-3', campaignId: 'camp-2', name: 'Trang giới thiệu và trải nghiệm', brand_id: 'brand-sava-meta', segment: 'b2b', currency: 'VND', planned: 40000000, approved: 30000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-4', campaignId: 'camp-2', name: 'Sự kiện trải nghiệm (USD mẫu)', brand_id: 'brand-sava-meta', segment: 'b2b', currency: 'USD', planned: 2000, approved: 1500, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
       // Fixture R3.1 D.1: approved = phân bổ cho từng action (8/15/5/2 = 30tr);
       // planned cố ý khác approved để chứng minh hai số lưu độc lập (AC10).
-      { id: 'bl-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', name: 'Phân bổ — Mời khách mời', currency: 'VND', planned: 9000000, approved: 8000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
-      { id: 'bl-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', name: 'Phân bổ — Chạy ads', currency: 'VND', planned: 16000000, approved: 15000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
-      { id: 'bl-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', name: 'Phân bổ — Seeding', currency: 'VND', planned: 6000000, approved: 5000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
-      { id: 'bl-live-show', campaignId: 'camp-live', activityId: 'act-live-show', name: 'Phân bổ — Tổ chức livestream', currency: 'VND', planned: 2500000, approved: 2000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null}
+      { id: 'bl-live-invite', campaignId: 'camp-live', activityId: 'act-live-invite', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Phân bổ — Mời khách mời', currency: 'VND', planned: 9000000, approved: 8000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'bl-live-ads', campaignId: 'camp-live', activityId: 'act-live-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Phân bổ — Chạy ads', currency: 'VND', planned: 16000000, approved: 15000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'bl-live-seeding', campaignId: 'camp-live', activityId: 'act-live-seeding', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Phân bổ — Seeding', currency: 'VND', planned: 6000000, approved: 5000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'bl-live-show', campaignId: 'camp-live', activityId: 'act-live-show', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Phân bổ — Tổ chức livestream', currency: 'VND', planned: 2500000, approved: 2000000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-play-unknown', campaignId: 'camp-play-unknown', brand_id: 'brand-sava-meta', segment: 'b2c', name: 'Ngân sách Camp 1 — PLAY THE UNKNOWN (tổng theo file IMC)', currency: 'VND', planned: 60391500, approved: 60391500, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null},
+      { id: 'budget-build-unknown', campaignId: 'camp-build-unknown', brand_id: 'brand-sava-meta', segment: 'b2b', name: 'Ngân sách Camp 2 — BUILD THE UNKNOWN (tổng theo file IMC, chưa gồm Market Test Fund)', currency: 'VND', planned: 154200000, approved: 154200000, approvedBy: 'member-owner', approvedAt: '2026-11-15T09:00:00+07:00', approvedViaProposalId: null}
     ],
     commitments: [
       { id: 'commit-1', budgetLineId: 'budget-1', title: 'Đặt cọc quay dựng video', amount: 20000000, currency: 'VND', status: 'open', approvalStatus: 'approved'},
@@ -267,23 +413,23 @@
       { id: 'pay-live-show', budgetLineId: 'bl-live-show', commitmentId: 'cm-live-show', campaignId: 'camp-live', activityId: 'act-live-show', title: 'Chi tổ chức livestream', description: 'Chứng từ minh họa R3.1', amount: 1500000, currency: 'VND', date: '2026-11-25', source: 'manual', approvalStatus: 'approved'}
     ],
     kpis: [
-      { id: 'kpi-1', campaignId: 'camp-1', name: 'Lượt cài đặt mới', target: 10000, actual: 6200, unit: 'lượt', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },
-      { id: 'kpi-2', campaignId: 'camp-1', name: 'Lượt xem video thử thách', target: 100000, actual: null, unit: 'lượt xem', source: 'Chưa có nguồn số liệu', updatedAt: null },
-      { id: 'kpi-3', campaignId: 'camp-2', name: 'Lịch hẹn trải nghiệm thử', target: 30, actual: 0, unit: 'lịch hẹn', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },
+      { id: 'kpi-1', campaignId: 'camp-1', name: 'Lượt cài đặt mới', brand_id: 'brand-sava-meta', segment: 'b2c', target: 10000, actual: 6200, unit: 'lượt', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },
+      { id: 'kpi-2', campaignId: 'camp-1', name: 'Lượt xem video thử thách', brand_id: 'brand-sava-meta', segment: 'b2c', target: 100000, actual: null, unit: 'lượt xem', source: 'Chưa có nguồn số liệu', updatedAt: null },
+      { id: 'kpi-3', campaignId: 'camp-2', name: 'Lịch hẹn trải nghiệm thử', brand_id: 'brand-sava-meta', segment: 'b2b', target: 30, actual: 0, unit: 'lịch hẹn', source: 'Số liệu minh họa nhập tay', updatedAt: '2026-11-10T09:00:00+07:00' },
       // KPI tự động từ bài đã đăng (post_metrics): post-1 thuộc camp-1 có
       // lifetime_views 100 -> 150 -> 200 nên actual store tự tính phải là
       // 200 (số mới nhất), postCount 1 — KHÔNG đặt actual cứng ở đây.
-      { id: 'kpi-auto-post-views', campaignId: 'camp-1', scopeType: 'campaign', name: 'Lượt xem lũy kế từ bài đã đăng — Campaign mẫu 1', metricCode: 'lifetime_views', aggregationMode: 'sum', target: 500, actual: null, unit: 'lượt xem', periodKey: '2026-11', definition: { description: 'Tự tính từ bộ đếm lifetime_views của các bài đã đăng thuộc campaign — cộng số mới nhất của từng bài.', dataSource: { type: 'post_metrics', metric: 'lifetime_views', mode: 'latest_sum' } }, source: 'Tự động từ bài đã đăng', updatedAt: null },
+      { id: 'kpi-auto-post-views', campaignId: 'camp-1', scopeType: 'campaign', brand_id: 'brand-sava-meta', segment: 'b2c', name: 'Lượt xem lũy kế từ bài đã đăng — Campaign mẫu 1', metricCode: 'lifetime_views', aggregationMode: 'sum', target: 500, actual: null, unit: 'lượt xem', periodKey: '2026-11', definition: { description: 'Tự tính từ bộ đếm lifetime_views của các bài đã đăng thuộc campaign — cộng số mới nhất của từng bài.', dataSource: { type: 'post_metrics', metric: 'lifetime_views', mode: 'latest_sum' } }, source: 'Tự động từ bài đã đăng', updatedAt: null },
       // Fixture R3.1 D.2: đăng ký ads 100 (target 120), seeding 60 (target 80),
       // trùng 20 khóa → campaign unique 140/150 = 93,33%.
-      { id: 'kpi-live-ads-reg', campaignId: 'camp-live', activityId: 'act-live-ads', scopeType: 'activity', name: 'Đăng ký hợp lệ từ ads', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 120, actual: 100, unit: 'người', periodKey: '2026-11', identityKeys: ADS_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ ads theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
-      { id: 'kpi-live-seeding-reg', campaignId: 'camp-live', activityId: 'act-live-seeding', scopeType: 'activity', name: 'Đăng ký hợp lệ từ seeding', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 80, actual: 60, unit: 'người', periodKey: '2026-11', identityKeys: SEEDING_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ seeding theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
-      { id: 'kpi-live-campaign-reg', campaignId: 'camp-live', scopeType: 'campaign', name: 'Đăng ký hợp lệ không trùng — toàn campaign', metricCode: 'valid_registrations', aggregationMode: 'unique', target: 150, actual: null, unit: 'người', periodKey: '2026-11', definition: { description: 'COUNT DISTINCT khóa định danh trên tập KPI nguồn đã chọn (ads + seeding).' }, source: 'Roll-up từ KPI nguồn (contributions)', updatedAt: '2026-11-12T09:00:00+07:00' },
-      { id: 'kpi-live-guests', campaignId: 'camp-live', activityId: 'act-live-invite', scopeType: 'activity', name: 'Khách mời xác nhận', metricCode: 'confirmed_guests', aggregationMode: 'sum', target: 2, actual: 2, unit: 'khách', periodKey: '2026-11', definition: { description: 'Số khách mời đã xác nhận tham gia — metric khác, không cộng vào đăng ký.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-ads-reg', campaignId: 'camp-live', activityId: 'act-live-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', scopeType: 'activity', name: 'Đăng ký hợp lệ từ ads', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 120, actual: 100, unit: 'người', periodKey: '2026-11', identityKeys: ADS_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ ads theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-seeding-reg', campaignId: 'camp-live', activityId: 'act-live-seeding', brand_id: 'brand-lumus-ai', segment: 'b2c', scopeType: 'activity', name: 'Đăng ký hợp lệ từ seeding', metricCode: 'valid_registrations', aggregationMode: 'sum', target: 80, actual: 60, unit: 'người', periodKey: '2026-11', identityKeys: SEEDING_REG_KEYS, definition: { description: 'Đếm đăng ký hợp lệ từ seeding theo khóa định danh đã chuẩn hóa.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-campaign-reg', campaignId: 'camp-live', scopeType: 'campaign', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Đăng ký hợp lệ không trùng — toàn campaign', metricCode: 'valid_registrations', aggregationMode: 'unique', target: 150, actual: null, unit: 'người', periodKey: '2026-11', definition: { description: 'COUNT DISTINCT khóa định danh trên tập KPI nguồn đã chọn (ads + seeding).' }, source: 'Roll-up từ KPI nguồn (contributions)', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-guests', campaignId: 'camp-live', activityId: 'act-live-invite', brand_id: 'brand-lumus-ai', segment: 'b2c', scopeType: 'activity', name: 'Khách mời xác nhận', metricCode: 'confirmed_guests', aggregationMode: 'sum', target: 2, actual: 2, unit: 'khách', periodKey: '2026-11', definition: { description: 'Số khách mời đã xác nhận tham gia — metric khác, không cộng vào đăng ký.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
       // CPL ratio hai scope: Ads = 10tr/100 = 100.000; toàn campaign =
       // 20,5tr/140 ≈ 146.429 — nhãn phạm vi ghi rõ ở từng KPI.
-      { id: 'kpi-live-ads-cpl', campaignId: 'camp-live', activityId: 'act-live-ads', scopeType: 'activity', name: 'Chi phí / đăng ký — phạm vi Chạy ads', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 10000000, denominator: 100, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi của hoạt động Chạy ads / đăng ký hợp lệ từ ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
-      { id: 'kpi-live-campaign-cpl', campaignId: 'camp-live', scopeType: 'campaign', name: 'Chi phí / đăng ký — phạm vi toàn campaign', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 20500000, denominator: 140, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi toàn campaign / đăng ký unique toàn campaign — KHÔNG phải CPL của riêng ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' }
+      { id: 'kpi-live-ads-cpl', campaignId: 'camp-live', activityId: 'act-live-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', scopeType: 'activity', name: 'Chi phí / đăng ký — phạm vi Chạy ads', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 10000000, denominator: 100, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi của hoạt động Chạy ads / đăng ký hợp lệ từ ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' },
+      { id: 'kpi-live-campaign-cpl', campaignId: 'camp-live', scopeType: 'campaign', brand_id: 'brand-lumus-ai', segment: 'b2c', name: 'Chi phí / đăng ký — phạm vi toàn campaign', metricCode: 'cpl', aggregationMode: 'ratio', numerator: 20500000, denominator: 140, target: null, actual: null, unit: 'VND/đăng ký', periodKey: '2026-11', definition: { description: 'Thực chi toàn campaign / đăng ký unique toàn campaign — KHÔNG phải CPL của riêng ads.' }, source: 'Fixture minh họa R3.1', updatedAt: '2026-11-12T09:00:00+07:00' }
     ],
     kpiContributions: [
       { id: 'contrib-live-1', kpiId: 'kpi-live-campaign-reg', sourceKpiId: 'kpi-live-ads-reg', rule: 'unique', dedupKeyField: 'identityKeys' },

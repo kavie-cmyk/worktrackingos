@@ -59,7 +59,11 @@
     'reportSnapshots', 'manualMetricEntries', 'comments',
     'contentPillars', 'kpiTargetVersions', 'kpiContributions', 'brandPageVersions',
     'campaignBaselines', 'campaignAssets', 'budgetAllocations', 'budgetProposals',
-    'cashAccounts', 'cashCategories', 'cashTransactions'];
+    'cashAccounts', 'cashCategories', 'cashTransactions',
+    // Brand + Planning (17/11, bản bấm thử): CHƯA có bảng Supabase tương ứng
+    // (không migration) — _loadCollection không thấy ánh xạ bảng trong
+    // store-core nên tự trả [] ở chế độ thật, không gọi Supabase, không crash.
+    'brands', 'benchmarks', 'plan_rows'];
 
   function clone(x) { return JSON.parse(JSON.stringify(x)); }
   function uid(prefix) { return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7); }
