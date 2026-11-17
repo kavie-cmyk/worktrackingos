@@ -8,9 +8,9 @@
 //    Partnership; Event): audience 'b2c'|'b2b'|'both' + b2b_split_pct.
 //    Objective thuần B2C (Awareness/Traffic/Signup/Remarketing) bị
 //    khóa lựa chọn B2B ở UI + engine ép phần B2B = 0.
-// 3) Cách tính: Lead Gen B2C -> Signups tại tầng Signups chảy xuống;
+// 3) Cách tính: Lead Gen B2C -> Freemium tại tầng Freemium chảy xuống;
 //    Lead Gen B2B -> Leads x lead_to_account; Demo tương tự với
-//    demo_to_account; Partnership/Event B2C -> Signups = tiền /
+//    demo_to_account; Partnership/Event B2C -> Freemium = tiền /
 //    cost_per_result.signup, B2B -> Accounts = tiền /
 //    cost_per_result.b2b_account. CHỈ áp dòng budget-driven (qty
 //    null) thuộc 3 nhóm — không phân loại lại dòng content có qty.
@@ -45,11 +45,11 @@ function section(startMarker, endMarker) {
 
 // ============================================================ (a) cầu nối
 test('PB2B [domain] (a): cầu nối Paid -> B2B ở kênh content — Paid tháng = P, paid_to_b2b = 10% -> B2B Accounts tháng = P x 10%', () => {
-  const bm = [{ brand_id: 'b1', channel: 'KOL X', group: 'KOL', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, paid_to_b2b: 0.1, direct_budget: false }];
+  const bm = [{ brand_id: 'b1', channel: 'KOL X', group: 'KOL', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_freemium: 0.1, freemium_to_paid: 0.1, paid_to_b2b: 0.1, direct_budget: false }];
   const rows = [{ id: 'r1', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'KOL X', group: 'KOL', qty: 10, budget: null }];
   const f = domain.forecastFunnel(rows, bm);
   const P = f.rows[0].forecast.paid;
-  approx(P, 1, 'Paid = 10 x 100 x 0,1 x 0,1 x 0,5 x 0,2');
+  approx(P, 1, 'Paid = 10 x 100 x 0,1 x 0,1 x 0,1 (freemium_to_paid 0,1 = 0,5 x 0,2 gộp)');
   approx(f.rows[0].forecast.b2b, P * 0.1, 'B2B Accounts = Paid x paid_to_b2b');
   approx(f.byMonth['2027-01'].b2b, P * 0.1, 'byMonth cộng đúng cầu nối');
   approx(f.totals.b2b, P * 0.1, 'totals cộng đúng cầu nối');
@@ -62,13 +62,13 @@ test('PB2B [domain] (a): cầu nối Paid -> B2B ở kênh content — Paid thá
 
 test('PB2B [domain] (a2): cầu nối áp cho CẢ Paid Objective thuần B2C và phần B2C của Lead Gen — không kênh/luồng B2C nào được miễn', () => {
   // Traffic (Objective thuần B2C) vẫn sinh B2B qua cầu nối từ Paid của nó.
-  const bmTraffic = [{ brand_id: 'b1', channel: 'Meta-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, paid_to_b2b: 0.1, cost_per_result: { traffic: 20000 } }];
+  const bmTraffic = [{ brand_id: 'b1', channel: 'Meta-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: 0.1, cost_per_result: { traffic: 20000 } }];
   const rowTraffic = [{ id: 'rt', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'Meta-like', group: 'Paid Media', qty: null, budget: 5460000, objective: 'traffic', audience: 'b2c' }];
   const fcT = domain.forecastFunnel(rowTraffic, bmTraffic).rows[0].forecast;
   approx(fcT.paid, 0.675675, 'Traffic Paid như ca neo Meta T1');
   approx(fcT.b2b, 0.675675 * 0.1, 'Traffic (thuần B2C) vẫn qua cầu nối');
   // Lead Gen 'both': Paid của PHẦN B2C cũng qua cầu nối, cộng với phần B2B trực tiếp.
-  const bmLead = [{ brand_id: 'b1', channel: 'Ads B2B', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, paid_to_b2b: 0.1, lead_to_account: 0.2, cost_per_result: { lead_gen: 100000 } }];
+  const bmLead = [{ brand_id: 'b1', channel: 'Ads B2B', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: 0.1, lead_to_account: 0.2, cost_per_result: { lead_gen: 100000 } }];
   const rowLead = [{ id: 'rl', brand_id: 'b1', segment: 'b2b', month: '2027-01', channel: 'Ads B2B', group: 'Paid Media', qty: null, budget: 10000000, objective: 'lead_gen', audience: 'both', b2b_split_pct: 40 }];
   const fcL = domain.forecastFunnel(rowLead, bmLead).rows[0].forecast;
   approx(fcL.b2b, 8 + 1.65 * 0.1, 'B2B = Lead->Account (8) + cầu nối từ Paid phần B2C (1,65 x 10%)');
@@ -76,70 +76,67 @@ test('PB2B [domain] (a2): cầu nối áp cho CẢ Paid Objective thuần B2C v�
 
 test('PB2B [domain] (a3): paid_to_b2b sửa theo Phase + uplift qua phase_assumptions như các tỉ lệ funnel khác', () => {
   const phases = [{ id: 'ph-1', brand_id: 'b1', start_month: '2027-01', end_month: '2027-02', uplift_percent_per_month: 10 }];
-  const assumptions = [{ phase_id: 'ph-1', channel: 'KOL X', view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, paid_to_b2b: 0.2, lead_to_account: null, demo_to_account: null, views_per_unit: null }];
-  const bm = [{ brand_id: 'b1', channel: 'KOL X', group: 'KOL', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, paid_to_b2b: null, direct_budget: false }];
+  const assumptions = [{ phase_id: 'ph-1', channel: 'KOL X', view_to_visit: null, visit_to_freemium: null, freemium_to_paid: null, paid_to_b2b: 0.2, lead_to_account: null, demo_to_account: null, views_per_unit: null }];
+  const bm = [{ brand_id: 'b1', channel: 'KOL X', group: 'KOL', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_freemium: 0.1, freemium_to_paid: 0.1, paid_to_b2b: null, direct_budget: false }];
   const mk = (month) => [{ id: 'r-' + month, brand_id: 'b1', segment: 'b2c', month, channel: 'KOL X', group: 'KOL', qty: 10, budget: null, phase_id: 'ph-1' }];
   const ctx = { phases, phaseAssumptions: assumptions };
   const jan = domain.forecastFunnel(mk('2027-01'), bm, ctx).rows[0].forecast;
-  approx(jan.paid, 1, 'Paid tháng đầu = 1 (10 x 100 x 0,1 x 0,1 x 0,5 x 0,2)');
+  approx(jan.paid, 1, 'Paid tháng đầu = 1 (10 x 100 x 0,1 x 0,1 x 0,1)');
   approx(jan.b2b, jan.paid * 0.2, 'tháng đầu phase: assumption 20% thắng benchmark null, uplift n=0');
   const feb = domain.forecastFunnel(mk('2027-02'), bm, ctx).rows[0].forecast;
   approx(feb.b2b, feb.paid * 0.2 * 1.1, 'tháng 2: uplift 10% lũy kế n=1 áp vào paid_to_b2b như tỉ lệ funnel (b2b = Paid tháng đó x 22%)');
 });
 
 // ============================================================ (b) split
-test('PB2B [domain] (b): CA NEO SPLIT Lead Gen — 10.000.000đ, both, B2B 40%, CPL 100.000, lead_to_account 20%, signup->first 50%, first->paid 5,5%: B2C 60 Signups -> 30 First -> 1,65 Paid; B2B 40 Leads -> 8 Accounts', () => {
-  const bm = [{ brand_id: 'b1', channel: 'Google-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, lead_to_account: 0.2, cost_per_result: { lead_gen: 100000 } }];
+test('PB2B [domain] (b): CA NEO SPLIT Lead Gen — 10.000.000đ, both, B2B 40%, CPL 100.000, lead_to_account 20%, freemium_to_paid 2,75% (= 50% x 5,5% gộp): B2C 60 Freemium -> 1,65 Paid; B2B 40 Leads -> 8 Accounts', () => {
+  const bm = [{ brand_id: 'b1', channel: 'Google-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, lead_to_account: 0.2, cost_per_result: { lead_gen: 100000 } }];
   const rows = [{ id: 'r1', brand_id: 'b1', segment: 'b2b', month: '2027-01', channel: 'Google-like', group: 'Paid Media', qty: null, budget: 10000000, objective: 'lead_gen', audience: 'both', b2b_split_pct: 40 }];
   const fc = domain.forecastFunnel(rows, bm).rows[0].forecast;
-  approx(fc.signups, 60, 'phần B2C 6.000.000 / 100.000 = 60 Signups (đặt tại tầng Signups, KHÔNG áp visit_to_signup ngược)');
+  approx(fc.freemium, 60, 'phần B2C 6.000.000 / 100.000 = 60 Freemium (đặt tại tầng Freemium, KHÔNG áp visit_to_freemium ngược)');
   assert.equal(fc.visits, 0, 'không suy ngược lên Visits');
   assert.equal(fc.views, 0, 'không suy ngược lên Views');
-  approx(fc.first, 30, 'First = 60 x 50%');
-  approx(fc.paid, 1.65, 'Paid = 30 x 5,5%');
+  approx(fc.paid, 1.65, 'Paid = 60 x 2,75%');
   approx(fc.b2b, 8, 'phần B2B 4.000.000 / 100.000 = 40 Leads x 20% = 8 Accounts');
 });
 
-test('PB2B [domain] (b2): Demo split — phần B2C đặt tại Signups rồi chảy xuống; phần B2B Demos x demo_to_account', () => {
-  const bm = [{ brand_id: 'b1', channel: 'LinkedIn-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, demo_to_account: 0.25, cost_per_result: { demo: 200000 } }];
+test('PB2B [domain] (b2): Demo split — phần B2C đặt tại Freemium rồi chảy xuống; phần B2B Demos x demo_to_account', () => {
+  const bm = [{ brand_id: 'b1', channel: 'LinkedIn-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, demo_to_account: 0.25, cost_per_result: { demo: 200000 } }];
   const rows = [{ id: 'r1', brand_id: 'b1', segment: 'b2b', month: '2027-01', channel: 'LinkedIn-like', group: 'Paid Media', qty: null, budget: 10000000, objective: 'demo', audience: 'both', b2b_split_pct: 40 }];
   const fc = domain.forecastFunnel(rows, bm).rows[0].forecast;
-  approx(fc.signups, 30, 'B2C 6.000.000 / 200.000 = 30 Signups');
-  approx(fc.first, 15, 'First = 30 x 50%');
-  approx(fc.paid, 0.825, 'Paid = 15 x 5,5%');
+  approx(fc.freemium, 30, 'B2C 6.000.000 / 200.000 = 30 Freemium');
+  approx(fc.paid, 0.825, 'Paid = 30 x 2,75%');
   approx(fc.b2b, 5, 'B2B 4.000.000 / 200.000 = 20 Demos x 25% = 5 Accounts');
   // Audience b2b thuần (như seed LinkedIn): toàn bộ ngân sách vào chân B2B.
   const fcB = domain.forecastFunnel([{ ...rows[0], id: 'r2', audience: 'b2b', b2b_split_pct: null }], bm).rows[0].forecast;
-  approx(fcB.signups, 0, 'audience b2b: phần B2C = 0');
+  approx(fcB.freemium, 0, 'audience b2b: phần B2C = 0');
   approx(fcB.b2b, 12.5, 'audience b2b: 10.000.000 / 200.000 = 50 Demos x 25% = 12,5 Accounts');
 });
 
 test('PB2B [domain] (b3): Partnership/Event budget-driven — B2C = tiền / cost signup chảy xuống; B2B = tiền / cost per B2B account', () => {
-  const bm = [{ brand_id: 'b1', channel: 'Partner X', group: 'Partnership', direct_budget: true, view_to_visit: null, visit_to_signup: null, signup_to_first: 0.5, first_to_paid: 0.055, cost_per_result: { signup: 50000, b2b_account: 500000 } }];
+  const bm = [{ brand_id: 'b1', channel: 'Partner X', group: 'Partnership', direct_budget: true, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: 0.0275, cost_per_result: { signup: 50000, b2b_account: 500000 } }];
   const rows = [{ id: 'r1', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'Partner X', group: 'Partnership', qty: null, budget: 10000000, audience: 'both', b2b_split_pct: 40 }];
   const fc = domain.forecastFunnel(rows, bm).rows[0].forecast;
-  approx(fc.signups, 120, 'B2C 6.000.000 / 50.000 = 120 Signups');
-  approx(fc.first, 60, 'First = 120 x 50%');
-  approx(fc.paid, 3.3, 'Paid = 60 x 5,5%');
+  approx(fc.freemium, 120, 'B2C 6.000.000 / 50.000 = 120 Freemium');
+  approx(fc.paid, 3.3, 'Paid = 120 x 2,75%');
   approx(fc.b2b, 8, 'B2B 4.000.000 / 500.000 = 8 Accounts');
   // Event thuần B2B: chỉ ra Account, phễu B2C = 0.
   const bmEv = [{ ...bm[0], channel: 'Event X', group: 'Event', cost_per_result: { signup: 50000, b2b_account: 250000 } }];
   const fcEv = domain.forecastFunnel([{ id: 'r2', brand_id: 'b1', segment: 'b2b', month: '2027-01', channel: 'Event X', group: 'Event', qty: null, budget: 5000000, audience: 'b2b' }], bmEv).rows[0].forecast;
   approx(fcEv.b2b, 20, 'Event B2B: 5.000.000 / 250.000 = 20 Accounts');
-  approx(fcEv.signups, 0, 'Event thuần B2B: Signups = 0');
+  approx(fcEv.freemium, 0, 'Event thuần B2B: Freemium = 0');
   // Thiếu cả 2 đơn giá -> forecast null như cơ chế "chưa có đơn giá".
   const bmNone = [{ ...bm[0], cost_per_result: {} }];
   assert.equal(domain.forecastFunnel(rows, bmNone).rows[0].forecast, null, 'Partnership chưa có đơn giá nào -> forecast null');
   // Dòng CONTENT có qty thuộc nhóm Event KHÔNG bị phân loại lại:
   // vẫn tính theo qty x output như content thường (khóa phạm vi).
-  const bmContent = [{ brand_id: 'b1', channel: 'B2B Event', group: 'Event', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, direct_budget: false, cost_per_result: { signup: 1, b2b_account: 1 } }];
+  const bmContent = [{ brand_id: 'b1', channel: 'B2B Event', group: 'Event', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_freemium: 0.1, freemium_to_paid: 0.1, direct_budget: false, cost_per_result: { signup: 1, b2b_account: 1 } }];
   const fcContent = domain.forecastFunnel([{ id: 'r3', brand_id: 'b1', segment: 'b2b', month: '2027-01', channel: 'B2B Event', group: 'Event', qty: 2, budget: null }], bmContent).rows[0].forecast;
   approx(fcContent.views, 200, 'dòng Event có qty vẫn là content: Views = qty x output');
   approx(fcContent.b2b, 0, 'dòng content không sinh B2B kiểu budget-driven (và benchmark này không có paid_to_b2b)');
 });
 
 test('PB2B [domain] (b4): Objective thuần B2C bị khóa B2B ở engine — audience b2b/both trên Traffic vẫn chạy 100% B2C', () => {
-  const bm = [{ brand_id: 'b1', channel: 'Meta-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, lead_to_account: 0.9, cost_per_result: { traffic: 20000, lead_gen: 1 } }];
+  const bm = [{ brand_id: 'b1', channel: 'Meta-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, lead_to_account: 0.9, cost_per_result: { traffic: 20000, lead_gen: 1 } }];
   const rows = [{ id: 'r1', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'Meta-like', group: 'Paid Media', qty: null, budget: 2000000, objective: 'traffic', audience: 'both', b2b_split_pct: 90 }];
   const fc = domain.forecastFunnel(rows, bm).rows[0].forecast;
   approx(fc.visits, 100, 'Traffic bị khóa B2C: Visits = toàn bộ 2.000.000 / 20.000, không chia B2B');
@@ -150,9 +147,9 @@ test('PB2B [domain] (b4): Objective thuần B2C bị khóa B2B ở engine — au
 test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b churn 4% -> churn 2, EOM 56, Revenue B2B = arppu_b2b x 56; Profit gồm cả B2B; Paid EOM không bị trừ chuyển đổi', () => {
   const out = domain.computeOperatingFinancials({
     months: ['2027-01'],
-    funnelByMonth: { '2027-01': { views: 5000, visits: 900, signups: 300, first: 200, paid: 10, b2b: 8 } },
+    funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 300, paid: 10, b2b: 8 } },
     budgetByMonth: { '2027-01': 1000000 },
-    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, arppu: 50000, cogs_per_user: 10000, fixed_cost: 200000, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000 } },
+    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000 } },
     openingFree: 1000, openingPaid: 100, openingB2b: 50
   });
   const r = out.months[0];
@@ -161,9 +158,13 @@ test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b c
   approx(r.b2bEom, 56, 'B2B EOM = 50 + 8 - 2');
   approx(r.revenueB2b, 100000 * 56, 'Revenue B2B = arppu_b2b x B2B EOM');
   approx(r.cogsB2b, 30000 * 56, 'COGS B2B = cogs_per_b2b_account x B2B EOM');
-  approx(r.paidEom, 108, 'Paid EOM giữ nguyên công thức B2C (100 + 10 - 2) — chuyển đổi B2B KHÔNG trừ khỏi Paid');
-  approx(r.profitAfterCogsMkt, (5400000 + 5600000) - (12480000 + 1680000) - 1000000, 'Profit 1 = (Revenue + Revenue B2B) - (COGS + COGS B2B) - Budget');
-  approx(r.profitAfterCogsFixedMkt, (5400000 + 5600000) - (12480000 + 1680000) - 1000000 - 200000, 'Profit 2 trừ thêm fixed cost');
+  // LOẠI 3 — tính lại theo công thức tài chính MỚI (tháng đầu, churn x0,5 trên đầu kỳ + dòng vào):
+  //   Free churn = (1.000 + 300) x 5% x 0,5 = 32,5; Free EOM = 1.000 + 300 - 10 - 32,5 = 1.257,5
+  //   Paid churn = (100 + 10) x 2% x 0,5 = 1,1; Paid EOM = 100 + 10 - 1,1 = 108,9
+  //   Revenue B2C = 50.000 x 108,9 = 5.445.000; COGS B2C = 10.000 x 1.257,5 + 10.000 x 108,9 = 13.664.000
+  approx(r.paidEom, 108.9, 'Paid EOM theo công thức MỚI (100 + 10 - 1,1) — chuyển đổi B2B KHÔNG trừ khỏi Paid');
+  approx(r.profitAfterCogsMkt, (5445000 + 5600000) - (13664000 + 1680000) - 1000000, 'Profit 1 = (Revenue + Revenue B2B) - (COGS + COGS B2B) - Budget');
+  approx(r.profitAfterCogsFixedMkt, (5445000 + 5600000) - (13664000 + 1680000) - 1000000 - 200000, 'Profit 2 trừ thêm fixed cost');
   assert.equal(out.totals.b2bEom, 56, 'Tổng B2B EOM = giá trị tháng cuối (dòng tồn)');
   approx(out.totals.newB2b, 8, 'Tổng New B2B Accounts cộng dồn (dòng flow)');
   assert.deepEqual(out.missingB2b, { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false });
@@ -172,20 +173,23 @@ test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b c
 test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ đầu vào B2B nào thì Revenue B2B / COGS B2B = 0 và Profit KHÔNG hiện "—" oan; thiếu arppu_b2b KHI CÓ account thì mới null', () => {
   const base = {
     months: ['2027-01'],
-    funnelByMonth: { '2027-01': { views: 0, visits: 0, signups: 0, first: 200, paid: 10, b2b: 0 } },
+    funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 0, paid: 10, b2b: 0 } },
     budgetByMonth: { '2027-01': 1000000 },
-    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, arppu: 50000, cogs_per_user: 10000, fixed_cost: 200000 } },
+    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000 } },
     openingFree: 1000, openingPaid: 100
   };
   const out = domain.computeOperatingFinancials(base);
   const r = out.months[0];
   assert.equal(r.b2bEom, 0); assert.equal(r.revenueB2b, 0); assert.equal(r.cogsB2b, 0);
-  approx(r.profitAfterCogsFixedMkt, -8280000, 'Profit bằng đúng ca B2C thuần khi không có B2B');
+  // LOẠI 3 — tính lại theo công thức MỚI: Free churn = (1.000 + 0) x 5% x 0,5 = 25 -> Free EOM 965;
+  // Paid churn = (100 + 10) x 2% x 0,5 = 1,1 -> Paid EOM 108,9; Revenue = 50.000 x 108,9 = 5.445.000;
+  // COGS = 10.000 x 965 + 10.000 x 108,9 = 10.739.000; Profit 2 = 5.445.000 - 10.739.000 - 1.000.000 - 200.000.
+  approx(r.profitAfterCogsFixedMkt, -6494000, 'Profit bằng đúng ca B2C thuần (công thức MỚI) khi không có B2B');
   assert.deepEqual(out.missingB2b, { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false }, 'không hoạt động B2B thì không báo thiếu đầu vào B2B');
   // Có account mới + opening_b2b nhưng thiếu arppu_b2b -> Revenue B2B null, Profit null, missingB2b.arppu_b2b = true.
   const out2 = domain.computeOperatingFinancials({
     ...base,
-    funnelByMonth: { '2027-01': { views: 0, visits: 0, signups: 0, first: 200, paid: 10, b2b: 8 } },
+    funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 0, paid: 10, b2b: 8 } },
     inputsByMonth: { '2027-01': { ...base.inputsByMonth['2027-01'], b2b_churn_rate: 0.04, cogs_per_b2b_account: 30000 } },
     openingB2b: 50
   });
@@ -196,7 +200,7 @@ test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ
   // Có account mới nhưng thiếu opening_b2b -> chuỗi B2B đứt (null), missingB2b.opening_b2b = true.
   const out3 = domain.computeOperatingFinancials({
     ...base,
-    funnelByMonth: { '2027-01': { views: 0, visits: 0, signups: 0, first: 200, paid: 10, b2b: 8 } },
+    funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 0, paid: 10, b2b: 8 } },
     inputsByMonth: { '2027-01': { ...base.inputsByMonth['2027-01'], b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000 } }
   });
   assert.equal(out3.months[0].b2bEom, null);
@@ -223,17 +227,19 @@ test('PB2B [domain+demo] (d): HỒI QUY — đầu vào B2B trống thì mọi s
   for (const ch of ['Google Search B2B', 'LinkedIn Ads B2B']) {
     assert.ok(domain.forecastFunnel(lumus.filter((r) => r.channel === ch), demo.benchmarks).rows.every((r) => r.forecast === null), ch + ': chưa có CPL/tỉ lệ -> forecast null như hiện tại');
   }
-  // Ca tài chính cũ: opening Free 1000 / Paid 100, New Free 200, New Paid 10, free churn 5%, paid churn 2%.
+  // Ca tài chính: opening Free 1000 / Paid 100, Free user (Freemium) 300, New Paid 10, free churn 5%, paid churn 2% (số EOM tính lại theo công thức MỚI — xem comment LOẠI 3 dưới).
   const fin = domain.computeOperatingFinancials({
     months: ['2027-01'],
-    funnelByMonth: { '2027-01': { views: 5000, visits: 900, signups: 300, first: 200, paid: 10 } },
+    funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 300, paid: 10 } },
     budgetByMonth: { '2027-01': 1000000 },
-    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, arppu: 50000, cogs_per_user: 10000, fixed_cost: 200000 } },
+    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000 } },
     openingFree: 1000, openingPaid: 100
   });
-  approx(fin.months[0].freeEom, 1140, 'Free EOM ca cũ = 1140');
-  approx(fin.months[0].paidEom, 108, 'Paid EOM ca cũ = 108');
-  assert.deepEqual(fin.missing, { opening: false, paid_churn_rate: false, free_churn_rate: false, arppu: false, cogs_per_user: false, fixed_cost: false }, 'hợp đồng missing B2C giữ nguyên 6 khóa');
+  // LOẠI 3 — tính lại theo công thức MỚI: Free churn = (1.000 + 300) x 5% x 0,5 = 32,5 ->
+  // Free EOM = 1.000 + 300 - 10 - 32,5 = 1.257,5; Paid churn = (100 + 10) x 2% x 0,5 = 1,1 -> Paid EOM = 108,9.
+  approx(fin.months[0].freeEom, 1257.5, 'Free EOM công thức MỚI = 1257,5');
+  approx(fin.months[0].paidEom, 108.9, 'Paid EOM công thức MỚI = 108,9');
+  assert.deepEqual(fin.missing, { opening: false, paid_churn_rate: false, free_churn_rate: false, paid_price_tiers: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false }, 'hợp đồng missing B2C theo key MỚI (paid_price_tiers + cogs tách Free/Paid)');
 });
 
 test('PB2B [demo] seed: audience đúng đặc tả + đầu vào B2B mới để trống (null) — KHÔNG bịa số', () => {
@@ -325,8 +331,8 @@ function makeHarness(rows, phases, benchmarks, assumptions, brands) {
 }
 
 const B2B_BENCH = [
-  { id: 'bm-kol', brand_id: 'b1', segment: null, channel: 'KOL X', group: 'KOL', unit_price: 1000000, output_per_unit: 200, view_to_visit: 1, visit_to_signup: 1, signup_to_first: 1, first_to_paid: 0.05, paid_to_b2b: 0.1, direct_budget: false },
-  { id: 'bm-lead', brand_id: 'b1', segment: 'b2b', channel: 'Ads B2B', group: 'Paid Media', unit_price: null, output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, lead_to_account: 0.2, paid_to_b2b: null, cost_per_result: { lead_gen: 100000 }, direct_budget: true },
+  { id: 'bm-kol', brand_id: 'b1', segment: null, channel: 'KOL X', group: 'KOL', unit_price: 1000000, output_per_unit: 200, view_to_visit: 1, visit_to_freemium: 1, freemium_to_paid: 0.05, paid_to_b2b: 0.1, direct_budget: false },
+  { id: 'bm-lead', brand_id: 'b1', segment: 'b2b', channel: 'Ads B2B', group: 'Paid Media', unit_price: null, output_per_unit: null, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, lead_to_account: 0.2, paid_to_b2b: null, cost_per_result: { lead_gen: 100000 }, direct_budget: true },
 ];
 const B2B_PHASES = [{ id: 'ph-1', brand_id: 'b1', name: 'Phase 1', start_month: '2027-01', end_month: '2027-01', uplift_percent_per_month: 0 }];
 function b2bRows() {
@@ -342,7 +348,7 @@ test('PB2B [app unit]: planningKpiData + bảng KPI thứ 5 "B2B Accounts" — C
   const data = h.planningKpiData(rows, B2B_BENCH, ['2027-01']);
   const kol = data.channels.find((c) => c.channel === 'KOL X');
   const lead = data.channels.find((c) => c.channel === 'Ads B2B');
-  approx(kol.months['2027-01'].b2b, 10 * 0.1, 'KOL X: Paid 10 (200 x 1 x 1 x 1 x 0,05) x paid_to_b2b 10% = 1');
+  approx(kol.months['2027-01'].b2b, 10 * 0.1, 'KOL X: Paid 10 (200 x 1 x 1 x 0,05) x paid_to_b2b 10% = 1');
   approx(lead.months['2027-01'].b2b, 8, 'Ads B2B: 8 Accounts từ phần B2B Lead Gen');
   approx(data.blended.months['2027-01'].b2b, 9, 'Tất cả tháng = 1 + 8');
   approx(data.blended.totals.b2b, 9, 'Tất cả cả kỳ = 9');
@@ -492,7 +498,7 @@ test('PB2B [app unit]: savePhaseViews — lưu views_per_unit vào phase_assumpt
 
 test('PB2B [app unit]: bảng tài chính Theo tháng có đủ hàng B2B và tính đúng ca (c) qua đường app — New B2B Accounts / B2B churn / B2B EOM / Revenue B2B / COGS B2B', () => {
   const rows = b2bRows();
-  const phases = [{ ...B2B_PHASES[0], paid_churn_rate: 0.02, free_churn_rate: 0.05, arppu: 50000, cogs_per_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000, opening_b2b: 50 }];
+  const phases = [{ ...B2B_PHASES[0], paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000, opening_b2b: 50 }];
   const { h, UI } = makeHarness(rows, phases, B2B_BENCH, []);
   UI.planningOpeningPhaseIds = { 'ph-1': true };
   const data = h.planningOperatingData(rows, B2B_BENCH, ['2027-01']);

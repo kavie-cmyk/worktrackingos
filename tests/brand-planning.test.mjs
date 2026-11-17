@@ -55,11 +55,11 @@ test('BP [demo]: benchmarks KOL đúng số 03 Inputs; Paid Ads là direct budge
   assert.equal(byChannel['KOL Expert'].unit_price, 30000000);
   assert.equal(byChannel['KOL Expert'].output_per_unit, 25000);
   approx(byChannel['KOL Expert'].view_to_visit, 0.005, 'expert v2v');
-  // Chuỗi hạ nguồn dùng chung trong file nguồn cho cả 3 KOL.
+  // Chuỗi hạ nguồn dùng chung trong file nguồn cho cả 3 KOL (key MỚI:
+  // visit_to_freemium 0,09; freemium_to_paid 0,0275 = 0,5 x 0,055 gộp).
   for (const ch of ['KOL Nano', 'KOL Micro', 'KOL Expert']) {
-    approx(byChannel[ch].visit_to_signup, 0.09, `${ch} v2s`);
-    approx(byChannel[ch].signup_to_first, 0.5, `${ch} s2f`);
-    approx(byChannel[ch].first_to_paid, 0.055, `${ch} f2p`);
+    approx(byChannel[ch].visit_to_freemium, 0.09, `${ch} v2f`);
+    approx(byChannel[ch].freemium_to_paid, 0.0275, `${ch} f2p`);
     assert.equal(byChannel[ch].brand_id, 'brand-lumus-ai');
   }
   for (const ch of ['Meta Ads', 'TikTok Ads']) {
@@ -75,7 +75,7 @@ test('BP [demo]: benchmarks KOL đúng số 03 Inputs; Paid Ads là direct budge
   // có CPL / Cost-Demo).
   assert.equal(byChannel['Meta Ads'].cost_per_result.traffic, 20000);
   approx(byChannel['Meta Ads'].cost_per_result.signup, 20000 / 0.09, 'Meta cost/signup suy từ chuỗi');
-  approx(byChannel['Meta Ads'].cost_per_result.remarketing, 20000 / (0.09 * 0.5 * 0.055), 'Meta CAC suy từ chuỗi');
+  approx(byChannel['Meta Ads'].cost_per_result.remarketing, 20000 / (0.09 * 0.0275), 'Meta CAC suy từ chuỗi');
   assert.equal(byChannel['Meta Ads'].cost_per_result.awareness, null);
   assert.equal(byChannel['TikTok Ads'].cost_per_result.traffic, 22000);
   approx(byChannel['TikTok Ads'].cost_per_result.signup, 22000 / 0.09, 'TikTok cost/signup suy từ chuỗi');
@@ -163,12 +163,11 @@ test('BP [domain]: forecastFunnel CA SỐ NEO — KOL Nano 2027-01', () => {
   assert.ok(row.forecast, 'phải có forecast');
   approx(row.forecast.views, 16000, 'views');       // 4 x 4000
   approx(row.forecast.visits, 48, 'visits');        // x 0,003
-  approx(row.forecast.signups, 4.32, 'signups');    // x 0,09
-  approx(row.forecast.first, 2.16, 'first');        // x 0,5
-  approx(row.forecast.paid, 0.1188, 'paid');        // x 0,055
+  approx(row.forecast.freemium, 4.32, 'freemium');  // x 0,09
+  approx(row.forecast.paid, 0.1188, 'paid');        // freemium x 0,0275
   approx(f.byMonth['2027-01'].views, 16000, 'byMonth views');
   approx(f.totals.paid, 0.1188, 'totals paid');
-  assert.deepEqual(f.steps, ['views', 'visits', 'signups', 'first', 'paid']);
+  assert.deepEqual(f.steps, ['views', 'visits', 'freemium', 'paid']);
 });
 
 test('BP [domain]: forecastFunnel toàn năm — tổng views KOL khớp cộng tay; byMonth đủ 12', () => {
@@ -202,10 +201,10 @@ test('BP [domain]: forecastFunnel — channel không benchmark -> forecast null,
   approx(trafficRow.forecast.visits, 273, 'Meta T1 Traffic visits = 5.460.000 / 20.000');
   assert.equal(f2.rows.find((r) => r.objective === 'awareness').forecast, null, 'Awareness chưa có đơn giá -> null');
   // Direct budget THIẾU cost_per_result -> vẫn null (không bịa số).
-  const fNoCost = domain.forecastFunnel(meta, [{ brand_id: 'brand-lumus-ai', channel: 'Meta Ads', direct_budget: true, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055 }]);
+  const fNoCost = domain.forecastFunnel(meta, [{ brand_id: 'brand-lumus-ai', channel: 'Meta Ads', direct_budget: true, visit_to_freemium: 0.09, freemium_to_paid: 0.0275 }]);
   assert.ok(fNoCost.rows.every((r) => r.forecast === null), 'thiếu cost_per_result thì mọi dòng Paid đều null');
   // Benchmark lạ không khớp brand -> null.
-  const f3 = domain.forecastFunnel([nanoJan], [{ brand_id: 'brand-khac', channel: 'KOL Nano', unit_price: 1, output_per_unit: 1, view_to_visit: 1, visit_to_signup: 1, signup_to_first: 1, first_to_paid: 1 }]);
+  const f3 = domain.forecastFunnel([nanoJan], [{ brand_id: 'brand-khac', channel: 'KOL Nano', unit_price: 1, output_per_unit: 1, view_to_visit: 1, visit_to_freemium: 1, freemium_to_paid: 1 }]);
   assert.equal(f3.rows[0].forecast, null);
 });
 

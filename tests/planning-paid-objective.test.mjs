@@ -19,12 +19,10 @@
 // BẢNG DELTA Paid cũ (cơ chế traffic_share, 7015b32) -> mới (Objective),
 // tính tay độc lập từ ngân sách từng Objective:
 //   Meta Ads/năm:   Visits 16.380 -> 6.415,5 (Traffic 128.310.000đ/20.000đ)
-//                   Signups 1.474,2 -> 1.732,185
-//                   First 737,1 -> 866,0925
+//                   Freemium 1.474,2 -> 1.732,185 (tầng Freemium = Signups cũ)
 //                   Paid 40,5405 -> 57,7702125 (gồm Remarketing qua CAC)
 //   TikTok Ads/năm: Visits 5.790,909… -> 2.523,1818… (55.510.000đ/22.000đ)
-//                   Signups 521,1818… -> 524,9045…
-//                   First 260,5909… -> 262,4523…
+//                   Freemium 521,1818… -> 524,9045…
 //                   Paid 14,3325 -> 14,434875
 //   Ngân sách năm:  Meta 546.000.000đ / TikTok 182.000.000đ KHÔNG đổi.
 // LƯU Ý chênh lệch với con số ví dụ ở điểm 5 của đặc tả (Traffic Meta
@@ -65,8 +63,8 @@ const MONTHS = Array.from({ length: 12 }, (_, i) => '2027-' + String(i + 1).padS
 // ---------------------------------------------------------------- catalog
 test('PPO [domain]: catalog Objective chuẩn + catalog theo Channel đúng đặc tả', () => {
   assert.deepEqual(domain.PAID_OBJECTIVES.map((o) => [o.key, o.tier]), [
-    ['awareness', 'views'], ['traffic', 'visits'], ['signup', 'signups'],
-    ['remarketing', 'paid'], ['lead_gen', 'signups'], ['demo', 'first']
+    ['awareness', 'views'], ['traffic', 'visits'], ['signup', 'freemium'],
+    ['remarketing', 'paid'], ['lead_gen', 'freemium'], ['demo', 'freemium']
   ]);
   assert.deepEqual(domain.PAID_CHANNEL_OBJECTIVES['Meta Ads'], ['awareness', 'traffic', 'signup', 'remarketing']);
   assert.deepEqual(domain.PAID_CHANNEL_OBJECTIVES['TikTok Ads'], ['awareness', 'traffic', 'signup'], 'TikTok không có Remarketing');
@@ -123,16 +121,14 @@ test('PPO [seed]: Google Search B2B + LinkedIn Ads B2B — ngân sách phase chi
 });
 
 // ---------------------------------------------------------------- forecast ca neo
-test('PPO [domain]: ca neo tính tay Meta T1 — Traffic: Visits 273 -> Signups 24,57 -> First 12,285 -> Paid 0,675675; Signup: Signups 14,742 -> First 7,371 -> Paid 0,405405; tổng Paid T1 = 1,08108', () => {
+test('PPO [domain]: ca neo tính tay Meta T1 — Traffic: Visits 273 -> Freemium 24,57 -> Paid 0,675675; Signup: Freemium 14,742 -> Paid 0,405405; tổng Paid T1 = 1,08108', () => {
   const rows = lumus.filter((r) => r.channel === 'Meta Ads' && r.month === '2027-01');
   const f = domain.forecastFunnel(rows, demo.benchmarks);
   const byObj = Object.fromEntries(f.rows.map((r) => [r.objective, r.forecast]));
   approx(byObj.traffic.visits, 273, 'Traffic visits = 5.460.000 / 20.000');
-  approx(byObj.traffic.signups, 24.57, 'Traffic signups');
-  approx(byObj.traffic.first, 12.285, 'Traffic first');
+  approx(byObj.traffic.freemium, 24.57, 'Traffic freemium');
   approx(byObj.traffic.paid, 0.675675, 'Traffic paid');
-  approx(byObj.signup.signups, 14.742, 'Signup signups = 3.276.000 / (20.000 / 0,09)');
-  approx(byObj.signup.first, 7.371, 'Signup first');
+  approx(byObj.signup.freemium, 14.742, 'Signup freemium = 3.276.000 / (20.000 / 0,09)');
   approx(byObj.signup.paid, 0.405405, 'Signup paid');
   approx(f.totals.paid, 1.08108, 'Tổng Paid Meta T1 (Remarketing T1 = 0đ, Awareness chưa có đơn giá)');
   // KHÔNG suy ngược: dòng Signup không tạo Visits/Views; dòng Traffic không tạo Views.
@@ -146,23 +142,21 @@ test('PPO [domain]: Remarketing đặt kết quả TẠI tầng Paid (Meta T10: 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].budget, 20092800, 'Phase 4 Remarketing 20% x 100.464.000');
   const fc = domain.forecastFunnel(rows, demo.benchmarks).rows[0].forecast;
-  approx(fc.paid, 20092800 / (20000 / (0.09 * 0.5 * 0.055)), 'Paid = ngân sách / CAC suy từ chuỗi');
+  approx(fc.paid, 20092800 / (20000 / (0.09 * 0.0275)), 'Paid = ngân sách / CAC suy từ chuỗi');
   approx(fc.paid, 2.486484, 'Paid Remarketing T10');
-  assert.equal(fc.views + fc.visits + fc.signups + fc.first, 0, 'không suy ngược lên tầng trên');
+  assert.equal(fc.views + fc.visits + fc.freemium, 0, 'không suy ngược lên tầng trên');
 });
 
-test('PPO [domain]: bảng delta năm cũ -> mới (Meta + TikTok: Visits/Signups/First/Paid) khoá bằng engine', () => {
+test('PPO [domain]: bảng delta năm cũ -> mới (Meta + TikTok: Visits/Freemium/Paid) khoá bằng engine', () => {
   const meta = domain.forecastFunnel(lumus.filter((r) => r.channel === 'Meta Ads'), demo.benchmarks).totals;
-  // Cũ (traffic_share): visits 16.380 / signups 1.474,2 / first 737,1 / paid 40,5405.
+  // Cũ (traffic_share): visits 16.380 / signups 1.474,2 / paid 40,5405.
   approx(meta.visits, 6415.5, 'Meta visits mới = 128.310.000 / 20.000');
-  approx(meta.signups, 1732.185, 'Meta signups mới');
-  approx(meta.first, 866.0925, 'Meta first mới');
+  approx(meta.freemium, 1732.185, 'Meta freemium mới (= Signups cũ)');
   approx(meta.paid, 57.7702125, 'Meta paid mới');
   const tik = domain.forecastFunnel(lumus.filter((r) => r.channel === 'TikTok Ads'), demo.benchmarks).totals;
-  // Cũ: visits 5.790,909… / signups 521,1818… / first 260,5909… / paid 14,3325.
+  // Cũ: visits 5.790,909… / signups 521,1818… / paid 14,3325.
   approx(tik.visits, 55510000 / 22000, 'TikTok visits mới');
-  approx(tik.signups, 524.9045454545455, 'TikTok signups mới');
-  approx(tik.first, 262.4522727272727, 'TikTok first mới');
+  approx(tik.freemium, 524.9045454545455, 'TikTok freemium mới (= Signups cũ)');
   approx(tik.paid, 14.434875, 'TikTok paid mới');
 });
 
@@ -182,14 +176,13 @@ test('PPO [domain]: Objective thiếu đơn giá — đóng góp 0 chỉ số, n
   }
 });
 
-test('PPO [domain]: thiếu tỉ lệ hạ nguồn thì chuỗi DỪNG tại đó, không bịa số (Traffic có đơn giá nhưng visit_to_signup = null -> chỉ Visits, Signups/First/Paid = 0)', () => {
-  const bm = [{ brand_id: 'b1', channel: 'Ads X', direct_budget: true, view_to_visit: null, visit_to_signup: null, signup_to_first: 0.5, first_to_paid: 0.055, cost_per_result: { traffic: 10000 } }];
+test('PPO [domain]: thiếu tỉ lệ hạ nguồn thì chuỗi DỪNG tại đó, không bịa số (Traffic có đơn giá nhưng visit_to_freemium = null -> chỉ Visits, Freemium/Paid = 0)', () => {
+  const bm = [{ brand_id: 'b1', channel: 'Ads X', direct_budget: true, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: 0.0275, cost_per_result: { traffic: 10000 } }];
   const rows = [{ id: 'r1', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'Ads X', group: 'Paid Media', qty: null, budget: 100000, objective: 'traffic' }];
   const fc = domain.forecastFunnel(rows, bm).rows[0].forecast;
   assert.ok(fc, 'có đơn giá ở tầng của Objective thì forecast tồn tại');
   approx(fc.visits, 10, 'Visits = 100.000 / 10.000');
-  assert.equal(fc.signups, 0, 'thiếu visit_to_signup -> chuỗi dừng, Signups = 0');
-  assert.equal(fc.first, 0);
+  assert.equal(fc.freemium, 0, 'thiếu visit_to_freemium -> chuỗi dừng, Freemium = 0');
   assert.equal(fc.paid, 0);
   // Dòng Paid KHÔNG có objective -> forecast null (không tự gán Objective).
   const noObj = domain.forecastFunnel([{ ...rows[0], id: 'r2', objective: undefined }], [{ ...bm[0], cost_per_result: { traffic: 10000 } }]);
@@ -201,11 +194,10 @@ test('PPO [domain]: uplift phase áp vào tỉ lệ hạ nguồn của Objective
   const ctx = { phases: demo.phases.filter((p) => p.brand_id && p.start_month), phaseAssumptions: demo.phase_assumptions };
   const noCtx = domain.forecastFunnel(rows, demo.benchmarks).rows[0].forecast;
   approx(noCtx.visits, 1310.4, 'visits không đổi bởi uplift');
-  approx(noCtx.signups, 117.936, 'signups không uplift = visits x 0,09');
+  approx(noCtx.freemium, 117.936, 'freemium không uplift = visits x 0,09');
   const withCtx = domain.forecastFunnel(rows, demo.benchmarks, ctx).rows[0].forecast;
   approx(withCtx.visits, 1310.4, 'visits vẫn không đổi');
-  approx(withCtx.signups, 1310.4 * 0.09 * 1.05, 'signups uplift n=1');
-  approx(withCtx.first, 1310.4 * 0.09 * 1.05 * 0.5 * 1.05, 'first uplift luỹ kế theo tháng');
+  approx(withCtx.freemium, 1310.4 * 0.09 * 1.05, 'freemium uplift n=1');
 });
 
 test('PPO [gỡ cơ chế cũ]: engine + app không còn dùng traffic_share/cost_per_visit trong tính toán; benchmark demo không còn 2 field đó', () => {
