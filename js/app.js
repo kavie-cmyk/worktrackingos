@@ -163,6 +163,10 @@
     planningYear: 2027,
     planningChannel: null,
     planningChannelGroup: null,
+    // Thêm dòng Planning Theo tháng: form đang mở hay không + Brand đang
+    // chọn TRONG form (để nạp lại danh sách Channel/Nhóm theo Brand).
+    planningAddOpen: false,
+    planningAddBrand: null,
     // Phase + Uplift (bổ sung): chế độ xem Planning 'month' | 'phase' và
     // bộ lọc Phase của view KPI (id phase hoặc 'all'; chỉ áp khi đang
     // chọn đúng 1 Brand — xem viewKpi).
@@ -857,6 +861,54 @@
     var first = prices[0];
     if (prices.some(function (p) { return p !== first; })) return { value: null, source: 'mixed' };
     return { value: first, source: qtyRows.some(planRowHasManualUnitPrice) ? 'manual' : 'benchmark' };
+  }
+  // --- Planning Theo tháng: helper Thêm dòng (THUẦN, không UI/Store) ---
+  // Mọi Channel "hiện có" trong hệ thống: từ plan_rows của mọi Brand +
+  // từ benchmarks, khử trùng, giữ thứ tự gặp đầu tiên.
+  function planningExistingChannels() {
+    var seen = {}, out = [];
+    function push(ch) { var k = String(ch || ''); if (k && !seen[k]) { seen[k] = true; out.push(k); } }
+    planRowsList().forEach(function (r) { push(r && r.channel); });
+    benchmarksList().forEach(function (b) { push(b && b.channel); });
+    return out;
+  }
+  // Channel đã có dòng trong LƯỚI của Brand ở năm đang xem (mọi segment —
+  // lưới gom Channel × Group không tách segment) -> không cho thêm trùng.
+  function planningBrandGridChannels(brandId, year) {
+    var yPrefix = String(year) + '-';
+    var seen = {}, out = [];
+    planRowsList().forEach(function (r) {
+      if (!r || String(recordBrandId(r) || '') !== String(brandId)) return;
+      if (planRowMonth(r).indexOf(yPrefix) !== 0) return;
+      var k = String(r.channel || '');
+      if (k && !seen[k]) { seen[k] = true; out.push(k); }
+    });
+    return out;
+  }
+  // Các Nhóm đang có trong lưới của Brand (mọi năm — nhóm là thuộc tính
+  // tổ chức của Brand, không theo năm).
+  function planningBrandGroups(brandId) {
+    var seen = {}, out = [];
+    planRowsList().forEach(function (r) {
+      if (!r || String(recordBrandId(r) || '') !== String(brandId)) return;
+      var g = planRowGroup(r);
+      if (!seen[g]) { seen[g] = true; out.push(g); }
+    });
+    return out;
+  }
+  // Phase gắn cho dòng plan mới tạo ở tháng `month` của Brand: khớp Brand
+  // + tháng nằm trong khoảng phase (ĐÚNG cơ chế các đường tạo dòng hiện
+  // tại dùng — savePlanningMonthQty / savePlanningMonthUnitPrice). Không
+  // phase nào khớp -> null; khi đó phaseRowsFor vẫn tự suy theo Brand +
+  // khoảng tháng ở chế độ Theo phase nếu tháng thuộc một phase.
+  function planningPhaseIdForNewRow(brandId, month) {
+    var found = null;
+    brandPhasesList().forEach(function (p) {
+      if (found) return;
+      if (brandId && String(recordBrandId(p) || '') !== String(brandId)) return;
+      if (phaseMonths(p).indexOf(String(month)) !== -1) found = p.id;
+    });
+    return found;
   }
   // Parse Đơn giá nhập ở bảng chi tiết: chỉ số nguyên >= 0 (VNĐ);
   // còn lại (chữ, âm, thập phân) -> null để handler chặn lưu và báo
@@ -3165,6 +3217,52 @@
   }
 
   // ---------- Planning (Brand + Planning, bản bấm thử) ----------
+  // Nút + form "Thêm dòng" của chế độ Theo tháng. Brand trong form: mặc
+  // định = bộ lọc Brand hiện tại (UI.planningAddBrand ghi đè khi người
+  // dùng đổi select Brand trong form — change handler render lại để nạp
+  // danh sách Channel/Nhóm theo Brand đã chọn); bộ lọc đang "Tất cả" và
+  // chưa chọn Brand trong form -> select Brand để trống, bắt chọn.
+  // Channel: select kênh hiện có mà Brand CHƯA có trong lưới năm đang
+  // xem, HOẶC ô nhập tên kênh mới (ô nhập thắng khi có chữ). Nhóm cũng
+  // vậy: select nhóm đang có của Brand hoặc nhập mới (ô nhập thắng).
+  function planningAddRowHtml(year) {
+    var html = '<p class="planning-add-row-bar" data-planning-add-row-bar="1"><button type="button" class="btn small" data-action="planning-add-row-toggle" aria-expanded="' + (UI.planningAddOpen ? 'true' : 'false') + '">+ Thêm dòng</button> <span class="sub">Thêm một dòng Channel mới vào lưới Planning Theo tháng của năm ' + esc(year) + '.</span></p>';
+    if (!UI.planningAddOpen) return html;
+    var editable = planningInputsEditable();
+    var disAttr = editable ? '' : ' disabled';
+    var selBrand = UI.planningAddBrand || (UI.brandFilter && UI.brandFilter !== 'all' ? UI.brandFilter : '');
+    var brands = brandsList();
+    var brandOpts = (selBrand ? '' : '<option value="" selected>— Chọn Brand —</option>') + brands.map(function (b) {
+      return '<option value="' + esc(b.id) + '"' + (String(selBrand) === String(b.id) ? ' selected' : '') + '>' + esc(b.name || b.id) + '</option>';
+    }).join('');
+    var inGrid = selBrand ? planningBrandGridChannels(selBrand, year) : [];
+    var availChannels = planningExistingChannels().filter(function (ch) { return inGrid.indexOf(ch) === -1; });
+    var chOpts = '<option value="">— Chọn Channel có sẵn —</option>' + availChannels.map(function (ch) { return '<option value="' + esc(ch) + '">' + esc(ch) + '</option>'; }).join('');
+    var groups = selBrand ? planningBrandGroups(selBrand) : [];
+    var gOpts = '<option value="">— Chọn Nhóm có sẵn —</option>' + groups.map(function (g) { return '<option value="' + esc(g) + '">' + esc(g) + '</option>'; }).join('');
+    var defSeg = (UI.segmentFilter === 'b2c' || UI.segmentFilter === 'b2b') ? UI.segmentFilter : 'b2c';
+    var segOpts = [['b2c', 'B2C'], ['b2b', 'B2B']].map(function (p) { return '<option value="' + p[0] + '"' + (defSeg === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('');
+    html += '<div class="panel" data-planning-add-form-panel="1"><h3>Thêm dòng Planning — năm ' + esc(year) + '</h3>';
+    if (Store.mode !== 'demo') {
+      html += '<div class="notice warn" data-planning-add-locked="1">Đang ở chế độ dữ liệu thật: plan_rows/benchmarks chưa có bảng dữ liệu nên chưa thêm dòng được. Bật chế độ demo ở Thiết lập để bấm thử.</div>';
+    } else if (!canEdit()) {
+      html += '<div class="notice info" data-planning-add-locked="1">Vai trò hiện tại chỉ xem nên không thêm dòng Planning được.</div>';
+    } else {
+      html += '<p class="sub">Dòng mới được tạo với Số lượng 0 ở tháng 1/' + esc(year) + ' — sau khi thêm, bấm tên Channel trong lưới để mở bảng chi tiết và sửa Số lượng/Đơn giá từng tháng. Nếu nhập Đơn giá ban đầu và Brand × Channel chưa có Benchmark, hệ thống tạo Benchmark chỉ gồm đơn giá này (các tỉ lệ phễu để trống nên Forecast của kênh mới sẽ báo chưa tính được cho tới khi có tỉ lệ).</p>';
+    }
+    html += '<form class="inline" id="planning-add-row-form" data-year="' + esc(year) + '">' +
+      '<label>Brand<select name="brandId" data-action-change="planning-add-brand" aria-label="Brand của dòng mới"' + disAttr + '>' + brandOpts + '</select></label>' +
+      '<label>Channel có sẵn<select name="channelExisting" aria-label="Chọn Channel có sẵn"' + disAttr + '>' + chOpts + '</select></label>' +
+      '<label>hoặc Channel mới<input type="text" name="channelNew" placeholder="vd: Google Ads" aria-label="Nhập tên Channel mới"' + disAttr + '></label>' +
+      '<label>Nhóm có sẵn<select name="groupExisting" aria-label="Chọn Nhóm có sẵn"' + disAttr + '>' + gOpts + '</select></label>' +
+      '<label>hoặc Nhóm mới<input type="text" name="groupNew" placeholder="vd: Paid Media" aria-label="Nhập tên Nhóm mới"' + disAttr + '></label>' +
+      '<label>Segment<select name="segment" aria-label="Segment của dòng mới"' + disAttr + '>' + segOpts + '</select></label>' +
+      '<label>Đơn giá ban đầu (VNĐ, tuỳ chọn)<input type="number" name="unitPrice" step="1" min="0" placeholder="Để trống = chưa đặt" aria-label="Đơn giá ban đầu"' + disAttr + '></label>' +
+      '<button class="btn" type="submit"' + disAttr + '>Thêm dòng</button> ' +
+      '<button class="btn secondary" type="button" data-action="planning-add-row-toggle">Đóng form</button>' +
+      '</form></div>';
+    return html;
+  }
   function viewPlanning() {
     var year = UI.planningYear || 2027;
     var allRows = filteredPlanRows();
@@ -3194,6 +3292,9 @@
     html += '<p class="planning-mode-toggle" data-planning-mode-toggle="1"><span class="sub">Chế độ xem:</span> ' +
       '<button type="button" class="btn small ' + (mode === 'month' ? '' : 'secondary') + '" data-action="planning-mode" data-id="month">Theo tháng</button> ' +
       '<button type="button" class="btn small ' + (mode === 'phase' ? '' : 'secondary') + '" data-action="planning-mode" data-id="phase">Theo phase</button></p>';
+    // Thêm dòng chỉ thuộc chế độ Theo tháng — hiện cả khi lưới đang rỗng
+    // theo năm/bộ lọc để vẫn thêm được dòng đầu tiên cho năm đó.
+    if (mode === 'month') html += planningAddRowHtml(year);
     var allPlanRows = planRowsList();
     var isDemo = false; try { isDemo = Store.mode === 'demo'; } catch (e) { isDemo = false; }
     if (!allPlanRows.length) {
@@ -3704,6 +3805,78 @@
     saveResult(sCreate('plan_rows', objP),
       function () { toast('Đã tạo dòng plan và lưu Đơn giá đặt tay ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Ngân sách sẽ tính theo đơn giá này khi có Số lượng.'); render(); },
       function (msg) { toast('Chưa lưu được Đơn giá: ' + msg); render(); });
+  }
+
+  // Lưu form "Thêm dòng" Planning Theo tháng (guard demo/chỉ-xem như
+  // các ô sửa Planning). input = { brandId, channelExisting, channelNew,
+  // groupExisting, groupNew, segment, unitPriceRaw, year }.
+  // - Channel/Nhóm: ô nhập mới thắng select có sẵn; cả hai đều trống ->
+  //   chặn. Brand bắt buộc (form đã bắt chọn khi bộ lọc là "Tất cả").
+  // - Trùng dòng (Brand × Channel × Nhóm đã có dòng trong lưới năm đang
+  //   xem) -> chặn, mở sẵn bảng chi tiết của dòng đang có.
+  // - Tạo 1 dòng plan_rows: tháng 1 của năm đang xem, qty = 0, budget =
+  //   null, unit_price = null (đơn giá ban đầu KHÔNG ghi lên dòng), gắn
+  //   phase_id theo Brand + tháng như các đường tạo dòng hiện tại. Nhờ
+  //   dòng qty = 0 này, kênh mới hiện ngay trong lưới và bảng chi tiết
+  //   sửa được Số lượng/Đơn giá mọi tháng (tháng chưa có dòng thì cơ chế
+  //   tạo dòng khi sửa áp dụng như kênh cũ).
+  // - Đơn giá ban đầu (tuỳ chọn): tạo Benchmark cho Brand × Channel với
+  //   CHỈ đơn giá (output/tỉ lệ phễu = null, segment = null = dùng
+  //   chung như Benchmark KOL) để đơn giá áp cho mọi tháng qua đường
+  //   Benchmark thường. Benchmark của cặp Brand × Channel ĐÃ tồn tại ->
+  //   KHÔNG ghi đè, giữ giá trị cũ và nói rõ trong toast.
+  // - Sau khi lưu: đóng form, mở bảng chi tiết của dòng mới; nếu bộ lọc
+  //   Brand/Segment toàn cục đang khác Brand/Segment vừa thêm thì chuyển
+  //   bộ lọc theo để dòng mới hiện ngay trong lưới.
+  function savePlanningAddRow(input) {
+    if (!planningMonthSaveGuard()) return;
+    input = input || {};
+    var year = Number(input.year);
+    if (!year || isNaN(year)) { toast('Không xác định được năm Planning để thêm dòng.'); render(); return; }
+    var brandId = input.brandId ? String(input.brandId) : '';
+    var brand = brandId ? brandById(brandId) : null;
+    if (!brand) { toast('Hãy chọn Brand cho dòng mới.'); render(); return; }
+    var channel = String(input.channelNew || '').trim() || String(input.channelExisting || '').trim();
+    if (!channel) { toast('Hãy chọn Channel có sẵn hoặc nhập tên Channel mới.'); render(); return; }
+    var group = String(input.groupNew || '').trim() || String(input.groupExisting || '').trim();
+    if (!group) { toast('Hãy chọn Nhóm có sẵn hoặc nhập tên Nhóm mới.'); render(); return; }
+    var segment = String(input.segment || '').toLowerCase() === 'b2b' ? 'b2b' : 'b2c';
+    var priceRaw = input.unitPriceRaw;
+    var unitPrice = null;
+    if (priceRaw !== '' && priceRaw !== null && priceRaw !== undefined && String(priceRaw).trim() !== '') {
+      unitPrice = parsePlanUnitPrice(priceRaw);
+      if (unitPrice === null) { toast('Đơn giá ban đầu phải là số nguyên từ 0 trở lên.'); render(); return; }
+    }
+    if (planningBrandGridChannels(brandId, year).indexOf(channel) !== -1 &&
+      planRowsList().some(function (r) { return String(recordBrandId(r) || '') === brandId && String(r.channel || '') === channel && planRowGroup(r) === group && planRowMonth(r).indexOf(String(year) + '-') === 0; })) {
+      UI.planningChannel = channel; UI.planningChannelGroup = group;
+      toast('Dòng ' + channel + ' (' + group + ') đã có trong lưới Planning ' + year + ' của Brand này — đã mở bảng chi tiết của dòng đó để sửa.');
+      render(); return;
+    }
+    var month = String(year) + '-01';
+    var obj = { month: month, channel: channel, group: group, qty: 0, budget: null, brand_id: brandId, segment: segment, unit: null };
+    var phaseId = planningPhaseIdForNewRow(brandId, month);
+    if (phaseId) obj.phase_id = phaseId;
+    saveResult(sCreate('plan_rows', obj), function () {
+      UI.planningAddOpen = false;
+      UI.planningAddBrand = null;
+      UI.planningChannel = channel;
+      UI.planningChannelGroup = group;
+      if (UI.brandFilter && UI.brandFilter !== 'all' && String(UI.brandFilter) !== brandId) UI.brandFilter = brandId;
+      if (UI.segmentFilter && UI.segmentFilter !== 'all' && UI.segmentFilter !== segment) UI.segmentFilter = segment;
+      var doneMsg = 'Đã thêm dòng ' + channel + ' vào Planning ' + year + ' của ' + (brand.name || brandId) + ' — bấm tên Channel trong lưới (bảng chi tiết đang mở sẵn) để sửa Số lượng/Đơn giá từng tháng.';
+      if (unitPrice === null) { toast(doneMsg); render(); return; }
+      var existingBm = benchmarkForRow({ brand_id: brandId, channel: channel }, benchmarksList());
+      if (existingBm) {
+        var oldPrice = existingBm.unit_price !== undefined && existingBm.unit_price !== null ? existingBm.unit_price : existingBm.unitPrice;
+        toast(doneMsg + ' Benchmark của ' + channel + ' đã tồn tại nên KHÔNG ghi đè — đơn giá đang áp dụng vẫn là ' + (oldPrice === null || oldPrice === undefined || isNaN(Number(oldPrice)) ? 'chưa đặt' : fmtNum(Number(oldPrice))) + ' (không phải ' + fmtNum(unitPrice) + ' vừa nhập).');
+        render(); return;
+      }
+      var bmObj = { brand_id: brandId, segment: null, channel: channel, group: group, unit_price: unitPrice, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, direct_budget: false, source: 'Thêm dòng Planning — đơn giá ban đầu do người dùng nhập (chỉ đơn giá, chưa có tỉ lệ phễu)' };
+      saveResult(sCreate('benchmarks', bmObj),
+        function () { toast(doneMsg + ' Đã tạo Benchmark ' + fmtNum(unitPrice) + ' cho ' + channel + ' (chỉ đơn giá — chưa có tỉ lệ phễu nên Forecast của kênh này chưa tính được).'); render(); },
+        function (msg) { toast('Đã thêm dòng ' + channel + ' nhưng chưa tạo được Benchmark đơn giá: ' + msg); render(); });
+    }, function (msg) { toast('Chưa thêm được dòng: ' + msg); render(); });
   }
 
   // ---------- Brand Hub ----------
@@ -7334,6 +7507,7 @@
     if (action === 'planning-channel') { var detailSel = planningDetailToggle(UI.planningChannel, UI.planningChannelGroup, t.getAttribute('data-channel'), t.getAttribute('data-group')); UI.planningChannel = detailSel.channel; UI.planningChannelGroup = detailSel.group; render(); }
     if (action === 'planning-channel-close') { UI.planningChannel = null; UI.planningChannelGroup = null; render(); }
     if (action === 'planning-mode') { UI.planningMode = id === 'phase' ? 'phase' : 'month'; render(); }
+    if (action === 'planning-add-row-toggle') { UI.planningAddOpen = !UI.planningAddOpen; render(); }
     if (action === 'brand-detail') { UI.brandDetailId = id; render(); }
     if (action === 'brand-detail-close') { UI.brandDetailId = null; render(); }
     if (action === 'brand-tab') { UI.brandTab = id; render(); }
@@ -7595,6 +7769,7 @@
     if (ctxKind === 'phase-qty') { savePhaseQty(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'planning-month-qty') { savePlanningMonthQty(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-unit-price') { savePlanningMonthUnitPrice(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
+    if (ctxKind === 'planning-add-brand') { UI.planningAddBrand = t.value || null; render(); return; }
     if (ctxKind === 'phase-views') { savePhaseViews(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'phase-rate') { savePhaseRate(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.getAttribute('data-field'), t.value); return; }
     if (t.hasAttribute && t.hasAttribute('data-editor-platform')) {
@@ -7774,6 +7949,14 @@
       return;
     }
     if (f.id === 'planning-year-form') { var py = Number(val('year')); if (py) UI.planningYear = py; render(); return; }
+    if (f.id === 'planning-add-row-form') {
+      savePlanningAddRow({
+        brandId: val('brandId'), channelExisting: val('channelExisting'), channelNew: val('channelNew'),
+        groupExisting: val('groupExisting'), groupNew: val('groupNew'), segment: val('segment'),
+        unitPriceRaw: val('unitPrice'), year: Number(f.getAttribute('data-year'))
+      });
+      return;
+    }
     if (f.id === 'brand-search-form') { UI.brandQuery = String(document.getElementById('brand-query').value || ''); render(); return; }
     if (f.id === 'cal-nav-form') {
       UI.calendarMonth = Math.min(12, Math.max(1, Number(document.getElementById('cal-month').value) || 1)) - 1;
