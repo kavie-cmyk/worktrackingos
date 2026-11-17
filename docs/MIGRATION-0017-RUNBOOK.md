@@ -5,7 +5,7 @@
 > File liên quan:
 > - Migration: `supabase/migrations/0017_brand_planning.sql` (CHỈ viết file ở đợt chuẩn bị — chưa áp)
 > - Seed: `supabase/seed/from-demo-data.sql` (sinh tự động bởi `scripts/generate-seed-from-demo.mjs` từ `js/demo-data.js` — không sửa tay file seed)
-> - Commit gỡ demo: ở branch local `prep/remove-demo-mode`, hash ghi ở mục (c) — **chưa push, tuyệt đối không push trước khi seed xong**.
+> - Commit gỡ demo: commit `0aa7e59` trên branch `prep/remove-demo-mode` — branch này **đã push lên origin** (làm branch riêng) sau khi seed bản cuối đã chốt; commit gỡ demo **chưa lên `feat/marketing-workspace`** — chỉ đưa lên feat tại cổng (c) sau khi (a) + (b) kiểm chứng đạt (cách đưa: xem mục (c)).
 
 ---
 
@@ -22,33 +22,18 @@
 | `phases` | `b2b_churn_rate` | numeric(9,6) — dạng phân số như các churn rate hiện có |
 | `phases` | `arppu_b2b`, `cogs_per_b2b_account`, `opening_b2b` | numeric(18,2) |
 
-`js/demo-data.js` hiện **chưa có** các field này — đợt triển khai mô hình B2B trên demo sẽ bổ sung dữ liệu sau. Ánh xạ store-core đã sẵn sàng từ bây giờ để không rớt field khi dữ liệu tới.
+`js/demo-data.js` **đã có** các field này từ commit `3275bc7` (mô hình B2B bottom-up trên demo); riêng `audience` của 4 dòng Meta Ads Camp 01 (`plan-sava-budget-01/02/03/07`) đã ghi tường minh `'b2c'` ở commit `3545316` (trước đó undefined, hiệu dụng vẫn B2C). Ánh xạ store-core đã sẵn sàng nên seed mang đủ field.
 
 ### CỔNG THỨ TỰ SEED — BẮT BUỘC
 
-File seed hiện tại (`supabase/seed/from-demo-data.sql`) là **SEED NHÁP** — sinh từ demo-data *trước* khi đợt triển khai mô hình B2B trên demo commit. **Không áp bản nháp này.**
+**Cổng này ĐÃ QUA (17/11/2026)** — seed trong repo tại `feat/marketing-workspace` là **SEED BẢN CUỐI**, không phải bản nháp:
 
-Seed bản cuối chỉ được chốt theo đúng thứ tự:
-1. Chờ Miso báo **hash commit của đợt triển khai mô hình B2B trên demo**.
-2. Đối chiếu: `git log -1 --format=%H -- js/demo-data.js` (hoặc HEAD của repo tại thời điểm sinh) phải trùng / chứa hash đó. Chưa trùng → dừng, không sinh seed.
-3. Chạy lại `node scripts/generate-seed-from-demo.mjs` từ đúng demo-data đó.
-4. Chạy `npm test` (test `brand-planning-0017` tự kiểm số INSERT ↔ số dòng demo + 4 số neo theo demo-data mới — số dòng/số neo có thể đã thay đổi sau đợt B2B, lấy số kỳ vọng từ output kiểm chứng của lần sinh cuối).
-5. Chỉ khi đó mới sang bước (a)/(b).
+1. Commit triển khai mô hình B2B trên demo: `3275bc7` (đã ở trên `origin/feat/marketing-workspace`).
+2. demo-data bản cuối: commit `3545316` (bổ sung `audience: 'b2c'` tường minh cho 4 dòng Meta Ads Camp 01; không đổi số liệu).
+3. Seed đã sinh lại từ đúng demo-data đó bằng `node scripts/generate-seed-from-demo.mjs` và commit ở `cdb6f6c`; generator tự kiểm FK nội bộ PASS, số INSERT từng collection khớp số dòng demo (xem bảng kỳ vọng ở mục (b)).
+4. `npm test` tại thời điểm chốt seed: **761/761 xanh**; 4 số neo giữ nguyên (776 / 1.598.700.000đ / 51.539.000đ / 115 task — chi tiết ở mục (b)).
 
----|---|---|
-| `plan_rows` | `audience` (b2c/b2b/both), `b2b_split_pct` | Áp cho các dòng ngân sách của kênh Paid Media/Partnership/Event |
-| `benchmarks` | `paid_to_b2b`, `lead_to_account`, `demo_to_account` | 3 tỉ lệ funnel B2B mới |
-| `benchmarks` | cost per B2B account cho kênh Partnership/Event | Có thể nằm trong map `cost_per_result` |
-| `phases` | `b2b_churn_rate`, `arppu_b2b`, `cogs_per_b2b_account`, `opening_b2b` | Chỉ số B2B riêng theo Phase |
-
-Nhận xét của đợt chuẩn bị (không tự quyết thay danh sách chính thức):
-- `cost_per_result` của `benchmarks` đã là map jsonb theo objective → cost per B2B account nhiều khả năng chỉ cần **thêm khóa trong map** (vd `b2b_account`), không cần thêm cột.
-- `plan_rows` đã có `segment` (b2c/b2b, null = dùng chung) — `audience` dự kiến có thêm giá trị `both`, khác segment ở chỗ ghi tường minh trên từng dòng ngân sách; có cần cả hai hay audience thay segment là quyết định của danh sách chính thức.
-
-Khi có danh sách chính thức, việc cần làm trước khi sang bước (a):
-1. Bổ sung cột vào `supabase/migrations/0017_brand_planning.sql` tại đúng các điểm đã đánh dấu `ĐIỂM BỔ SUNG B2B` (theo từng bảng) + bổ sung cột tương ứng vào `TABLE_COLUMNS`/`FIELD_ALIASES` trong `js/store-core.js` nếu tên app khác tên cột.
-2. Chạy lại `node scripts/generate-seed-from-demo.mjs` để sinh lại seed (cơ chế tự động — không sửa tay).
-3. Chạy `npm test` — suite phải xanh — rồi mới áp.
+Từ đây sang thẳng bước (a)/(b); không sinh lại seed trừ khi demo-data thay đổi (nếu thay đổi: chạy lại generator + `npm test` + commit seed mới trước khi áp).
 
 ---
 
@@ -120,16 +105,18 @@ where conrelid = 'public.phases'::regclass and conname = 'phases_scope_check';
 
 ## (c) Push commit gỡ demo
 
-Chỉ làm sau khi (a) + (b) kiểm chứng đạt. Commit gỡ demo đã chuẩn bị sẵn ở branch local `prep/remove-demo-mode` (tạo từ đỉnh `feat/marketing-workspace` sau khi các commit chuẩn bị đã push), hash: **`__SEED_DEMO_COMMIT_HASH__`** (điền khi bàn giao đợt chuẩn bị — xem báo cáo bàn giao kèm runbook này).
+Chỉ làm sau khi (a) + (b) kiểm chứng đạt. Commit gỡ demo nằm ở branch **`prep/remove-demo-mode`** (đã push lên origin làm branch riêng), hash: **`0aa7e59`** — đúng 1 commit gỡ demo trên đỉnh `feat/marketing-workspace` tại thời điểm chốt (`cdb6f6c`). Tại cổng này, đưa commit đó lên `feat/marketing-workspace` bằng cách push thẳng ref của branch prep sang feat (fast-forward, không merge commit, không cherry-pick tạo hash mới):
 
 ```bash
 cd ~/workspace/worktrackingos
-git checkout prep/remove-demo-mode   # chứa đúng 1 commit gỡ demo trên đỉnh feat/marketing-workspace
-npm test                             # phải xanh toàn bộ trước khi push
+git checkout prep/remove-demo-mode   # chứa đúng 1 commit gỡ demo (0aa7e59) trên đỉnh feat/marketing-workspace
+npm test                             # phải xanh toàn bộ trước khi push (tại 0aa7e59: 755/755)
 git push origin prep/remove-demo-mode:feat/marketing-workspace
 git checkout feat/marketing-workspace
 git pull --ff-only origin feat/marketing-workspace   # đồng bộ về đúng commit vừa push
 ```
+
+Lưu ý: nếu `feat/marketing-workspace` đã có commit mới sau `cdb6f6c` tại thời điểm áp, lệnh push fast-forward ở trên sẽ bị từ chối — khi đó dừng lại, báo điều phối viên để rebase/cherry-pick commit `0aa7e59` lên đỉnh feat mới rồi mới push; không force-push.
 
 Nội dung commit gỡ demo: app khởi động thẳng vào dữ liệu thật (Supabase); bỏ nút "Xem dữ liệu mẫu" ở màn hình đăng nhập, bỏ các nút demo ở Planning/Brand và công tắc demo trong Thiết lập; bỏ toàn bộ đường nạp `js/demo-data.js` vào app (file vẫn ở trong repo vì test còn dùng làm fixture dữ liệu + là nguồn sinh seed).
 
@@ -217,7 +204,9 @@ alter table public.phases drop column if exists brand_id, drop column if exists 
   drop column if exists uplift_percent_per_month, drop column if exists note,
   drop column if exists paid_churn_rate, drop column if exists free_churn_rate, drop column if exists arppu,
   drop column if exists cogs_per_user, drop column if exists fixed_cost,
-  drop column if exists opening_free, drop column if exists opening_paid;
+  drop column if exists opening_free, drop column if exists opening_paid,
+  drop column if exists b2b_churn_rate, drop column if exists arppu_b2b,
+  drop column if exists cogs_per_b2b_account, drop column if exists opening_b2b;
 alter table public.phases drop constraint if exists phases_scope_check;
 alter table public.phases drop constraint if exists phases_segment_check;
 alter table public.phases drop constraint if exists phases_month_format_check;
@@ -230,4 +219,4 @@ alter table public.kpis drop column if exists brand_id, drop column if exists se
 alter table public.budget_lines drop column if exists brand_id, drop column if exists segment;
 ```
 
-3. **Commit gỡ demo khi quay lui**: nếu chưa push theo mục (c) thì không cần làm gì (branch `prep/remove-demo-mode` cứ để local). Nếu **đã push** rồi mới quay lui: tạo commit revert trên `feat/marketing-workspace` (`git revert <hash-gỡ-demo>`) và push — app quay lại có chế độ demo như trước đợt này; không force-push.
+3. **Commit gỡ demo khi quay lui**: branch `prep/remove-demo-mode` đã push lên origin (branch riêng) nhưng nếu commit gỡ demo **chưa lên `feat/marketing-workspace`** theo mục (c) thì không cần làm gì thêm (app trên feat vẫn còn chế độ demo). Nếu **đã đưa lên feat** theo mục (c) rồi mới quay lui: tạo commit revert trên `feat/marketing-workspace` (`git revert 0aa7e59`) và push — app quay lại có chế độ demo như trước đợt này; không force-push.
