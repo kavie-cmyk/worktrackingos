@@ -2139,7 +2139,9 @@
   //             bottom-up): audience 'b2c' | 'b2b' | 'both', b2b_split_pct
   //             là % ngân sách dành cho phần B2B khi audience = 'both'.
   // benchmark: { brand_id, channel, unit_price, output_per_unit,
-  //   view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
+  //   view_to_visit, visit_to_freemium, freemium_to_paid,
+  //   (fallback key CŨ: visit_to_signup cho visit_to_freemium;
+  //   signup_to_first x first_to_paid cho freemium_to_paid),
   //   paid_to_b2b, lead_to_account, demo_to_account,
   //   direct_budget, cost_per_result } — chấp nhận cả khóa camelCase
   //   tương ứng. 3 tỉ lệ B2B (paid_to_b2b = cầu nối Paid User -> B2B
@@ -2154,7 +2156,7 @@
   //   traffic_share ÷ cost_per_visit) ĐÃ GỠ HOÀN TOÀN khỏi engine.
   // Mọi hàm an toàn với rows rỗng/thiếu benchmark: trả 0/null, không throw.
   // =====================================================================
-  var FUNNEL_STEPS = ['views', 'visits', 'signups', 'first', 'paid'];
+  var FUNNEL_STEPS = ['views', 'visits', 'freemium', 'paid'];
 
   // ---------- Paid Media theo mô hình Objective (thay cơ chế cũ) ----------
   // Mỗi Objective có kết quả đặt TẠI tầng của nó, rồi chảy XUỐNG qua tỉ
@@ -2163,10 +2165,10 @@
   var PAID_OBJECTIVES = [
     { key: 'awareness', label: 'Awareness / Reach', tier: 'views', metric: 'Views' },
     { key: 'traffic', label: 'Traffic', tier: 'visits', metric: 'Visits' },
-    { key: 'signup', label: 'Signup Conversion', tier: 'signups', metric: 'Signups' },
+    { key: 'signup', label: 'Signup Conversion', tier: 'freemium', metric: 'Freemium' },
     { key: 'remarketing', label: 'Remarketing', tier: 'paid', metric: 'Paid' },
-    { key: 'lead_gen', label: 'Lead Generation', tier: 'signups', metric: 'Signups' },
-    { key: 'demo', label: 'Demo / Contact', tier: 'first', metric: 'First' }
+    { key: 'lead_gen', label: 'Lead Generation', tier: 'freemium', metric: 'Freemium' },
+    { key: 'demo', label: 'Demo / Contact', tier: 'freemium', metric: 'Freemium' }
   ];
   var PAID_OBJECTIVE_TIER = {};
   PAID_OBJECTIVES.forEach(function (o) { PAID_OBJECTIVE_TIER[o.key] = o.tier; });
@@ -2195,7 +2197,7 @@
   }
   // Đơn giá kết quả (VNĐ/kết quả) của 1 Objective trên benchmark:
   // đọc cost_per_result / costPerResult dạng object theo key objective
-  // (chấp nhận cả key tầng: views/visits/signups/first/paid) hoặc dạng
+  // (chấp nhận cả key tầng: views/visits/freemium/paid) hoặc dạng
   // phẳng cost_per_result_<key> / costPerResult<Key>. Thiếu/null/<=0
   // -> null (objective chưa có đơn giá, không bịa số).
   function _costPerResult(b, objectiveKey) {
@@ -2360,7 +2362,7 @@
   // ---------- Forecast v2: Phase + Uplift (bổ sung 17/11/2026) ----------
   // ctx = { phases: [{id, brand_id, start_month, end_month,
   //   uplift_percent_per_month}], phaseAssumptions: [{phase_id, channel,
-  //   view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
+  //   view_to_visit, visit_to_freemium, freemium_to_paid,
   //   views_per_unit}] } — cả hai đều tuỳ chọn; không truyền ctx thì
   // forecastFunnel giữ nguyên hành vi v1.
 
@@ -2457,8 +2459,15 @@
   }
 
   /**
-   * Forecast funnel: views = qty × output_per_unit → visits → signups →
-   * first → paid theo chuỗi tỉ lệ của benchmark khớp brand+channel.
+   * Forecast funnel: views = qty × output_per_unit → visits → freemium →
+   * paid theo chuỗi tỉ lệ của benchmark khớp brand+channel. Phễu MỚI
+   * (căn chỉnh theo sheet Lumilink1) chỉ còn 2 tỉ lệ chuyển đổi dưới
+   * views: visit_to_freemium (v2f) và freemium_to_paid (f2p). Tỉ lệ
+   * hiệu dụng có FALLBACK key cũ để dữ liệu/benchmark/assumption đời
+   * trước vẫn cho đúng số Paid: v2f = visit_to_freemium ??
+   * visit_to_signup; f2p = freemium_to_paid ?? (signup_to_first x
+   * first_to_paid) — fallback gộp CHỈ có khi đủ CẢ HAI key cũ, thiếu
+   * một trong hai -> f2p = null (chuỗi dừng, không bịa số).
    * Row không có benchmark (hoặc benchmark thiếu output/tỉ lệ, vd Paid Ads
    * direct budget) → forecast = null ở chi tiết dòng, không cộng vào tổng.
    *
@@ -2468,7 +2477,7 @@
    *   ngược lại benchmark. Tỉ lệ hiệu dụng = effectiveRate(tỉ lệ gốc,
    *   phase.uplift_percent_per_month ?? 0, n) với n = số tháng từ
    *   start_month của phase tới tháng của row (tháng đầu phase n = 0).
-   *   Uplift CHỈ áp vào 4 tỉ lệ chuyển đổi — không áp qty/output_per_unit.
+   *   Uplift CHỈ áp vào các tỉ lệ chuyển đổi — không áp qty/output_per_unit.
    * - views_per_unit của assumption(phase, channel) là số Views MỖI BÀI
    *   (đầu phễu trên 1 KOL/content) cho phase×channel đó: row thuộc phase
    *   có assumption.views_per_unit khác null → views của row =
@@ -2481,7 +2490,7 @@
    *   Giá trị đã lưu theo ngữ nghĩa cũ đều là null (seed/demo và
    *   production đều chưa từng đặt) nên đổi ngữ nghĩa không mất dữ liệu.
    * - Channel không benchmark VÀ không assumption đủ tỉ lệ → null như v1.
-   *   Assumption đủ 4 tỉ lệ nhưng không benchmark: chỉ tính được khi có
+   *   Assumption đủ tỉ lệ nhưng không benchmark: chỉ tính được khi có
    *   views_per_unit (để suy views = qty × views_per_unit); thiếu → null.
    * - Paid Media (benchmark direct_budget) — MÔ HÌNH OBJECTIVE: mỗi
    *   dòng Paid mang field `objective`; kết quả của objective đặt TẠI
@@ -2497,8 +2506,8 @@
    *   forecast null cho dòng đó (ngân sách vẫn tính vào tổng ngân sách
    *   qua planBudget, chỉ số đóng góp 0, không bịa số). Cơ chế cũ
    *   (Visits = ngân sách × traffic_share ÷ cost_per_visit) ĐÃ GỠ.
-   * - Trả thêm byPhase: { [phase_id]: { phase_id, views, visits, signups,
-   *   first, paid, rowCount } } cộng từ CÙNG kết quả từng row đã tính
+   * - Trả thêm byPhase: { [phase_id]: { phase_id, views, visits,
+   *   freemium, paid, rowCount } } cộng từ CÙNG kết quả từng row đã tính
    *   (rowCount = số row có forecast thuộc phase); row chi tiết thêm
    *   field phase_id đã suy. Không truyền ctx → không phase object nào
    *   được resolve nên KHÔNG uplift (số liệu y hệt v1); byPhase vẫn gom
@@ -2512,9 +2521,9 @@
     var months = _planMonthsOf(list);
     var byMonth = {};
     months.forEach(function (m) {
-      byMonth[m] = { month: m, views: 0, visits: 0, signups: 0, first: 0, paid: 0, b2b: 0, hasForecast: false };
+      byMonth[m] = { month: m, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, hasForecast: false };
     });
-    var totals = { views: 0, visits: 0, signups: 0, first: 0, paid: 0, b2b: 0 };
+    var totals = { views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0 };
     // Tiền xử lý: resolve phase cho mọi row (views mỗi bài của phase
     // được áp trực tiếp tại từng row ở dưới — không còn bước phân bổ).
     var resolved = list.map(function (r) {
@@ -2538,6 +2547,32 @@
         var av = _assumpField(assumption, snake, camel);
         if (av !== null) return av;
         return b ? _benchField(b, snake, camel) : null;
+      }
+      // Tỉ lệ phễu HIỆU DỤNG (trước uplift) theo phễu MỚI 2 bước dưới
+      // views: v2f = visit_to_freemium ?? visit_to_signup (fallback key
+      // cũ); f2p = freemium_to_paid ?? (signup_to_first x first_to_paid)
+      // — fallback gộp chỉ khi có CẢ HAI key cũ (mỗi key đã qua cơ chế
+      // assumption-thắng-benchmark của baseRate), thiếu một trong hai
+      // -> f2p = null. Áp tại MỌI điểm đọc tỉ lệ của forecastFunnel
+      // (đường content, đường budget-driven/Objective, phase_assumptions
+      // override) để số Paid không đổi khi dữ liệu còn key cũ.
+      function funnelRates() {
+        var v2fNew = baseRate('visit_to_freemium', 'visitToFreemium');
+        var v2f = v2fNew !== null ? v2fNew : baseRate('visit_to_signup', 'visitToSignup');
+        var f2p = baseRate('freemium_to_paid', 'freemiumToPaid');
+        if (f2p === null) {
+          var s2fOld = baseRate('signup_to_first', 'signupToFirst');
+          var f2pOld = baseRate('first_to_paid', 'firstToPaid');
+          if (s2fOld !== null && f2pOld !== null) f2p = s2fOld * f2pOld;
+        }
+        return {
+          v2v: baseRate('view_to_visit', 'viewToVisit'),
+          v2f: v2f,
+          f2p: f2p,
+          p2b: baseRate('paid_to_b2b', 'paidToB2b'),
+          l2a: baseRate('lead_to_account', 'leadToAccount'),
+          d2a: baseRate('demo_to_account', 'demoToAccount')
+        };
       }
       // Uplift của phase áp vào các tỉ lệ chuyển đổi được truyền vào
       // (không áp vào qty/output/ngân sách/visits suy từ ngân sách).
@@ -2565,21 +2600,13 @@
         var objKey = _rowObjective(r);
         base.objective = objKey;
         if (budget === null) return base;
-        var pRates = upliftRates({
-          v2v: baseRate('view_to_visit', 'viewToVisit'),
-          v2s: baseRate('visit_to_signup', 'visitToSignup'),
-          s2f: baseRate('signup_to_first', 'signupToFirst'),
-          f2p: baseRate('first_to_paid', 'firstToPaid'),
-          p2b: baseRate('paid_to_b2b', 'paidToB2b'),
-          l2a: baseRate('lead_to_account', 'leadToAccount'),
-          d2a: baseRate('demo_to_account', 'demoToAccount')
-        });
-        var vals = { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+        var pRates = upliftRates(funnelRates());
+        var vals = { views: 0, visits: 0, freemium: 0, paid: 0 };
         var b2bAcc = 0;
         var computed = false;
         // Chảy XUỐNG từ tầng fromIdx; thiếu tỉ lệ -> dừng chuỗi.
         function flowDown(fromIdx) {
-          var transRates = [pRates.v2v, pRates.v2s, pRates.s2f, pRates.f2p];
+          var transRates = [pRates.v2v, pRates.v2f, pRates.f2p];
           for (var ti = fromIdx; ti < FUNNEL_STEPS.length - 1; ti++) {
             var tr = transRates[ti];
             if (tr === null) break;
@@ -2588,15 +2615,17 @@
         }
         if (_grp0 === 'Partnership' || _grp0 === 'Event') {
           // Partnership/Event (budget-driven, không Objective):
-          // phần B2C -> Signups = tiền_B2C / cost_per_result.signup rồi
-          // chảy xuống; phần B2B -> Accounts = tiền_B2B /
-          // cost_per_result.b2b_account. Thiếu cả 2 đơn giá -> null.
+          // phần B2C -> Freemium = tiền_B2C / cost_per_result.signup
+          // (GIỮ NGUYÊN key đơn giá 'signup' — chỉ tầng đặt kết quả đổi
+          // sang Freemium) rồi chảy xuống Paid bằng f2p; phần B2B ->
+          // Accounts = tiền_B2B / cost_per_result.b2b_account. Thiếu
+          // cả 2 đơn giá -> null.
           var shPE = _audienceShare(r, null);
           var cprSignupPE = _costPerResult(b, 'signup');
           var cprAcctPE = _costPerResult(b, 'b2b_account');
           if (cprSignupPE !== null) {
             computed = true;
-            if (shPE.b2c > 0) { vals.signups = budget * shPE.b2c / cprSignupPE; flowDown(2); }
+            if (shPE.b2c > 0) { vals.freemium = budget * shPE.b2c / cprSignupPE; flowDown(2); }
           }
           if (cprAcctPE !== null) {
             computed = true;
@@ -2611,12 +2640,13 @@
           if (objKey === 'lead_gen' || objKey === 'demo') {
             // Objective có chân B2B: chia ngân sách theo audience.
             // Phần B2C: kết quả = tiền_B2C / đơn giá kết quả, đặt tại
-            // tầng Signups rồi chảy XUỐNG (KHÔNG áp visit_to_signup
-            // ngược). Phần B2B: Leads/Demos = tiền_B2B / đơn giá, rồi
+            // tầng Freemium rồi chảy XUỐNG Paid bằng f2p (KHÔNG áp
+            // visit_to_freemium ngược). Phần B2B: Leads/Demos =
+            // tiền_B2B / đơn giá, rồi
             // Accounts = Leads x lead_to_account (hoặc Demos x
             // demo_to_account); thiếu tỉ lệ -> phần B2B = 0 account.
             var sh = _audienceShare(r, objKey);
-            if (sh.b2c > 0) { vals.signups = budget * sh.b2c / cpr; flowDown(2); }
+            if (sh.b2c > 0) { vals.freemium = budget * sh.b2c / cpr; flowDown(2); }
             if (sh.b2b > 0) {
               var convRate = objKey === 'lead_gen' ? pRates.l2a : pRates.d2a;
               if (convRate !== null) b2bAcc += (budget * sh.b2b / cpr) * convRate;
@@ -2637,18 +2667,18 @@
         // tỉ lệ -> 0 account từ cầu nối (không bịa số).
         if (pRates.p2b !== null && vals.paid) b2bAcc += vals.paid * pRates.p2b;
         views = vals.views; visits = vals.visits;
-        var pSignups = vals.signups, pFirst = vals.first, pPaid = vals.paid;
-        base.forecast = { views: views, visits: visits, signups: pSignups, first: pFirst, paid: pPaid, b2b: b2bAcc };
+        var pFreemium = vals.freemium, pPaid = vals.paid;
+        base.forecast = { views: views, visits: visits, freemium: pFreemium, paid: pPaid, b2b: b2bAcc };
         var bmP = base.month && byMonth[base.month];
         if (bmP) {
-          bmP.views += views; bmP.visits += visits; bmP.signups += pSignups; bmP.first += pFirst; bmP.paid += pPaid; bmP.b2b += b2bAcc;
+          bmP.views += views; bmP.visits += visits; bmP.freemium += pFreemium; bmP.paid += pPaid; bmP.b2b += b2bAcc;
           bmP.hasForecast = true;
         }
-        totals.views += views; totals.visits += visits; totals.signups += pSignups; totals.first += pFirst; totals.paid += pPaid; totals.b2b += b2bAcc;
+        totals.views += views; totals.visits += visits; totals.freemium += pFreemium; totals.paid += pPaid; totals.b2b += b2bAcc;
         if (res.phaseId) {
           var bpP = byPhase[res.phaseId];
-          if (!bpP) bpP = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, signups: 0, first: 0, paid: 0, b2b: 0, rowCount: 0 };
-          bpP.views += views; bpP.visits += visits; bpP.signups += pSignups; bpP.first += pFirst; bpP.paid += pPaid; bpP.b2b += b2bAcc;
+          if (!bpP) bpP = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, rowCount: 0 };
+          bpP.views += views; bpP.visits += visits; bpP.freemium += pFreemium; bpP.paid += pPaid; bpP.b2b += b2bAcc;
           bpP.rowCount += 1;
         }
         return base;
@@ -2661,35 +2691,28 @@
       if (qty !== null && viewsPerUnit !== null) views = qty * viewsPerUnit;
       else if (qty !== null && output !== null) views = qty * output;
       else return base;
-      var rates0 = {
-        v2v: baseRate('view_to_visit', 'viewToVisit'),
-        v2s: baseRate('visit_to_signup', 'visitToSignup'),
-        s2f: baseRate('signup_to_first', 'signupToFirst'),
-        f2p: baseRate('first_to_paid', 'firstToPaid'),
-        p2b: baseRate('paid_to_b2b', 'paidToB2b')
-      };
-      if (rates0.v2v === null || rates0.v2s === null || rates0.s2f === null || rates0.f2p === null) return base;
+      var rates0 = funnelRates();
+      if (rates0.v2v === null || rates0.v2f === null || rates0.f2p === null) return base;
       var rates = upliftRates(rates0);
-      var v2v = rates.v2v, v2s = rates.v2s, s2f = rates.s2f, f2p = rates.f2p;
+      var v2v = rates.v2v, v2f = rates.v2f, f2p = rates.f2p;
       visits = views * v2v;
-      var signups = visits * v2s;
-      var first = signups * s2f;
-      var paid = first * f2p;
+      var freemium = visits * v2f;
+      var paid = freemium * f2p;
       // CẦU NỐI Paid -> B2B: Paid User của kênh content x tỉ lệ
       // paid_to_b2b của Channel (sửa theo Phase + uplift như mọi tỉ lệ
       // funnel). Chưa có tỉ lệ -> 0 account (không bịa số).
       var b2bC = rates.p2b !== null && rates.p2b !== undefined ? paid * rates.p2b : 0;
-      base.forecast = { views: views, visits: visits, signups: signups, first: first, paid: paid, b2b: b2bC };
+      base.forecast = { views: views, visits: visits, freemium: freemium, paid: paid, b2b: b2bC };
       var bm = base.month && byMonth[base.month];
       if (bm) {
-        bm.views += views; bm.visits += visits; bm.signups += signups; bm.first += first; bm.paid += paid; bm.b2b += b2bC;
+        bm.views += views; bm.visits += visits; bm.freemium += freemium; bm.paid += paid; bm.b2b += b2bC;
         bm.hasForecast = true;
       }
-      totals.views += views; totals.visits += visits; totals.signups += signups; totals.first += first; totals.paid += paid; totals.b2b += b2bC;
+      totals.views += views; totals.visits += visits; totals.freemium += freemium; totals.paid += paid; totals.b2b += b2bC;
       if (res.phaseId) {
         var bp = byPhase[res.phaseId];
-        if (!bp) bp = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, signups: 0, first: 0, paid: 0, b2b: 0, rowCount: 0 };
-        bp.views += views; bp.visits += visits; bp.signups += signups; bp.first += first; bp.paid += paid; bp.b2b += b2bC;
+        if (!bp) bp = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, rowCount: 0 };
+        bp.views += views; bp.visits += visits; bp.freemium += freemium; bp.paid += paid; bp.b2b += b2bC;
         bp.rowCount += 1;
       }
       return base;
@@ -2774,36 +2797,55 @@
   }
 
   // =====================================================================
-  // Bảng Chỉ số vận hành & tài chính theo tháng (bổ sung — Zac duyệt).
-  // Đầu vào THUẦN, mọi số do nơi gọi chuẩn bị từ cùng engine funnel +
-  // planBudget + các ô nhập theo Phase:
+  // Bảng Chỉ số vận hành & tài chính theo tháng (CĂN CHỈNH PHỄU theo
+  // sheet Lumilink1 — phễu Freemium/Paid). Đầu vào THUẦN, mọi số do nơi
+  // gọi chuẩn bị từ cùng engine funnel + planBudget + các ô nhập theo
+  // Phase:
   //   input = { months: ['YYYY-MM', ...],
-  //     funnelByMonth: { [month]: { views, visits, signups, first, paid } },
+  //     funnelByMonth: { [month]: { views, visits, freemium, paid } },
   //     budgetByMonth: { [month]: VNĐ },
   //     inputsByMonth: { [month]: { paid_churn_rate, free_churn_rate,
-  //       arppu, cogs_per_user, fixed_cost } },  // tỉ lệ dạng phân số
+  //       monthly_cvr, paid_price_tiers, cogs_per_free_user,
+  //       cogs_per_paid_user, fixed_cost } },  // tỉ lệ dạng phân số;
+  //       // paid_price_tiers = [{ price, pct }] với pct là SỐ PHẦN
+  //       // TRĂM 0–100 của từng mức giá Paid
   //     openingFree, openingPaid }              // số dư trước tháng đầu
   // Ánh xạ: Budget = ngân sách plan tháng; Reach = Views; Visits =
-  // Visits; Free user = Signups; New Free = First; New Paid = Paid.
-  // Chuỗi tồn (EOM_0 = opening):
-  //   Paid churn_t = Paid EOM_{t-1} × paid_churn_rate(phase của t)
-  //   Free churn_t = Free EOM_{t-1} × free_churn_rate(phase của t)
-  //   Free EOM_t = Free EOM_{t-1} + New Free_t − New Paid_t − Free
+  // Visits; Free user (dòng vào) = Freemium; New Paid = Paid (cohort
+  // từ engine funnel) + Free EOM đầu kỳ x monthly_cvr (chuyển đổi từ
+  // tồn Free); New Free = Free user − New Paid.
+  // Chuỗi tồn (EOM_0 = opening); churn tính trên TỔN ĐẦU KỲ + DÒNG VÀO
+  // trong tháng, riêng tháng ĐẦU TIÊN của mảng months cả hai churn
+  // nhân thêm hệ số 0,5:
+  //   Free churn_t = (Free EOM_{t-1} + Free user_t) x free_churn_rate
+  //     (x 0,5 nếu t là tháng đầu)
+  //   Paid churn_t = (Paid EOM_{t-1} + New Paid_t) x paid_churn_rate
+  //     (x 0,5 nếu t là tháng đầu)
+  //   Free EOM_t = Free EOM_{t-1} + Free user_t − New Paid_t − Free
   //     churn_t (kẹp ≥ 0, đánh dấu freeClamped nếu phải kẹp)
   //   Paid EOM_t = Paid EOM_{t-1} + New Paid_t − Paid churn_t
   //   Total users = Free EOM + Paid EOM
-  //   Revenue_t = arppu × Paid EOM_t
-  //   COGS_t = cogs_per_user × Total users_t  (COGS theo SỐ TIỀN trên
-  //     mỗi user — VNĐ/user/tháng — KHÔNG theo % doanh thu)
+  //   ARPPU hiệu dụng = Σ price x pct/100 trên paid_price_tiers.
+  //     Validate: từng pct phải trong 0–100 và TỔNG pct ≤ 100; vi phạm
+  //     -> coi như THIẾU đầu vào giá (Revenue + 2 Profit null tháng đó,
+  //     missing.paid_price_tiers = true). Chưa nhập mức nào (null/rỗng)
+  //     cũng là thiếu như vậy.
+  //   Revenue_t = ARPPU hiệu dụng x Paid EOM_t
+  //   COGS TÁCH theo nhóm user: cogsFree_t = cogs_per_free_user x Free
+  //     EOM_t; cogsPaid_t = cogs_per_paid_user x Paid EOM_t; COGS_t =
+  //     cogsFree_t + cogsPaid_t (đơn giá là SỐ TIỀN trên mỗi user —
+  //     VNĐ/user/tháng — KHÔNG theo % doanh thu). Thiếu MỘT trong hai
+  //     đơn giá -> phần COGS tương ứng + COGS tổng + 2 Profit null.
   //   Profit (after COGS + mkt cost) = Revenue − COGS − Budget
   //   Profit (after COGS + fixed cost + mkt cost) = trên − fixed_cost
+  // QUYẾT ĐỊNH ĐÃ CHỐT: monthly_cvr null -> nguồn chuyển đổi từ tồn
+  // Free đóng góp 0 vào New Paid (KHÔNG null-hoá New Paid).
   // Thiếu đầu vào -> giá trị null ("—" ở UI), TUYỆT ĐỐI không điền 0
   // lặng lẽ: thiếu opening hoặc thiếu 1 tỉ lệ churn của 1 tháng thì
   // chuỗi EOM đứt từ tháng đó (các tháng sau cũng null vì phụ thuộc
-  // tồn trước); thiếu arppu -> Revenue + cả 2 Profit null tháng đó;
-  // thiếu cogs_per_user -> COGS + 2 Profit null; thiếu fixed_cost ->
-  // chỉ Profit cuối null. Cột Tổng: dòng flow cộng dồn (null nếu có
-  // tháng null), dòng tồn lấy giá trị tháng cuối.
+  // tồn trước); thiếu fixed_cost -> chỉ Profit cuối null. Cột Tổng:
+  // dòng flow cộng dồn (null nếu có tháng null), dòng tồn lấy giá trị
+  // tháng cuối.
   // =====================================================================
   function computeOperatingFinancials(input) {
     var inp = input || {};
@@ -2814,22 +2856,19 @@
     function num(v) { return _planNum(v); }
     var openingFree = num(inp.openingFree !== undefined && inp.openingFree !== null ? inp.openingFree : inp.opening_free);
     var openingPaid = num(inp.openingPaid !== undefined && inp.openingPaid !== null ? inp.openingPaid : inp.opening_paid);
-    var missing = { opening: openingFree === null || openingPaid === null, paid_churn_rate: false, free_churn_rate: false, arppu: false, cogs_per_user: false, fixed_cost: false };
-    // --- Tài chính B2B (mô hình B2B bottom-up): chuỗi tồn B2B Account
-    // RIÊNG, song song chuỗi Free/Paid: New B2B Accounts lấy từ
-    // funnelByMonth[m].b2b (account MỚI sinh trong tháng — cầu nối
-    // Paid->B2B + Lead/Demo->Account + Partnership/Event trực tiếp);
-    // B2B churn = B2B EOM đầu kỳ x b2b_churn_rate (theo Phase);
-    // B2B EOM = đầu kỳ + New − churn (chuyển đổi KHÔNG trừ khỏi Paid
-    // EOM — Paid User vẫn ở lại chuỗi B2C); Revenue B2B = arppu_b2b x
-    // B2B EOM; COGS B2B = cogs_per_b2b_account x B2B EOM. Hai dòng
-    // Profit tính trên TỔNG B2C + B2B. Thiếu đầu vào B2B -> null như
-    // quy tắc chung, NGOẠI TRỪ: khi tồn B2B = 0 và không có account
-    // mới (toàn kỳ không hoạt động B2B, kể cả chưa nhập opening_b2b)
-    // thì B2B churn/EOM/Revenue B2B/COGS B2B = 0 — Profit không hiện
-    // "—" oan và ca tài chính B2C cũ cho kết quả y hệt. Thiếu đầu vào
-    // B2B khi ĐANG có hoạt động B2B được ghi ở missingB2b (tách khỏi
-    // `missing` B2C để giữ nguyên hợp đồng cũ).
+    var missing = { opening: openingFree === null || openingPaid === null, paid_churn_rate: false, free_churn_rate: false, paid_price_tiers: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
+    // --- Tài chính B2B (mô hình B2B bottom-up): GIỮ NGUYÊN 100% —
+    // chuỗi tồn B2B Account RIÊNG, song song chuỗi Free/Paid: New B2B
+    // Accounts lấy từ funnelByMonth[m].b2b; B2B churn = B2B EOM đầu kỳ
+    // x b2b_churn_rate (theo Phase, KHÔNG nhân 0,5 tháng đầu như chuỗi
+    // B2C); B2B EOM = đầu kỳ + New − churn (chuyển đổi KHÔNG trừ khỏi
+    // Paid EOM); Revenue B2B = arppu_b2b x B2B EOM; COGS B2B =
+    // cogs_per_b2b_account x B2B EOM. Hai dòng Profit tính trên TỔNG
+    // B2C + B2B. Thiếu đầu vào B2B -> null như quy tắc chung, NGOẠI
+    // TRỪ: khi tồn B2B = 0 và không có account mới (toàn kỳ không hoạt
+    // động B2B, kể cả chưa nhập opening_b2b) thì B2B churn/EOM/Revenue
+    // B2B/COGS B2B = 0. Thiếu đầu vào B2B khi ĐANG có hoạt động B2B
+    // được ghi ở missingB2b (tách khỏi `missing` B2C).
     var openingB2b = num(inp.openingB2b !== undefined && inp.openingB2b !== null ? inp.openingB2b : inp.opening_b2b);
     function funnelB2b(m) {
       var f = funnel[m] || {};
@@ -2843,7 +2882,27 @@
     var chainBrokenB2b = hasB2bActivity && openingB2b === null;
     var prevFree = openingFree, prevPaid = openingPaid;
     var chainBroken = missing.opening;
-    var rows = months.map(function (m) {
+    // ARPPU hiệu dụng từ các mức giá Paid của 1 tháng: mảng
+    // paid_price_tiers / paidPriceTiers [{ price, pct }] (pct = số
+    // phần trăm 0–100). Trả null khi chưa nhập mức nào hoặc vi phạm
+    // validate (pct ngoài 0–100, tổng pct > 100, price âm/thiếu).
+    function tiersArppu(im) {
+      var raw = im.paid_price_tiers !== undefined && im.paid_price_tiers !== null ? im.paid_price_tiers : im.paidPriceTiers;
+      if (!Array.isArray(raw) || raw.length === 0) return null;
+      var sumPct = 0, arppu = 0;
+      for (var i = 0; i < raw.length; i++) {
+        var t = raw[i] || {};
+        var price = num(t.price);
+        var pct = num(t.pct);
+        if (price === null || pct === null || price < 0 || pct < 0 || pct > 100) return null;
+        sumPct += pct;
+        arppu += price * pct / 100;
+      }
+      if (sumPct > 100) return null;
+      return arppu;
+    }
+    var rows = months.map(function (m, monthIdx) {
+      var isFirstMonth = monthIdx === 0;
       var f = funnel[m] || {};
       var im = inputsMap[m] || {};
       function inNum(snake, camel) {
@@ -2851,40 +2910,56 @@
         return num(v);
       }
       var budget = num(budgetMap[m]);
+      var cohortPaid = num(f.paid) || 0;
       var row = {
         month: m,
         budget: budget === null ? 0 : budget,
         reach: num(f.views) || 0,
         visits: num(f.visits) || 0,
-        freeUser: num(f.signups) || 0,
-        newFree: num(f.first) || 0,
-        newPaid: num(f.paid) || 0,
+        freeUser: num(f.freemium) || 0,
+        newFree: 0,
+        newPaid: cohortPaid,
         newB2b: funnelB2b(m),
         paidChurn: null, freeChurn: null,
         paidEom: null, freeEom: null, totalUsers: null,
         b2bChurn: null, b2bEom: null,
-        revenue: null, cogs: null, revenueB2b: null, cogsB2b: null,
+        revenue: null, cogs: null, cogsFree: null, cogsPaid: null,
+        arppuEffective: null,
+        revenueB2b: null, cogsB2b: null,
         profitAfterCogsMkt: null, profitAfterCogsFixedMkt: null,
         freeClamped: false
       };
+      row.newFree = row.freeUser - row.newPaid;
       var paidChurnRate = inNum('paid_churn_rate', 'paidChurnRate');
       var freeChurnRate = inNum('free_churn_rate', 'freeChurnRate');
-      var arppu = inNum('arppu', 'arppu');
-      var cogsPerUser = inNum('cogs_per_user', 'cogsPerUser');
+      var monthlyCvr = inNum('monthly_cvr', 'monthlyCvr');
+      var arppuEff = tiersArppu(im);
+      var cogsPerFree = inNum('cogs_per_free_user', 'cogsPerFreeUser');
+      var cogsPerPaid = inNum('cogs_per_paid_user', 'cogsPerPaidUser');
       var fixedCost = inNum('fixed_cost', 'fixedCost');
       var b2bChurnRate = inNum('b2b_churn_rate', 'b2bChurnRate');
       var arppuB2b = inNum('arppu_b2b', 'arppuB2b');
       var cogsPerB2b = inNum('cogs_per_b2b_account', 'cogsPerB2bAccount');
       if (paidChurnRate === null) missing.paid_churn_rate = true;
       if (freeChurnRate === null) missing.free_churn_rate = true;
-      if (arppu === null) missing.arppu = true;
-      if (cogsPerUser === null) missing.cogs_per_user = true;
+      if (arppuEff === null) missing.paid_price_tiers = true;
+      if (cogsPerFree === null) missing.cogs_per_free_user = true;
+      if (cogsPerPaid === null) missing.cogs_per_paid_user = true;
       if (fixedCost === null) missing.fixed_cost = true;
+      if (arppuEff !== null) row.arppuEffective = arppuEff;
       if (!chainBroken && paidChurnRate !== null && freeChurnRate !== null) {
-        row.paidChurn = prevPaid * paidChurnRate;
-        row.freeChurn = prevFree * freeChurnRate;
+        // New Paid = cohort từ engine + chuyển đổi từ tồn Free đầu kỳ
+        // (monthly_cvr null -> phần chuyển đổi = 0 theo quyết định đã
+        // chốt, không null-hoá New Paid).
+        var converted = monthlyCvr !== null ? prevFree * monthlyCvr : 0;
+        row.newPaid = cohortPaid + converted;
+        row.newFree = row.freeUser - row.newPaid;
+        // Churn trên (tồn đầu kỳ + dòng vào tháng); tháng đầu x 0,5.
+        var churnFactor = isFirstMonth ? 0.5 : 1;
+        row.freeChurn = (prevFree + row.freeUser) * freeChurnRate * churnFactor;
+        row.paidChurn = (prevPaid + row.newPaid) * paidChurnRate * churnFactor;
         row.paidEom = prevPaid + row.newPaid - row.paidChurn;
-        var freeRaw = prevFree + row.newFree - row.newPaid - row.freeChurn;
+        var freeRaw = prevFree + row.freeUser - row.newPaid - row.freeChurn;
         if (freeRaw < 0) { row.freeClamped = true; freeRaw = 0; }
         row.freeEom = freeRaw;
         row.totalUsers = row.freeEom + row.paidEom;
@@ -2892,8 +2967,10 @@
       } else {
         chainBroken = true;
       }
-      if (row.paidEom !== null && arppu !== null) row.revenue = arppu * row.paidEom;
-      if (row.totalUsers !== null && cogsPerUser !== null) row.cogs = cogsPerUser * row.totalUsers;
+      if (row.paidEom !== null && arppuEff !== null) row.revenue = arppuEff * row.paidEom;
+      if (row.freeEom !== null && cogsPerFree !== null) row.cogsFree = cogsPerFree * row.freeEom;
+      if (row.paidEom !== null && cogsPerPaid !== null) row.cogsPaid = cogsPerPaid * row.paidEom;
+      if (row.cogsFree !== null && row.cogsPaid !== null) row.cogs = row.cogsFree + row.cogsPaid;
       // Chuỗi tồn B2B (độc lập với chuỗi Free/Paid ở trên).
       if (!hasB2bActivity) {
         // Toàn kỳ không có B2B: tồn 0 + không account mới -> mọi số
@@ -2924,7 +3001,7 @@
       if (row.profitAfterCogsMkt !== null && fixedCost !== null) row.profitAfterCogsFixedMkt = row.profitAfterCogsMkt - fixedCost;
       return row;
     });
-    var FLOW_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'revenue', 'cogs', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt', 'newB2b', 'b2bChurn', 'revenueB2b', 'cogsB2b'];
+    var FLOW_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'revenue', 'cogs', 'cogsFree', 'cogsPaid', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt', 'newB2b', 'b2bChurn', 'revenueB2b', 'cogsB2b'];
     var STOCK_KEYS = ['paidEom', 'freeEom', 'totalUsers', 'b2bEom'];
     var totals = {};
     FLOW_KEYS.forEach(function (k) {
