@@ -37,10 +37,82 @@
   // GĐ3: 20/25/25/30; GĐ4: 46/46/8) × FX 26.000 VNĐ/USD. Đối chiếu: T1 Meta
   // 420 USD / TikTok 140 USD và T2 Meta 630 / TikTok 210 KHỚP sheet 04
   // Monthly; tổng năm Meta 546.000.000đ (=21.000 USD), TikTok 182.000.000đ.
+  // TỔNG ngân sách theo kênh × tháng dưới đây GIỮ NGUYÊN — mô hình
+  // Objective chỉ CHIA tổng tháng đó cho các Objective (xem
+  // PAID_OBJECTIVE_USD ngay dưới).
   var PAID_BUDGET_VND = {
     'Meta Ads': [10920000, 16380000, 65520000, 87360000, 65520000, 16380000, 20475000, 20475000, 24570000, 100464000, 100464000, 17472000],
     'TikTok Ads': [3640000, 5460000, 21840000, 29120000, 21840000, 5460000, 6825000, 6825000, 8190000, 33488000, 33488000, 5824000]
   };
+  // Paid Ads theo MÔ HÌNH OBJECTIVE (Lumus Draft Plan — bảng Paid Ads,
+  // USD, Objective × Phase; FX 26.000đ; Phase 1 = T1–T2, Phase 2 =
+  // T3–T5, Phase 3 = T6–T9, Phase 4 = T10–T12): trong mỗi phase, tổng
+  // ngân sách tháng của kênh được chia cho các Objective theo TỈ TRỌNG
+  // Objective trong phase đó của Draft Plan (vd Meta Phase 1: Awareness
+  // 630/3150 = 20% · Traffic 1575/3150 = 50% · Signup 945/3150 = 30% ·
+  // Remarketing 0 -> Meta T1: 2.184.000 / 5.460.000 / 3.276.000 / 0).
+  // Làm tròn VNĐ nguyên, hiệu chỉnh phần dư vào Objective lớn nhất của
+  // tháng đó để tổng tháng khớp tuyệt đối (xem allocatePaidObjectives).
+  // Objective có ngân sách 0 trong phase (vd Remarketing ở Phase 1 của
+  // Meta) KHÔNG tạo dòng seed — UI chi tiết hiện 0 và sửa được.
+  var PAID_OBJECTIVE_USD = {
+    'Meta Ads': [
+      { awareness: 630, traffic: 1575, signup: 945, remarketing: 0 },
+      { awareness: 945, traffic: 1890, signup: 2835, remarketing: 630 },
+      { awareness: 420, traffic: 840, signup: 2100, remarketing: 840 },
+      { awareness: 1102.5, traffic: 1102.5, signup: 3675, remarketing: 1470 }
+    ],
+    'TikTok Ads': [
+      { awareness: 525, traffic: 420, signup: 105 },
+      { awareness: 630, traffic: 840, signup: 630 },
+      { awareness: 280, traffic: 420, signup: 700 },
+      { awareness: 735, traffic: 490, signup: 1225 }
+    ]
+  };
+  var PAID_OBJECTIVE_ORDER = ['awareness', 'traffic', 'signup', 'remarketing', 'lead_gen', 'demo'];
+  function paidPhaseIndexForMonth(month) {
+    if (month <= '2027-02') return 0;
+    if (month <= '2027-05') return 1;
+    if (month <= '2027-09') return 2;
+    return 3;
+  }
+  // Chia `total` (VNĐ nguyên) theo tỉ trọng usdMap (USD từng Objective
+  // trong phase): làm tròn từng phần, dồn phần dư vào Objective có
+  // phần thô lớn nhất (hòa thì Objective đứng trước trong thứ tự
+  // catalog) để tổng các phần ĐÚNG bằng total.
+  function allocatePaidObjectives(total, usdMap) {
+    var keys = PAID_OBJECTIVE_ORDER.filter(function (k) { return usdMap[k] !== undefined; });
+    var usdTotal = keys.reduce(function (s, k) { return s + usdMap[k]; }, 0);
+    if (!usdTotal || !total) return {};
+    var raw = {}, out = {}, sum = 0, largest = null;
+    keys.forEach(function (k) {
+      raw[k] = total * usdMap[k] / usdTotal;
+      out[k] = Math.round(raw[k]);
+      sum += out[k];
+      if (largest === null || raw[k] > raw[largest]) largest = k;
+    });
+    if (largest !== null) out[largest] += total - sum;
+    return out;
+  }
+  // Paid Ads B2B MỚI (Lumus Draft Plan — seed cũ bỏ sót 2 kênh này):
+  // Google Search B2B tổng $1.600 (phase 0/0/640/960 — chỉ Lead
+  // Generation có ngân sách; Search/High-intent Traffic = 0 ở mọi
+  // phase) và LinkedIn Ads B2B tổng $1.600 (phase 0/0/640/960 — chỉ
+  // Demo/Contact có ngân sách; B2B Lead Generation = 0). Hai kênh này
+  // chưa có phân bổ tháng từ Forecast nên ngân sách phase (USD ×
+  // 26.000đ) CHIA ĐỀU cho các tháng trong phase. Hệ quả: tổng ngân
+  // sách năm khi lọc "Tất cả" tăng +83.200.000đ (1.515.500.000đ ->
+  // 1.598.700.000đ); tổng B2C không đổi.
+  var PAID_B2B_OBJECTIVE_USD = {
+    'Google Search B2B': [{}, {}, { lead_gen: 640 }, { lead_gen: 960 }],
+    'LinkedIn Ads B2B': [{}, {}, { demo: 640 }, { demo: 960 }]
+  };
+  var PAID_PHASE_MONTHS = [
+    ['2027-01', '2027-02'],
+    ['2027-03', '2027-04', '2027-05'],
+    ['2027-06', '2027-07', '2027-08', '2027-09'],
+    ['2027-10', '2027-11', '2027-12']
+  ];
   function planSlug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
   // Phase Lumus theo khoảng tháng (khớp BRAND_PHASES bên dưới):
   // T1–T2 → GĐ1, T3–T5 → GĐ2, T6–T9 → GĐ3, T10–T12 → GĐ4.
@@ -64,12 +136,38 @@
     });
     Object.keys(PAID_BUDGET_VND).forEach(function (channel) {
       PLAN_MONTHS_2027.forEach(function (month, i) {
-        rows.push({
-          id: 'plan-lumus-' + month + '-' + planSlug(channel),
-          brand_id: 'brand-lumus-ai', segment: 'b2c', month: month,
-          channel: channel, group: 'Paid Media', unit: null, qty: null,
-          budget: PAID_BUDGET_VND[channel][i],
-          phase_id: lumusPhaseIdForMonth(month)
+        var alloc = allocatePaidObjectives(PAID_BUDGET_VND[channel][i], PAID_OBJECTIVE_USD[channel][paidPhaseIndexForMonth(month)]);
+        PAID_OBJECTIVE_ORDER.forEach(function (obj) {
+          var amount = alloc[obj];
+          if (!amount) return; // Objective 0đ trong phase: không tạo dòng (UI hiện 0, sửa được)
+          rows.push({
+            id: 'plan-lumus-' + month + '-' + planSlug(channel) + '-' + planSlug(obj),
+            brand_id: 'brand-lumus-ai', segment: 'b2c', month: month,
+            channel: channel, group: 'Paid Media', unit: null, qty: null,
+            budget: amount, objective: obj,
+            phase_id: lumusPhaseIdForMonth(month)
+          });
+        });
+      });
+    });
+    Object.keys(PAID_B2B_OBJECTIVE_USD).forEach(function (channel) {
+      PAID_B2B_OBJECTIVE_USD[channel].forEach(function (usdMap, phaseIdx) {
+        var months = PAID_PHASE_MONTHS[phaseIdx];
+        PAID_OBJECTIVE_ORDER.forEach(function (obj) {
+          var usd = usdMap[obj];
+          if (!usd) return;
+          var phaseTotalVnd = Math.round(usd * 26000);
+          var perMonth = Math.floor(phaseTotalVnd / months.length);
+          months.forEach(function (month, mi) {
+            rows.push({
+              id: 'plan-lumus-' + month + '-' + planSlug(channel) + '-' + planSlug(obj),
+              brand_id: 'brand-lumus-ai', segment: 'b2b', month: month,
+              channel: channel, group: 'Paid Media', unit: null, qty: null,
+              budget: perMonth + (mi === months.length - 1 ? phaseTotalVnd - perMonth * months.length : 0),
+              objective: obj,
+              phase_id: lumusPhaseIdForMonth(month)
+            });
+          });
         });
       });
     });
@@ -442,23 +540,30 @@
     // visit→signup 0,09 / signup→first 0,5 / first→paid 0,055 DÙNG CHUNG
     // cho cả 3 KOL trong file nguồn (R44–R46) — chỉ view→visit khác nhau.
     // Paid Ads: direct_budget = true, unit_price/output/view→visit = null
-    // (ngân sách nhập thẳng ở plan_rows.budget). Forecast Paid KHÔNG suy
-    // Views (cột REACH/VIEWS của file nguồn để trống cho Paid) mà suy
-    // Visits từ ngân sách theo đúng công thức sheet 04 Monthly của file:
-    // Visits = Ngân sách VNĐ × traffic_share ÷ cost_per_visit, với
-    // traffic_share (cột M) + cost_per_visit = COST/LP VISIT VND (cột N)
-    // ở 03 Inputs R59 (Meta: 0,6 / 20.000đ) và R60 (TikTok: 0,7 / 22.000đ);
-    // hạ nguồn visit→signup 0,09 / signup→first 0,5 / first→paid 0,055
-    // lấy từ chính R59/R60 (cột H/I/J). Kiểm chứng: Meta cả năm
-    // 546.000.000 × 0,6 ÷ 20.000 = 16.380 Visits và TikTok
-    // 182.000.000 × 0,7 ÷ 22.000 = 5.790,909… Visits — khớp sheet
-    // 02 KPI Budget R23/R24 của file nguồn.
+    // (ngân sách nhập thẳng ở plan_rows.budget của từng dòng Objective).
+    // Forecast Paid theo MÔ HÌNH OBJECTIVE: đơn giá kết quả
+    // cost_per_result theo Objective — Traffic = Cost/LPV của Master
+    // Forecast (Meta 20.000đ, TikTok 22.000đ, 03 Inputs R59/R60 cột N);
+    // Signup = Cost/Signup SUY TỪ CHUỖI tỉ lệ của file (Cost/LPV ÷
+    // 0,09 -> Meta ≈222.222đ, TikTok ≈244.444đ — nguồn: suy từ chuỗi
+    // tỉ lệ file); Remarketing = CAC SUY TỪ CHUỖI (Cost/LPV ÷
+    // (0,09×0,5×0,055) -> Meta ≈8.080.808đ, TikTok ≈8.888.889đ — nguồn:
+    // suy từ chuỗi tỉ lệ file). Awareness (CPM/CPV), Lead Gen (CPL) và
+    // Demo (Cost/Demo): file KHÔNG có đơn giá -> cost_per_result = null
+    // (KHÔNG seed) — Objective đó hiện "chưa có đơn giá", ngân sách vẫn
+    // tính vào tổng nhưng chưa ra chỉ số. Cơ chế cũ traffic_share /
+    // cost_per_visit ĐÃ GỠ khỏi benchmark (không còn được dùng trong
+    // tính toán). Đơn giá Objective sửa được qua cùng đường với các
+    // field benchmark khác (field cost_per_result trên benchmark —
+    // app chưa có UI sửa benchmark riêng).
     benchmarks: [
       { id: 'bench-lumus-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', group: 'KOL', unit_price: 1500000, currency: 'VND', output_per_unit: 4000, view_to_visit: 0.003, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
       { id: 'bench-lumus-kol-micro', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Micro', group: 'KOL', unit_price: 5500000, currency: 'VND', output_per_unit: 15000, view_to_visit: 0.004, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
       { id: 'bench-lumus-kol-expert', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Expert', group: 'KOL', unit_price: 30000000, currency: 'VND', output_per_unit: 25000, view_to_visit: 0.005, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
-      { id: 'bench-lumus-meta-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, traffic_share: 0.6, cost_per_visit: 20000, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R59 — Paid Media pool 21.000 USD/năm, ngân sách thẳng theo tháng; traffic share 60% + cost/LP visit 20.000đ (cột M/N), hạ nguồn 0,09/0,5/0,055 (cột H/I/J)' },
-      { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, traffic_share: 0.7, cost_per_visit: 22000, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R60 — Paid Media pool 7.000 USD/năm, ngân sách thẳng theo tháng; traffic share 70% + cost/LP visit 22.000đ (cột M/N), hạ nguồn 0,09/0,5/0,055 (cột H/I/J)' }
+      { id: 'bench-lumus-meta-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, cost_per_result: { awareness: null, traffic: 20000, signup: 20000 / 0.09, remarketing: 20000 / (0.09 * 0.5 * 0.055) }, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R59 + Lumus Draft Plan (Paid Ads theo Objective) — Traffic = Cost/LPV 20.000đ (cột N); Signup ≈222.222đ và Remarketing (CAC) ≈8.080.808đ SUY TỪ CHUỖI tỉ lệ file (÷0,09 và ÷(0,09×0,5×0,055)); Awareness chưa có CPM/CPV trong file nên để null; hạ nguồn 0,09/0,5/0,055 (cột H/I/J)' },
+      { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, cost_per_result: { awareness: null, traffic: 22000, signup: 22000 / 0.09, remarketing: 22000 / (0.09 * 0.5 * 0.055) }, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R60 + Lumus Draft Plan (Paid Ads theo Objective) — Traffic = Cost/LPV 22.000đ (cột N); Signup ≈244.444đ và Remarketing (CAC) ≈8.888.889đ SUY TỪ CHUỖI tỉ lệ file (÷0,09 và ÷(0,09×0,5×0,055)); Awareness chưa có CPM/CPV trong file nên để null; hạ nguồn 0,09/0,5/0,055 (cột H/I/J)' },
+      { id: 'bench-lumus-google-search-b2b', brand_id: 'brand-lumus-ai', segment: 'b2b', channel: 'Google Search B2B', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, cost_per_result: { traffic: null, lead_gen: null }, direct_budget: true, confidence: 'C — giả định', source: 'Lumus Draft Plan — Paid Ads B2B: Google Search tổng $1.600 (chỉ Lead Generation có ngân sách ở Phase 3–4); file KHÔNG có Cost/LPV cho Search và KHÔNG có CPL cho Lead Generation nên cost_per_result để null (chưa có đơn giá)' },
+      { id: 'bench-lumus-linkedin-ads-b2b', brand_id: 'brand-lumus-ai', segment: 'b2b', channel: 'LinkedIn Ads B2B', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, cost_per_result: { lead_gen: null, demo: null }, direct_budget: true, confidence: 'C — giả định', source: 'Lumus Draft Plan — Paid Ads B2B: LinkedIn Ads tổng $1.600 (chỉ Demo/Contact có ngân sách ở Phase 3–4); file KHÔNG có CPL cho Lead Generation và KHÔNG có Cost/Demo nên cost_per_result để null (chưa có đơn giá)' }
     ],
     plan_rows: PLAN_ROWS,
     phase_assumptions: PHASE_ASSUMPTIONS,

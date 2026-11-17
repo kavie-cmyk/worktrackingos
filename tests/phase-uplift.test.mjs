@@ -103,8 +103,8 @@ test('PU [demo]: phase_assumptions đủ 3 KOL x 4 phase Lumus, toàn bộ null 
   }
 });
 
-test('PU [demo]: plan_rows Lumus 144 dòng đều có phase_id suy từ khoảng tháng (kể cả Paid Ads)', () => {
-  assert.equal(lumusRows.length, 144);
+test('PU [demo]: plan_rows Lumus 216 dòng đều có phase_id suy từ khoảng tháng (kể cả Paid Ads — SỬA PHẠM VI đợt Paid Objective)', () => {
+  assert.equal(lumusRows.length, 216);
   const expected = (m) => (m <= '2027-02' ? 'phase-lumus-1' : m <= '2027-05' ? 'phase-lumus-2' : m <= '2027-09' ? 'phase-lumus-3' : 'phase-lumus-4');
   for (const r of lumusRows) assert.equal(r.phase_id, expected(r.month), `${r.id} sai phase`);
   assert.ok(lumusRows.filter((r) => r.channel === 'Meta Ads').every((r) => r.phase_id));
@@ -208,9 +208,11 @@ test('PU [domain]: byPhase = tổng đúng các row thuộc phase (cộng từ c
   }
   // GĐ1 (uplift 0): views KOL T1–T2 = (4+6)x4000 + (4+5)x15000 + (1+1)x25000.
   approx(f.byPhase['phase-lumus-1'].views, 40000 + 135000 + 50000, 'GĐ1 views');
-  // SỬA PHẠM VI Đợt Paid Media: GĐ1 nay có thêm 4 row Paid có forecast
-  // (Meta Ads + TikTok Ads x T1–T2, suy Visits từ ngân sách) -> 6 + 4 = 10.
-  assert.equal(f.byPhase['phase-lumus-1'].rowCount, 10, 'GĐ1: 6 row KOL + 4 row Paid Media có forecast');
+  // SỬA PHẠM VI đợt Paid Objective: GĐ1 có 8 row Paid có forecast —
+  // mỗi tháng T1–T2, Meta + TikTok mỗi kênh có 2 dòng Objective tính
+  // được (Traffic + Signup; Awareness chưa có đơn giá -> null,
+  // Remarketing Phase 1 ngân sách 0 nên không có dòng) -> 6 + 8 = 14.
+  assert.equal(f.byPhase['phase-lumus-1'].rowCount, 14, 'GĐ1: 6 row KOL + 8 row Paid Objective có forecast');
   // Bỏ phase_id trên row -> khớp theo tháng phải cho cùng byPhase.
   const stripped = demo.plan_rows.map((r) => ({ ...r, phase_id: undefined }));
   const f2 = domain.forecastFunnel(stripped, demo.benchmarks, CTX);
@@ -280,8 +282,10 @@ test('PU [domain]: ctx rỗng / assumption vắng mặt -> hành vi v1 trên to�
   const v2 = domain.forecastFunnel(lumusRows, demo.benchmarks, {});
   assert.deepEqual(v2.totals, v1.totals);
   assert.deepEqual(v2.byMonth, v1.byMonth);
-  // planBudget / summarize không đổi hành vi (neo trên tập Lumus 144 dòng).
-  assert.equal(domain.planBudget(lumusRows, demo.benchmarks).total, 65 * 1500000 + 60 * 5500000 + 12 * 30000000 + 546000000 + 182000000);
+  // planBudget / summarize không đổi hành vi (neo trên tập Lumus 216
+  // dòng — SỬA PHẠM VI đợt Paid Objective: tổng ngân sách cộng thêm
+  // 83.200.000đ của 2 kênh Paid B2B mới).
+  assert.equal(domain.planBudget(lumusRows, demo.benchmarks).total, 65 * 1500000 + 60 * 5500000 + 12 * 30000000 + 546000000 + 182000000 + 41600000 + 41600000);
 });
 
 // ---------------------------------------------------------------- store

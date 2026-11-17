@@ -829,6 +829,92 @@
     if (isNaN(v) || v < 0 || Math.round(v) !== v) return null;
     return v;
   }
+  // --- Paid Media theo mô hình Objective (thay cơ chế traffic_share cũ) ---
+  // Mỗi dòng Paid mang field `objective`; kết quả của Objective đặt tại
+  // tầng của nó rồi chảy XUỐNG qua tỉ lệ Benchmark (engine ở domain.js —
+  // KHÔNG fork công thức ở đây). Catalog chuẩn + catalog theo Channel:
+  var PAID_OBJECTIVE_META = {
+    awareness: { label: 'Awareness / Reach', tier: 'views', metric: 'Views' },
+    traffic: { label: 'Traffic', tier: 'visits', metric: 'Visits' },
+    signup: { label: 'Signup Conversion', tier: 'signups', metric: 'Signups' },
+    remarketing: { label: 'Remarketing', tier: 'paid', metric: 'Paid' },
+    lead_gen: { label: 'Lead Generation', tier: 'signups', metric: 'Signups' },
+    demo: { label: 'Demo / Contact', tier: 'first', metric: 'First' }
+  };
+  var PAID_OBJECTIVE_ORDER = ['awareness', 'traffic', 'signup', 'remarketing', 'lead_gen', 'demo'];
+  var PAID_CHANNEL_OBJECTIVES = {
+    'Meta Ads': ['awareness', 'traffic', 'signup', 'remarketing'],
+    'TikTok Ads': ['awareness', 'traffic', 'signup'],
+    'Google Search B2B': ['traffic', 'lead_gen'],
+    'LinkedIn Ads B2B': ['lead_gen', 'demo']
+  };
+  function planRowObjective(r) {
+    if (!r) return null;
+    var v = r.objective !== undefined && r.objective !== null ? r.objective
+      : (r.objective_key !== undefined && r.objective_key !== null ? r.objective_key : r.objectiveKey);
+    if (v === undefined || v === null || String(v).trim() === '') return null;
+    var k = String(v).trim().toLowerCase();
+    return PAID_OBJECTIVE_META[k] ? k : null;
+  }
+  function paidObjectiveMeta(key) {
+    return PAID_OBJECTIVE_META[key] || { label: String(key || ''), tier: null, metric: '' };
+  }
+  function paidObjectivesForChannel(channel) {
+    return (PAID_CHANNEL_OBJECTIVES[String(channel || '')] || []).slice();
+  }
+  // Các Objective cần hiển thị cho 1 dòng Channel: catalog của Channel
+  // hợp nhất với Objective đang có trên các dòng (giữ thứ tự catalog).
+  function paidObjectiveKeysForRows(rows, channel) {
+    var keys = paidObjectivesForChannel(channel);
+    (rows || []).forEach(function (r) {
+      var k = planRowObjective(r);
+      if (k && keys.indexOf(k) === -1) keys.push(k);
+    });
+    return keys.sort(function (a, b) { return PAID_OBJECTIVE_ORDER.indexOf(a) - PAID_OBJECTIVE_ORDER.indexOf(b); });
+  }
+  // Đơn giá kết quả (VNĐ/kết quả) của 1 Objective trên 1 Benchmark —
+  // CÙNG quy tắc đọc với domain._costPerResult: field cost_per_result
+  // (object theo Objective) trên benchmark; thiếu/null/<=0 -> null
+  // (Objective chưa có đơn giá). Sửa đơn giá này qua cùng đường với các
+  // field benchmark khác (app chưa có UI sửa benchmark riêng).
+  function planBenchmarkCostPerResult(benchmark, objectiveKey) {
+    if (!benchmark || !objectiveKey) return null;
+    var meta = PAID_OBJECTIVE_META[objectiveKey];
+    var maps = [benchmark.cost_per_result, benchmark.costPerResult];
+    for (var i = 0; i < maps.length; i++) {
+      var m = maps[i];
+      if (m && typeof m === 'object') {
+        var raw = m[objectiveKey] !== undefined && m[objectiveKey] !== null ? m[objectiveKey] : (meta ? m[meta.tier] : undefined);
+        if (raw !== undefined && raw !== null && raw !== '' && !isNaN(Number(raw))) {
+          return Number(raw) > 0 ? Number(raw) : null;
+        }
+      }
+    }
+    var cap = objectiveKey.charAt(0).toUpperCase() + objectiveKey.slice(1);
+    var flat = benchmark['cost_per_result_' + objectiveKey] !== undefined && benchmark['cost_per_result_' + objectiveKey] !== null
+      ? benchmark['cost_per_result_' + objectiveKey] : benchmark['costPerResult' + cap];
+    if (flat !== undefined && flat !== null && flat !== '' && !isNaN(Number(flat))) {
+      return Number(flat) > 0 ? Number(flat) : null;
+    }
+    return null;
+  }
+  // Ngân sách theo Objective của 1 tập dòng Paid (dùng ở chế độ Theo
+  // phase — CHỈ ĐỌC, sửa ở bảng chi tiết Theo tháng): trả
+  // [{ objective, label, metric, budget, rowCount }] theo thứ tự catalog,
+  // chỉ gồm Objective đang có dòng hoặc thuộc catalog của Channel.
+  function phasePaidObjectiveBudgets(chRows) {
+    var list = (chRows || []).filter(planRowIsPaidMedia);
+    if (!list.length) return [];
+    var channel = String(list[0].channel || '');
+    return paidObjectiveKeysForRows(list, channel).map(function (k) {
+      var oRows = list.filter(function (r) { return planRowObjective(r) === k; });
+      return {
+        objective: k, label: paidObjectiveMeta(k).label, metric: paidObjectiveMeta(k).metric,
+        budget: oRows.reduce(function (s, r) { return s + planRowEffectiveBudget(r, null); }, 0),
+        rowCount: oRows.length
+      };
+    });
+  }
   // Đơn giá ĐẶT TAY riêng của 1 dòng plan: field unit_price (chấp nhận
   // cả unitPrice / customFields do Store gói) khác null/'' và đọc được
   // thành số mới tính là đặt tay; còn lại -> null.
@@ -1313,6 +1399,23 @@
         { label: 'First starts', value: n('first') }, { label: 'Paid', value: n('paid') }
       ];
     }
+    // Mô hình Objective: kết quả có thể bắt đầu ở tầng Signups / First /
+    // Paid (Objective Signup / Demo / Remarketing) khi các tầng trên = 0
+    // — phễu bắt đầu đúng tại tầng đầu tiên có số, không bịa tầng trên.
+    if (n('signups') > 0) {
+      return [
+        { label: 'Signups', value: n('signups') }, { label: 'First starts', value: n('first') },
+        { label: 'Paid', value: n('paid') }
+      ];
+    }
+    if (n('first') > 0) {
+      return [
+        { label: 'First starts', value: n('first') }, { label: 'Paid', value: n('paid') }
+      ];
+    }
+    if (n('paid') > 0) {
+      return [{ label: 'Paid', value: n('paid') }];
+    }
     return [];
   }
   // --- Planning Theo tháng: dữ liệu 3 bảng KPI chi tiết theo tháng ---
@@ -1385,6 +1488,12 @@
     var channels = channelOrder.map(function (ch) {
       var e = byChannel[ch];
       e.isPaidMedia = planningChannelIsPaidMedia(e.rows, benchmarks);
+      // Paid Media có Views CHỈ khi Objective Awareness có đơn giá
+      // (cost_per_result.awareness) trên Benchmark — file nguồn chưa
+      // có CPM/CPV nên hiện tại luôn false, bảng Views hiện "—".
+      e.hasAwarenessPrice = e.isPaidMedia
+        ? planBenchmarkCostPerResult(benchmarkForRow(e.rows[0], benchmarks), 'awareness') !== null
+        : false;
       var tViews = null, tPaid = null, tBudget = 0, tHas = false;
       mlist.forEach(function (m) {
         var cell = e.months[m];
@@ -3571,6 +3680,7 @@
       var detailDisAttr = detailEditable ? '' : ' disabled';
       var selHasQty = selRows.some(planRowHasQty);
       var selHasPaid = selRows.some(planRowIsPaidMedia);
+      var selHasPaidObjective = selRows.some(function (r) { return planRowIsPaidMedia(r) && planRowObjective(r); });
       var detailTotal = 0;
       var detailBudgetTotal = 0;
       var detailMonthRows = months.map(function (m) {
@@ -3631,7 +3741,48 @@
         } else {
           budgetCell = '—';
         }
-        return '<tr><td>' + esc(vizMonthLabel(m)) + ' (' + esc(m) + ')</td><td>' + qtyCell + '</td><td>' + priceCell + '</td><td>' + budgetCell + '</td><td>' + esc(rep && recordSegment(rep) ? recordSegment(rep).toUpperCase() : 'Dùng chung') + '</td><td>' + esc(rep ? brandNameOf(recordBrandId(rep)) : '—') + '</td></tr>';
+        // MÔ HÌNH OBJECTIVE: tháng của Channel Paid có Objective hiển
+        // thị THEO TỪNG OBJECTIVE ngay dưới dòng tháng — mỗi Objective
+        // một dòng có ô nhập ngân sách riêng (planning-month-paid-
+        // objective-budget) + tên chỉ số chính + kết quả suy ra của
+        // Objective đó (engine funnel qua funnelTotalsFor trên đúng
+        // các dòng của Objective đó); Objective thuộc catalog nhưng
+        // chưa có dòng ở tháng đó hiện với 0 và sửa được (nhập > 0 tạo
+        // dòng qua savePlanningMonthPaidObjectiveBudget). Dòng tháng
+        // chính khi đó chỉ còn TỔNG ngân sách tháng (chỉ đọc) và cuối
+        // cụm Objective có hàng tổng tháng chỉ đọc = cộng các Objective
+        // (+ mọi dòng Paid chưa gắn Objective nếu có). Channel Paid
+        // KHÔNG có Objective trên dòng nào (vd dữ liệu SAVA) giữ
+        // nguyên ô nhập tổng tháng ở trên.
+        var cellObjKeys = selHasPaidObjective ? paidObjectiveKeysForRows(selRows, selChannel) : [];
+        var cellIsObjectivePaid = !!(cellObjKeys.length && (cellIsPaid || selHasPaidObjective));
+        var objectiveRowsHtml = '';
+        if (cellIsObjectivePaid) {
+          budgetCell = '<span data-planning-budget-value="1">' + fmtMoney(budgetSum, 'VND') + '</span> <span class="sub" data-planning-paid-month-total-label="1">Tổng tháng (chỉ đọc — cộng các Objective)</span>';
+          var selBenchmark = benchmarkForRow(rep || selRows[0] || {}, benchmarks);
+          objectiveRowsHtml = cellObjKeys.map(function (objKey) {
+            var meta = paidObjectiveMeta(objKey);
+            var oRows = cellRows.filter(function (r) { return planRowIsPaidMedia(r) && planRowObjective(r) === objKey; });
+            var oBudget = oRows.reduce(function (s, r) { return s + planRowEffectiveBudget(r, benchmarks); }, 0);
+            var cost = planBenchmarkCostPerResult(selBenchmark, objKey);
+            var costCell = cost === null
+              ? '<span class="sub" data-planning-paid-no-price="1" data-objective="' + esc(objKey) + '">chưa có đơn giá</span>'
+              : fmtMoney(cost, 'VND') + ' <span class="sub">/ ' + esc(meta.metric) + '</span>';
+            var resultHtml;
+            if (cost === null) {
+              resultHtml = '<span class="sub" data-planning-paid-objective-result="1" data-objective="' + esc(objKey) + '">— (chưa có đơn giá)</span>';
+            } else {
+              var oTotals = oRows.length ? funnelTotalsFor(oRows, benchmarks) : { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+              var primary = oTotals ? oTotals[meta.tier] : null;
+              resultHtml = (primary === null || primary === undefined)
+                ? '<span data-planning-paid-objective-result="1" data-objective="' + esc(objKey) + '">—</span>'
+                : '<span data-planning-paid-objective-result="1" data-objective="' + esc(objKey) + '">' + esc(meta.metric) + ': ' + fmtNum(Math.round(primary * 10000) / 10000) + '</span>';
+            }
+            return '<tr data-planning-paid-objective-row="1" data-month="' + esc(m) + '" data-objective="' + esc(objKey) + '"><td>↳ ' + esc(vizMonthLabel(m)) + ' — Objective: ' + esc(meta.label) + '</td><td>—</td><td>' + costCell + '</td><td><input class="phase-input planning-month-input planning-paid-budget-input planning-paid-objective-input" type="number" step="1" min="0" value="' + esc(String(oBudget)) + '" data-action-change="planning-month-paid-objective-budget" data-channel="' + esc(selChannel) + '" data-group="' + esc(cellGroup) + '" data-month="' + esc(m) + '" data-objective="' + esc(objKey) + '" aria-label="Ngân sách Objective ' + esc(meta.label) + ' của ' + esc(selChannel) + ' trong tháng ' + esc(m) + '"' + detailDisAttr + '> ' + resultHtml + '</td><td>' + esc(rep && recordSegment(rep) ? recordSegment(rep).toUpperCase() : 'Dùng chung') + '</td><td>' + esc(rep ? brandNameOf(recordBrandId(rep)) : '—') + '</td></tr>';
+          }).join('') +
+            '<tr data-planning-paid-month-total-row="1" data-month="' + esc(m) + '"><td><strong>Tổng ngân sách tháng ' + esc(m) + '</strong></td><td></td><td></td><td data-planning-paid-month-total="1" data-month="' + esc(m) + '"><strong>' + fmtMoney(budgetSum, 'VND') + '</strong></td><td colspan="2"></td></tr>';
+        }
+        return '<tr><td>' + esc(vizMonthLabel(m)) + ' (' + esc(m) + ')</td><td>' + qtyCell + '</td><td>' + priceCell + '</td><td>' + budgetCell + '</td><td>' + esc(rep && recordSegment(rep) ? recordSegment(rep).toUpperCase() : 'Dùng chung') + '</td><td>' + esc(rep ? brandNameOf(recordBrandId(rep)) : '—') + '</td></tr>' + objectiveRowsHtml;
       }).join('');
       html += '<div class="panel" data-planning-detail="1" data-planning-detail-channel="' + esc(selChannel) + '" data-planning-detail-group="' + esc(selGroup || '') + '"><h3>Chi tiết dòng: ' + esc(selChannel) + (selGroup ? ' — ' + esc(selGroup) : '') + ' (' + esc(year) + ')</h3>' +
         '<p class="sub">' + esc(selRows.length) + ' dòng plan · Tổng số lượng của dòng: <strong>' + fmtNum(detailTotal) + '</strong> (tự cộng từ 12 tháng) · Tổng ngân sách của dòng: <strong>' + fmtMoney(detailBudgetTotal, 'VND') + '</strong></p>' +
@@ -3645,7 +3796,7 @@
         html += '<p class="sub" data-planning-detail-hint="1">Sửa ô Số lượng hoặc Đơn giá theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay vào dữ liệu demo — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng ngân sách nguồn (Số lượng trống, vd Paid Ads) không sửa Số lượng và Đơn giá ở đây — riêng dòng Paid Media thì sửa trực tiếp ô Ngân sách theo tháng (xem chú thích Paid Media bên dưới).</p>' +
           '<p class="sub" data-planning-detail-price-hint="1">Đơn giá: ô hiện đơn giá hiệu dụng của tháng — nhãn "Benchmark" nghĩa là đang lấy đơn giá Benchmark, nhập số vào ô Đơn giá để chuyển tháng đó sang "đặt tay". Xoá trắng ô Đơn giá rồi ra khỏi ô để bỏ đơn giá đặt tay, quay về đơn giá Benchmark.</p>' +
           '<p class="sub" data-planning-detail-budget-hint="1">Ngân sách của dòng thường chỉ tự tính (không sửa được): Ngân sách của tháng = Số lượng × Đơn giá hiệu dụng (đơn giá đặt tay nếu có, không thì đơn giá Benchmark). Ngoại lệ duy nhất: dòng thuộc nhóm Paid Media nhập ngân sách trực tiếp theo tháng ở cột Ngân sách (dòng không thuộc Paid Media không có ô nhập ngân sách).</p>' +
-          (selHasPaid ? '<p class="sub" data-planning-paid-budget-hint="1">Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Chỉ số Paid (Visits → Signups → First → Paid) suy ra từ ngân sách qua Benchmark: Visits = Ngân sách × traffic share ÷ cost per LP visit (Meta Ads 60% ÷ 20.000đ; TikTok Ads 70% ÷ 22.000đ — 03 Inputs của file Lumus 2027 Master Forecast). Views không suy từ tiền vì file nguồn không có số Views cho Paid.</p>' : '');
+          (selHasPaid ? '<p class="sub" data-planning-paid-budget-hint="1">Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Theo mô hình Objective, mỗi tháng hiển thị theo từng Objective: mỗi Objective có ô nhập ngân sách riêng, kết quả đặt tại tầng của Objective đó (Awareness → Views, Traffic → Visits, Signup → Signups, Remarketing → Paid) = Ngân sách ÷ đơn giá kết quả (cost_per_result) của Benchmark rồi chảy xuống qua tỉ lệ Benchmark — KHÔNG suy ngược lên tầng trên. Objective chưa có đơn giá trong file nguồn (vd Awareness) hiển thị "chưa có đơn giá": ngân sách vẫn tính vào tổng tháng nhưng chưa ra chỉ số. Tổng ngân sách tháng ở dòng tháng là chỉ đọc, bằng cộng các Objective.</p>' : '');
       }
       html += tbl('<tr><th>Tháng</th><th>Số lượng</th><th>Đơn giá (VNĐ)</th><th>Ngân sách (VNĐ)</th><th>Segment</th><th>Brand</th></tr>' + detailMonthRows + '<tr data-planning-detail-total="1"><td><strong>Tổng dòng</strong></td><td><strong>' + fmtNum(detailTotal) + '</strong></td><td></td><td data-planning-detail-budget-total="1"><strong>' + fmtMoney(detailBudgetTotal, 'VND') + '</strong></td><td colspan="2"></td></tr>', 'planning-detail');
       // Forecast của chính dòng này — dùng NGUYÊN cơ chế sẵn có của Theo
@@ -3812,6 +3963,20 @@
         return '<tr data-planning-phase-channel="' + esc(ch) + '">' + cells + '</tr>';
       }).join('');
       html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đơn giá mỗi bài (VNĐ)</th><th>Đầu phễu (Views)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Signups</th><th>Forecast Paid</th></tr>' + body, 'planning-phase-channels');
+      // Paid Media trong Phase: ngân sách theo Objective (CHỈ ĐỌC từ
+      // cùng các dòng plan_rows — sửa ngân sách Objective ở bảng chi
+      // tiết Theo tháng, KHÔNG sửa ở chế độ Theo phase).
+      var paidBreakdowns = channels.map(function (ch) {
+        var chRows = pRows.filter(function (r) { return String(r.channel || '—') === ch; });
+        var objs = phasePaidObjectiveBudgets(chRows);
+        if (!objs.length) return '';
+        return '<p class="sub" data-planning-phase-paid-objectives="1" data-channel="' + esc(ch) + '"><strong>' + esc(ch) + ' — Ngân sách theo Objective trong Phase:</strong> ' +
+          objs.map(function (o) { return esc(o.label) + ': ' + fmtMoney(o.budget, 'VND'); }).join(' · ') + '</p>';
+      }).join('');
+      if (paidBreakdowns) {
+        html += paidBreakdowns +
+          '<p class="sub" data-planning-phase-paid-note="1">Ngân sách Paid theo Objective ở chế độ Theo phase chỉ HIỂN THỊ (đọc từ cùng các dòng plan_rows) — muốn sửa ngân sách của từng Objective, sửa ở bảng chi tiết Theo tháng.</p>';
+      }
       html += '<p class="sub">Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).</p>';
       html += '<p class="sub" data-planning-phase-price-hint="1">Đơn giá mỗi bài: ô hiện đơn giá HIỆU DỤNG của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang đơn giá đặt tay, "Benchmark" nghĩa là đang lấy đơn giá Benchmark. Nhập một giá vào ô sẽ ghi đơn giá đặt tay đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × đơn giá hiệu dụng như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ đơn giá đặt tay của cả Phase, quay về Benchmark. Nếu các tháng đang có đơn giá khác nhau (do sửa lẻ ở Theo tháng), ô để trống kèm ghi chú "khác nhau theo tháng".</p>';
     }
@@ -3850,23 +4015,25 @@
       return '<tr data-planning-kpi-row="' + esc(kind) + '" data-channel="' + esc(ch.channel) + '"><td><strong>' + esc(ch.channel) + '</strong></td>' + cells +
         '<td data-planning-kpi-total="' + esc(kind) + '" data-channel="' + esc(ch.channel) + '"><strong>' + totalVal(ch.totals, ch) + '</strong></td></tr>';
     }
-    // 1) VIEWS — Paid Media không có Views -> "—" ở mọi tháng + ghi chú.
+    // 1) VIEWS — Paid Media chỉ có Views khi Objective Awareness có
+    // đơn giá; file nguồn chưa có CPM/CPV nên Paid Media không có
+    // Views -> "—" ở mọi tháng + ghi chú lý do.
     var viewsBody = data.channels.map(function (ch) {
       return rowHtml('views', ch,
-        function (cell) { return ch.isPaidMedia ? '—' : (cell.hasForecast ? fmtNum(Math.round(cell.views)) : '—'); },
-        function (tot) { return ch.isPaidMedia ? '—' : (tot.hasForecast ? fmtNum(Math.round(tot.views)) : '—'); });
+        function (cell) { return (ch.isPaidMedia && !ch.hasAwarenessPrice) ? '—' : (cell.hasForecast ? fmtNum(Math.round(cell.views)) : '—'); },
+        function (tot) { return (ch.isPaidMedia && !ch.hasAwarenessPrice) ? '—' : (tot.hasForecast ? fmtNum(Math.round(tot.views)) : '—'); });
     }).join('');
     var viewsHtml = planningKpiSectionHtml('views', 'KPI chi tiết theo tháng — Views (Forecast)',
-      'Views forecast theo Channel × tháng, lấy từ cùng engine funnel với Forecast ở trên (đã gồm uplift theo Phase). Channel thuộc Paid Media <strong>không có Views</strong> (phễu của Paid Media bắt đầu ở Visits, suy từ ngân sách) nên hiển thị "—" ở mọi tháng. Channel chưa có Benchmark/Assumption khớp cũng hiển thị "—".',
+      'Views forecast theo Channel × tháng, lấy từ cùng engine funnel với Forecast ở trên (đã gồm uplift theo Phase). Channel thuộc Paid Media <strong>không có Views</strong> khi Objective Awareness chưa có đơn giá — file nguồn không có CPM/CPV cho Paid nên hiện tại hiển thị "—" ở mọi tháng (khi nào Benchmark có cost_per_result của Awareness thì Views của Paid mới hiện). Channel chưa có Benchmark/Assumption khớp cũng hiển thị "—".',
       tbl(head + viewsBody, 'planning-kpi-views'));
-    // 2) PAID USERS — gồm cả Paid Media suy từ ngân sách.
+    // 2) PAID USERS — gồm cả Paid Media tính theo từng Objective.
     var paidBody = data.channels.map(function (ch) {
       return rowHtml('paid', ch,
         function (cell) { return cell.hasForecast ? fmtPlanningPaid(cell.paid) : '—'; },
         function (tot) { return tot.hasForecast ? fmtPlanningPaid(tot.paid) : '—'; });
     }).join('');
     var paidHtml = planningKpiSectionHtml('paid', 'KPI chi tiết theo tháng — Paid Users (Forecast)',
-      'Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (suy từ ngân sách qua Visits → Signups → First → Paid). Số hiển thị làm tròn tối đa 4 chữ số thập phân; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn.',
+      'Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (tính theo từng Objective từ ngân sách: kết quả đặt tại tầng của Objective rồi chảy xuống tới Paid, cộng dồn mọi Objective). Số hiển thị làm tròn tối đa 4 chữ số thập phân; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn.',
       tbl(head + paidBody, 'planning-kpi-paid'));
     // 3) CAC — kèm hàng "Tất cả" (blended).
     var cacBody = data.channels.map(function (ch) {
@@ -4230,6 +4397,70 @@
     if (newPhaseIdB) objB.phase_id = newPhaseIdB;
     saveResult(sCreate('plan_rows', objB),
       function () { toast('Đã tạo dòng Paid Media và lưu Ngân sách ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Tổng ngân sách và Forecast Paid đã tính lại.'); render(); },
+      function (msg) { toast('Chưa lưu được Ngân sách Paid Media: ' + msg); render(); });
+  }
+
+  // Lưu Ngân sách của ĐÚNG 1 OBJECTIVE trong 1 ô tháng (Channel × Group
+  // × tháng × Objective) vào field `budget` của các dòng plan_rows Paid
+  // Media mang objective đó — mô hình Objective: sửa ngân sách 1
+  // Objective CHỈ đổi kết quả của Objective đó + các tổng liên quan,
+  // không đụng Objective khác (các dòng objective khác trong cùng ô
+  // không nằm trong tập lọc nên không bị ghi). Cùng guard + validate
+  // như savePlanningMonthPaidBudget (planningMonthSaveGuard +
+  // parsePlanPaidBudget). Ô tháng chưa có dòng của Objective đó: nhập
+  // > 0 tạo 1 dòng Paid mới mang objective (suy Brand/Segment/Phase từ
+  // dòng Paid khác của cùng Channel — kể cả dòng thuộc Objective khác);
+  // nhập 0 thì không tạo. Ô có nhiều dòng cùng Objective: phân bổ tổng
+  // mới theo tỉ lệ hiện tại bằng distributeQty như cơ chế Paid sẵn có.
+  function savePlanningMonthPaidObjectiveBudget(channel, group, month, objective, raw) {
+    if (!planningMonthSaveGuard()) return;
+    if (!/^\d{4}-\d{2}$/.test(String(month || ''))) { toast('Không xác định được tháng của ô Ngân sách Paid Media.'); render(); return; }
+    var objKey = planRowObjective({ objective: objective });
+    if (!objKey) { toast('Không xác định được Objective của ô Ngân sách Paid Media.'); render(); return; }
+    var v = parsePlanPaidBudget(raw);
+    if (v === null) { toast('Ngân sách Paid Media phải là số nguyên từ 0 trở lên.'); render(); return; }
+    var objLabel = paidObjectiveMeta(objKey).label;
+    var yearPrefix = String(month).slice(0, 4) + '-';
+    var yearRows = filteredPlanRows().filter(function (r) { return planRowMonth(r).indexOf(yearPrefix) === 0; });
+    var cellRows = planMonthRows(yearRows, channel, group, month);
+    var objRows = cellRows.filter(function (r) { return planRowIsPaidMedia(r) && planRowObjective(r) === objKey; });
+    if (objRows.length) {
+      var news = distributeQty(v, objRows.map(function (r) { var d = planRowDirectBudget(r); return d === null ? 0 : d; }));
+      var jobs = [];
+      objRows.forEach(function (r, i) { var cur = planRowDirectBudget(r); if ((cur === null ? 0 : cur) !== news[i]) jobs.push({ id: r.id, budget: news[i] }); });
+      if (!jobs.length) { render(); return; }
+      var idx = 0, failed = 0;
+      function next() {
+        if (idx >= jobs.length) {
+          if (failed) toast('Đã lưu Ngân sách Objective ' + objLabel + ' ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' nhưng ' + failed + ' dòng chưa lưu được — hãy thử lại.');
+          else toast('Đã lưu Ngân sách Objective ' + objLabel + ' ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Tổng tháng và Forecast của Objective này đã tính lại, Objective khác không đổi.');
+          render(); return;
+        }
+        var job = jobs[idx++];
+        saveResult(sUpdate('plan_rows', job.id, { budget: job.budget }), function () { next(); }, function () { failed++; next(); });
+      }
+      next();
+      return;
+    }
+    if (v === 0) { render(); return; }
+    var siblings = yearRows.filter(function (r) { return String(r.channel || '—') === String(channel) && planRowGroup(r) === String(group) && planRowIsPaidMedia(r); });
+    if (!siblings.length) { toast('Không có dòng Paid Media nào của Channel này để tạo dòng Objective ' + objLabel + ' cho tháng ' + month + '.'); render(); return; }
+    var tpl = siblings.filter(function (r) { return planRowObjective(r) === objKey; })[0] || siblings[0];
+    var objO = { month: String(month), channel: String(channel), group: planRowGroup(tpl), qty: null, budget: v, unit: null, objective: objKey };
+    if (tpl.brand_id !== undefined && tpl.brand_id !== null) objO.brand_id = tpl.brand_id;
+    else if (tpl.brandId !== undefined && tpl.brandId !== null) objO.brandId = tpl.brandId;
+    var segO = recordSegment(tpl);
+    if (segO) objO.segment = segO;
+    var tplBrandO = recordBrandId(tpl);
+    var newPhaseIdO = null;
+    brandPhasesList().forEach(function (p) {
+      if (newPhaseIdO) return;
+      if (tplBrandO && String(recordBrandId(p) || '') !== String(tplBrandO)) return;
+      if (phaseMonths(p).indexOf(String(month)) !== -1) newPhaseIdO = p.id;
+    });
+    if (newPhaseIdO) objO.phase_id = newPhaseIdO;
+    saveResult(sCreate('plan_rows', objO),
+      function () { toast('Đã tạo dòng Paid Media Objective ' + objLabel + ' và lưu Ngân sách ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Tổng tháng và Forecast đã tính lại.'); render(); },
       function (msg) { toast('Chưa lưu được Ngân sách Paid Media: ' + msg); render(); });
   }
 
@@ -8198,6 +8429,7 @@
     if (ctxKind === 'planning-month-qty') { savePlanningMonthQty(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-unit-price') { savePlanningMonthUnitPrice(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-paid-budget') { savePlanningMonthPaidBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
+    if (ctxKind === 'planning-month-paid-objective-budget') { savePlanningMonthPaidObjectiveBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.getAttribute('data-objective'), t.value); return; }
     if (ctxKind === 'planning-add-brand') { UI.planningAddBrand = t.value || null; render(); return; }
     if (ctxKind === 'phase-views') { savePhaseViews(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'phase-rate') { savePhaseRate(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.getAttribute('data-field'), t.value); return; }

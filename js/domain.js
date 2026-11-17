@@ -2127,18 +2127,86 @@
   // =====================================================================
   // Brand + Planning (17/11/2026) — hàm THUẦN cho bản bấm thử, dữ liệu demo.
   // plan row: { brand_id, segment, month: 'YYYY-MM', channel, group, qty,
-  //             budget, unit_price } — budget chỉ có ở dòng ngân sách thẳng
-  //             KHÔNG có số lượng (Paid Ads, qty null); unit_price là ĐƠN GIÁ
-  //             ĐẶT TAY riêng của dòng (tuỳ chọn, khác null mới có hiệu lực),
-  //             thắng đơn giá của benchmark khớp khi tính ngân sách.
+  //             budget, unit_price, objective } — budget chỉ có ở dòng ngân
+  //             sách thẳng KHÔNG có số lượng (Paid Ads, qty null); unit_price
+  //             là ĐƠN GIÁ ĐẶT TAY riêng của dòng (tuỳ chọn, khác null mới
+  //             có hiệu lực), thắng đơn giá của benchmark khớp khi tính
+  //             ngân sách. objective CHỈ có ở dòng Paid Media (mô hình
+  //             Objective, xem PAID_OBJECTIVES bên dưới).
   // benchmark: { brand_id, channel, unit_price, output_per_unit,
   //   view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
-  //   direct_budget, traffic_share, cost_per_visit } — chấp nhận cả khóa
-  //   camelCase tương ứng. traffic_share + cost_per_visit CHỈ có ở
-  //   benchmark Paid Media (suy Visits từ ngân sách, xem forecastFunnel).
+  //   direct_budget, cost_per_result } — chấp nhận cả khóa camelCase
+  //   tương ứng. cost_per_result là ĐƠN GIÁ KẾT QUẢ theo Objective của
+  //   benchmark Paid Media: object { [objectiveKey]: VNĐ/kết quả } (giá
+  //   trị null/thiếu = objective đó CHƯA có đơn giá — không bịa số).
+  //   Cơ chế cũ traffic_share / cost_per_visit (Visits = ngân sách ×
+  //   traffic_share ÷ cost_per_visit) ĐÃ GỠ HOÀN TOÀN khỏi engine.
   // Mọi hàm an toàn với rows rỗng/thiếu benchmark: trả 0/null, không throw.
   // =====================================================================
   var FUNNEL_STEPS = ['views', 'visits', 'signups', 'first', 'paid'];
+
+  // ---------- Paid Media theo mô hình Objective (thay cơ chế cũ) ----------
+  // Mỗi Objective có kết quả đặt TẠI tầng của nó, rồi chảy XUỐNG qua tỉ
+  // lệ benchmark của channel (kèm uplift ở chế độ phase); KHÔNG suy
+  // ngược lên tầng trên; thiếu tỉ lệ thì chuỗi dừng tại đó, không bịa số.
+  var PAID_OBJECTIVES = [
+    { key: 'awareness', label: 'Awareness / Reach', tier: 'views', metric: 'Views' },
+    { key: 'traffic', label: 'Traffic', tier: 'visits', metric: 'Visits' },
+    { key: 'signup', label: 'Signup Conversion', tier: 'signups', metric: 'Signups' },
+    { key: 'remarketing', label: 'Remarketing', tier: 'paid', metric: 'Paid' },
+    { key: 'lead_gen', label: 'Lead Generation', tier: 'signups', metric: 'Signups' },
+    { key: 'demo', label: 'Demo / Contact', tier: 'first', metric: 'First' }
+  ];
+  var PAID_OBJECTIVE_TIER = {};
+  PAID_OBJECTIVES.forEach(function (o) { PAID_OBJECTIVE_TIER[o.key] = o.tier; });
+  // Catalog Objective theo Channel (Paid Ads — Lumus Draft Plan).
+  var PAID_CHANNEL_OBJECTIVES = {
+    'Meta Ads': ['awareness', 'traffic', 'signup', 'remarketing'],
+    'TikTok Ads': ['awareness', 'traffic', 'signup'],
+    'Google Search B2B': ['traffic', 'lead_gen'],
+    'LinkedIn Ads B2B': ['lead_gen', 'demo']
+  };
+  var _OBJECTIVE_ALIASES = {
+    awareness: 'awareness', reach: 'awareness', 'awareness/reach': 'awareness', video_views: 'awareness', videoviews: 'awareness', 'video views': 'awareness',
+    traffic: 'traffic', 'high-intent traffic': 'traffic', search: 'traffic',
+    signup: 'signup', signups: 'signup', signup_conversion: 'signup', 'signup conversion': 'signup', conversion: 'signup',
+    remarketing: 'remarketing',
+    lead_gen: 'lead_gen', leadgen: 'lead_gen', 'lead generation': 'lead_gen', lead_generation: 'lead_gen', 'b2b lead generation': 'lead_gen',
+    demo: 'demo', contact: 'demo', 'demo/contact': 'demo'
+  };
+  function _rowObjective(row) {
+    if (!row) return null;
+    var v = row.objective !== undefined && row.objective !== null ? row.objective
+      : (row.objective_key !== undefined && row.objective_key !== null ? row.objective_key : row.objectiveKey);
+    if (v === undefined || v === null || String(v).trim() === '') return null;
+    var k = String(v).trim().toLowerCase();
+    return _OBJECTIVE_ALIASES[k] || (PAID_OBJECTIVE_TIER[k] ? k : null);
+  }
+  // Đơn giá kết quả (VNĐ/kết quả) của 1 Objective trên benchmark:
+  // đọc cost_per_result / costPerResult dạng object theo key objective
+  // (chấp nhận cả key tầng: views/visits/signups/first/paid) hoặc dạng
+  // phẳng cost_per_result_<key> / costPerResult<Key>. Thiếu/null/<=0
+  // -> null (objective chưa có đơn giá, không bịa số).
+  function _costPerResult(b, objectiveKey) {
+    if (!b || !objectiveKey) return null;
+    var tier = PAID_OBJECTIVE_TIER[objectiveKey];
+    var maps = [b.cost_per_result, b.costPerResult];
+    for (var i = 0; i < maps.length; i++) {
+      var m = maps[i];
+      if (m && typeof m === 'object') {
+        var v = _planNum(m[objectiveKey] !== undefined && m[objectiveKey] !== null ? m[objectiveKey] : m[tier]);
+        if (v !== null) return v > 0 ? v : null;
+      }
+    }
+    var cap = objectiveKey.charAt(0).toUpperCase() + objectiveKey.slice(1);
+    var flat = _planNum(b['cost_per_result_' + objectiveKey] !== undefined && b['cost_per_result_' + objectiveKey] !== null
+      ? b['cost_per_result_' + objectiveKey] : b['costPerResult' + cap]);
+    if (flat !== null) return flat > 0 ? flat : null;
+    return null;
+  }
+  function costPerResultFor(benchmark, objectiveKey) {
+    return _costPerResult(benchmark, _OBJECTIVE_ALIASES[String(objectiveKey || '').trim().toLowerCase()] || objectiveKey);
+  }
 
   function _planNum(v) {
     if (v === null || v === undefined || v === '') return null;
@@ -2348,17 +2416,20 @@
    * - Channel không benchmark VÀ không assumption đủ tỉ lệ → null như v1.
    *   Assumption đủ 4 tỉ lệ nhưng không benchmark: chỉ tính được khi có
    *   top_funnel_override (có đầu phễu); thiếu đầu phễu → null.
-   * - Paid Media (benchmark direct_budget): forecast bắt đầu ở VISITS,
-   *   suy từ ngân sách của dòng theo đúng công thức sheet 04 Monthly của
-   *   file Lumus 2027 Master Forecast: Visits = budget (VNĐ) ×
-   *   traffic_share ÷ cost_per_visit (03 Inputs cột M/N: Meta 0,6 /
-   *   20.000đ — R59; TikTok 0,7 / 22.000đ — R60), rồi áp chuỗi hạ nguồn
-   *   visit→signup / signup→first / first→paid của benchmark/assumption
-   *   (R59/R60: 0,09 / 0,5 / 0,055; uplift phase áp vào 3 tỉ lệ này như
-   *   kênh thường). Views của Paid = 0 trong tổng (file nguồn để trống
-   *   REACH/VIEWS cho Paid — KHÔNG suy Views từ tiền, không bịa số).
-   *   Benchmark direct_budget THIẾU traffic_share / cost_per_visit /
-   *   chuỗi hạ nguồn → forecast null như trước (không bịa số).
+   * - Paid Media (benchmark direct_budget) — MÔ HÌNH OBJECTIVE: mỗi
+   *   dòng Paid mang field `objective`; kết quả của objective đặt TẠI
+   *   tầng của nó: result = budget ÷ cost_per_result[objective] của
+   *   benchmark (Traffic = Cost/LPV từ Master Forecast 03 Inputs:
+   *   Meta 20.000đ, TikTok 22.000đ; Signup / Remarketing = đơn giá SUY
+   *   TỪ CHUỖI tỉ lệ của file — xem seed ở demo-data.js), rồi chảy
+   *   XUỐNG qua các tỉ lệ benchmark/assumption phía dưới tầng đó
+   *   (uplift phase áp vào các tỉ lệ này như kênh thường). KHÔNG suy
+   *   ngược lên tầng trên; thiếu tỉ lệ thì chuỗi dừng tại đó. Objective
+   *   CHƯA có đơn giá (cost_per_result thiếu/null — Awareness, Lead
+   *   Gen, Demo trong file nguồn) hoặc dòng Paid không có objective →
+   *   forecast null cho dòng đó (ngân sách vẫn tính vào tổng ngân sách
+   *   qua planBudget, chỉ số đóng góp 0, không bịa số). Cơ chế cũ
+   *   (Visits = ngân sách × traffic_share ÷ cost_per_visit) ĐÃ GỠ.
    * - Trả thêm byPhase: { [phase_id]: { phase_id, views, visits, signups,
    *   first, paid, rowCount } } cộng từ CÙNG kết quả từng row đã tính
    *   (rowCount = số row có forecast thuộc phase); row chi tiết thêm
@@ -2455,25 +2526,32 @@
       }
       var views, visits;
       if (b && (b.direct_budget || b.directBudget)) {
-        // Paid Media: đầu phễu là Visits suy từ ngân sách (xem doc ở
-        // đầu hàm). top_funnel_override (đầu phễu Views) KHÔNG áp cho
-        // Paid — file nguồn không có Views cho Paid.
+        // Paid Media — MÔ HÌNH OBJECTIVE (xem doc ở đầu hàm):
+        // top_funnel_override (đầu phễu Views) KHÔNG áp cho Paid.
         var budget = _planNum(r && r.budget);
-        var trafficShare = _benchField(b, 'traffic_share', 'trafficShare');
-        var costPerVisit = _benchField(b, 'cost_per_visit', 'costPerVisit');
-        if (budget === null || trafficShare === null || costPerVisit === null || costPerVisit <= 0) return base;
-        var pRates0 = {
+        var objKey = _rowObjective(r);
+        base.objective = objKey;
+        if (budget === null || !objKey) return base;
+        var cpr = _costPerResult(b, objKey);
+        if (cpr === null) return base;
+        var pRates = upliftRates({
+          v2v: baseRate('view_to_visit', 'viewToVisit'),
           v2s: baseRate('visit_to_signup', 'visitToSignup'),
           s2f: baseRate('signup_to_first', 'signupToFirst'),
           f2p: baseRate('first_to_paid', 'firstToPaid')
-        };
-        if (pRates0.v2s === null || pRates0.s2f === null || pRates0.f2p === null) return base;
-        var pRates = upliftRates(pRates0);
-        views = 0;
-        visits = budget * trafficShare / costPerVisit;
-        var pSignups = visits * pRates.v2s;
-        var pFirst = pSignups * pRates.s2f;
-        var pPaid = pFirst * pRates.f2p;
+        });
+        var tierIdx = FUNNEL_STEPS.indexOf(PAID_OBJECTIVE_TIER[objKey]);
+        var vals = { views: 0, visits: 0, signups: 0, first: 0, paid: 0 };
+        vals[FUNNEL_STEPS[tierIdx]] = budget / cpr;
+        // Chảy XUỐNG từ tầng của objective; thiếu tỉ lệ -> dừng chuỗi.
+        var transRates = [pRates.v2v, pRates.v2s, pRates.s2f, pRates.f2p];
+        for (var ti = tierIdx; ti < FUNNEL_STEPS.length - 1; ti++) {
+          var tr = transRates[ti];
+          if (tr === null) break;
+          vals[FUNNEL_STEPS[ti + 1]] = vals[FUNNEL_STEPS[ti]] * tr;
+        }
+        views = vals.views; visits = vals.visits;
+        var pSignups = vals.signups, pFirst = vals.first, pPaid = vals.paid;
         base.forecast = { views: views, visits: visits, signups: pSignups, first: pFirst, paid: pPaid };
         var bmP = base.month && byMonth[base.month];
         if (bmP) {
@@ -2607,6 +2685,11 @@
     forecastFunnel: forecastFunnel,
     effectiveRate: effectiveRate,
     planBudget: planBudget,
+    PAID_OBJECTIVES: PAID_OBJECTIVES,
+    PAID_OBJECTIVE_TIER: PAID_OBJECTIVE_TIER,
+    PAID_CHANNEL_OBJECTIVES: PAID_CHANNEL_OBJECTIVES,
+    paidObjectiveOf: _rowObjective,
+    costPerResultFor: costPerResultFor,
     wouldCreateCycle: wouldCreateCycle,
     taskReadiness: taskReadiness,
     previewDependencyImpact: previewDependencyImpact,

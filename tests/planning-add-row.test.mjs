@@ -25,7 +25,7 @@
 //      tại -> bộ lọc chuyển theo để dòng mới hiện ngay; dòng mới tuân
 //      thủ matchesBrandSegment như mọi dòng khác.
 // Neo demo TRƯỚC khi thêm không đổi: Lumus 776 content / tổng ngân sách
-// năm 1.515.500.000đ.
+// năm 1.598.700.000đ (sau đợt Paid Objective; trước đợt đó là 1.515.500.000đ).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -295,9 +295,9 @@ test('PAR (f): thêm dòng cho Brand/Segment khác bộ lọc hiện tại -> b�
 });
 
 // ---------- neo ----------
-test('PAR [neo]: số neo demo TRƯỚC khi thêm dòng không đổi — Lumus 776 content / tổng ngân sách năm 1.515.500.000đ', () => {
+test('PAR [neo]: số neo demo TRƯỚC khi thêm dòng — Lumus 776 content / tổng ngân sách năm 1.598.700.000đ (SỬA PHẠM VI đợt Paid Objective: +83.200.000đ từ 2 kênh Paid B2B mới trong Draft Plan mà seed cũ bỏ sót; tổng B2C vẫn 1.515.500.000đ)', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
   assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 776);
-  assert.equal(domain.planBudget(lumus, demo.benchmarks).total, 1515500000);
+  assert.equal(domain.planBudget(lumus, demo.benchmarks).total, 1598700000);
   assert.ok(!demo.plan_rows.some((r) => r.channel === 'Google Ads'), 'dữ liệu nguồn chưa có kênh Google Ads — tính năng thêm dòng là thao tác người dùng, không sửa dữ liệu nguồn');
 });

@@ -10,22 +10,17 @@
 // savePlanningMonthPaidBudget / parsePlanPaidBudget) để KHÔNG hồi sinh
 // cơ chế sửa ngân sách tổng quát đã gỡ ở 06d8ffc -> ec2ab1b.
 //
-// Forecast Paid — căn cứ file nguồn (TUYỆT ĐỐI không bịa số):
-// Lumus 2027 Master Forecast (.xlsm), sheet 03 Inputs R59/R60:
-//   Meta Ads:   traffic share (cột M) 0,6; COST/LP VISIT (cột N) 20.000đ;
-//               visit→signup 0,09 / signup→first 0,5 / first→paid 0,055.
-//   TikTok Ads: traffic share 0,7; cost/LP visit 22.000đ; hạ nguồn như trên.
-// Công thức sheet 04 Monthly (cột H VISITS):
-//   Visits = Ngân sách VNĐ × traffic_share ÷ cost_per_visit
-//   (file tính bằng USD × FX 26.000 — tương đương vì ngân sách plan đã
-//   là VNĐ). Kiểm chứng khớp sheet 02 KPI Budget: Meta cả năm
-//   546.000.000 × 0,6 ÷ 20.000 = 16.380 Visits / 1.474,2 Signups /
-//   737,1 First; TikTok 182.000.000 × 0,7 ÷ 22.000 = 5.790,909… Visits.
-// Views của Paid: file nguồn ĐỂ TRỐNG cột REACH/VIEWS cho Paid ->
-// forecast Paid bắt đầu ở Visits, Views đóng góp 0, KHÔNG suy Views.
-// Paid (bước cuối) theo chuỗi thống nhất của app như KOL: First ×
-// first_to_paid (file nguồn tính New Paid theo cohort lag riêng — app
-// không dùng cơ chế lag đó cho bất kỳ channel nào, giữ nhất quán app).
+// Forecast Paid — SỬA PHẠM VI đợt Paid Objective (thay cơ chế
+// traffic_share của bản cũ): mỗi dòng Paid mang field objective; kết
+// quả đặt TẠI tầng của Objective = ngân sách ÷ cost_per_result của
+// Benchmark rồi chảy XUỐNG qua chuỗi tỉ lệ (visit→signup 0,09 /
+// signup→first 0,5 / first→paid 0,055 — 03 Inputs R59/R60). Đơn giá:
+// Traffic = Cost/LPV (Meta 20.000đ / TikTok 22.000đ); Signup và
+// Remarketing (CAC) SUY TỪ CHUỖI tỉ lệ file; Awareness chưa có đơn
+// giá (file không có CPM/CPV) -> forecast null, ngân sách vẫn tính.
+// Ca neo đầy đủ của mô hình Objective khoá ở
+// tests/planning-paid-objective.test.mjs; file này giữ các ca ngân
+// sách trực tiếp (i)/(ii) và neo tổng (v) đã cập nhật theo Objective.
 //
 // Cách xử lý tháng NHIỀU dòng Paid khi lưu (ghi rõ theo yêu cầu):
 // phân bổ TỔNG ngân sách mới về các dòng theo tỉ lệ ngân sách hiện tại
@@ -114,7 +109,7 @@ const PHASES = [
 ];
 const BENCHMARKS = [
   { id: 'bench-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', unit_price: 1500000, output_per_unit: 4000, view_to_visit: 0.003, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055 },
-  { id: 'bench-meta', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', unit_price: null, output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, traffic_share: 0.6, cost_per_visit: 20000, direct_budget: true },
+  { id: 'bench-meta', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', unit_price: null, output_per_unit: null, view_to_visit: null, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055, cost_per_result: { awareness: null, traffic: 20000, signup: 20000 / 0.09, remarketing: 20000 / (0.09 * 0.5 * 0.055) }, direct_budget: true },
 ];
 function baseRows() {
   return [
@@ -271,63 +266,81 @@ test('PPB (ii): dòng KHÔNG-paid gọi lưu ngân sách trực tiếp đều b�
 });
 
 // ---------- (iv) forecast Paid suy từ ngân sách ----------
-test('PPB (iv) [domain]: ca số file nguồn — Meta Ads T1 ngân sách 10.920.000đ -> Visits 327,6 / Signups 29,484 / First 14,742 (khớp 04 Monthly + 02 KPI Budget); cả năm Meta/TikTok khớp sheet 02', () => {
-  const metaJan = demo.plan_rows.find((r) => r.channel === 'Meta Ads' && r.month === '2027-01');
-  assert.equal(metaJan.budget, 10920000);
-  const f = domain.forecastFunnel([metaJan], demo.benchmarks);
-  const fc = f.rows[0].forecast;
-  assert.ok(fc, 'Paid có căn cứ file nguồn thì forecast phải tính được');
-  approx(fc.views, 0, 'Views Paid = 0 (file nguồn để trống, không suy từ tiền)');
-  approx(fc.visits, 327.6, 'visits = 10.920.000 x 0,6 / 20.000');
-  approx(fc.signups, 29.484, 'signups = visits x 0,09');
-  approx(fc.first, 14.742, 'first = signups x 0,5');
-  approx(fc.paid, 14.742 * 0.055, 'paid = first x 0,055 (chuỗi app thống nhất)');
-  // Cả năm theo channel — khớp sheet 02 KPI Budget R23/R24 ở Visits/Signups/First.
+test('PPB (iv) [domain]: ca số Objective — Meta Ads T1 theo từng Objective (Traffic 5.460.000đ -> Visits 273; Signup 3.276.000đ -> Signups 14,742; tổng Paid T1 = 1,08108); cả năm Meta/TikTok theo Objective (SỬA PHẠM VI đợt Paid Objective)', () => {
+  const metaJanRows = demo.plan_rows.filter((r) => r.channel === 'Meta Ads' && r.month === '2027-01');
+  assert.equal(metaJanRows.reduce((a, r) => a + r.budget, 0), 10920000, 'tổng tháng T1 không đổi');
+  const f = domain.forecastFunnel(metaJanRows, demo.benchmarks);
+  const byObj = Object.fromEntries(f.rows.map((r) => [r.objective, r.forecast]));
+  assert.equal(byObj.awareness, null, 'Awareness chưa có đơn giá -> forecast null');
+  approx(byObj.traffic.visits, 273, 'Traffic visits = 5.460.000 / 20.000');
+  approx(byObj.traffic.signups, 24.57, 'Traffic signups = 273 x 0,09');
+  approx(byObj.traffic.first, 12.285, 'Traffic first');
+  approx(byObj.traffic.paid, 0.675675, 'Traffic paid');
+  approx(byObj.signup.signups, 14.742, 'Signup signups = 3.276.000 / (20.000 / 0,09)');
+  approx(byObj.signup.first, 7.371, 'Signup first');
+  approx(byObj.signup.paid, 0.405405, 'Signup paid');
+  approx(f.totals.views, 0, 'Views Paid = 0 (Awareness chưa có đơn giá, không suy từ tiền)');
+  approx(f.totals.visits, 273, 'tổng visits T1');
+  approx(f.totals.signups, 39.312, 'tổng signups T1');
+  approx(f.totals.first, 19.656, 'tổng first T1');
+  approx(f.totals.paid, 1.08108, 'tổng Paid Meta T1 = 0,675675 + 0,405405');
+  // Cả năm theo Objective (tính tay từ ngân sách từng Objective — xem
+  // bảng delta trong tests/planning-paid-objective.test.mjs).
   const metaYear = domain.forecastFunnel(demo.plan_rows.filter((r) => r.channel === 'Meta Ads'), demo.benchmarks);
-  approx(metaYear.totals.visits, 16380, 'Meta FY visits');
-  approx(metaYear.totals.signups, 1474.2, 'Meta FY signups');
-  approx(metaYear.totals.first, 737.1, 'Meta FY first');
+  approx(metaYear.totals.visits, 6415.5, 'Meta FY visits = 128.310.000 / 20.000');
+  approx(metaYear.totals.signups, 1732.185, 'Meta FY signups');
+  approx(metaYear.totals.first, 866.0925, 'Meta FY first');
+  approx(metaYear.totals.paid, 57.7702125, 'Meta FY paid');
   const tikYear = domain.forecastFunnel(demo.plan_rows.filter((r) => r.channel === 'TikTok Ads'), demo.benchmarks);
-  approx(tikYear.totals.visits, 5790.909090909091, 'TikTok FY visits = 182.000.000 x 0,7 / 22.000');
-  approx(tikYear.totals.signups, 521.1818181818182, 'TikTok FY signups');
-  approx(tikYear.totals.first, 260.5909090909091, 'TikTok FY first');
-  // Benchmark Paid đã seed đúng số file nguồn.
+  approx(tikYear.totals.visits, 2523.181818181818, 'TikTok FY visits = 55.510.000 / 22.000');
+  approx(tikYear.totals.signups, 524.9045454545455, 'TikTok FY signups');
+  approx(tikYear.totals.first, 262.4522727272727, 'TikTok FY first');
+  approx(tikYear.totals.paid, 14.434875, 'TikTok FY paid');
+  // Benchmark Paid đã seed đúng đơn giá Objective; cơ chế cũ đã gỡ.
   const byChannel = Object.fromEntries(demo.benchmarks.map((b) => [b.channel, b]));
-  assert.equal(byChannel['Meta Ads'].traffic_share, 0.6);
-  assert.equal(byChannel['Meta Ads'].cost_per_visit, 20000);
-  assert.equal(byChannel['TikTok Ads'].traffic_share, 0.7);
-  assert.equal(byChannel['TikTok Ads'].cost_per_visit, 22000);
+  assert.equal(byChannel['Meta Ads'].cost_per_result.traffic, 20000);
+  assert.equal(byChannel['TikTok Ads'].cost_per_result.traffic, 22000);
+  approx(byChannel['Meta Ads'].cost_per_result.signup, 20000 / 0.09, 'Meta cost/signup suy từ chuỗi');
+  approx(byChannel['TikTok Ads'].cost_per_result.signup, 22000 / 0.09, 'TikTok cost/signup suy từ chuỗi');
+  approx(byChannel['Meta Ads'].cost_per_result.remarketing, 20000 / (0.09 * 0.5 * 0.055), 'Meta CAC suy từ chuỗi');
+  approx(byChannel['TikTok Ads'].cost_per_result.remarketing, 22000 / (0.09 * 0.5 * 0.055), 'TikTok CAC suy từ chuỗi');
+  assert.equal(byChannel['Meta Ads'].traffic_share, undefined, 'traffic_share đã gỡ khỏi benchmark');
+  assert.equal(byChannel['Meta Ads'].cost_per_visit, undefined, 'cost_per_visit đã gỡ khỏi benchmark');
   for (const ch of ['Meta Ads', 'TikTok Ads']) {
     approx(byChannel[ch].visit_to_signup, 0.09, ch + ' v2s');
     approx(byChannel[ch].signup_to_first, 0.5, ch + ' s2f');
     approx(byChannel[ch].first_to_paid, 0.055, ch + ' f2p');
-    assert.equal(byChannel[ch].view_to_visit, null, ch + ' không có view->visit (không suy Views)');
+    assert.equal(byChannel[ch].view_to_visit, null, ch + ' không có view->visit (không suy ngược)');
     assert.equal(byChannel[ch].output_per_unit, null);
   }
 });
 
 test('PPB (iv): sửa ngân sách Paid qua hàm lưu THẬT -> Forecast (funnelTotalsFor) thay đổi đúng tỉ lệ; steps phễu Paid bắt đầu ở Visits (không có bước Views)', () => {
-  // Dùng đúng dữ liệu demo Lumus cho Meta Ads T1 (clone để không đụng demo gốc).
+  // Dùng đúng dữ liệu demo Lumus cho Meta Ads T1 (clone để không đụng
+  // demo gốc) — SỬA PHẠM VI đợt Paid Objective: T1 nay gồm các dòng
+  // Objective (Awareness/Traffic/Signup); hàm lưu tổng tháng phân bổ
+  // theo tỉ lệ hiện tại nên mọi Objective cùng gấp đôi, forecast gấp đôi.
   const rows = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai' && r.channel === 'Meta Ads' && r.month === '2027-01')
     .map((r) => ({ ...r }));
   const phases = demo.phases.filter((p) => p.brand_id && p.start_month);
   const { h } = makeHarness(rows, phases, demo.benchmarks, demo.phase_assumptions);
   const before = h.funnelTotalsFor(rows, demo.benchmarks);
   approx(before.views, 0, 'trước: views Paid = 0');
-  approx(before.visits, 327.6, 'trước: visits');
+  approx(before.visits, 273, 'trước: visits (chỉ Objective Traffic)');
+  approx(before.paid, 1.08108, 'trước: paid T1 theo Objective');
   // Tăng ngân sách T1 gấp đôi: 10.920.000 -> 21.840.000 (+10.920.000).
   h.savePlanningMonthPaidBudget('Meta Ads', 'Paid Media', '2027-01', '21840000');
-  assert.equal(rows[0].budget, 21840000);
+  assert.equal(rows.reduce((a, r) => a + r.budget, 0), 21840000, 'tổng các dòng Objective sau lưu đúng bằng số nhập');
   const after = h.funnelTotalsFor(rows, demo.benchmarks);
-  approx(after.visits, 655.2, 'sau: visits gấp đôi đúng tỉ lệ ngân sách');
-  approx(after.signups, 58.968, 'sau: signups gấp đôi');
-  approx(after.first, 29.484, 'sau: first gấp đôi');
-  approx(after.paid, 29.484 * 0.055, 'sau: paid gấp đôi');
+  approx(after.visits, 546, 'sau: visits gấp đôi đúng tỉ lệ ngân sách');
+  approx(after.signups, 78.624, 'sau: signups gấp đôi');
+  approx(after.first, 39.312, 'sau: first gấp đôi');
+  approx(after.paid, 2.16216, 'sau: paid gấp đôi');
   approx(after.views, 0, 'sau: views vẫn 0 — không bịa Views từ tiền');
   // Steps vẽ phễu cho Paid-only: bắt đầu ở Visits, KHÔNG có bước Views.
   const steps = h.planningFunnelSteps(after);
   assert.deepEqual(steps.map((s) => s.label), ['Visits', 'Signups', 'First starts', 'Paid']);
-  approx(steps[0].value, 655.2, 'bước đầu phễu Paid là Visits');
+  approx(steps[0].value, 546, 'bước đầu phễu Paid là Visits');
   // Totals có Views (KOL) thì steps giữ nguyên bắt đầu ở Views như cũ.
   const kolSteps = h.planningFunnelSteps({ views: 16000, visits: 48, signups: 4.32, first: 2.16, paid: 0.1188 });
   assert.deepEqual(kolSteps.map((s) => s.label), ['Views', 'Visits', 'Signups', 'First starts', 'Paid']);
@@ -340,24 +353,26 @@ test('PPB (iv): kênh KHÔNG có căn cứ vẫn "chưa tính được" — funn
   assert.equal(h.funnelTotalsFor(fb, demo.benchmarks), null);
   assert.deepEqual(h.planningFunnelSteps(null), []);
   assert.deepEqual(h.planningFunnelSteps({ views: 0, visits: 0, signups: 0, first: 0, paid: 0 }), []);
-  // Direct budget nhưng benchmark thiếu traffic_share/cost_per_visit -> null.
+  // Direct budget nhưng benchmark thiếu cost_per_result -> null.
   const meta = demo.plan_rows.filter((r) => r.channel === 'Meta Ads' && r.month === '2027-01');
   const f = domain.forecastFunnel(meta, [{ brand_id: 'brand-lumus-ai', channel: 'Meta Ads', direct_budget: true, visit_to_signup: 0.09, signup_to_first: 0.5, first_to_paid: 0.055 }]);
-  assert.equal(f.rows[0].forecast, null, 'thiếu cost/traffic share thì không bịa forecast Paid');
+  assert.ok(f.rows.every((r) => r.forecast === null), 'thiếu cost_per_result thì không bịa forecast Paid');
 });
 
 // ---------- (v) neo trước khi sửa ----------
-test('PPB (v) [neo]: chưa sửa gì — Meta Ads 546.000.000đ / TikTok Ads 182.000.000đ / Paid 728.000.000đ / tổng năm Lumus 1.515.500.000đ / content 776; forecast toàn Lumus views vẫn 1.460.000 (Paid không cộng Views)', () => {
+test('PPB (v) [neo]: chưa sửa gì — Meta Ads 546.000.000đ / TikTok Ads 182.000.000đ / 2 kênh B2B mới 83.200.000đ / tổng năm Lumus 1.598.700.000đ (SỬA PHẠM VI đợt Paid Objective; tổng B2C vẫn 1.515.500.000đ) / content 776; forecast toàn Lumus views vẫn 1.460.000 (Paid không cộng Views)', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
   assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 776);
   const sumCh = (ch) => lumus.filter((r) => r.channel === ch).reduce((s, r) => s + r.budget, 0);
   assert.equal(sumCh('Meta Ads'), 546000000);
   assert.equal(sumCh('TikTok Ads'), 182000000);
   assert.equal(sumCh('Meta Ads') + sumCh('TikTok Ads'), 728000000);
+  assert.equal(sumCh('Google Search B2B') + sumCh('LinkedIn Ads B2B'), 83200000);
   const d = domain.planBudget(lumus, demo.benchmarks);
-  assert.equal(d.total, 1515500000);
-  assert.equal(d.totalDirect, 728000000);
+  assert.equal(d.total, 1598700000);
+  assert.equal(d.totalDirect, 811200000);
+  assert.equal(domain.planBudget(lumus.filter((r) => r.segment !== 'b2b'), demo.benchmarks).total, 1515500000, 'tổng B2C không đổi');
   const f = domain.forecastFunnel(lumus, demo.benchmarks);
   approx(f.totals.views, 1460000, 'views toàn kỳ chỉ từ KOL');
-  approx(f.totals.visits, 5880 + 16380 + 5790.909090909091, 'visits toàn kỳ = KOL + Paid');
+  approx(f.totals.visits, 5880 + 6415.5 + 2523.181818181818, 'visits toàn kỳ = KOL + Paid theo Objective Traffic');
 });

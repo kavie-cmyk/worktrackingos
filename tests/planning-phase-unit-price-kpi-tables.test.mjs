@@ -24,6 +24,11 @@
 //    Thu gọn: planningKpiToggleMap thuần + UI.planningKpiCollapsed
 //    giữ trong phiên; mặc định cả 3 bảng MỞ.
 //    Paid Media: Views "—" nhưng có mặt ở Paid Users và CAC.
+//    SỬA PHẠM VI đợt Paid Objective: Paid T1 tính theo Objective —
+//    Meta T1 paid = 1,08108 (Traffic 0,675675 + Signup 0,405405),
+//    TikTok T1 paid = 0,20475; blended T1 paid = 2,308005 và CAC
+//    blended T1 = 72.560.000 ÷ 2,308005 = 31.438.407đ (làm tròn đồng).
+//    Trước đợt Objective: blended paid 2,119635 / CAC 34.232.309đ.
 //    Sửa Số lượng / Đơn giá / Ngân sách Paid -> bảng cập nhật ngay
 //    (render lại từ cùng state/engine, không cache).
 
@@ -255,7 +260,7 @@ test('PPUP-KPI [static]: viewPlanning gắn 3 bảng KPI sau lưới/chi tiết,
 });
 
 // ---------- [unit] Phần 2: dữ liệu neo ----------
-test('PPUP-KPI [unit]: planningKpiData ca neo Lumus — KOL Nano T1 views 16.000 / paid 0,1188 / ngân sách 6.000.000 / CAC = 6.000.000÷0,1188; blended T1 72.560.000 ÷ 2,119635', () => {
+test('PPUP-KPI [unit]: planningKpiData ca neo Lumus — KOL Nano T1 views 16.000 / paid 0,1188 / ngân sách 6.000.000 / CAC = 6.000.000÷0,1188; blended T1 72.560.000 ÷ 2,308005 (paid theo Objective)', () => {
   const { h } = demoHarness();
   const rows = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
   const data = h.planningKpiData(rows, demo.benchmarks, MONTHS_2027);
@@ -269,12 +274,12 @@ test('PPUP-KPI [unit]: planningKpiData ca neo Lumus — KOL Nano T1 views 16.000
   assert.equal(h.fmtPlanningPaid(jan.paid), '0,1188');
   const bl = data.blended.months['2027-01'];
   assert.equal(bl.budget, 72560000, 'tổng ngân sách T1 mọi channel');
-  approx(bl.paid, 2.119635, 'tổng paid T1 từ engine');
-  approx(bl.cac, 72560000 / 2.119635, 'CAC blended T1');
-  assert.equal(h.fmtPlanningCac(bl.cac), '34.232.309 VND');
+  approx(bl.paid, 2.308005, 'tổng paid T1 từ engine (SỬA PHẠM VI Paid Objective: KOL 1,022175 + Meta 1,08108 + TikTok 0,20475)');
+  approx(bl.cac, 72560000 / 2.308005, 'CAC blended T1');
+  assert.equal(h.fmtPlanningCac(bl.cac), '31.438.407 VND');
   const meta = data.channels.find((c) => c.channel === 'Meta Ads');
   assert.equal(meta.isPaidMedia, true);
-  approx(meta.months['2027-01'].paid, 0.81081, 'paid Meta Ads T1 suy từ ngân sách');
+  approx(meta.months['2027-01'].paid, 1.08108, 'paid Meta Ads T1 theo Objective (Traffic 0,675675 + Signup 0,405405)');
 });
 
 // ---------- [unit] Phần 2: render neo + Paid Media ----------
@@ -286,10 +291,10 @@ test('PPUP-KPI [unit]: render 3 bảng — ca neo KOL Nano T1 ở cả 3 bảng;
   assert.equal(kpiCell(html, 'paid', 'KOL Nano', '2027-01'), '0,1188');
   assert.equal(kpiCell(html, 'cac', 'KOL Nano', '2027-01'), '50.505.051 VND');
   assert.equal(kpiCell(html, 'views', 'Meta Ads', '2027-01'), '—', 'Paid Media không có Views');
-  assert.equal(kpiCell(html, 'paid', 'Meta Ads', '2027-01'), '0,8108', 'Paid Media có Paid Users (làm tròn 4 số thập phân)');
+  assert.equal(kpiCell(html, 'paid', 'Meta Ads', '2027-01'), '1,0811', 'Paid Media có Paid Users theo Objective (làm tròn 4 số thập phân)');
   assert.notEqual(kpiCell(html, 'cac', 'Meta Ads', '2027-01'), '—', 'Paid Media có CAC');
   assert.notEqual(kpiCell(html, 'cac', 'Meta Ads', '2027-01'), null);
-  assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '34.232.309 VND', 'hàng Tất cả T1 = 72.560.000 ÷ 2,119635 làm tròn tới đồng');
+  assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '31.438.407 VND', 'hàng Tất cả T1 = 72.560.000 ÷ 2,308005 (paid theo Objective) làm tròn tới đồng');
   assert.ok(html.includes('data-planning-kpi-row="cac" data-channel="Tất cả"'));
   // Channel không benchmark (Facebook Owned): forecast không tính được -> "—" ở Views/Paid, không bịa 0.
   assert.equal(kpiCell(html, 'views', 'Facebook Owned', '2027-01'), '—');
@@ -355,8 +360,10 @@ test('PPUP-KPI [unit]: sửa Số lượng / Đơn giá (Theo tháng) và Ngân 
   hz.h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-01', '3000000');
   html = hz.h.planningKpiTablesHtml(cloned, benchmarks, MONTHS_2027);
   assert.equal(kpiCell(html, 'cac', 'KOL Nano', '2027-01'), '101.010.101 VND');
-  // Sửa Ngân sách Paid Media T1: 10.920.000 -> 21.840.000 (gấp đôi): Paid Meta gấp đôi 0,81081 -> 1,62162, hiển thị 4 số thập phân.
+  // Sửa Ngân sách Paid Media T1: 10.920.000 -> 21.840.000 (gấp đôi, phân
+  // bổ theo tỉ lệ các Objective): Paid Meta gấp đôi 1,08108 -> 2,16216,
+  // hiển thị 4 số thập phân (SỬA PHẠM VI đợt Paid Objective).
   hz.h.savePlanningMonthPaidBudget('Meta Ads', 'Paid Media', '2027-01', '21840000');
   html = hz.h.planningKpiTablesHtml(cloned, benchmarks, MONTHS_2027);
-  assert.equal(kpiCell(html, 'paid', 'Meta Ads', '2027-01'), '1,6216');
+  assert.equal(kpiCell(html, 'paid', 'Meta Ads', '2027-01'), '2,1622');
 });

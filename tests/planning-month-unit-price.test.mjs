@@ -35,7 +35,7 @@
 //      dùng để tính ngân sách — ngân sách luôn = qty × đơn giá hiệu
 //      dụng; dữ liệu demo hiện không có dòng nào vừa có qty vừa có
 //      budget (khoá để neo không lệch âm thầm).
-// Neo demo: Lumus tổng ngân sách năm = 1.515.500.000đ (gồm 728.000.000đ
+// Neo demo: Lumus tổng ngân sách năm = 1.598.700.000đ (gồm 811.200.000đ
 // Paid Ads từ dữ liệu nguồn), content = 776 khi chưa sửa gì.
 
 import { test } from 'node:test';
@@ -361,16 +361,16 @@ test('PMUP [an toàn]: dữ liệu demo KHÔNG có dòng nào vừa có qty vừ
   assert.equal(both.length, 0, 'nếu sau này dữ liệu nguồn thêm dòng qty+budget lệch công thức thì phải dừng và báo delta, không tự ý đổi neo');
 });
 
-test('PMUP [neo]: demo Lumus tổng ngân sách năm = 1.515.500.000đ (gồm Paid Ads direct 728.000.000đ từ dữ liệu nguồn) và tổng content = 776 khi chưa sửa gì (domain + planBudgetFor đều khớp)', () => {
+test('PMUP [neo]: demo Lumus tổng ngân sách năm = 1.598.700.000đ (gồm Paid Ads direct 811.200.000đ — SỬA PHẠM VI đợt Paid Objective: +83.200.000đ từ 2 kênh Paid B2B mới) và tổng content = 776 khi chưa sửa gì (domain + planBudgetFor đều khớp)', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
   assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 776);
   const d = domain.planBudget(lumus, demo.benchmarks);
-  assert.equal(d.total, 1515500000);
-  assert.equal(d.totalDirect, 728000000);
+  assert.equal(d.total, 1598700000);
+  assert.equal(d.totalDirect, 811200000);
   assert.equal(d.totalUnitPrice, 787500000);
   assert.equal(d.totalManualUnitPrice, 0, 'chưa sửa gì thì không có đơn giá đặt tay nào');
   assert.ok(lumus.every((r) => r.unit_price === undefined || r.unit_price === null), 'dữ liệu nguồn không mang sẵn đơn giá đặt tay trên dòng');
   const { h } = makeHarness([], [], demo.benchmarks);
   const viaApp = h.planBudgetFor(lumus, demo.benchmarks).reduce((s, x) => s + x.total, 0);
-  assert.equal(viaApp, 1515500000);
+  assert.equal(viaApp, 1598700000);
 });
