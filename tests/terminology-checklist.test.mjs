@@ -40,7 +40,10 @@ test('TERM [static]: panel chi tiết task dùng tên Checklist', () => {
 });
 
 test('TERM [static]: khái niệm task thống nhất tên "Task" ở các bề mặt chính', () => {
-  assert.match(src, /\['tasks', 'Task'\], \['approvals', 'Duyệt content'\]/);
+  // Đợt gộp Duyệt content vào Content: nav không còn mục approvals riêng —
+  // nhóm "Kế hoạch & content" kết thúc ở ['tasks', 'Task'].
+  assert.match(src, /\['content', 'Content'\], \['tasks', 'Task'\]\]/);
+  assert.ok(!src.includes("['approvals', 'Duyệt content']"), 'nav còn mục Duyệt content riêng');
   assert.match(src, /pageHead\('Task', 'Một danh sách task dùng chung/);
   assert.match(src, /\['tasks', 'Task'\], \['content', 'Content'\], \['kpi', 'KPI & Ngân sách'\]/);
   assert.match(src, /<strong>Task của campaign \(' \+ ctasks\.length/);
@@ -100,7 +103,8 @@ test('TERM [guard]: "Còn dùng được" thống nhất — không còn "Còn c
 });
 
 test('TERM [static]: thuật ngữ giữ tiếng Việt có chủ đích vẫn còn nguyên (Duyệt / Ngân sách / Người phụ trách / Kênh)', () => {
-  assert.match(src, /\['approvals', 'Duyệt content'\]/);
+  // "Duyệt content" nay là TAB trong view Content (không còn mục nav riêng).
+  assert.match(src, /data-id="approvals"[^>]*>Duyệt content/);
   assert.match(src, /'KPI & Ngân sách'/);
   assert.match(src, /F\('ownerId', 'Người phụ trách', 'select'/);
   assert.match(src, /F\('platform', 'Kênh', 'select'/);

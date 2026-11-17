@@ -110,12 +110,12 @@
 
   var NAV_GROUPS = [
     ['Chung', [['overview', 'Overview'], ['my-work', 'Task của tôi']]],
-    ['Kế hoạch & content', [['campaigns', 'IMC & Campaigns'], ['timeline', 'Timeline'], ['planning', 'Planning'], ['content', 'Content'], ['tasks', 'Task'], ['approvals', 'Duyệt content']]],
+    ['Kế hoạch & content', [['campaigns', 'IMC & Campaigns'], ['timeline', 'Timeline'], ['planning', 'Planning'], ['content', 'Content'], ['tasks', 'Task']]],
     ['Thương hiệu', [['brand', 'Brand Hub']]],
     ['Hiệu quả', [['kpi', 'KPI & Ngân sách'], ['channels', 'Kênh & Post'], ['ads', 'Quảng cáo'], ['reports', 'Báo cáo']]],
     ['Tổ chức', [['team', 'Team & Workload'], ['settings', 'Thiết lập']]]
   ];
-  var ROUTES = ['overview', 'my-work', 'brand', 'campaigns', 'timeline', 'planning', 'content', 'tasks', 'approvals', 'team', 'kpi', 'channels', 'ads', 'reports', 'settings'];
+  var ROUTES = ['overview', 'my-work', 'brand', 'campaigns', 'timeline', 'planning', 'content', 'tasks', 'team', 'kpi', 'channels', 'ads', 'reports', 'settings'];
 
   function mondayOf(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); var diff = (x.getDay() + 6) % 7; x.setDate(x.getDate() - diff); return x; }
   function isoOf(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -126,6 +126,7 @@
     lastBase: null,
     scrollMem: {},
     campaignTab: 'overview',
+    contentMainTab: 'list',
     contentTab: 'calendar',
     brandTab: 'pages',
     brandQuery: '',
@@ -1182,6 +1183,10 @@
     var parts = h.split('/').filter(function (x) { return x !== ''; });
     var name = parts[0] || 'overview';
     if (name === 'calendar') { UI.contentTab = 'calendar'; name = 'content'; }
+    // Gộp Duyệt content vào Content: route cũ #/approvals chuyển hướng
+    // sang Content với tab Duyệt đang mở; đích mới có dạng #/content/approvals.
+    if (name === 'approvals') { UI.contentMainTab = 'approvals'; name = 'content'; parts[1] = null; }
+    if (name === 'content' && parts[1] === 'approvals') { UI.contentMainTab = 'approvals'; parts[1] = null; }
     if (ROUTES.indexOf(name) === -1) name = 'overview';
     var route = { name: name, id: parts[1] ? decodeURIComponent(parts[1]) : null, sub: parts[2] ? decodeURIComponent(parts[2]) : null };
     if (name === 'campaigns' && route.sub && ['overview', 'action', 'plan', 'tasks', 'content', 'kpi', 'docs', 'summary'].indexOf(route.sub) !== -1) UI.campaignTab = route.sub;
@@ -2848,7 +2853,7 @@
     }
     html += '<div class="cards">' +
       vizKpiCardHtml({ label: 'Campaign đang chạy', valueText: String(running.length), tone: 'running', toneLabel: 'Đang chạy', href: '#/campaigns', hrefLabel: 'Xem danh sách', progress: campaigns.length ? { value: running.length, max: campaigns.length, pct: vizPct(running.length, campaigns.length), tone: 'running', detail: running.length + '/' + campaigns.length + ' campaign (' + fmtPct(vizPct(running.length, campaigns.length)) + ')' } : null }) +
-      vizKpiCardHtml({ label: 'Content chờ duyệt', valueText: String(approvals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/approvals', hrefLabel: 'Tới hộp duyệt' }) +
+      vizKpiCardHtml({ label: 'Content chờ duyệt', valueText: String(approvals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/content/approvals', hrefLabel: 'Tới hộp duyệt' }) +
       vizKpiCardHtml({ label: 'Task quá hạn', valueText: String(overdue.length), tone: 'overdue', toneLabel: 'Quá hạn', href: '#/tasks', hrefLabel: 'Xem task', progress: tasks.length ? { value: overdue.length, max: tasks.length, pct: vizPct(overdue.length, tasks.length), tone: 'overdue', detail: overdue.length + '/' + tasks.length + ' task (' + fmtPct(vizPct(overdue.length, tasks.length)) + ')' } : null }) +
       vizKpiCardHtml({ label: 'Campaign nguy cơ trễ', valueText: String(atRisk.length), tone: 'overdue', toneLabel: 'Nguy cơ trễ', sub: 'Có căn cứ thời gian/trở ngại', progress: campaigns.length ? { value: atRisk.length, max: campaigns.length, pct: vizPct(atRisk.length, campaigns.length), tone: 'overdue', detail: atRisk.length + '/' + campaigns.length + ' campaign (' + fmtPct(vizPct(atRisk.length, campaigns.length)) + ')' } : null }) +
       '</div>';
@@ -2873,7 +2878,7 @@
       }).join(''), 'overview-risk') + '</div>';
     }
     html += '<h2>Chờ duyệt & quá hạn</h2><div class="grid2"><div class="panel"><h3>Chờ duyệt (' + approvals.length + ') ' + (approvals.length ? vizStatusPillHtml('pending', { label: 'Chờ duyệt' }) : '') + '</h3>' +
-      (approvals.length ? '<ul class="clean">' + approvals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> · phiên bản content số ' + esc(a.revision) + ' · từ ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content chờ duyệt.</p>') + '</div>' +
+      (approvals.length ? '<ul class="clean">' + approvals.map(function (a) { return '<li><a href="#/content/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> · phiên bản content số ' + esc(a.revision) + ' · từ ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content chờ duyệt.</p>') + '</div>' +
       '<div class="panel"><h3>Quá hạn (' + overdue.length + ') ' + (overdue.length ? vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) : '') + '</h3>' +
       (overdue.length ? '<ul class="clean">' + overdue.map(function (t) { return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '">' + esc(t.title) + '</button> — hạn ' + esc(D.formatDateVN(t.dueDate)) + ' · ' + esc(memberName(t.assigneeId)) + ' ' + statusBadge(t.status) + ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có task quá hạn.</p>') + '</div></div>';
     return html;
@@ -2958,7 +2963,7 @@
       if (g[0] === 'Tuần này') html += weekTimelineHtml(g[1]);
     });
     html += '<h2>Chờ mình duyệt (' + myApprovals.length + ')</h2>';
-    html += myApprovals.length ? '<ul class="clean">' + myApprovals.map(function (a) { return '<li><a href="#/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> — phiên bản content số ' + esc(a.revision) + ', gửi bởi ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content nào chờ bạn duyệt.</p>';
+    html += myApprovals.length ? '<ul class="clean">' + myApprovals.map(function (a) { return '<li><a href="#/content/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> — phiên bản content số ' + esc(a.revision) + ', gửi bởi ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content nào chờ bạn duyệt.</p>';
     html += '<h2>Lịch content của tôi tuần này (' + myContent.length + ')</h2>';
     if (!myContent.length) html += '<p class="sub">Tuần này bạn không có content nào tới lịch đăng.</p>';
     else {
@@ -5028,6 +5033,22 @@
   }
 
   // ---------- Nội dung (Content) ----------
+  // Gộp Duyệt content vào Content: số chờ duyệt dùng ĐÚNG tập mà view
+  // approvals cũ hiển thị ở hàng đợi "Tất cả đang chờ" (status pending
+  // hoặc needs_reapproval trên collection approvals).
+  function contentPendingApprovalCount() {
+    return Store.list('approvals').filter(function (a) { return a.status === 'pending' || a.status === 'needs_reapproval'; }).length;
+  }
+  function contentMainTabsHtml() {
+    var pendingCount = contentPendingApprovalCount();
+    var active = UI.contentMainTab === 'approvals' ? 'approvals' : 'list';
+    // Badge LUÔN hiện kể cả khi 0 (ghi rõ lựa chọn này ở bàn giao) để
+    // số chờ duyệt luôn đọc được mà không phải mở tab.
+    return '<div class="tabs" role="tablist" data-content-main-tabs="1">' +
+      '<button type="button" class="tab' + (active === 'list' ? ' active' : '') + '" data-action="content-main-tab" data-id="list" role="tab" aria-selected="' + (active === 'list' ? 'true' : 'false') + '">Danh sách</button>' +
+      '<button type="button" class="tab' + (active === 'approvals' ? ' active' : '') + '" data-action="content-main-tab" data-id="approvals" role="tab" aria-selected="' + (active === 'approvals' ? 'true' : 'false') + '">Duyệt content <span class="badge warn" data-content-approvals-badge="1">' + pendingCount + '</span></button>' +
+      '</div>';
+  }
   function variantCardActions(v) {
     var ed = canEdit();
     var html = '<button class="btn small" data-action="editor-open" data-kind="variant" data-id="' + esc(v.id) + '"' + dis(!ed) + '>Mở / sửa</button> ';
@@ -5037,6 +5058,11 @@
     return html;
   }
   function viewContent() {
+    // Tab Duyệt content (gộp từ view approvals cũ): render nguyên hàng
+    // đợi duyệt qua viewApprovals() — logic duyệt/vai trò không đổi.
+    if (UI.contentMainTab === 'approvals') {
+      return pageHead('Content', 'Quản lý content và duyệt content trong cùng một mục.') + contentMainTabsHtml() + viewApprovals();
+    }
     // R3.1 C.6: Content Plan là điểm vào RIÊNG của đội content — mọi view ở
     // đây (Backlog / Theo Pillar / Lịch đăng / Bảng / Board / Tiến độ /
     // Thư viện / Content mix / Chờ phân loại / Quản lý Pillar) đọc CÙNG một
@@ -5100,6 +5126,7 @@
     Store.list('businessUnits').forEach(function (b) { (b.products || []).forEach(function (p) { if (productsAll.indexOf(p) === -1) productsAll.push(p); }); });
     var html = pageHead('Content Plan', 'Lập kế hoạch content theo Pillar, campaign (tùy chọn), kênh và lịch đăng. Tạo content ngay tại đây là luồng bình thường — không cần qua Action Plan hay campaign.',
       (ed ? '<button class="btn" data-action="editor-open" data-kind="content">+ Tạo content</button> <button class="btn secondary" data-action="editor-open" data-kind="variant">+ Thêm phiên bản theo kênh</button> <button class="btn secondary" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : ''));
+    html += contentMainTabsHtml();
     html += readonlyNote() + collectionBanner('variants');
     html += '<details class="filter-details"' + ((typeof window !== 'undefined' && window.innerWidth && window.innerWidth > 820) ? ' open' : '') + '><summary class="filter-summary">Bộ lọc</summary><form class="inline filter-panel" id="content-filter-form"><span class="sub">Lọc:</span>' +
       '<label>Brand / BU<select name="buProductId"><option value="all">Tất cả</option>' + Store.list('businessUnits').map(function (b) { return '<option value="' + esc(b.id) + '"' + (cf.buProductId === b.id ? ' selected' : '') + '>' + esc(b.name || b.buName || b.id) + '</option>'; }).join('') + '</select></label>' +
@@ -5618,7 +5645,10 @@
     var pending = UI.approvalsTab === 'mine' ? minePending : allPending;
     var done = approvals.filter(function (a) { return a.status !== 'pending' && a.status !== 'needs_reapproval'; });
     var ok = canApprove();
-    var html = pageHead('Duyệt content', 'Hộp thư chờ mình duyệt: xem đúng bản content được gửi, rồi duyệt / yêu cầu sửa / từ chối kèm nhận xét. Việc sửa content làm ở mục Content, không sửa tại màn duyệt.');
+    // Nội dung tab Duyệt content trong view Content (viewContent bọc
+    // pageHead + cụm tab chính ở ngoài) — giữ nguyên toàn bộ hàng đợi,
+    // nút quyết định và quy tắc vai trò như view approvals cũ.
+    var html = '<p class="sub">Hộp thư chờ mình duyệt: xem đúng bản content được gửi, rồi duyệt / yêu cầu sửa / từ chối kèm nhận xét. Việc sửa content làm ở tab Danh sách, không sửa tại màn duyệt.</p>';
     if (!ok) html += '<div class="notice warn">Vai trò hiện tại (' + esc(labelStatus(Store.currentRole())) + ') không có quyền duyệt — các nút quyết định bị khóa.' + (Store.mode === 'demo' ? ' Đổi sang Owner/Lead ở thanh trên (Chế độ demo) để thử duyệt.' : '') + '</div>';
     html += collectionBanner('approvals');
     // WAVE-B4: dải hàng đợi — số chờ theo tab + tuổi chờ lâu nhất (từ mốc
@@ -6172,7 +6202,7 @@
       html += '<div class="cards" data-viz="reports-ops-cards">' +
         vizKpiCardHtml({ label: 'Campaign đang chạy', valueText: String(runningCampaigns.length), tone: 'running', toneLabel: 'Đang chạy', href: '#/campaigns', hrefLabel: 'Xem danh sách', progress: allCampaigns.length ? { value: runningCampaigns.length, max: allCampaigns.length, pct: vizPct(runningCampaigns.length, allCampaigns.length), tone: 'running', detail: runningCampaigns.length + '/' + allCampaigns.length + ' campaign (' + fmtPct(vizPct(runningCampaigns.length, allCampaigns.length)) + ')' } : null }) +
         vizKpiCardHtml({ label: 'Task quá hạn', valueText: String(overdue.length), tone: 'overdue', toneLabel: 'Quá hạn', href: '#/tasks', hrefLabel: 'Xem task', progress: tasks.length ? { value: overdue.length, max: tasks.length, pct: vizPct(overdue.length, tasks.length), tone: 'overdue', detail: overdue.length + '/' + tasks.length + ' task (' + fmtPct(vizPct(overdue.length, tasks.length)) + ')' } : null }) +
-        vizKpiCardHtml({ label: 'Content chờ duyệt', valueText: String(pendingApprovals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/approvals', hrefLabel: 'Tới hộp duyệt' }) +
+        vizKpiCardHtml({ label: 'Content chờ duyệt', valueText: String(pendingApprovals.length), tone: 'pending', toneLabel: 'Chờ duyệt', href: '#/content/approvals', hrefLabel: 'Tới hộp duyệt' }) +
         vizKpiCardHtml({ label: 'Task đã hoàn thành', valueText: completedTasks.length + '/' + tasks.length, tone: 'done', toneLabel: 'Hoàn thành', progress: tasks.length ? { value: completedTasks.length, max: tasks.length, pct: vizPct(completedTasks.length, tasks.length), tone: 'done', detail: completedTasks.length + '/' + tasks.length + ' task (' + fmtPct(vizPct(completedTasks.length, tasks.length)) + ')' } : null }) +
         '</div>';
       html += '<h2>Tiến độ theo campaign</h2><div data-viz="reports-ops-progress">' + tbl('<tr><th>Campaign</th><th>Tiến độ</th><th>Quá hạn</th></tr>' + allCampaigns.map(function (c) {
@@ -6401,7 +6431,7 @@
   // ---------- Router / khởi tạo ----------
   var VIEWS = {
     'overview': viewOverview, 'my-work': viewMyWork, 'brand': viewBrand, 'campaigns': viewCampaigns,
-    'timeline': viewTimeline, 'planning': viewPlanning, 'content': viewContent, 'tasks': viewTasks, 'approvals': viewApprovals, 'team': viewTeam,
+    'timeline': viewTimeline, 'planning': viewPlanning, 'content': viewContent, 'tasks': viewTasks, 'team': viewTeam,
     'kpi': viewKpi, 'channels': viewChannels, 'ads': viewAds, 'reports': viewReports, 'settings': viewSettings
   };
   function authGateView() {
@@ -6927,6 +6957,7 @@
     if (action === 'brand-clear') { UI.brandQuery = ''; render(); }
     if (action === 'post-metrics') { UI.postOpenId = UI.postOpenId === id ? null : id; render(); }
     if (action === 'kpi-drill') { UI.kpiOpenId = UI.kpiOpenId === id ? null : id; render(); }
+    if (action === 'content-main-tab') { UI.contentMainTab = id === 'approvals' ? 'approvals' : 'list'; render(); }
     if (action === 'content-tab') { UI.contentTab = id; render(); }
     if (action === 'activity-open') { UI.activityDrawerId = id; UI.activityTab = 'overview'; renderOverlay(); }
     if (action === 'activity-close') { UI.activityDrawerId = null; renderOverlay(); }
@@ -6942,7 +6973,7 @@
       // bản theo kênh, giờ mặc định 09:00) — không tự gán campaign/action.
       openEditor('variant', null, { scheduledAtLocal: id + 'T09:00' });
     }
-    if (action === 'content-mix-unit') { UI.contentMixUnit = id === 'publication' ? 'publication' : 'content'; UI.contentTab = 'mix'; render(); }
+    if (action === 'content-mix-unit') { UI.contentMixUnit = id === 'publication' ? 'publication' : 'content'; UI.contentMainTab = 'list'; UI.contentTab = 'mix'; render(); }
     if (action === 'pillar-suggest') {
       var sug = PILLAR_SUGGESTIONS.find(function (s) { return s.name === t.getAttribute('data-name'); });
       if (sug) openEditor('pillar', null, { suggestedName: sug.name, suggestedDescription: sug.description, suggestedGuide: sug.guide });
@@ -6950,7 +6981,7 @@
     if (action === 'content-prod-tasks') { createProductionTasks(id); }
     if (action === 'chip-variant') { ev.stopPropagation(); openEditor('variant', id, {}); }
     if (action === 'submit-review') {
-      settle(submitReviewCall(id), function () { toast('Đã gửi duyệt. Người duyệt sẽ thấy đúng bản content này ở mục Duyệt content.'); render(); });
+      settle(submitReviewCall(id), function () { toast('Đã gửi duyệt. Người duyệt sẽ thấy đúng bản content này ở tab Duyệt content trong mục Content.'); render(); });
     }
     if (action === 'publish-variant') {
       var v = Store.get('variants', id);
