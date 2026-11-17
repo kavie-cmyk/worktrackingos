@@ -1717,16 +1717,21 @@
     blended.totals.cac = blended.totals.paid > 0 ? blended.totals.budget / blended.totals.paid : null;
     return { months: mlist.slice(), channels: channels, blended: blended };
   }
-  // Paid Users hiển thị: làm tròn TỐI ĐA 4 chữ số thập phân (bỏ số 0
-  // cuối) — đủ giữ đúng ca neo 0,1188 trên màn hình; CAC luôn tính từ
-  // paid CHƯA làm tròn. (Phễu tổng dùng fmtNum; bảng Phase dùng 2 số
-  // thập phân — ở bảng chi tiết theo tháng này cần thấy đủ 4 số để đối
-  // chiếu CAC, nên chốt 4 số và ghi rõ ở chú thích bảng Paid Users.)
-  function fmtPlanningPaid(v) {
-    if (v === null || v === undefined || v === '' || isNaN(Number(v))) return '—';
-    var r = Math.round(Number(v) * 10000) / 10000;
-    return r.toLocaleString('vi-VN', { maximumFractionDigits: 4 });
+  // Chỉ số ĐẾM của Planning hiển thị SỐ NGUYÊN (yêu cầu Zac 18/11):
+  // Views / Reach / Visits / Freemium / Paid Users / B2B Accounts và
+  // các hàng đếm của bảng vận hành đều làm tròn chuẩn Math.round rồi
+  // phân tách hàng nghìn vi-VN (vd 2,308005 -> "2"; 0,1188 -> "0";
+  // 2.206,75 -> "2.207"; 101000 -> "101.000"; 2,5 -> "3"). CHỈ đổi
+  // hiển thị: engine vẫn giữ giá trị thập phân đầy đủ và CAC luôn
+  // tính từ paid CHƯA làm tròn.
+  function fmtPlanningCount(v) {
+    if (v === null || v === undefined || v === '' || isNaN(Number(v)) || !isFinite(Number(v))) return '—';
+    return Math.round(Number(v)).toLocaleString('vi-VN');
   }
+  // Tên cũ giữ làm alias của fmtPlanningCount để các điểm gọi cũ và
+  // harness kiểm thử cũ vẫn chạy: Paid Users / B2B Accounts nay cũng
+  // hiển thị số nguyên như mọi chỉ số đếm khác của Planning.
+  function fmtPlanningPaid(v) { return fmtPlanningCount(v); }
   // CAC hiển thị: VNĐ làm tròn TỚI ĐỒNG (Math.round) qua fmtMoney.
   function fmtPlanningCac(v) {
     if (v === null || v === undefined || v === '' || isNaN(Number(v)) || !isFinite(Number(v))) return '—';
@@ -3966,7 +3971,7 @@
               var primary = oTotals ? oTotals[meta.tier] : null;
               resultHtml = (primary === null || primary === undefined)
                 ? '<span data-planning-paid-objective-result="1" data-objective="' + esc(objKey) + '">—</span>'
-                : '<span data-planning-paid-objective-result="1" data-objective="' + esc(objKey) + '">' + esc(meta.metric) + ': ' + fmtNum(Math.round(primary * 10000) / 10000) + '</span>';
+                : '<span data-planning-paid-objective-result="1" data-objective="' + esc(objKey) + '">' + esc(meta.metric) + ': ' + fmtPlanningCount(primary) + '</span>';
             }
             // Audience của dòng Objective (mô hình B2B bottom-up):
             // chọn B2C / B2B / Cả hai + ô % B2B khi Cả hai — chỉ hiện
@@ -4006,7 +4011,7 @@
       // tính được từ ngân sách -> phễu bắt đầu ở Visits khi Views = 0.
       var detailSteps = detailTotals ? planningFunnelSteps(detailTotals) : [];
       if (detailTotals && detailSteps.length) {
-        html += '<div data-viz="planning-detail-forecast">' + vizFunnelHtml({ steps: detailSteps, emptyText: 'Chưa có dữ liệu Forecast cho dòng này.' }) + '</div>';
+        html += '<div data-viz="planning-detail-forecast">' + vizFunnelHtml({ steps: detailSteps, countInt: true, emptyText: 'Chưa có dữ liệu Forecast cho dòng này.' }) + '</div>';
       } else {
         html += '<div class="state-box">Chưa tính được Forecast cho dòng này — chưa có Benchmark/Assumption khớp với Channel này.</div>';
       }
@@ -4033,7 +4038,7 @@
     var funnelSteps = forecastFunnelFor(rows, benchmarks);
     html += '<h2>Forecast — Funnel dự kiến theo Benchmark</h2>';
     if (funnelSteps.length) {
-      html += '<div data-viz="planning-forecast-chart">' + vizFunnelHtml({ steps: funnelSteps, emptyText: 'Chưa có dữ liệu Forecast.' }) + '</div>';
+      html += '<div data-viz="planning-forecast-chart">' + vizFunnelHtml({ steps: funnelSteps, countInt: true, emptyText: 'Chưa có dữ liệu Forecast.' }) + '</div>';
     } else {
       html += '<div class="state-box">Chưa tính được Forecast — chưa có Benchmark khớp với các dòng Planning đang lọc (cần output_per_unit và chuỗi tỉ lệ chuyển đổi).</div>';
     }
@@ -4253,10 +4258,10 @@
           cells += '<td data-rate-source="' + esc(eff.source || 'none') + '"><input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(ratePctText(eff.value)) + '" placeholder="—" data-action-change="phase-rate" data-field="' + esc(rh[0]) + '" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Tỉ lệ ' + esc(rh[1]) + ' của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' +
             '<br><span class="sub">' + (eff.source === 'assumption' ? 'Phase Assumption' : (eff.source === 'benchmark' ? 'Benchmark' : 'Không có')) + '</span></td>';
         });
-        cells += '<td>' + (totals ? fmtNum(Math.round(totals.visits * 100) / 100) : '—') + '</td>' +
-          '<td>' + (totals ? fmtNum(Math.round(totals.freemium * 100) / 100) : '—') + '</td>' +
-          '<td>' + (totals ? fmtNum(Math.round(totals.paid * 100) / 100) : '—') + '</td>' +
-          '<td>' + (totals ? fmtNum(Math.round((totals.b2b || 0) * 100) / 100) : '—') + '</td>';
+        cells += '<td>' + (totals ? fmtPlanningCount(totals.visits) : '—') + '</td>' +
+          '<td>' + (totals ? fmtPlanningCount(totals.freemium) : '—') + '</td>' +
+          '<td>' + (totals ? fmtPlanningCount(totals.paid) : '—') + '</td>' +
+          '<td>' + (totals ? fmtPlanningCount(totals.b2b || 0) : '—') + '</td>';
         return '<tr data-planning-phase-channel="' + esc(ch) + '">' + cells + '</tr>';
       }).join('');
       html += tbl('<tr><th>Channel</th><th>Số lượng</th><th>Đơn giá mỗi bài (VNĐ)</th><th>Views mỗi bài (đầu phễu)</th>' + rateHeads.map(function (rh) { return '<th>' + esc(rh[1]) + '</th>'; }).join('') + '<th>Forecast Visits</th><th>Forecast Freemium</th><th>Forecast Paid</th><th>Forecast B2B Accounts</th></tr>' + body, 'planning-phase-channels');
@@ -4300,7 +4305,7 @@
     html += '<h4>Forecast — Funnel của Phase</h4>';
     var pSteps = pTotals ? planningFunnelSteps(pTotals) : [];
     if (pTotals && pSteps.length) {
-      html += '<div data-viz="planning-phase-funnel" data-phase-id="' + esc(phase.id) + '">' + vizFunnelHtml({ steps: pSteps, emptyText: 'Chưa có dữ liệu Forecast cho Phase này.' }) + '</div>';
+      html += '<div data-viz="planning-phase-funnel" data-phase-id="' + esc(phase.id) + '">' + vizFunnelHtml({ steps: pSteps, countInt: true, emptyText: 'Chưa có dữ liệu Forecast cho Phase này.' }) + '</div>';
     } else {
       html += '<div class="state-box">Chưa tính được Forecast cho Phase này — chưa có Benchmark/Assumption khớp với các Channel trong Phase.</div>';
     }
@@ -4335,32 +4340,32 @@
     // Views -> "—" ở mọi tháng + ghi chú lý do.
     var viewsBody = data.channels.map(function (ch) {
       return rowHtml('views', ch,
-        function (cell) { return (ch.isPaidMedia && !ch.hasAwarenessPrice) ? '—' : (cell.hasForecast ? fmtNum(Math.round(cell.views)) : '—'); },
-        function (tot) { return (ch.isPaidMedia && !ch.hasAwarenessPrice) ? '—' : (tot.hasForecast ? fmtNum(Math.round(tot.views)) : '—'); });
+        function (cell) { return (ch.isPaidMedia && !ch.hasAwarenessPrice) ? '—' : (cell.hasForecast ? fmtPlanningCount(cell.views) : '—'); },
+        function (tot) { return (ch.isPaidMedia && !ch.hasAwarenessPrice) ? '—' : (tot.hasForecast ? fmtPlanningCount(tot.views) : '—'); });
     }).join('');
     var viewsBlendedCells = months.map(function (m) {
       var b = data.blended.months[m];
-      return '<td data-planning-kpi-cell="views" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasViews && b.views !== null) ? fmtNum(Math.round(b.views)) : '—') + '</td>';
+      return '<td data-planning-kpi-cell="views" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasViews && b.views !== null) ? fmtPlanningCount(b.views) : '—') + '</td>';
     }).join('');
     viewsBody += '<tr data-planning-kpi-row="views" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + viewsBlendedCells +
-      '<td data-planning-kpi-total="views" data-channel="Tất cả"><strong>' + ((data.blended.totals.hasViews && data.blended.totals.views !== null) ? fmtNum(Math.round(data.blended.totals.views)) : '—') + '</strong></td></tr>';
+      '<td data-planning-kpi-total="views" data-channel="Tất cả"><strong>' + ((data.blended.totals.hasViews && data.blended.totals.views !== null) ? fmtPlanningCount(data.blended.totals.views) : '—') + '</strong></td></tr>';
     var viewsHtml = planningKpiSectionHtml('views', 'KPI chi tiết theo tháng — Views (Forecast)',
       'Views forecast theo Channel × tháng, lấy từ cùng engine funnel với Forecast ở trên (đã gồm uplift theo Phase). Channel thuộc Paid Media <strong>không có Views</strong> khi Objective Awareness chưa có đơn giá — file nguồn không có CPM/CPV cho Paid nên hiện tại hiển thị "—" ở mọi tháng (khi nào Benchmark có cost_per_result của Awareness thì Views của Paid mới hiện). Channel chưa có Benchmark/Assumption khớp cũng hiển thị "—". Hàng <strong>Tất cả</strong>: tổng Views của mọi Channel có forecast trong tháng (không cộng Channel Paid Media chưa có đơn giá Awareness); tháng không Channel nào có Views thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Views cả kỳ.',
       tbl(head + viewsBody, 'planning-kpi-views'));
     // 2) PAID USERS — gồm cả Paid Media tính theo từng Objective.
     var paidBody = data.channels.map(function (ch) {
       return rowHtml('paid', ch,
-        function (cell) { return cell.hasForecast ? fmtPlanningPaid(cell.paid) : '—'; },
-        function (tot) { return tot.hasForecast ? fmtPlanningPaid(tot.paid) : '—'; });
+        function (cell) { return cell.hasForecast ? fmtPlanningCount(cell.paid) : '—'; },
+        function (tot) { return tot.hasForecast ? fmtPlanningCount(tot.paid) : '—'; });
     }).join('');
     var paidBlendedCells = months.map(function (m) {
       var b = data.blended.months[m];
-      return '<td data-planning-kpi-cell="paid" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasForecast) ? fmtPlanningPaid(b.paid) : '—') + '</td>';
+      return '<td data-planning-kpi-cell="paid" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasForecast) ? fmtPlanningCount(b.paid) : '—') + '</td>';
     }).join('');
     paidBody += '<tr data-planning-kpi-row="paid" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + paidBlendedCells +
-      '<td data-planning-kpi-total="paid" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningPaid(data.blended.totals.paid) : '—') + '</strong></td></tr>';
+      '<td data-planning-kpi-total="paid" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningCount(data.blended.totals.paid) : '—') + '</strong></td></tr>';
     var paidHtml = planningKpiSectionHtml('paid', 'KPI chi tiết theo tháng — Paid Users (Forecast)',
-      'Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (tính theo từng Objective từ ngân sách: kết quả đặt tại tầng của Objective rồi chảy xuống tới Paid, cộng dồn mọi Objective). Số hiển thị làm tròn tối đa 4 chữ số thập phân; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn. Hàng <strong>Tất cả</strong>: tổng Paid Users của mọi Channel có forecast trong tháng; tháng không Channel nào có forecast thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Paid Users cả kỳ.',
+      'Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (tính theo từng Objective từ ngân sách: kết quả đặt tại tầng của Objective rồi chảy xuống tới Paid, cộng dồn mọi Objective). Số hiển thị làm tròn thành số nguyên; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn. Hàng <strong>Tất cả</strong>: tổng Paid Users của mọi Channel có forecast trong tháng; tháng không Channel nào có forecast thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Paid Users cả kỳ.',
       tbl(head + paidBody, 'planning-kpi-paid'));
     // 3) CAC — kèm hàng "Tất cả" (blended).
     var cacBody = data.channels.map(function (ch) {
@@ -4385,17 +4390,17 @@
     // có tỉ lệ/đơn giá B2B -> 0 (đúng số engine tính, không bịa).
     var b2bBody = data.channels.map(function (ch) {
       return rowHtml('b2b', ch,
-        function (cell) { return cell.hasForecast ? fmtPlanningPaid(cell.b2b) : '—'; },
-        function (tot) { return tot.hasForecast ? fmtPlanningPaid(tot.b2b) : '—'; });
+        function (cell) { return cell.hasForecast ? fmtPlanningCount(cell.b2b) : '—'; },
+        function (tot) { return tot.hasForecast ? fmtPlanningCount(tot.b2b) : '—'; });
     }).join('');
     var b2bBlendedCells = months.map(function (m) {
       var b = data.blended.months[m];
-      return '<td data-planning-kpi-cell="b2b" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasForecast) ? fmtPlanningPaid(b.b2b) : '—') + '</td>';
+      return '<td data-planning-kpi-cell="b2b" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasForecast) ? fmtPlanningCount(b.b2b) : '—') + '</td>';
     }).join('');
     b2bBody += '<tr data-planning-kpi-row="b2b" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + b2bBlendedCells +
-      '<td data-planning-kpi-total="b2b" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningPaid(data.blended.totals.b2b) : '—') + '</strong></td></tr>';
+      '<td data-planning-kpi-total="b2b" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningCount(data.blended.totals.b2b) : '—') + '</strong></td></tr>';
     var b2bHtml = planningKpiSectionHtml('b2b', 'KPI chi tiết theo tháng — B2B Accounts (Forecast)',
-      'B2B Accounts MỚI sinh trong tháng theo Channel × tháng, từ cùng engine funnel — cộng cả 3 nguồn: (1) cầu nối Paid → B2B: mọi Paid User sinh ra từ luồng B2C (content, Paid Objective B2C, phần B2C của Lead Gen/Demo) × tỉ lệ paid_to_b2b của Channel; (2) phần B2B của Objective Lead Generation / Demo → Account qua lead_to_account / demo_to_account; (3) Partnership/Event trực tiếp = ngân sách B2B ÷ cost per B2B account. Chưa có tỉ lệ/đơn giá B2B thì nguồn đó cho 0 account (hiện "chưa có tỉ lệ"/"chưa có đơn giá" ở nơi nhập). Hàng <strong>Tất cả</strong>: tổng B2B Accounts của mọi Channel có forecast trong tháng. Số hiển thị làm tròn tối đa 4 chữ số thập phân như bảng Paid Users.',
+      'B2B Accounts MỚI sinh trong tháng theo Channel × tháng, từ cùng engine funnel — cộng cả 3 nguồn: (1) cầu nối Paid → B2B: mọi Paid User sinh ra từ luồng B2C (content, Paid Objective B2C, phần B2C của Lead Gen/Demo) × tỉ lệ paid_to_b2b của Channel; (2) phần B2B của Objective Lead Generation / Demo → Account qua lead_to_account / demo_to_account; (3) Partnership/Event trực tiếp = ngân sách B2B ÷ cost per B2B account. Chưa có tỉ lệ/đơn giá B2B thì nguồn đó cho 0 account (hiện "chưa có tỉ lệ"/"chưa có đơn giá" ở nơi nhập). Hàng <strong>Tất cả</strong>: tổng B2B Accounts của mọi Channel có forecast trong tháng. Số hiển thị làm tròn thành số nguyên như bảng Paid Users.',
       tbl(head + b2bBody, 'planning-kpi-b2b'));
     // 5) CHỈ SỐ VẬN HÀNH & TÀI CHÍNH — thu gọn như các bảng trên.
     var operatingHtml = planningOperatingTableHtml(rows, benchmarks, months);
@@ -4532,7 +4537,7 @@
     }
     function fmtVal(kind, v) {
       if (v === null || v === undefined) return '—';
-      return kind === 'money' ? fmtMoney(v, 'VND') : fmtPlanningPaid(v);
+      return kind === 'money' ? fmtMoney(v, 'VND') : fmtPlanningCount(v);
     }
     var body = OPERATING_ROWS.map(function (def) {
       var key = def[0], label = def[1], kind = def[2];
@@ -5959,9 +5964,14 @@
     var rows = steps.map(function (s, i) {
       var pct = vizPct(s.value, first);
       var conv = i > 0 ? vizPct(s.value, steps[i - 1].value) : null;
+      // opts.countInt (chỉ Planning bật): số đếm hiển thị SỐ NGUYÊN
+      // (Math.round + phân tách nghìn vi-VN); % và tỉ lệ chuyển đổi
+      // vẫn tính từ giá trị CHƯA làm tròn như cũ. Không bật -> giữ
+      // nguyên fmtNum như trước (vd phễu Quảng cáo không đổi).
+      var shown = opts.countInt ? Math.round(Number(s.value)).toLocaleString('vi-VN') : fmtNum(s.value);
       return '<div class="viz-row" data-viz="funnel-step"><span class="viz-label"><strong>' + esc(s.label) + '</strong></span>' +
         '<span class="viz-track"><span class="viz-fill series-alloc" style="width:' + vizBarWidth(pct) + '%;opacity:' + (Math.round((1 - i * 0.18) * 100) / 100) + '"></span></span>' +
-        '<span class="viz-value">' + esc(fmtNum(s.value)) + ' (' + esc(fmtPct(pct)) + ')' + (conv !== null ? ' · chuyển đổi ' + esc(fmtPct(conv)) : '') + '</span></div>';
+        '<span class="viz-value">' + esc(shown) + ' (' + esc(fmtPct(pct)) + ')' + (conv !== null ? ' · chuyển đổi ' + esc(fmtPct(conv)) : '') + '</span></div>';
     }).join('');
     return '<div class="viz-chart" data-viz="ads-funnel">' + rows + '</div>';
   }
