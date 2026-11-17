@@ -2127,7 +2127,10 @@
   // =====================================================================
   // Brand + Planning (17/11/2026) — hàm THUẦN cho bản bấm thử, dữ liệu demo.
   // plan row: { brand_id, segment, month: 'YYYY-MM', channel, group, qty,
-  //             budget } — budget chỉ có ở dòng ngân sách thẳng (Paid Ads).
+  //             budget, unit_price } — budget chỉ có ở dòng ngân sách thẳng
+  //             KHÔNG có số lượng (Paid Ads, qty null); unit_price là ĐƠN GIÁ
+  //             ĐẶT TAY riêng của dòng (tuỳ chọn, khác null mới có hiệu lực),
+  //             thắng đơn giá của benchmark khớp khi tính ngân sách.
   // benchmark: { brand_id, channel, unit_price, output_per_unit,
   //   view_to_visit, visit_to_signup, signup_to_first, first_to_paid,
   //   direct_budget } — chấp nhận cả khóa camelCase tương ứng.
@@ -2470,44 +2473,74 @@
   }
 
   /**
-   * Ngân sách dự kiến: dòng có field budget → lấy thẳng (Paid Ads);
-   * còn lại qty × unit_price của benchmark khớp. Trả tổng theo tháng + kỳ.
+   * Ngân sách dự kiến — CHỈ TỰ TÍNH, không có tầng "ngân sách đặt tay do
+   * người dùng nhập" cho dòng có số lượng (chốt của Zac: cột Ngân sách chỉ
+   * hiển thị; người dùng chỉ sửa Số lượng và Đơn giá). Thứ tự ưu tiên cho
+   * MỘT dòng:
+   *   1) Dòng CÓ số lượng (qty khác null): ngân sách = qty × đơn giá hiệu
+   *      dụng. Đơn giá hiệu dụng = đơn giá ĐẶT TAY riêng của dòng (field
+   *      unit_price/unitPrice trên chính dòng plan, khác null) nếu có;
+   *      không thì đơn giá Benchmark khớp brand+channel. Field budget lưu
+   *      sẵn trên dòng có qty KHÔNG được dùng (an toàn neo: dữ liệu nguồn
+   *      hiện không có dòng nào vừa có qty vừa có budget).
+   *   2) Dòng KHÔNG có số lượng (qty null — ngoại lệ dữ liệu nguồn Paid
+   *      Ads): ngân sách = field budget đã lưu trong dữ liệu nguồn, vì
+   *      không có qty × đơn giá để tính. Đây không phải đường sửa của
+   *      người dùng.
+   * Trả tổng theo tháng + kỳ; source của dòng: 'manual_unit_price' /
+   * 'unit_price' / 'direct' / null. totalUnitPrice gồm cả hai nguồn đơn
+   * giá (đặt tay + Benchmark); thêm totalManualUnitPrice tách phần đặt tay.
    */
   function planBudget(rows, benchmarks) {
     var list = rows || [];
     var idx = _benchmarkIndex(benchmarks);
     var months = _planMonthsOf(list);
     var byMonth = {};
-    months.forEach(function (m) { byMonth[m] = { month: m, amount: 0, directBudget: 0, unitPriceBudget: 0 }; });
-    var total = 0, totalDirect = 0, totalUnitPrice = 0;
+    months.forEach(function (m) { byMonth[m] = { month: m, amount: 0, directBudget: 0, unitPriceBudget: 0, manualUnitPriceBudget: 0 }; });
+    var total = 0, totalDirect = 0, totalUnitPrice = 0, totalManualUnitPrice = 0;
     var detail = list.map(function (r) {
       var entry = {
         rowId: r && r.id !== undefined ? r.id : null,
         month: _planMonth(r), channel: r ? (r.channel || null) : null,
+        qty: r ? _planNum(r.qty) : null,
+        unitPrice: null,
         amount: 0, source: null
       };
-      var direct = r ? _planNum(r.budget) : null;
-      if (direct !== null) {
-        entry.amount = direct; entry.source = 'direct';
+      var qty = r ? _planNum(r.qty) : null;
+      if (qty !== null) {
+        var manual = r ? _planNum(r.unit_price !== undefined && r.unit_price !== null ? r.unit_price : r.unitPrice) : null;
+        if (manual !== null) {
+          entry.unitPrice = manual; entry.amount = qty * manual; entry.source = 'manual_unit_price';
+        } else {
+          var b = _benchmarkFor(idx, r || {});
+          var price = b ? _benchField(b, 'unit_price', 'unitPrice') : null;
+          if (price !== null) { entry.unitPrice = price; entry.amount = qty * price; entry.source = 'unit_price'; }
+        }
       } else {
-        var b = _benchmarkFor(idx, r || {});
-        var price = b ? _benchField(b, 'unit_price', 'unitPrice') : null;
-        var qty = _planNum(r && r.qty);
-        if (price !== null && qty !== null) { entry.amount = qty * price; entry.source = 'unit_price'; }
+        var direct = r ? _planNum(r.budget) : null;
+        if (direct !== null) { entry.amount = direct; entry.source = 'direct'; }
       }
       var bm = entry.month && byMonth[entry.month];
       if (bm && entry.source) {
         bm.amount += entry.amount;
-        if (entry.source === 'direct') bm.directBudget += entry.amount; else bm.unitPriceBudget += entry.amount;
+        if (entry.source === 'direct') bm.directBudget += entry.amount;
+        else {
+          bm.unitPriceBudget += entry.amount;
+          if (entry.source === 'manual_unit_price') bm.manualUnitPriceBudget += entry.amount;
+        }
       }
       if (entry.source === 'direct') totalDirect += entry.amount;
-      if (entry.source === 'unit_price') totalUnitPrice += entry.amount;
+      if (entry.source === 'unit_price' || entry.source === 'manual_unit_price') {
+        totalUnitPrice += entry.amount;
+        if (entry.source === 'manual_unit_price') totalManualUnitPrice += entry.amount;
+      }
       total += entry.amount;
       return entry;
     });
     return {
       months: months, byMonth: byMonth,
       total: total, totalDirect: totalDirect, totalUnitPrice: totalUnitPrice,
+      totalManualUnitPrice: totalManualUnitPrice,
       rows: detail
     };
   }
