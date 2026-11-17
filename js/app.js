@@ -714,6 +714,32 @@
     });
   }
   function planRowMonth(r) { return String((r && (r.month || r.monthKey || r.periodKey)) || '').slice(0, 7); }
+  function pickPlanningYear(rows, currentYear) {
+    var cur = Number(currentYear);
+    var counts = {};
+    (rows || []).forEach(function (r) {
+      var yStr = planRowMonth(r).slice(0, 4);
+      if (!/^\d{4}$/.test(yStr)) return;
+      counts[yStr] = (counts[yStr] || 0) + 1;
+    });
+    var years = Object.keys(counts);
+    if (!years.length) return null;
+    if (!isNaN(cur) && counts[String(cur)]) {
+      return { year: cur, changed: false, from: cur };
+    }
+    var bestYear = null;
+    var bestCount = -1;
+    var bestDist = Infinity;
+    years.forEach(function (yStr) {
+      var y = Number(yStr);
+      var c = counts[yStr];
+      var dist = isNaN(cur) ? Infinity : Math.abs(y - cur);
+      if (c > bestCount || (c === bestCount && (dist < bestDist || (dist === bestDist && (bestYear === null || y > bestYear))))) {
+        bestYear = y; bestCount = c; bestDist = dist;
+      }
+    });
+    return { year: bestYear, changed: true, from: isNaN(cur) ? currentYear : cur };
+  }
   function planRowQty(r) { var v = r ? (r.qty !== undefined ? r.qty : (r.quantity !== undefined ? r.quantity : r.count)) : null; return (v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v); }
   function benchmarkForRow(row, benchmarks) {
     var list = benchmarks || benchmarksList();
@@ -2999,6 +3025,13 @@
   function viewPlanning() {
     var year = UI.planningYear || 2027;
     var allRows = filteredPlanRows();
+    var autoYear = pickPlanningYear(allRows, year);
+    var autoYearNote = null;
+    if (autoYear && autoYear.changed) {
+      autoYearNote = { from: autoYear.from, to: autoYear.year };
+      year = autoYear.year;
+      UI.planningYear = year;
+    }
     var rows = allRows.filter(function (r) { return planRowMonth(r).indexOf(String(year) + '-') === 0; });
     var benchmarks = filteredBenchmarks();
     var months = [];
@@ -3010,6 +3043,9 @@
     var yearOpts = [2026, 2027, 2028].map(function (y) { return '<option value="' + y + '"' + (year === y ? ' selected' : '') + '>' + y + '</option>'; }).join('');
     html += '<form class="inline" id="planning-year-form"><label>Năm Planning<select name="year">' + yearOpts + '</select></label><button class="btn secondary" type="submit">Xem năm</button>' +
       '<span class="sub">Ngữ cảnh: ' + esc(contextLabel()) + '</span></form>';
+    if (autoYearNote) {
+      html += '<p class="sub" data-planning-auto-year="1">Đã tự chuyển sang năm ' + esc(autoYearNote.to) + ' vì ' + esc(contextLabel()) + ' chưa có dòng plan trong năm ' + esc(autoYearNote.from) + '.</p>';
+    }
     // Chuyển chế độ [Theo tháng | Theo phase]
     var mode = UI.planningMode === 'phase' ? 'phase' : 'month';
     html += '<p class="planning-mode-toggle" data-planning-mode-toggle="1"><span class="sub">Chế độ xem:</span> ' +
