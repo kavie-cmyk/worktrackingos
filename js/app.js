@@ -1446,14 +1446,23 @@
   // Trả { months, channels: [{ channel, group, isPaidMedia,
   //   months: { 'YYYY-MM': { views, paid, budget, hasForecast, cac } },
   //   totals: { views, paid, budget, hasForecast, cac } }],
-  //   blended: { months: { 'YYYY-MM': { budget, paid, cac } },
-  //   totals: { budget, paid, cac } } }
+  //   blended: { months: { 'YYYY-MM': { budget, paid, cac, views,
+  //     hasForecast, hasViews } },
+  //   totals: { budget, paid, cac, views, hasForecast, hasViews } } }
   // views/paid = null khi channel × tháng không có forecast nào (không
   // benchmark/assumption khớp) — nơi render hiện "—", không bịa 0.
   // cac = budget / paid khi paid > 0, ngược lại null ("—"). Cột Tổng
   // của CAC = tổng ngân sách cả kỳ ÷ tổng paid cả kỳ (KHÔNG phải trung
-  // bình các CAC tháng). blended là hàng "Tất cả" của bảng CAC: mỗi
-  // tháng = tổng ngân sách mọi channel ÷ tổng paid mọi channel.
+  // bình các CAC tháng). blended là hàng "Tất cả" của cả 3 bảng KPI:
+  // CAC mỗi tháng = tổng ngân sách mọi channel ÷ tổng paid mọi
+  // channel; Paid mỗi tháng = tổng paid (chưa làm tròn) mọi channel
+  // có forecast tháng đó (hasForecast=false khi không channel nào có
+  // forecast -> render "—"); Views mỗi tháng = tổng views mọi channel
+  // có forecast tháng đó, KHÔNG cộng Channel Paid Media chưa có đơn
+  // giá Awareness (hasViews=false khi không channel nào có Views ->
+  // render "—"). Cột Tổng của blended = tổng cả kỳ tương ứng (Views
+  // tính từ cùng cell.views nên tổng theo tháng và tổng theo channel
+  // cho cùng một số).
   function planningKpiData(rows, benchmarks, months) {
     var list = rows || [];
     var mlist = months || [];
@@ -1490,8 +1499,8 @@
         cell.paid = (cell.paid === null ? 0 : cell.paid) + fv.paid;
       }
     });
-    var blended = { months: {}, totals: { budget: 0, paid: 0, cac: null } };
-    mlist.forEach(function (m) { blended.months[m] = { budget: 0, paid: 0, cac: null }; });
+    var blended = { months: {}, totals: { budget: 0, paid: 0, cac: null, views: null, hasForecast: false, hasViews: false } };
+    mlist.forEach(function (m) { blended.months[m] = { budget: 0, paid: 0, cac: null, views: null, hasForecast: false, hasViews: false }; });
     var channels = channelOrder.map(function (ch) {
       var e = byChannel[ch];
       e.isPaidMedia = planningChannelIsPaidMedia(e.rows, benchmarks);
@@ -1513,10 +1522,20 @@
         }
         blended.months[m].budget += cell.budget;
         if (cell.paid !== null) blended.months[m].paid += cell.paid;
+        if (cell.hasForecast) blended.months[m].hasForecast = true;
+        if (cell.hasForecast && !(e.isPaidMedia && !e.hasAwarenessPrice) && cell.views !== null) {
+          blended.months[m].views = (blended.months[m].views === null ? 0 : blended.months[m].views) + (cell.views || 0);
+          blended.months[m].hasViews = true;
+        }
       });
       e.totals = { views: tViews, paid: tPaid, budget: tBudget, hasForecast: tHas, cac: (tPaid !== null && tPaid > 0) ? tBudget / tPaid : null };
       blended.totals.budget += tBudget;
       if (tPaid !== null) blended.totals.paid += tPaid;
+      if (tHas) blended.totals.hasForecast = true;
+      if (tViews !== null && !(e.isPaidMedia && !e.hasAwarenessPrice)) {
+        blended.totals.views = (blended.totals.views === null ? 0 : blended.totals.views) + tViews;
+        blended.totals.hasViews = true;
+      }
       return e;
     });
     mlist.forEach(function (m) {
@@ -4086,8 +4105,14 @@
         function (cell) { return (ch.isPaidMedia && !ch.hasAwarenessPrice) ? '—' : (cell.hasForecast ? fmtNum(Math.round(cell.views)) : '—'); },
         function (tot) { return (ch.isPaidMedia && !ch.hasAwarenessPrice) ? '—' : (tot.hasForecast ? fmtNum(Math.round(tot.views)) : '—'); });
     }).join('');
+    var viewsBlendedCells = months.map(function (m) {
+      var b = data.blended.months[m];
+      return '<td data-planning-kpi-cell="views" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasViews && b.views !== null) ? fmtNum(Math.round(b.views)) : '—') + '</td>';
+    }).join('');
+    viewsBody += '<tr data-planning-kpi-row="views" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + viewsBlendedCells +
+      '<td data-planning-kpi-total="views" data-channel="Tất cả"><strong>' + ((data.blended.totals.hasViews && data.blended.totals.views !== null) ? fmtNum(Math.round(data.blended.totals.views)) : '—') + '</strong></td></tr>';
     var viewsHtml = planningKpiSectionHtml('views', 'KPI chi tiết theo tháng — Views (Forecast)',
-      'Views forecast theo Channel × tháng, lấy từ cùng engine funnel với Forecast ở trên (đã gồm uplift theo Phase). Channel thuộc Paid Media <strong>không có Views</strong> khi Objective Awareness chưa có đơn giá — file nguồn không có CPM/CPV cho Paid nên hiện tại hiển thị "—" ở mọi tháng (khi nào Benchmark có cost_per_result của Awareness thì Views của Paid mới hiện). Channel chưa có Benchmark/Assumption khớp cũng hiển thị "—".',
+      'Views forecast theo Channel × tháng, lấy từ cùng engine funnel với Forecast ở trên (đã gồm uplift theo Phase). Channel thuộc Paid Media <strong>không có Views</strong> khi Objective Awareness chưa có đơn giá — file nguồn không có CPM/CPV cho Paid nên hiện tại hiển thị "—" ở mọi tháng (khi nào Benchmark có cost_per_result của Awareness thì Views của Paid mới hiện). Channel chưa có Benchmark/Assumption khớp cũng hiển thị "—". Hàng <strong>Tất cả</strong>: tổng Views của mọi Channel có forecast trong tháng (không cộng Channel Paid Media chưa có đơn giá Awareness); tháng không Channel nào có Views thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Views cả kỳ.',
       tbl(head + viewsBody, 'planning-kpi-views'));
     // 2) PAID USERS — gồm cả Paid Media tính theo từng Objective.
     var paidBody = data.channels.map(function (ch) {
@@ -4095,8 +4120,14 @@
         function (cell) { return cell.hasForecast ? fmtPlanningPaid(cell.paid) : '—'; },
         function (tot) { return tot.hasForecast ? fmtPlanningPaid(tot.paid) : '—'; });
     }).join('');
+    var paidBlendedCells = months.map(function (m) {
+      var b = data.blended.months[m];
+      return '<td data-planning-kpi-cell="paid" data-channel="Tất cả" data-month="' + esc(m) + '">' + ((b && b.hasForecast) ? fmtPlanningPaid(b.paid) : '—') + '</td>';
+    }).join('');
+    paidBody += '<tr data-planning-kpi-row="paid" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + paidBlendedCells +
+      '<td data-planning-kpi-total="paid" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningPaid(data.blended.totals.paid) : '—') + '</strong></td></tr>';
     var paidHtml = planningKpiSectionHtml('paid', 'KPI chi tiết theo tháng — Paid Users (Forecast)',
-      'Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (tính theo từng Objective từ ngân sách: kết quả đặt tại tầng của Objective rồi chảy xuống tới Paid, cộng dồn mọi Objective). Số hiển thị làm tròn tối đa 4 chữ số thập phân; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn.',
+      'Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (tính theo từng Objective từ ngân sách: kết quả đặt tại tầng của Objective rồi chảy xuống tới Paid, cộng dồn mọi Objective). Số hiển thị làm tròn tối đa 4 chữ số thập phân; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn. Hàng <strong>Tất cả</strong>: tổng Paid Users của mọi Channel có forecast trong tháng; tháng không Channel nào có forecast thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Paid Users cả kỳ.',
       tbl(head + paidBody, 'planning-kpi-paid'));
     // 3) CAC — kèm hàng "Tất cả" (blended).
     var cacBody = data.channels.map(function (ch) {

@@ -342,6 +342,91 @@ test('PPUP-KPI [unit]: thu gọn — toggle map thuần; bảng thu gọn không
   assert.ok(html.includes('data-planning-kpi-row="paid"'), 'mở lại phải hiện thân bảng');
 });
 
+// ---------- [static] Phần 2b: hàng Tất cả ở cả 3 bảng + ghi chú ----------
+test('PPUP-KPI [static]: planningKpiTablesHtml có hàng Tất cả cho Views + Paid Users (cùng mẫu blended CAC) + ghi chú mô tả hàng Tất cả ở cả 2 bảng', () => {
+  const b = section('function planningKpiTablesHtml(rows, benchmarks, months)', '// --- Bảng Chỉ số vận hành');
+  assert.match(b, /data-planning-kpi-row="views" data-channel="Tất cả"/);
+  assert.match(b, /data-planning-kpi-row="paid" data-channel="Tất cả"/);
+  assert.match(b, /data-planning-kpi-row="cac" data-channel="Tất cả"/);
+  assert.match(b, /Hàng <strong>Tất cả<\/strong>: tổng Views của mọi Channel có forecast/);
+  assert.match(b, /không cộng Channel Paid Media chưa có đơn giá Awareness/);
+  assert.match(b, /Cột Tổng của hàng Tất cả = tổng Views cả kỳ/);
+  assert.match(b, /Hàng <strong>Tất cả<\/strong>: tổng Paid Users của mọi Channel có forecast/);
+  assert.match(b, /Cột Tổng của hàng Tất cả = tổng Paid Users cả kỳ/);
+});
+
+// ---------- [unit] Phần 2b: hàng Tất cả Views / Paid Users — số neo + tổng ----------
+test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 Views = tổng Views content (101.000, Paid "—" không cộng), T1 Paid = tổng Paid mọi Channel có forecast (2,308); cột Tổng = tổng cả kỳ (Views 1.460.000 / Paid 95,8106); CAC không đổi', () => {
+  const { h } = demoHarness();
+  const rows = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
+  const data = h.planningKpiData(rows, demo.benchmarks, MONTHS_2027);
+  // (b) Paid T1 ở tầng dữ liệu = tổng Paid T1 (chưa làm tròn) của mọi Channel có forecast — cùng blended đã phục vụ CAC.
+  let sumPaidT1 = 0;
+  data.channels.forEach((ch) => { const c = ch.months['2027-01']; if (c.hasForecast) sumPaidT1 += (c.paid || 0); });
+  approx(data.blended.months['2027-01'].paid, sumPaidT1, 'blended paid T1 = tổng Paid T1 mọi Channel có forecast');
+  approx(data.blended.months['2027-01'].paid, 2.308005, 'blended paid T1 neo');
+  // (c) Views T1 ở tầng dữ liệu = tổng Views T1 các Channel content (Paid Media chưa có đơn giá Awareness không cộng).
+  let sumViewsT1 = 0;
+  data.channels.forEach((ch) => {
+    const c = ch.months['2027-01'];
+    if (c.hasForecast && !(ch.isPaidMedia && !ch.hasAwarenessPrice)) sumViewsT1 += (c.views || 0);
+  });
+  approx(data.blended.months['2027-01'].views, sumViewsT1, 'blended views T1 = tổng Views T1 các Channel có Views');
+  approx(data.blended.months['2027-01'].views, 101000, 'blended views T1 neo: 16.000 (KOL Nano) + 60.000 (KOL Micro) + 25.000 (KOL Expert)');
+  assert.equal(data.blended.months['2027-01'].hasViews, true);
+  assert.equal(data.blended.months['2027-01'].hasForecast, true);
+  // (d) Cột Tổng ở tầng dữ liệu: hai cách tính (tổng theo tháng / tổng theo Channel) cho cùng một số.
+  let sumViewsByMonth = 0, sumPaidByMonth = 0;
+  MONTHS_2027.forEach((m) => { sumViewsByMonth += (data.blended.months[m].views || 0); sumPaidByMonth += data.blended.months[m].paid; });
+  let sumViewsByChannel = 0, sumPaidByChannel = 0;
+  data.channels.forEach((ch) => {
+    if (ch.totals.hasForecast && !(ch.isPaidMedia && !ch.hasAwarenessPrice)) sumViewsByChannel += (ch.totals.views || 0);
+    if (ch.totals.hasForecast) sumPaidByChannel += (ch.totals.paid || 0);
+  });
+  approx(data.blended.totals.views, sumViewsByMonth, 'blended totals views = tổng Views theo tháng');
+  approx(data.blended.totals.views, sumViewsByChannel, 'blended totals views = tổng Views theo Channel');
+  approx(data.blended.totals.views, 1460000, 'blended totals views neo: 260.000 + 900.000 + 300.000');
+  approx(data.blended.totals.paid, sumPaidByMonth, 'blended totals paid = tổng Paid theo tháng (cùng tổng đã phục vụ blended CAC)');
+  approx(data.blended.totals.paid, sumPaidByChannel, 'blended totals paid = tổng Paid theo Channel');
+  approx(data.blended.totals.paid, 95.81059904256077, 'blended totals paid neo');
+  // (a) + render: hàng Tất cả tồn tại trong cả 3 bảng, ô T1 + cột Tổng đúng.
+  const html = h.planningKpiTablesHtml(rows, demo.benchmarks, MONTHS_2027);
+  assert.ok(html.includes('data-planning-kpi-row="views" data-channel="Tất cả"'), 'bảng Views phải có hàng Tất cả');
+  assert.ok(html.includes('data-planning-kpi-row="paid" data-channel="Tất cả"'), 'bảng Paid Users phải có hàng Tất cả');
+  assert.ok(html.includes('data-planning-kpi-row="cac" data-channel="Tất cả"'), 'bảng CAC phải có hàng Tất cả');
+  assert.equal(kpiCell(html, 'views', 'Tất cả', '2027-01'), '101.000', 'Views Tất cả T1 = 101.000');
+  assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), '2,308', 'Paid Tất cả T1 = fmtPlanningPaid(2,308005)');
+  assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), h.fmtPlanningPaid(sumPaidT1), 'Paid Tất cả T1 render = fmtPlanningPaid(tổng Paid T1 chưa làm tròn)');
+  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.460.000', 'Views Tất cả cột Tổng = tổng Views cả kỳ');
+  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '95,8106', 'Paid Tất cả cột Tổng = fmtPlanningPaid(tổng Paid cả kỳ)');
+  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), h.fmtPlanningPaid(data.blended.totals.paid), 'Paid Tất cả cột Tổng render từ cùng blended.totals.paid');
+  // (e) CAC và mọi số cũ không đổi.
+  assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '31.438.407 VND', 'CAC Tất cả T1 không đổi');
+  assert.equal(kpiCell(html, 'views', 'KOL Nano', '2027-01'), '16.000');
+  assert.equal(kpiCell(html, 'paid', 'KOL Nano', '2027-01'), '0,1188');
+  assert.equal(kpiCell(html, 'cac', 'KOL Nano', '2027-01'), '50.505.051 VND');
+  assert.equal(kpiCell(html, 'views', 'Meta Ads', '2027-01'), '—', 'Paid Media vẫn không có Views');
+});
+
+// ---------- [unit] Phần 2b: hàng Tất cả — tháng không có forecast/Views thì "—" ----------
+test('PPUP-KPI [unit]: hàng Tất cả — chỉ Paid Media (không Views) thì Views Tất cả = "—" nhưng Paid Tất cả có số; không dòng nào thì cả hai = "—"', () => {
+  const phases = JSON.parse(JSON.stringify(demo.phases.filter((p) => p.brand_id)));
+  const benchmarks = JSON.parse(JSON.stringify(demo.benchmarks));
+  const assumptions = JSON.parse(JSON.stringify(demo.phase_assumptions));
+  const paidOnlyRows = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai' && r.channel === 'Meta Ads')));
+  const hz = makeHarness(paidOnlyRows, phases, benchmarks, assumptions);
+  const htmlPaid = hz.h.planningKpiTablesHtml(paidOnlyRows, benchmarks, MONTHS_2027);
+  assert.equal(kpiCell(htmlPaid, 'views', 'Tất cả', '2027-01'), '—', 'chỉ Paid Media chưa có đơn giá Awareness -> Views Tất cả phải là "—", không bịa 0');
+  assert.equal(kpiTotal(htmlPaid, 'views', 'Tất cả'), '—', 'Views Tất cả cột Tổng = "—" khi không Channel nào có Views cả kỳ');
+  assert.equal(kpiCell(htmlPaid, 'paid', 'Tất cả', '2027-01'), '1,0811', 'Paid Tất cả T1 = Paid của Meta Ads (1,08108 làm tròn 4 số)');
+  const he = makeHarness([], phases, benchmarks, assumptions);
+  const htmlEmpty = he.h.planningKpiTablesHtml([], benchmarks, ['2027-01']);
+  assert.equal(kpiCell(htmlEmpty, 'views', 'Tất cả', '2027-01'), '—');
+  assert.equal(kpiCell(htmlEmpty, 'paid', 'Tất cả', '2027-01'), '—');
+  assert.equal(kpiTotal(htmlEmpty, 'views', 'Tất cả'), '—');
+  assert.equal(kpiTotal(htmlEmpty, 'paid', 'Tất cả'), '—');
+});
+
 // ---------- [unit] Phần 2: sửa ở nơi khác -> bảng cập nhật ----------
 test('PPUP-KPI [unit]: sửa Số lượng / Đơn giá (Theo tháng) và Ngân sách Paid -> 3 bảng KPI cập nhật ngay khi render lại', () => {
   const cloned = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
