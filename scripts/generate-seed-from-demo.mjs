@@ -389,10 +389,11 @@ const header = `-- =============================================================
 --   4. Chạy bằng SQL Editor (vai postgres/service) — bỏ qua RLS có chủ ý:
 --      đây là nạp dữ liệu khởi tạo, gồm cả số đã duyệt (approved_amount,
 --      budget_ceiling) mà đường app thường bị khóa bởi chuỗi duyệt 0014.
---   5. *** SEED NHÁP ***: bản seed này sinh từ js/demo-data.js tại thời
---      điểm TRƯỚC khi đợt triển khai mô hình B2B trên demo commit. KHÔNG
---      áp bản này. Seed bản cuối chỉ được chốt khi sinh lại từ demo-data
---      SAU commit B2B trên demo (đối chiếu hash — xem runbook).
+--   5. *** SEED BẢN CUỐI ***: bản seed này sinh từ js/demo-data.js SAU
+--      commit mô hình B2B trên demo (3275bc7) + commit ghi tường minh
+--      audience 'b2c' cho 4 dòng Meta Ads Camp 01 (3545316). Đây là bản
+--      được áp lên production theo runbook 0017 — đối chiếu số dòng ở
+--      bảng dưới + 4 số neo ở cuối file trước khi coi là xong.
 --
 -- BẢNG ĐỐI CHIẾU số dòng demo ↔ số INSERT (script tự in khi sinh):
 ${countLines}
