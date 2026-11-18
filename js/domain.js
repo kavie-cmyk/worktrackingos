@@ -316,14 +316,57 @@
    * @param {Array<object>} actuals Các khoản chi thực tế.
    * @returns {number} Tổng phần cam kết còn mở chưa thành actual.
    */
+  /**
+   * Phần còn mở của MỘT cam kết — NGUỒN DUY NHẤT cho cả tổng
+   * openCommitmentTotal lẫn cột "Còn mở" từng cam kết ở UI (Bước B
+   * I-5): 0 khi cam kết không còn mở (settled/released/cancelled…),
+   * chưa duyệt hoặc đã archive; ngược lại max(0, amount − đã trả).
+   */
+  function openCommitmentAmount(commitment, actuals) {
+    var c = commitment;
+    if (!c) return 0;
+    if (!isOpenCommitment(c)) return 0;
+    if (!isApprovedFact(c)) return 0; // 0014: cam kết chưa duyệt không giữ ngân sách
+    if (c.archivedAt || c.archived_at) return 0; // 0014: cam kết đã archive bị bỏ qua
+    var amt = pickNum(c, ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value']) || 0;
+    return Math.max(0, amt - commitmentPaidTotal(c, actuals));
+  }
+
   function openCommitmentTotal(commitments, actuals) {
     var total = 0;
     (commitments || []).forEach(function (c) {
-      if (!isOpenCommitment(c)) return;
-      if (!isApprovedFact(c)) return; // 0014: cam kết chưa duyệt không giữ ngân sách
-      if (c.archivedAt || c.archived_at) return; // 0014: cam kết đã archive bị bỏ qua
-      var amt = pickNum(c, ['amount', 'committedAmount', 'committed_amount', 'commitmentAmount', 'value']) || 0;
-      total += Math.max(0, amt - commitmentPaidTotal(c, actuals));
+      total += openCommitmentAmount(c, actuals);
+    });
+    return total;
+  }
+
+  /** Fact có cùng currency với currency chuẩn không (quy tắc SYN-09):
+   *  phía chuẩn không có currency -> khớp; fact thiếu currency khi phía
+   *  chuẩn có currency -> lệch. */
+  function _factSameCurrency(f, currency) {
+    if (currency === null || currency === undefined || String(currency).trim() === '') return true;
+    if (!f) return false;
+    var fc = f.currency !== undefined && f.currency !== null ? f.currency : (f.currencyCode !== undefined && f.currencyCode !== null ? f.currencyCode : f.currency_code);
+    if (fc === undefined || fc === null || String(fc).trim() === '') return false;
+    return String(fc).trim() === String(currency).trim();
+  }
+
+  /**
+   * Tổng THỰC CHI ĐÃ DUYỆT của một dòng ngân sách (Bước B I-4) — nguồn
+   * duy nhất cho thẻ "Đã chi", cột actualTotal và export CSV: chỉ cộng
+   * actual ĐÃ DUYỆT (isApprovedFact) cùng currency với dòng (line là
+   * object có currency, hoặc chính chuỗi currency, hoặc null).
+   * Khớp thành phần actual của budgetUsageTotal.
+   */
+  function budgetActualTotal(line, actuals) {
+    var currency = (line && typeof line === 'object')
+      ? (line.currency || line.currencyCode || line.currency_code || null)
+      : (typeof line === 'string' ? line : null);
+    var total = 0;
+    (actuals || []).forEach(function (a) {
+      if (!a || !isApprovedFact(a)) return;
+      if (!_factSameCurrency(a, currency)) return;
+      total += pickNum(a, ['amount', 'actualAmount', 'actual_amount', 'value']) || 0;
     });
     return total;
   }
@@ -1567,21 +1610,40 @@
       bucketFor(cur).openCommitments += Math.max(0, scopedAmount - paidScoped);
     });
 
+    // SYN-13 (Bước B I-0): currency CHƯA đặt trần -> available = null
+    // (hiển thị '—'), không phải số âm giả. Nguồn quyết định nằm TẠI
+    // domain: input.ceilingConfigured (cho currency chính) /
+    // input.ceilingConfiguredByCurrency {CUR: bool} /
+    // input.ceilingsByCurrency (có key = đã cấu hình). Không truyền
+    // cờ nào -> giữ hành vi cũ (coi như đã cấu hình) cho caller cũ.
+    var ceilingConfiguredMap = {};
+    if (input.ceilingsByCurrency && typeof input.ceilingsByCurrency === 'object') {
+      Object.keys(input.ceilingsByCurrency).forEach(function (cur) { ceilingConfiguredMap[cur] = true; });
+    }
+    if (input.ceilingConfiguredByCurrency && typeof input.ceilingConfiguredByCurrency === 'object') {
+      Object.keys(input.ceilingConfiguredByCurrency).forEach(function (cur) { ceilingConfiguredMap[cur] = !!input.ceilingConfiguredByCurrency[cur]; });
+    }
+    if (typeof input.ceilingConfigured === 'boolean') ceilingConfiguredMap[primaryCurrency] = input.ceilingConfigured;
+    function ceilingConfiguredFor(cur) {
+      return Object.prototype.hasOwnProperty.call(ceilingConfiguredMap, cur) ? !!ceilingConfiguredMap[cur] : true;
+    }
     var byCurrency = {};
     Object.keys(buckets).forEach(function (cur) {
       var b = buckets[cur];
       var actualTotal = _r31RoundMoney(b.actualTotal);
       var openCommitments = _r31RoundMoney(b.openCommitments);
       var allocated = _r31RoundMoney(b.allocated);
+      var configured = ceilingConfiguredFor(cur);
       byCurrency[cur] = {
         currency: cur,
         ceiling: b.ceiling,
+        ceilingConfigured: configured,
         allocated: allocated,
         unallocated: _r31RoundMoney(b.ceiling - allocated - (cur === primaryCurrency ? directCeiling : 0)),
         actualTotal: actualTotal,
         openCommitments: openCommitments,
         forecastUse: _r31RoundMoney(actualTotal + openCommitments),
-        available: _r31RoundMoney(b.ceiling - actualTotal - openCommitments)
+        available: configured ? _r31RoundMoney(b.ceiling - actualTotal - openCommitments) : null
       };
     });
     var currencies = Object.keys(byCurrency);
@@ -1597,6 +1659,7 @@
     };
     if (!mixed && currencies.length === 1) {
       var only = byCurrency[currencies[0]];
+      result.ceilingConfigured = only.ceilingConfigured;
       result.ceiling = only.ceiling;
       result.allocated = only.allocated;
       result.unallocated = only.unallocated;
@@ -2235,17 +2298,26 @@
     var v = row.group !== undefined && row.group !== null ? row.group : row.groupName;
     return (v === undefined || v === null || String(v) === '') ? null : String(v);
   }
+  function _cfField(row, key) {
+    if (!row) return undefined;
+    if (row.customFields && row.customFields[key] !== undefined && row.customFields[key] !== null) return row.customFields[key];
+    if (row.custom_fields && row.custom_fields[key] !== undefined && row.custom_fields[key] !== null) return row.custom_fields[key];
+    return undefined;
+  }
   function _rowAudience(row) {
     if (!row) return null;
     var v = row.audience !== undefined && row.audience !== null ? row.audience
-      : (row.audience_type !== undefined && row.audience_type !== null ? row.audience_type : row.audienceType);
+      : (row.audience_type !== undefined && row.audience_type !== null ? row.audience_type
+        : (row.audienceType !== undefined && row.audienceType !== null ? row.audienceType : _cfField(row, 'audience')));
     if (v === undefined || v === null || String(v).trim() === '') return null;
     var k = String(v).trim().toLowerCase();
     return (k === 'b2c' || k === 'b2b' || k === 'both') ? k : null;
   }
   function _rowB2bSplitPct(row) {
     if (!row) return null;
-    return _planNum(row.b2b_split_pct !== undefined && row.b2b_split_pct !== null ? row.b2b_split_pct : row.b2bSplitPct);
+    var v = row.b2b_split_pct !== undefined && row.b2b_split_pct !== null ? row.b2b_split_pct
+      : (row.b2bSplitPct !== undefined && row.b2bSplitPct !== null ? row.b2bSplitPct : _cfField(row, 'b2b_split_pct'));
+    return _planNum(v);
   }
   /**
    * Tỉ trọng ngân sách B2C/B2B của 1 dòng budget-driven: { b2c, b2b }
@@ -2259,7 +2331,7 @@
     if (objectiveKey && PURE_B2C_OBJECTIVES[objectiveKey]) return { b2c: 1, b2b: 0 };
     var aud = _rowAudience(row);
     if (!aud) {
-      var seg = row && row.segment !== undefined && row.segment !== null ? String(row.segment).toLowerCase() : '';
+      var seg = _planSegment(row) || '';
       aud = seg === 'b2b' ? 'b2b' : 'b2c';
     }
     if (aud === 'b2b') return { b2c: 0, b2b: 1 };
@@ -2302,61 +2374,157 @@
     });
     return out;
   }
-  function _benchmarkIndex(benchmarks) {
-    var idx = {};
-    (benchmarks || []).forEach(function (b) {
-      if (!b || !b.channel) return;
-      idx[_planBrandId(b) + '|' + String(b.channel)] = b;
+  /** Segment của một bản ghi plan/benchmark: field segment trực tiếp,
+   *  thiếu thì đọc customFields/custom_fields (nơi Store gói field phụ). */
+  function _planSegment(x) {
+    if (!x) return null;
+    var v = x.segment !== undefined && x.segment !== null ? x.segment
+      : (x.customFields && x.customFields.segment !== undefined && x.customFields.segment !== null ? x.customFields.segment
+        : (x.custom_fields && x.custom_fields.segment !== undefined && x.custom_fields.segment !== null ? x.custom_fields.segment : null));
+    return (v === undefined || v === null || String(v).trim() === '') ? null : String(v).trim().toLowerCase();
+  }
+  /** Số lượng của 1 dòng plan — MỘT quy tắc fallback qty ?? quantity ??
+   *  count (khớp planRowQty của app); không có/không phải số -> null. */
+  function _planQty(row) {
+    if (!row) return null;
+    var v = row.qty !== undefined ? row.qty : (row.quantity !== undefined ? row.quantity : row.count);
+    if (v === null || v === undefined || v === '') return null;
+    var n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+  /** Tên nhóm HIỂN THỊ của 1 dòng plan — MỘT quy tắc (Bước B II-2):
+   *  group/groupName, thiếu -> 'Chưa nhóm'. (_rowGroup giữ bản thô
+   *  null cho engine phân loại nhóm budget-driven.) */
+  function rowGroupOf(row) {
+    return _rowGroup(row) || 'Chưa nhóm';
+  }
+  /**
+   * Thứ tự Channel của Planning — MỘT nguồn (Bước B II-1): duyệt GROUP
+   * theo thứ tự xuất hiện đầu tiên, trong group duyệt Channel theo thứ
+   * tự xuất hiện đầu tiên, phẳng hoá + khử trùng theo lần xuất hiện
+   * đầu tiên. Trả [{ group, channel }]. Lưới Planning, planningKpiData
+   * và khối Phase đều gọi helper này.
+   */
+  function planChannelOrder(rows) {
+    var groupOrder = [], channelsByGroup = {}, seen = {}, out = [];
+    (rows || []).forEach(function (r) {
+      if (!r) return;
+      var g = rowGroupOf(r);
+      if (!channelsByGroup[g]) { channelsByGroup[g] = []; groupOrder.push(g); }
+      var ch = String(r.channel || '—');
+      if (channelsByGroup[g].indexOf(ch) === -1) channelsByGroup[g].push(ch);
     });
-    return idx;
+    groupOrder.forEach(function (g) {
+      channelsByGroup[g].forEach(function (ch) {
+        if (seen[ch]) return;
+        seen[ch] = true;
+        out.push({ group: g, channel: ch });
+      });
+    });
+    return out;
+  }
+  /**
+   * Khớp Benchmark — MỘT hàm chuẩn duy nhất (Bước B I-1), dùng cho
+   * forecastFunnel / planBudget / summarize* và (qua export
+   * benchmarkForRow) cho mọi đường đọc ở app:
+   *  - channel phải khớp đúng;
+   *  - dòng có brand_id -> benchmark phải cùng brand_id (benchmark
+   *    thiếu brand_id không khớp); dòng không brand -> mọi brand;
+   *  - segment: benchmark có segment khác segment của dòng -> loại;
+   *    khớp segment CHÍNH XÁC thắng bản không/khác segment; trong các
+   *    bản cùng mức ưu tiên, bản ĐẦU TIÊN trong danh sách thắng
+   *    (không còn ghi đè theo thứ tự key như index cũ).
+   */
+  function _benchmarkIndex(benchmarks) {
+    return (benchmarks || []).filter(function (b) { return !!b && !!b.channel; });
   }
   function _benchmarkFor(idx, row) {
     if (!row || !row.channel) return null;
-    return idx[_planBrandId(row) + '|' + String(row.channel)] || null;
+    var bid = _planBrandId(row), seg = _planSegment(row), ch = String(row.channel);
+    var best = null, bestExact = false;
+    (idx || []).forEach(function (b) {
+      if (String(b.channel) !== ch) return;
+      var bb = _planBrandId(b);
+      if (bid !== null) {
+        if (bb === null || bb !== bid) return;
+      }
+      var bs = _planSegment(b);
+      if (seg !== null && bs !== null && bs !== seg) return;
+      var exact = seg !== null && bs === seg;
+      if (!best || (exact && !bestExact)) { best = b; bestExact = exact; }
+    });
+    return best;
+  }
+  function benchmarkForRow(row, benchmarks) {
+    return _benchmarkFor(_benchmarkIndex(benchmarks), row);
   }
   function _benchField(b, snake, camel) {
     if (!b) return null;
     return _planNum(b[snake] !== undefined && b[snake] !== null ? b[snake] : b[camel]);
   }
 
-  /** Tổng qty (+ budget trực tiếp nếu có) theo từng tháng; đủ 12 tháng/năm. */
-  function summarizePlanByMonth(rows) {
+  /**
+   * Tổng qty + ngân sách theo từng tháng; đủ 12 tháng/năm.
+   * Bước B I-2 (QUYẾT ĐỊNH: viết lại để ỦY QUYỀN cùng công thức hiệu
+   * dụng của app/domain thay vì gỡ export — vì hàm đang là API domain
+   * được test và tài liệu tham chiếu): qty qua _planQty (fallback
+   * qty ?? quantity ?? count như planRowQty của app); ngân sách qua
+   * CHÍNH planBudget(rows, benchmarks) (dòng có qty: qty × đơn giá
+   * hiệu dụng, field budget bị bỏ qua; dòng qty null: budget trực
+   * tiếp). Không truyền benchmarks -> dòng có qty không có đơn giá
+   * (amount 0) như planBudgetFor không benchmark.
+   */
+  function summarizePlanByMonth(rows, benchmarks) {
     var list = rows || [];
     var months = _planMonthsOf(list);
+    var budget = planBudget(list, benchmarks);
+    var budgetByMonth = {};
+    Object.keys(budget.byMonth || {}).forEach(function (m) { budgetByMonth[m] = budget.byMonth[m].amount; });
     var byMonth = {};
-    months.forEach(function (m) { byMonth[m] = { month: m, qty: 0, budget: 0, rowCount: 0 }; });
-    var totalQty = 0, totalBudget = 0;
+    months.forEach(function (m) { byMonth[m] = { month: m, qty: 0, budget: budgetByMonth[m] || 0, rowCount: 0 }; });
+    var totalQty = 0;
     list.forEach(function (r) {
       var m = _planMonth(r);
       if (!m || !byMonth[m]) return;
-      var q = _planNum(r.qty) || 0;
-      var b = _planNum(r.budget) || 0;
-      byMonth[m].qty += q; byMonth[m].budget += b; byMonth[m].rowCount += 1;
-      totalQty += q; totalBudget += b;
+      var q = _planQty(r) || 0;
+      byMonth[m].qty += q; byMonth[m].rowCount += 1;
+      totalQty += q;
     });
-    return { months: months, byMonth: byMonth, totalQty: totalQty, totalBudget: totalBudget };
+    return { months: months, byMonth: byMonth, totalQty: totalQty, totalBudget: budget.total };
   }
 
-  /** Tổng theo channel (kèm group của channel). */
-  function summarizePlanByChannel(rows) {
+  /**
+   * Tổng theo channel (kèm group của channel). Bước B I-2 + II-1:
+   * qty qua _planQty, ngân sách từng dòng qua planBudget (cùng công
+   * thức hiệu dụng), thứ tự channel qua planChannelOrder
+   * (group -> channel) — KHÔNG còn sort ABC.
+   */
+  function summarizePlanByChannel(rows, benchmarks) {
     var list = rows || [];
+    var budget = planBudget(list, benchmarks);
+    var amountByIndex = (budget.rows || []).map(function (d) { return d.amount || 0; });
     var byChannel = {};
-    var totalQty = 0, totalBudget = 0;
-    list.forEach(function (r) {
+    var totalQty = 0;
+    list.forEach(function (r, i) {
       if (!r || !r.channel) return;
       var key = String(r.channel);
       var e = byChannel[key];
-      if (!e) e = byChannel[key] = { channel: key, group: r.group || null, qty: 0, budget: 0, rowCount: 0, months: {} };
-      if (!e.group && r.group) e.group = r.group;
-      var q = _planNum(r.qty) || 0;
-      var b = _planNum(r.budget) || 0;
-      e.qty += q; e.budget += b; e.rowCount += 1;
+      if (!e) e = byChannel[key] = { channel: key, group: rowGroupOf(r), qty: 0, budget: 0, rowCount: 0, months: {} };
+      var q = _planQty(r) || 0;
+      e.qty += q; e.budget += amountByIndex[i] || 0; e.rowCount += 1;
       var m = _planMonth(r);
       if (m) e.months[m] = (e.months[m] || 0) + q;
-      totalQty += q; totalBudget += b;
+      totalQty += q;
     });
-    var channels = Object.keys(byChannel).sort().map(function (k) { return byChannel[k]; });
-    return { channels: channels, byChannel: byChannel, totalQty: totalQty, totalBudget: totalBudget };
+    var channels = planChannelOrder(list).map(function (o) {
+      var e = byChannel[o.channel];
+      if (e) e.group = o.group;
+      return e;
+    }).filter(Boolean);
+    // Channel có trong byChannel nhưng không lọt planChannelOrder
+    // (không xảy ra với rows thường) -> nối cuối để không mất dữ liệu.
+    Object.keys(byChannel).forEach(function (k) { if (channels.indexOf(byChannel[k]) === -1) channels.push(byChannel[k]); });
+    return { channels: channels, byChannel: byChannel, totalQty: totalQty, totalBudget: budget.total };
   }
 
   // ---------- Forecast v2: Phase + Uplift (bổ sung 17/11/2026) ----------
@@ -2466,6 +2634,95 @@
   }
   function _assumpViewsPerUnit(a) {
     return _assumpField(a, 'views_per_unit', 'viewsPerUnit');
+  }
+
+  var EFFECTIVE_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account'];
+  var EFFECTIVE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_freemium: 'visitToFreemium', freemium_to_paid: 'freemiumToPaid', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid', paid_to_b2b: 'paidToB2b', lead_to_account: 'leadToAccount', demo_to_account: 'demoToAccount' };
+  /**
+   * Tỉ lệ HIỆU DỤNG của (phase, channel) — MỘT nguồn cho UI hiển thị
+   * (Bước B II-3), cùng quy tắc engine forecastFunnel: assumption
+   * khác null thắng benchmark từng field; fallback key cũ v2f =
+   * visit_to_signup, f2p = signup_to_first × first_to_paid (chỉ khi
+   * đủ cả hai ở tầng hiệu dụng). Trả { [field]: {value, source} }.
+   */
+  function effectiveRatesFor(phase, channel, benchmarks, assumptions) {
+    var pid = phase ? (phase.id !== undefined && phase.id !== null ? String(phase.id) : null) : null;
+    var assumption = null;
+    (assumptions || []).forEach(function (a) {
+      if (assumption || !a) return;
+      var apid = a.phase_id !== undefined && a.phase_id !== null ? a.phase_id : a.phaseId;
+      if (pid !== null && apid !== undefined && apid !== null && String(apid) === pid && String(a.channel || '') === String(channel)) assumption = a;
+    });
+    var bm = benchmarkForRow({ brand_id: _planBrandId(phase), channel: channel }, benchmarks);
+    function effField(f) {
+      var av = assumption ? _assumpField(assumption, f, EFFECTIVE_RATE_CAMEL[f]) : null;
+      if (av !== null) return { value: av, source: 'assumption' };
+      var bv = bm ? _benchField(bm, f, EFFECTIVE_RATE_CAMEL[f]) : null;
+      if (bv !== null) return { value: bv, source: 'benchmark' };
+      return { value: null, source: null };
+    }
+    var out = {};
+    EFFECTIVE_RATE_FIELDS.forEach(function (f) { out[f] = effField(f); });
+    if (out.visit_to_freemium.value === null) out.visit_to_freemium = effField('visit_to_signup');
+    if (out.freemium_to_paid.value === null) {
+      var s2f = effField('signup_to_first');
+      var f2pOld = effField('first_to_paid');
+      if (s2f.value !== null && f2pOld.value !== null) {
+        out.freemium_to_paid = { value: s2f.value * f2pOld.value, source: (s2f.source === 'assumption' || f2pOld.source === 'assumption') ? 'assumption' : 'benchmark' };
+      }
+    }
+    return out;
+  }
+  /**
+   * Views mỗi bài HIỆU DỤNG của (phase, channel) — MỘT nguồn (Bước B
+   * II-3): assumption.views_per_unit thắng, thiếu thì benchmark
+   * output_per_unit. Trả { value, source }.
+   */
+  function effectiveViewsPerUnitFor(phase, channel, benchmarks, assumptions) {
+    var pid = phase ? (phase.id !== undefined && phase.id !== null ? String(phase.id) : null) : null;
+    var assumption = null;
+    (assumptions || []).forEach(function (a) {
+      if (assumption || !a) return;
+      var apid = a.phase_id !== undefined && a.phase_id !== null ? a.phase_id : a.phaseId;
+      if (pid !== null && apid !== undefined && apid !== null && String(apid) === pid && String(a.channel || '') === String(channel)) assumption = a;
+    });
+    var ov = assumption ? _assumpViewsPerUnit(assumption) : null;
+    if (ov !== null) return { value: ov, source: 'assumption' };
+    var bm = benchmarkForRow({ brand_id: _planBrandId(phase), channel: channel }, benchmarks);
+    var bv = bm ? _benchField(bm, 'output_per_unit', 'outputPerUnit') : null;
+    if (bv !== null) return { value: bv, source: 'benchmark' };
+    return { value: null, source: null };
+  }
+
+  /** 12 tháng 'YYYY-MM' của một năm — MỘT nguồn danh sách tháng kỳ
+   *  (Bước B II-9) cho lưới Planning và các nơi cần kỳ năm. */
+  function planMonthsForYear(year) {
+    var y = String(year);
+    var out = [];
+    for (var i = 1; i <= 12; i++) out.push(y + '-' + String(i).padStart(2, '0'));
+    return out;
+  }
+
+  /**
+   * Số dư của MỘT tài khoản Thu–Chi — MỘT công thức JS duy nhất
+   * (Bước B I-6/II-12), khớp SQL view cash_account_balances:
+   * opening + Σ amount(direction='in') − Σ amount(direction='out');
+   * direction khác 'in'/'out' bị BỎ QUA (không coi là chi như bản sao
+   * cũ). SQL view vẫn là nguồn ở chế độ supabase vì nó chạy phía DB —
+   * cùng công thức này, không thể gộp code qua hai tầng.
+   */
+  function cashBalanceFor(account, transactions) {
+    if (!account) return null;
+    var bal = Number(account.openingBalance !== undefined && account.openingBalance !== null ? account.openingBalance : account.opening_balance) || 0;
+    (transactions || []).forEach(function (t) {
+      if (!t) return;
+      var aid = t.accountId !== undefined && t.accountId !== null ? t.accountId : t.account_id;
+      if (aid === null || aid === undefined || String(aid) !== String(account.id)) return;
+      var amt = Number(t.amount) || 0;
+      if (t.direction === 'in') bal += amt;
+      else if (t.direction === 'out') bal -= amt;
+    });
+    return bal;
   }
 
   /**
@@ -2771,6 +3028,18 @@
    * 'unit_price' / 'direct' / null. totalUnitPrice gồm cả hai nguồn đơn
    * giá (đặt tay + Benchmark); thêm totalManualUnitPrice tách phần đặt tay.
    */
+  /** Giá trị thô của đơn giá đặt tay trên 1 dòng plan: unit_price /
+   *  unitPrice top-level, thiếu thì customFields/custom_fields. */
+  function _manualUnitPriceRaw(r) {
+    if (!r) return null;
+    if (r.unit_price !== undefined && r.unit_price !== null) return r.unit_price;
+    if (r.unitPrice !== undefined && r.unitPrice !== null) return r.unitPrice;
+    if (r.customFields && r.customFields.unit_price !== undefined && r.customFields.unit_price !== null) return r.customFields.unit_price;
+    if (r.customFields && r.customFields.unitPrice !== undefined && r.customFields.unitPrice !== null) return r.customFields.unitPrice;
+    if (r.custom_fields && r.custom_fields.unit_price !== undefined && r.custom_fields.unit_price !== null) return r.custom_fields.unit_price;
+    if (r.custom_fields && r.custom_fields.unitPrice !== undefined && r.custom_fields.unitPrice !== null) return r.custom_fields.unitPrice;
+    return null;
+  }
   function planBudget(rows, benchmarks) {
     var list = rows || [];
     var idx = _benchmarkIndex(benchmarks);
@@ -2782,13 +3051,16 @@
       var entry = {
         rowId: r && r.id !== undefined ? r.id : null,
         month: _planMonth(r), channel: r ? (r.channel || null) : null,
-        qty: r ? _planNum(r.qty) : null,
+        qty: r ? _planQty(r) : null,
         unitPrice: null,
         amount: 0, source: null
       };
-      var qty = r ? _planNum(r.qty) : null;
+      var qty = r ? _planQty(r) : null;
       if (qty !== null) {
-        var manual = r ? _planNum(r.unit_price !== undefined && r.unit_price !== null ? r.unit_price : r.unitPrice) : null;
+        // Đơn giá đặt tay: field top-level unit_price/unitPrice, thiếu
+        // thì customFields/custom_fields (Bước B II-5 — cùng đường đọc
+        // với planRowManualUnitPrice của app qua cfVal).
+        var manual = r ? _planNum(_manualUnitPriceRaw(r)) : null;
         if (manual !== null) {
           entry.unitPrice = manual; entry.amount = qty * manual; entry.source = 'manual_unit_price';
         } else {
@@ -2876,6 +3148,12 @@
   // dòng flow cộng dồn (null nếu có tháng null), dòng tồn lấy giá trị
   // tháng cuối.
   // =====================================================================
+  // Phân loại cột Tổng của bảng vận hành — MỘT nguồn (Bước B II-10):
+  // dòng FLOW cộng dồn cả kỳ; dòng STOCK lấy giá trị tháng cuối.
+  // arppuEffective KHÔNG thuộc hai nhóm này (tỉ lệ, không cộng dồn —
+  // xem xử lý riêng ở planningOperatingData phía app / Bước B I-8).
+  var OPERATING_FLOW_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'revenue', 'cogs', 'cogsFree', 'cogsPaid', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt', 'newB2b', 'b2bChurn', 'revenueB2b', 'cogsB2b'];
+  var OPERATING_STOCK_KEYS = ['paidEom', 'freeEom', 'totalUsers', 'b2bEom'];
   function computeOperatingFinancials(input) {
     var inp = input || {};
     var months = Array.isArray(inp.months) ? inp.months.slice() : [];
@@ -3030,8 +3308,8 @@
       if (row.profitAfterCogsMkt !== null && fixedCost !== null) row.profitAfterCogsFixedMkt = row.profitAfterCogsMkt - fixedCost;
       return row;
     });
-    var FLOW_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'revenue', 'cogs', 'cogsFree', 'cogsPaid', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt', 'newB2b', 'b2bChurn', 'revenueB2b', 'cogsB2b'];
-    var STOCK_KEYS = ['paidEom', 'freeEom', 'totalUsers', 'b2bEom'];
+    var FLOW_KEYS = OPERATING_FLOW_KEYS;
+    var STOCK_KEYS = OPERATING_STOCK_KEYS;
     var totals = {};
     FLOW_KEYS.forEach(function (k) {
       var sum = 0, ok = rows.length > 0;
@@ -3066,6 +3344,20 @@
     distributeEffort: distributeEffort,
     commitmentPaidTotal: commitmentPaidTotal,
     openCommitmentTotal: openCommitmentTotal,
+    openCommitmentAmount: openCommitmentAmount,
+    budgetActualTotal: budgetActualTotal,
+    benchmarkForRow: benchmarkForRow,
+    rowGroupOf: rowGroupOf,
+    planChannelOrder: planChannelOrder,
+    planQtyOf: _planQty,
+    resolvePhaseFor: _resolvePhase,
+    effectiveRatesFor: effectiveRatesFor,
+    effectiveViewsPerUnitFor: effectiveViewsPerUnitFor,
+    planMonthsOf: _planMonthsOf,
+    planMonthsForYear: planMonthsForYear,
+    cashBalanceFor: cashBalanceFor,
+    OPERATING_FLOW_KEYS: OPERATING_FLOW_KEYS,
+    OPERATING_STOCK_KEYS: OPERATING_STOCK_KEYS,
     budgetRemaining: budgetRemaining,
     factApprovalStatus: factApprovalStatus,
     isApprovedFact: isApprovedFact,
