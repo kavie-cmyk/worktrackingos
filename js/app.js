@@ -176,6 +176,16 @@
     // thu gọn theo key 'views' | 'paid' | 'cac' — chỉ giữ trong phiên
     // làm việc (UI state, không lưu Store); thiếu key = đang mở.
     planningKpiCollapsed: {},
+    // Khối Phase ở Planning Theo phase: trạng thái thu gọn theo
+    // phase id (true = đang thu gọn; thiếu key = đang MỞ — mặc định
+    // mở như trước). Khác planningKpiCollapsed (chỉ trong phiên),
+    // map này ĐƯỢC NHỚ BỀN qua localStorage (khoá
+    // PLANNING_PHASE_COLLAPSED_STORAGE_KEY, xem các helper
+    // planningPhase*Collapsed* bên dưới — bám mẫu lưu bền của kéo
+    // rộng cột ở js/col-resize.js); planningPhaseCollapsedLoaded
+    // đánh dấu đã nạp từ localStorage trong phiên này chưa.
+    planningPhaseCollapsed: {},
+    planningPhaseCollapsedLoaded: false,
     brandDetailId: null,
     approvalsTab: 'mine',
     actionGroupBy: 'phase',
@@ -1744,6 +1754,88 @@
     Object.keys(map || {}).forEach(function (k) { out[k] = !!map[k]; });
     out[key] = !out[key];
     return out;
+  }
+  // --- Thu gọn khối Phase (Planning Theo phase) ---
+  // Bám đúng mẫu thu gọn của 3 bảng KPI ở trên (nút linklike ▸/▾ +
+  // map trạng thái {key: true = thu gọn} + hàm toggle THUẦN), khác
+  // ở chỗ trạng thái của Phase ĐƯỢC NHỚ BỀN qua localStorage để
+  // giữ nguyên qua các lần tải lại trang — mẫu lưu bền sẵn có của
+  // app cho tuỳ chọn giao diện là kéo rộng cột (js/col-resize.js:
+  // localStorage với tiền tố riêng + try/catch bỏ qua khi storage
+  // tắt/hết quota). Khoá lưu: PLANNING_PHASE_COLLAPSED_STORAGE_KEY,
+  // giá trị JSON chỉ gồm các phase đang thu gọn {phaseId: true}
+  // (mở = không có key, nên mặc định lần đầu vào là MỞ).
+  var PLANNING_PHASE_COLLAPSED_STORAGE_KEY = 'sava-mkt-planning-phase-collapsed-v1';
+  // Hàm THUẦN: đọc chuỗi JSON đã lưu -> map {phaseId: true}; chuỗi
+  // hỏng / không phải object / giá trị không đúng true đều bỏ qua.
+  function planningPhaseParseCollapsed(text) {
+    if (!text) return {};
+    var parsed = null;
+    try { parsed = JSON.parse(text); } catch (e) { return {}; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    var out = {};
+    Object.keys(parsed).forEach(function (k) { if (parsed[k] === true) out[k] = true; });
+    return out;
+  }
+  // Hàm THUẦN: map -> chuỗi JSON để lưu (chỉ giữ key đang thu gọn).
+  function planningPhaseSerializeCollapsed(map) {
+    var out = {};
+    Object.keys(map || {}).forEach(function (k) { if (map[k]) out[k] = true; });
+    return JSON.stringify(out);
+  }
+  // Hàm THUẦN: lật trạng thái thu gọn của 1 Phase (như
+  // planningKpiToggleMap nhưng khoá theo phase id).
+  function planningPhaseToggleMap(map, phaseId) {
+    var out = {};
+    Object.keys(map || {}).forEach(function (k) { out[k] = !!map[k]; });
+    var key = String(phaseId);
+    out[key] = !out[key];
+    if (!out[key]) delete out[key];
+    return out;
+  }
+  // Hàm THUẦN: đặt trạng thái thu gọn cho NHIỀU Phase cùng lúc
+  // (Thu gọn tất cả / Mở tất cả); phase ngoài danh sách giữ nguyên.
+  function planningPhaseSetAllMap(map, phaseIds, collapsed) {
+    var out = {};
+    Object.keys(map || {}).forEach(function (k) { out[k] = !!map[k]; });
+    (phaseIds || []).forEach(function (pid) {
+      var key = String(pid);
+      if (collapsed) out[key] = true; else delete out[key];
+    });
+    return out;
+  }
+  function planningPhaseIsCollapsed(map, phaseId) {
+    return !!((map || {})[String(phaseId)]);
+  }
+  function planningPhaseStorageGet() {
+    try { if (typeof window !== 'undefined' && window.localStorage) return window.localStorage.getItem(PLANNING_PHASE_COLLAPSED_STORAGE_KEY); } catch (e) { /* storage tắt: bỏ qua */ }
+    try { if (typeof localStorage !== 'undefined') return localStorage.getItem(PLANNING_PHASE_COLLAPSED_STORAGE_KEY); } catch (e) { /* bỏ qua */ }
+    return null;
+  }
+  function planningPhaseStorageSet(map) {
+    var text = planningPhaseSerializeCollapsed(map);
+    try { if (typeof window !== 'undefined' && window.localStorage) { window.localStorage.setItem(PLANNING_PHASE_COLLAPSED_STORAGE_KEY, text); return; } } catch (e) { /* hết quota/tắt storage: trạng thái vẫn giữ trong phiên */ }
+    try { if (typeof localStorage !== 'undefined') localStorage.setItem(PLANNING_PHASE_COLLAPSED_STORAGE_KEY, text); } catch (e) { /* bỏ qua */ }
+  }
+  // Nạp trạng thái đã lưu vào UI.planningPhaseCollapsed (chỉ 1 lần
+  // mỗi phiên; các lần sau giữ map trong phiên). Trạng thái đã có
+  // trong phiên (người dùng vừa bấm) thắng trạng thái đã lưu ở các
+  // key trùng nhau.
+  function planningPhaseEnsureLoaded() {
+    if (UI.planningPhaseCollapsedLoaded) return UI.planningPhaseCollapsed || {};
+    UI.planningPhaseCollapsedLoaded = true;
+    var stored = planningPhaseParseCollapsed(planningPhaseStorageGet());
+    var cur = UI.planningPhaseCollapsed || {};
+    var merged = {};
+    Object.keys(stored).forEach(function (k) { merged[k] = true; });
+    Object.keys(cur).forEach(function (k) { if (cur[k]) merged[k] = true; else delete merged[k]; });
+    UI.planningPhaseCollapsed = merged;
+    return merged;
+  }
+  // Lưu bền map hiện tại (gọi sau mỗi lần bấm thu/mở).
+  function planningPhaseSaveCollapsed(map) {
+    UI.planningPhaseCollapsed = map || {};
+    planningPhaseStorageSet(UI.planningPhaseCollapsed);
   }
   // Phân bổ tổng Số lượng mới về các tháng theo tỉ lệ qty hiện tại —
   // largest remainder, deterministic (phần dư lớn nhất trước; hòa thì
@@ -4138,6 +4230,7 @@
     return html;
   }
   function planningPhaseModeHtml(year, rows, benchmarks) {
+    planningPhaseEnsureLoaded();
     var editable = planningInputsEditable();
     var disAttr = editable ? '' : ' disabled';
     var html = '<h2>Planning theo Phase (' + esc(year) + ')</h2>';
@@ -4172,6 +4265,15 @@
     groups.forEach(function (g) {
       if (g.phases.length) UI.planningOpeningPhaseIds[String(g.phases[0].id)] = true;
     });
+    // Thu gọn / mở tất cả Phase đang hiển thị (đúng tập Phase đã lọc
+    // theo Brand/Segment + năm ở trên): hai nút mang theo danh sách
+    // phase id đang hiển thị để handler áp đúng phạm vi đó; trạng
+    // thái sau khi bấm cũng lưu bền như thu gọn từng Phase.
+    var visiblePhaseIds = phases.map(function (p) { return String(p.id); }).join(',');
+    html += '<p class="planning-phase-toolbar" data-planning-phase-toolbar="1">' +
+      '<button type="button" class="btn small secondary" data-action="planning-phase-collapse-all" data-phase-ids="' + esc(visiblePhaseIds) + '">Thu gọn tất cả</button> ' +
+      '<button type="button" class="btn small secondary" data-action="planning-phase-expand-all" data-phase-ids="' + esc(visiblePhaseIds) + '">Mở tất cả</button> ' +
+      '<span class="sub">Bấm mũi tên hoặc tên Phase ở đầu mỗi khối để thu gọn / mở riêng Phase đó.</span></p>';
     groups.forEach(function (g) {
       if (multiBrand || !UI.brandFilter || UI.brandFilter === 'all') {
         html += '<h3 data-planning-phase-brand="' + esc(g.brandId) + '">Brand: ' + esc(g.brandId ? brandNameOf(g.brandId) : 'Chưa gắn Brand') + '</h3>';
@@ -4194,9 +4296,32 @@
     var uplift = phaseUplift(phase);
     var viewsUplift = phaseViewsUplift(phase);
     var objective = phaseObjective(phase);
-    var html = '<div class="panel planning-phase" data-planning-phase="' + esc(phase.id) + '">';
-    html += '<h3>Phase: ' + esc(phase.name || phase.id) + '</h3>' +
-      '<p class="sub">' + esc(rangeText) + (objective ? ' · <strong>Mục tiêu:</strong> ' + esc(objective) : '') + ' · ' + fmtNum(pRows.length) + ' dòng plan · Tổng số lượng: ' + fmtNum(pRows.reduce(function (s, r) { return s + planRowQty(r); }, 0)) + '</p>';
+    // Thu gọn khối Phase: trạng thái theo phase id trong
+    // UI.planningPhaseCollapsed (đã nạp bền từ localStorage ở
+    // planningPhaseModeHtml / planningPhaseEnsureLoaded); mặc định
+    // MỞ. Số tóm tắt ở thanh header lấy từ ĐÚNG các tổng engine mà
+    // thân khối đang dùng: Forecast Paid từ funnelTotalsFor(pRows)
+    // (cùng số vẽ funnel của Phase ở cuối khối) và ngân sách từ
+    // planBudgetFor(pRows) (cùng hàm ngân sách của Planning) — tính
+    // một lần ở đây rồi dùng lại cho funnel ở cuối, không chế số mới.
+    planningPhaseEnsureLoaded();
+    var collapsed = planningPhaseIsCollapsed(UI.planningPhaseCollapsed, phase.id);
+    var pTotals = funnelTotalsFor(pRows, benchmarks);
+    var phaseBudgetTotal = planBudgetFor(pRows, benchmarks).reduce(function (s, x) { return s + (Number(x.total) || 0); }, 0);
+    var summaryPaid = pTotals ? fmtPlanningCount(pTotals.paid) : '—';
+    var summaryBudget = pRows.length ? fmtMoney(phaseBudgetTotal, 'VND') : '—';
+    // Thanh header MỎNG luôn hiển thị: nút thu/mở (chevron + tên
+    // Phase) + dòng tóm tắt. Nút thu/mở là phần tử data-action DUY
+    // NHẤT của cơ chế này và KHÔNG bao trùm thân khối — các ô nhập
+    // nằm trong thân (data-planning-phase-body), dùng
+    // data-action-change riêng, nên bấm vào ô nhập không thể kích
+    // hoạt thu/mở. Khi thu gọn, thân khối không render (như mẫu
+    // planningKpiSectionHtml của 3 bảng KPI chi tiết theo tháng).
+    var html = '<div class="panel planning-phase" data-planning-phase="' + esc(phase.id) + '" data-planning-phase-collapsed="' + (collapsed ? 'true' : 'false') + '">';
+    html += '<div class="planning-phase-header" data-planning-phase-header="1"><h3 class="planning-phase-title"><button type="button" class="linklike planning-phase-toggle" data-action="planning-phase-toggle" data-id="' + esc(phase.id) + '" data-phase-id="' + esc(phase.id) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '" aria-label="' + (collapsed ? 'Mở rộng' : 'Thu gọn') + ' Phase ' + esc(phase.name || phase.id) + '"><span data-planning-phase-chevron="1">' + (collapsed ? '▸' : '▾') + '</span> Phase: ' + esc(phase.name || phase.id) + '</button></h3>' +
+      '<p class="sub planning-phase-summary" data-planning-phase-summary="1">' + esc(rangeText) + (objective ? ' · <strong>Mục tiêu:</strong> ' + esc(objective) : '') + ' · ' + fmtNum(pRows.length) + ' dòng plan · Tổng số lượng: ' + fmtNum(pRows.reduce(function (s, r) { return s + planRowQty(r); }, 0)) + ' · Forecast Paid: ' + esc(summaryPaid) + ' · Ngân sách: ' + esc(summaryBudget) + '</p></div>';
+    if (collapsed) { html += '</div>'; return html; }
+    html += '<div class="planning-phase-body" data-planning-phase-body="1" data-phase-id="' + esc(phase.id) + '">';
     // Ô nhập Uplift của Phase (%/tháng)
     html += '<p class="phase-uplift-row"><label>Uplift (%/tháng)<input class="phase-input" type="number" step="any" min="0" name="uplift" value="' + esc(uplift === null ? '' : String(uplift)) + '" data-action-change="phase-uplift" data-phase-id="' + esc(phase.id) + '" data-phase-uplift="' + esc(phase.id) + '" aria-label="Uplift %/tháng của Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></label> ' +
       '<span class="sub">Uplift áp vào 4 tỉ lệ chuyển đổi theo từng tháng trong Phase (tháng đầu hệ số 1) — do engine tính khi Forecast.</span></p>';
@@ -4301,7 +4426,8 @@
       html += '<p class="sub" data-planning-phase-views-hint="1">Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về Views mỗi bài của Benchmark.</p>';
     }
     // Chart funnel theo Phase (totals của Phase qua cùng engine + ctx)
-    var pTotals = funnelTotalsFor(pRows, benchmarks);
+    // — pTotals đã tính một lần ở đầu khối cho dòng tóm tắt của thanh
+    // header thu gọn, dùng lại đúng số đó ở đây.
     html += '<h4>Forecast — Funnel của Phase</h4>';
     var pSteps = pTotals ? planningFunnelSteps(pTotals) : [];
     if (pTotals && pSteps.length) {
@@ -4309,7 +4435,7 @@
     } else {
       html += '<div class="state-box">Chưa tính được Forecast cho Phase này — chưa có Benchmark/Assumption khớp với các Channel trong Phase.</div>';
     }
-    html += '</div>';
+    html += '</div></div>';
     return html;
   }
   // --- 3 bảng KPI chi tiết theo tháng (chế độ Theo tháng) ---
@@ -8922,6 +9048,8 @@
     if (action === 'planning-channel-close') { UI.planningChannel = null; UI.planningChannelGroup = null; render(); }
     if (action === 'planning-mode') { UI.planningMode = id === 'phase' ? 'phase' : 'month'; render(); }
     if (action === 'planning-kpi-toggle') { UI.planningKpiCollapsed = planningKpiToggleMap(UI.planningKpiCollapsed, id); render(); }
+    if (action === 'planning-phase-toggle') { planningPhaseEnsureLoaded(); planningPhaseSaveCollapsed(planningPhaseToggleMap(UI.planningPhaseCollapsed, id)); render(); }
+    if (action === 'planning-phase-collapse-all' || action === 'planning-phase-expand-all') { planningPhaseEnsureLoaded(); var phaseIdsAll = (t.getAttribute('data-phase-ids') || '').split(',').map(function (x) { return x.trim(); }).filter(Boolean); if (!phaseIdsAll.length) { try { phaseIdsAll = filteredBrandPhases().map(function (p) { return String(p.id); }); } catch (e) { phaseIdsAll = []; } } planningPhaseSaveCollapsed(planningPhaseSetAllMap(UI.planningPhaseCollapsed, phaseIdsAll, action === 'planning-phase-collapse-all')); render(); }
     if (action === 'planning-add-row-toggle') { UI.planningAddOpen = !UI.planningAddOpen; render(); }
     if (action === 'brand-detail') { UI.brandDetailId = id; render(); }
     if (action === 'brand-detail-close') { UI.brandDetailId = null; render(); }
