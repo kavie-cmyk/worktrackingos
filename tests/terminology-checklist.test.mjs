@@ -44,7 +44,7 @@ test('TERM [static]: khái niệm task thống nhất tên "Task" ở các bề 
   // nhóm "Kế hoạch & content" kết thúc ở ['tasks', 'Task'].
   assert.match(src, /\['content', 'Content'\], \['tasks', 'Task'\]\]/);
   assert.ok(!src.includes("['approvals', 'Duyệt content']"), 'nav còn mục Duyệt content riêng');
-  assert.match(src, /pageHead\('Task', 'Một danh sách task dùng chung/);
+  assert.match(src, /pageHead\('Task', 'Bấm tên task để mở chi tiết\.'/);
   assert.match(src, /\['tasks', 'Task'\], \['content', 'Content'\], \['kpi', 'KPI & Ngân sách'\]/);
   assert.match(src, /<strong>Task của campaign \(' \+ ctasks\.length/);
   assert.match(src, /formShell\('task', e\.id \? 'Sửa task' : 'Tạo task'/);

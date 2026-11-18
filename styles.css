@@ -13,7 +13,7 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;b
 .user-picker select{width:100%;margin-top:4px;padding:6px;border-radius:6px}
 .main{flex:1;padding:20px 24px 48px;max-width:1280px;margin:0 auto;width:100%}
 h1{font-size:22px;margin:0 0 4px} h2{font-size:17px;margin:22px 0 8px} h3{font-size:15px;margin:16px 0 6px}
-.sub{color:var(--muted);margin:0 0 14px}
+.sub,.note{font-size:13px;line-height:1.55;color:var(--color-text-secondary,#475569);max-width:72ch;margin:4px 0 12px;text-wrap:pretty}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px}
 .card .big{font-size:26px;font-weight:800}
@@ -31,7 +31,7 @@ input,select,textarea{padding:7px 9px;border:1px solid var(--line);border-radius
 textarea{width:100%;min-height:56px}
 form.inline{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:10px 0}
 form.inline label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
-.state-box{background:var(--panel);border:1px dashed var(--line);border-radius:var(--radius);padding:24px;text-align:center;color:var(--muted)}
+.state-box{background:var(--panel);border:1px dashed var(--line);border-radius:var(--radius);padding:16px;text-align:center;color:var(--muted)}
 .notice{border-radius:var(--radius);padding:12px 14px;margin:10px 0}
 .notice.warn{background:var(--warn-bg);color:#7a3a06}.notice.bad{background:var(--bad-bg);color:var(--bad)}.notice.ok{background:var(--ok-bg);color:var(--ok)}.notice.info{background:var(--accent-soft);color:#173d75}
 .progress{height:9px;background:#eaedf1;border-radius:99px;overflow:hidden}.progress>div{height:100%;background:var(--accent)}
@@ -104,7 +104,7 @@ button.linklike:hover{text-decoration:underline}
 .fld.wide{grid-column:1/-1}
 .fld input,.fld select,.fld textarea{width:100%;color:var(--text);font-size:14px}
 .field-error{color:var(--bad);font-weight:600}
-.field-help{color:var(--muted)}
+/* .field-help: cỡ/màu hợp nhất ở khối Typography (dùng chung hệ .note) */
 .form-actions{grid-column:1/-1;display:flex;gap:8px;margin-top:6px}
 .btn[disabled]{opacity:.65}
 /* Panel chi tiết công việc */
@@ -383,7 +383,7 @@ body{font-family:var(--font-sans);background:var(--color-bg);color:var(--color-t
 h1{font-size:var(--text-h1);line-height:1.25;font-weight:700;letter-spacing:-.015em;text-wrap:balance}
 h2{font-size:var(--text-h2);line-height:1.3;font-weight:700;letter-spacing:-.01em;margin:26px 0 10px}
 h3{font-size:var(--text-h3);line-height:1.35;font-weight:600}
-.sub{color:var(--color-text-secondary)}
+/* .sub: đã hợp nhất 1 định nghĩa duy nhất ở đầu file (đợt tinh gọn 18/11) */
 .tnum,td,.viz-value,.big{font-variant-numeric:tabular-nums}
 /* Sidebar sang (D2/R1) — giu nguyen vi tri/nhom/thu tu/nhan */
 .sidebar{background:var(--color-sidebar);color:var(--color-text);border-right:1px solid var(--color-border);padding:16px 12px}
@@ -525,7 +525,7 @@ tr.group-row td{background:var(--color-surface-sunken)}
 .viz-daybar-track{height:30px;display:flex;align-items:flex-end;justify-content:center}
 .viz-daybar-fill{display:block;width:14px;min-height:2px;border-radius:3px 3px 0 0}
 .viz-daybar-fill.st-fill-running{background:var(--st-running)} .viz-daybar-fill.st-fill-overdue{background:var(--st-overdue)} .viz-daybar-fill.st-fill-done{background:var(--st-done)}
-.viz-daybar-label{font-size:10px;color:var(--muted);white-space:nowrap}
+.viz-daybar-label{color:var(--muted);white-space:nowrap}
 .viz-timeline-bar.st-fill-running{background:var(--st-running)} .viz-timeline-bar.st-fill-done{background:var(--st-done)} .viz-timeline-bar.st-fill-overdue{background:var(--st-overdue)} .viz-timeline-bar.st-fill-todo{background:var(--st-todo)} .viz-timeline-bar.st-fill-neutral{background:var(--st-neutral)}
 .viz-timeline-elapsed.st-fill-running{background:var(--st-running)} .viz-timeline-elapsed.st-fill-done{background:var(--st-done)} .viz-timeline-elapsed.st-fill-overdue{background:var(--st-overdue)} .viz-timeline-elapsed.st-fill-todo{background:var(--st-todo)} .viz-timeline-elapsed.st-fill-neutral{background:var(--st-neutral)}
 .brand-thumb-wrap{display:inline-flex;align-items:flex-start;gap:5px}
@@ -561,7 +561,7 @@ h3{font-size:var(--t-16);line-height:1.4;font-weight:600}
 strong,b{font-weight:600}
 h1 strong,h1 b,h2 strong,h2 b{font-weight:700}
 p,li{line-height:1.5}
-.sub{font-size:var(--t-13);line-height:1.5;color:var(--color-text-secondary)}
+/* .sub: hợp nhất ở đầu file — không định nghĩa lại ở đây */
 .wordmark{font-size:var(--t-16);font-weight:700;line-height:1.3}
 .topbar-title{font-size:var(--t-16)}
 .topbar-title strong{font-weight:600}
@@ -602,7 +602,7 @@ td.perm-cell{font-size:var(--t-14)}
 .viz-cal-items{font-size:var(--t-12);line-height:1.45}
 .fld,form.inline label{font-size:var(--t-12);font-weight:400;color:var(--color-text-secondary);line-height:1.45}
 .fld input,.fld select,.fld textarea,input,select,textarea{font-size:var(--t-14);line-height:1.45}
-.field-help{color:var(--color-text-muted)}
+.field-help{font-size:var(--t-13);line-height:1.55;color:var(--color-text-secondary)}
 .demo-banner{font-size:var(--t-13);font-weight:700;line-height:1.45}
 .filter-summary{font-weight:600}
 .perm-yes{font-weight:700}
@@ -659,3 +659,20 @@ table.col-resize-measuring th,table.col-resize-measuring td{white-space:nowrap!i
    theo ngưỡng cuộn 400px của window). */
 .back-to-top{position:fixed;right:18px;bottom:88px;z-index:59;border-radius:999px;box-shadow:var(--shadow-pop)}
 .back-to-top[hidden]{display:none}
+
+/* ===== Tinh gọn chữ/UI 18/11 (AUDIT §4): hệ chú thích .note thống nhất =====
+   Một hệ duy nhất cho mọi đoạn mô tả phụ: 13px / 1,55 / màu secondary /
+   khổ tối đa 72ch. .sub giữ làm alias tương thích (định nghĩa ở đầu file). */
+.note--inline{font-size:var(--t-12);margin:2px 0 0;max-width:none}
+.note--full{margin:2px 0 4px}
+.note-block{margin:4px 0 12px}
+.note-details{margin:0 0 12px;max-width:72ch}
+.note-details>summary{cursor:pointer;color:var(--accent);font-size:13px;font-weight:600;padding:2px 0;width:max-content}
+.note-details>summary:hover{text-decoration:underline}
+.page-head .sub,.page-head .note{margin-top:4px}
+.state-box .note{margin-inline:auto}
+.state-box p{max-width:72ch;margin-inline:auto}
+.brand-identity p{font-size:13px;line-height:1.55;color:var(--color-text-secondary);max-width:72ch}
+.campaign-status-block .sub{flex-basis:100%}
+.snapshot-box .sub,.detail-panel .sub{max-width:none}
+td .sub,td .note{max-width:none}

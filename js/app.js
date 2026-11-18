@@ -2215,12 +2215,12 @@
           // và vai có quyền budget.propose (đúng entry point ở Tổng quan campaign).
           '<div class="fld wide" data-budget-ceiling-block="1" data-campaign-ceiling-readonly="1"><span>Hạn mức ngân sách campaign — chỉ xem</span>' +
           (!e.id
-            ? '<p class="sub" style="margin:2px 0">Chưa thiết lập — hạn mức được đặt qua Đề xuất ngân sách sau khi tạo campaign</p>'
-            : '<p class="sub" style="margin:2px 0"><strong>' + (campCeil ? fmtMoney(campCeil.amount, campCeil.currency) : 'chưa có') + '</strong></p>' + campaignCeilingApprovalHtml(c) +
+            ? '<p class="sub note--inline">Chưa thiết lập — hạn mức được đặt qua Đề xuất ngân sách sau khi tạo campaign</p>'
+            : '<p class="sub note--inline"><strong>' + (campCeil ? fmtMoney(campCeil.amount, campCeil.currency) : 'chưa có') + '</strong></p>' + campaignCeilingApprovalHtml(c) +
               (can('budget.propose') ? '<p style="margin:4px 0"><button type="button" class="btn small" data-action="editor-open" data-kind="budgetProposal" data-campaign="' + esc(c.id || e.id) + '" data-target-type="campaign_ceiling">Đề xuất ngân sách</button></p>' : '')) +
           '</div>' +
           (!e.id
-            ? F('template', 'Mẫu campaign', 'select', ev('template', ''), { options: [['', 'Không dùng mẫu'], ['livestream', 'Livestream — 4 activity mẫu']], emptyLabel: null, help: 'Mẫu chỉ tạo activity/task/KPI gợi ý và dòng phân bổ DỰ THẢO (chưa duyệt, chưa có khoản chi/thanh toán thật). Sửa số phân bổ ngay bên dưới trước khi tạo.' }) +
+            ? F('template', 'Mẫu campaign', 'select', ev('template', ''), { options: [['', 'Không dùng mẫu'], ['livestream', 'Livestream — 4 activity mẫu']], emptyLabel: null, help: 'Mẫu tạo gợi ý + phân bổ dự thảo (chưa duyệt, chưa có chi thật).' }) +
               '<div class="fld wide"><span>Phân bổ dự thảo của mẫu Livestream (VNĐ) — sửa được trước khi tạo</span></div>' +
               F('tplAlloc0', 'Mời khách mời — phân bổ dự thảo', 'number', ev('tplAlloc0', 8000000), { min: 0, step: 'any' }) +
               F('tplAlloc1', 'Chạy ads — phân bổ dự thảo', 'number', ev('tplAlloc1', 15000000), { min: 0, step: 'any' }) +
@@ -2232,7 +2232,7 @@
           // R2-28c: baseline KHÔNG nhập trực tiếp nữa — chỉ chốt qua hành động
           // "Chốt baseline" ở chi tiết campaign; ở đây hiển thị read-only + lịch sử.
           '<div class="fld wide"><span>Kế hoạch đã duyệt (baseline) — chỉ xem</span>' +
-          '<p class="sub" style="margin:2px 0">' + (c.baselineStartDate || c.baselineEndDate
+          '<p class="sub note--inline">' + (c.baselineStartDate || c.baselineEndDate
             ? esc(D.formatDateVN(c.baselineStartDate)) + ' — ' + esc(D.formatDateVN(c.baselineEndDate))
             : 'Chưa chốt baseline nào.') + '</p>' +
           (baselineVersionsOf(c).length
@@ -2347,7 +2347,7 @@
         var plGuide = ev('classificationGuide', pl.classificationGuide || pl.classification_guide || e.context.suggestedGuide || '');
         return formShell('pillar', e.id ? 'Sửa Content Pillar' : 'Tạo Content Pillar',
           F('name', 'Tên pillar *', 'text', plName, { required: true, wide: true }) +
-          F('buProductId', 'Phạm vi Brand / BU / sản phẩm', 'select', ev('buProductId', pl.buProductId || pl.bu_product_id || ''), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name || b.buName || b.id]; }), emptyLabel: '— Toàn workspace —', help: 'Pillar thuộc phạm vi này; mỗi BU có bộ pillar riêng, app không áp một bộ pillar cho mọi BU.' }) +
+          F('buProductId', 'Phạm vi Brand / BU / sản phẩm', 'select', ev('buProductId', pl.buProductId || pl.bu_product_id || ''), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name || b.buName || b.id]; }), emptyLabel: '— Toàn workspace —', help: 'Pillar thuộc phạm vi này.' }) +
           F('description', 'Mô tả pillar', 'textarea', plDesc, { wide: true, rows: 3 }) +
           F('classificationGuide', 'Hướng dẫn phân loại & ví dụ', 'textarea', plGuide, { wide: true, rows: 4, help: 'Ghi điều kiện phân loại và ví dụ cụ thể để cả đội phân loại nhất quán.' }) +
           F('status', 'Trạng thái', 'select', ev('status', pl.status || 'active'), { options: [['active', 'Đang dùng'], ['archived', 'Đã lưu trữ']], help: 'Lưu trữ chỉ ngừng dùng cho phân loại mới — ID và lịch sử phân loại của content cũ được giữ nguyên.' }),
@@ -2368,9 +2368,9 @@
           F('angle', 'Góc khai thác (angle)', 'text', ev('angle', cfVal(ci, 'angle') || ''), { wide: true, placeholder: 'Góc nhìn riêng của bài này so với các bài cùng chủ đề…' }) +
           F('buProductId', 'Brand / BU', 'select', ev('buProductId', ci.buProductId || ci.bu_product_id || ''), { options: Store.list('businessUnits').map(function (b) { return [b.id, b.name || b.buName || b.id]; }), emptyLabel: '— Chưa chọn brand/BU —' }) +
           F('product', 'Sản phẩm', 'select', ev('product', ciProduct), { options: ciProducts.map(function (p) { return [p, p]; }), emptyLabel: '— Chưa chọn sản phẩm —' }) +
-          F('pillarId', 'Pillar chính', 'select', ev('pillarId', ciPillar || ''), { options: pillarOpts, emptyLabel: '— Chưa chọn pillar (nằm ở Backlog) —', help: 'Một content chỉ có MỘT pillar chính để tính content mix không trùng. Chưa chọn pillar vẫn lưu được ở dạng nháp/Backlog.' }) +
+          F('pillarId', 'Pillar chính', 'select', ev('pillarId', ciPillar || ''), { options: pillarOpts, emptyLabel: '— Chưa chọn pillar (nằm ở Backlog) —', help: 'Chỉ 1 pillar chính (để mix không trùng); chưa chọn vẫn lưu nháp được.' }) +
           F('type', 'Định dạng (format)', 'select', ev('type', ci.type || 'post'), { options: [['post', 'Post'], ['video', 'Video'], ['image', 'Hình ảnh'], ['article', 'Bài viết'], ['other', 'Khác']] }) +
-          F('campaignChoice', 'Quan hệ với campaign', 'select', ev('campaignChoice', ciChoice), { options: [['unset', 'Chưa chọn'], ['none', 'Content thường xuyên — không thuộc campaign'], ['campaign', 'Thuộc campaign — chọn campaign ở ô bên cạnh']], help: '"Content thường xuyên — không thuộc campaign" là lựa chọn tường minh và hợp lệ; "Chưa chọn" nghĩa là chưa quyết định. Campaign KHÔNG bắt buộc để lưu/lên lịch content.' }) +
+          F('campaignChoice', 'Quan hệ với campaign', 'select', ev('campaignChoice', ciChoice), { options: [['unset', 'Chưa chọn'], ['none', 'Content thường xuyên — không thuộc campaign'], ['campaign', 'Thuộc campaign — chọn campaign ở ô bên cạnh']], help: '"Thường xuyên" là lựa chọn hợp lệ; campaign không bắt buộc.' }) +
           F('campaignId', 'Campaign (chỉ khi chọn "Thuộc campaign")', 'select', ev('campaignId', ci.campaignId || e.context.campaignId || ''), { options: campaignPairs(), emptyLabel: '— Chọn campaign —' }) +
           F('goal', 'Mục tiêu của content', 'textarea', ev('goal', cfVal(ci, 'goal') || cfVal(ci, 'objective') || ''), { wide: true, rows: 2 }) +
           F('ownerId', 'Người phụ trách', 'select', ev('ownerId', ci.ownerId || Store.currentUserId), { options: memberPairs(), emptyLabel: '— Chưa phân công —' }) +
@@ -2387,7 +2387,7 @@
           F('expiresAt', 'Ngày hết hiệu lực (tùy chọn)', 'date', ev('expiresAt', cfVal(ci, 'expiresAt') ? String(cfVal(ci, 'expiresAt')).slice(0, 10) : ''), { help: 'Hai thuộc tính always-on và evergreen là RIÊNG BIỆT: always-on nói cách vận hành, evergreen nói giá trị lâu dài. Content evergreen vẫn có thể dùng trong campaign.' }) +
           '<div class="fld wide"><span>Task liên quan (tùy chọn — không bắt buộc, không phải quan hệ cha)</span></div>' +
           F('activityId', 'Activity liên quan (Action Plan)', 'select', ev('activityId', ci.activityId || e.context.activityId || ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Không liên kết activity —' }) +
-          F('taskId', 'Task liên quan', 'select', ev('taskId', ci.taskId || cfVal(ci, 'taskId') || e.context.taskId || ''), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không liên kết task —', help: 'Lưu content từ Content Plan là luồng bình thường — không cần qua Action Plan hay campaign. Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở danh sách content, KHÔNG tự tạo khi Lưu.' }),
+          F('taskId', 'Task liên quan', 'select', ev('taskId', ci.taskId || cfVal(ci, 'taskId') || e.context.taskId || ''), { options: visibleList('tasks').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không liên kết task —', help: 'Lưu content từ Content Plan là luồng bình thường. Task sản xuất KHÔNG tự tạo khi Lưu.' }),
           e.id ? 'Lưu content' : 'Tạo content');
       }
       case 'variant': {
@@ -2403,7 +2403,7 @@
           F('productionDeadline', 'Hạn sản xuất', 'date', ev('productionDeadline', vv.productionDeadline)) +
           F('reviewDeadline', 'Hạn duyệt', 'date', ev('reviewDeadline', vv.reviewDeadline)) +
           F('scheduledAt', 'Lịch đăng dự kiến của publication này', 'datetime-local', ev('scheduledAt', vv.scheduledAt ? toDatetimeLocalValue(vv.scheduledAt) : (e.context.scheduledAtLocal || ''))) +
-          F('campaignId', 'Campaign của publication này', 'select', ev('campaignId', cfVal(vv, 'campaignId') || ''), { options: campaignPairs(), emptyLabel: '— Kế thừa campaign của content gốc —', help: 'Chỉ điền khi publication này dùng cho campaign KHÁC content gốc (dùng lại content) — lựa chọn lưu ở publication, không đổi campaign của content gốc.' }) +
+          F('campaignId', 'Campaign của publication này', 'select', ev('campaignId', cfVal(vv, 'campaignId') || ''), { options: campaignPairs(), emptyLabel: '— Kế thừa campaign của content gốc —', help: 'Lưu ở publication này — campaign của content gốc KHÔNG bị đổi.' }) +
           F('editorialStatus', 'Trạng thái biên tập', 'select', ev('editorialStatus', vv.editorialStatus || 'draft'), { options: EDITORIAL_STATUSES }) +
           F('caption', 'Caption', 'textarea', ev('caption', vv.caption), { wide: true, rows: 4 }) +
           F('hashtags', 'Hashtag (TikTok/mạng xã hội)', 'text', ev('hashtags', vv.hashtags), { wide: true, placeholder: '#sava #...' }) +
@@ -2454,7 +2454,7 @@
             : '') +
           F('aggregationMode', 'Cách tổng hợp (aggregation_mode)', 'select', ev('aggregationMode', k.aggregationMode || k.aggregation_mode || 'direct'), { options: [['direct', 'Đo trực tiếp (direct)'], ['sum', 'Cộng các nguồn cùng chỉ số (sum)'], ['unique', 'Đếm không trùng theo khóa định danh (unique)'], ['ratio', 'Tỷ lệ — tính lại từ tử số/mẫu số (ratio)'], ['snapshot', 'Snapshot mới nhất theo đối tượng (snapshot)'], ['manual', 'Nhập tay có bằng chứng (manual)']] }) +
           F('numerator', 'Tử số (chỉ khi aggregation_mode = ratio)', 'number', ev('numerator', (k.numerator !== null && k.numerator !== undefined) ? k.numerator : k.numeratorValue), { step: 'any', help: 'Vd KPI kiểu CPL: tử số là tổng chi phí của đúng scope đã khai (chi ads / chi toàn campaign).' }) +
-          F('denominator', 'Mẫu số (chỉ khi aggregation_mode = ratio)', 'number', ev('denominator', (k.denominator !== null && k.denominator !== undefined) ? k.denominator : k.denominatorValue), { step: 'any', help: 'Vd CPL: mẫu số là số kết quả hợp lệ của cùng scope (đăng ký hợp lệ). rollupKpi tính lại tỷ lệ = tử số / mẫu số, không lấy trung bình các tỷ lệ con.' }) +
+          F('denominator', 'Mẫu số (chỉ khi aggregation_mode = ratio)', 'number', ev('denominator', (k.denominator !== null && k.denominator !== undefined) ? k.denominator : k.denominatorValue), { step: 'any', help: 'Cách tính: rollupKpi tính lại tỷ lệ = tử số / mẫu số, không lấy trung bình các tỷ lệ con.' }) +
           F('target', 'Mục tiêu', 'number', ev('target', k.target), { step: 'any' }) +
           F('unit', 'Đơn vị', 'text', ev('unit', k.unit)) +
           F('direction', 'Chiều tốt lên', 'select', ev('direction', k.direction || 'increase'), { options: [['increase', 'Càng cao càng tốt'], ['decrease', 'Càng thấp càng tốt']] }) +
@@ -2464,7 +2464,7 @@
           '<label class="fld wide">KPI nguồn để roll-up (contributions) — chỉ dùng khi KPI này tổng hợp từ KPI khác cùng metric' +
           '<select name="sourceKpiIds" multiple size="4">' + kSourcePairs.map(function (p) { return '<option value="' + esc(p[0]) + '"' + (kContribIds.indexOf(p[0]) !== -1 ? ' selected' : '') + '>' + esc(p[1]) + '</option>'; }).join('') + '</select>' +
           '<span class="field-help">Chọn các KPI nguồn cùng metric_code/đơn vị/kỳ. Với unique, KPI nguồn phải có khóa định danh (identity keys) — thiếu khóa thì kết quả là "Chưa đủ dữ liệu", không cộng thô.</span></label>' +
-          (kRoll ? '<div class="fld wide"><span>Kết quả roll-up hiện tại</span><p class="sub" style="margin:2px 0">Phạm vi: ' + esc(kpiScopeLabel(k)) + ' · Trạng thái: ' + (kRoll.status === 'insufficient_data' ? 'Chưa đủ dữ liệu' : 'Đủ dữ liệu') + (kRoll.value !== null && kRoll.value !== undefined ? ' · Giá trị: ' + fmtNum(kRoll.value) : '') + (kRoll.achievementPercent !== null && kRoll.achievementPercent !== undefined ? ' · Mức đạt: ' + fmtNum(kRoll.achievementPercent) + '%' : '') + '</p></div>' : ''),
+          (kRoll ? '<div class="fld wide"><span>Kết quả roll-up hiện tại</span><p class="sub note--inline">Phạm vi: ' + esc(kpiScopeLabel(k)) + ' · Trạng thái: ' + (kRoll.status === 'insufficient_data' ? 'Chưa đủ dữ liệu' : 'Đủ dữ liệu') + (kRoll.value !== null && kRoll.value !== undefined ? ' · Giá trị: ' + fmtNum(kRoll.value) : '') + (kRoll.achievementPercent !== null && kRoll.achievementPercent !== undefined ? ' · Mức đạt: ' + fmtNum(kRoll.achievementPercent) + '%' : '') + '</p></div>' : ''),
           'Lưu KPI');
       }
       case 'measurement': {
@@ -2501,7 +2501,7 @@
           // số duyệt chỉ đổi qua đề xuất ngân sách được Owner duyệt. Ở đây chỉ
           // hiển thị dấu duyệt hiện tại (chỉ-đọc) + nút mở form đề xuất.
           '<div class="fld wide"><span>Được duyệt</span>' + budgetLineApprovalBlockHtml(b) +
-          (e.id && can('budget.propose') ? '<p style="margin:4px 0"><button type="button" class="btn small" data-action="editor-open" data-kind="budgetProposal" data-line="' + esc(b.id) + '" data-campaign="' + esc(b.campaignId || '') + '" data-target-type="budget_line">Đề xuất duyệt</button></p>' : (e.id ? '' : '<p class="sub" style="margin:2px 0">Dòng mới chưa có số duyệt — tạo dòng xong mới đề xuất duyệt được.</p>')) + '</div>' +
+          (e.id && can('budget.propose') ? '<p style="margin:4px 0"><button type="button" class="btn small" data-action="editor-open" data-kind="budgetProposal" data-line="' + esc(b.id) + '" data-campaign="' + esc(b.campaignId || '') + '" data-target-type="budget_line">Đề xuất duyệt</button></p>' : (e.id ? '' : '<p class="sub note--inline">Dòng mới chưa có số duyệt — tạo dòng xong mới đề xuất duyệt được.</p>')) + '</div>' +
           F('currency', 'Tiền tệ', 'select', ev('currency', b.currency || 'VND'), { options: [['VND', 'VND'], ['USD', 'USD']] }),
           'Lưu dòng ngân sách');
       }
@@ -2520,8 +2520,8 @@
           ? ('Dòng ngân sách: ' + (bpLine0 ? bpLine0.name : '— chọn dòng bên dưới —') + (bpCamp0 ? ' — ' + bpCamp0.name : ''))
           : ('Hạn mức campaign: ' + (bpCamp0 ? bpCamp0.name : '— chọn campaign bên dưới —'));
         return formShell('budgetProposal', 'Đề xuất ngân sách',
-          '<div class="fld wide"><span>Ngữ cảnh đối tượng</span><p class="sub" style="margin:2px 0"><strong>' + esc(bpTargetLabel) + '</strong></p>' +
-          '<p class="sub" style="margin:2px 0">Hiện tại: <strong>' + (bpCurrent === null ? 'chưa có' : fmtMoney(bpCurrent, bpCurrency)) + '</strong> → Đề xuất: nhập số ở ô "Số đề xuất" bên dưới.</p></div>' +
+          '<div class="fld wide"><span>Ngữ cảnh đối tượng</span><p class="sub note--inline"><strong>' + esc(bpTargetLabel) + '</strong></p>' +
+          '<p class="sub note--inline">Hiện tại: <strong>' + (bpCurrent === null ? 'chưa có' : fmtMoney(bpCurrent, bpCurrency)) + '</strong> → Đề xuất: nhập số ở ô "Số đề xuất" bên dưới.</p></div>' +
           F('proposalCampaignId', 'Campaign *', 'select', bpCampId, { options: campaignPairs(), emptyLabel: '— Chọn campaign —', attrs: ' data-refresh-editor="1"' }) +
           F('targetType', 'Đối tượng đề xuất', 'select', bpTargetType, { options: [['campaign_ceiling', 'Hạn mức campaign'], ['budget_line', 'Dòng ngân sách']], attrs: ' data-refresh-editor="1"' }) +
           F('budgetLineId', 'Dòng ngân sách (khi đối tượng là dòng)', 'select', bpLineId0, { options: bpLines.map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chọn dòng —', attrs: ' data-refresh-editor="1"' }) +
@@ -2539,7 +2539,7 @@
         return formShell('allocation', 'Phân bổ chi chung — chia một khoản cho nhiều activity',
           F('sourceKind', 'Loại khoản nguồn', 'select', srcKind, { options: [['actual', 'Khoản chi thực tế (actual)'], ['commitment', 'Cam kết (commitment)']], attrs: ' data-refresh-editor="1"' }) +
           F('sourceId', 'Khoản nguồn *', 'select', srcId, { options: srcList.map(function (x) { return [x.id, (x.title || '—') + ' — ' + fmtMoney(x.amount, x.currency)]; }), emptyLabel: '— Chọn khoản nguồn —', attrs: ' data-refresh-editor="1"' }) +
-          (srcId ? '<div class="fld wide"><span>Tình trạng phân bổ của khoản nguồn</span><p class="sub" style="margin:2px 0">Số tiền gốc: <strong>' + fmtMoney(srcItem.amount, srcItem.currency) + '</strong>' + (existingAllocs.length ? ' · Đã phân bổ: ' + existingAllocs.map(function (a) { var aa = Store.get('activities', a.activityId); return esc(aa ? aa.name : (a.activityId || '—')) + ' = ' + (a.amount !== null && a.amount !== undefined ? fmtMoney(a.amount, srcItem.currency) : (a.sharePercent + '%')); }).join('; ') : ' · Chưa phân bổ cho hoạt động nào.') + '</p></div>' : '') +
+          (srcId ? '<div class="fld wide"><span>Tình trạng phân bổ của khoản nguồn</span><p class="sub note--inline">Số tiền gốc: <strong>' + fmtMoney(srcItem.amount, srcItem.currency) + '</strong>' + (existingAllocs.length ? ' · Đã phân bổ: ' + existingAllocs.map(function (a) { var aa = Store.get('activities', a.activityId); return esc(aa ? aa.name : (a.activityId || '—')) + ' = ' + (a.amount !== null && a.amount !== undefined ? fmtMoney(a.amount, srcItem.currency) : (a.sharePercent + '%')); }).join('; ') : ' · Chưa phân bổ cho hoạt động nào.') + '</p></div>' : '') +
           F('activityId', 'Phân bổ cho activity *', 'select', ev('activityId', ''), { options: visibleList('activities').map(function (x) { return [x.id, x.name + ' — ' + campaignName(x.campaignId)]; }), emptyLabel: '— Chọn activity —' }) +
           F('amount', 'Số tiền phân bổ', 'number', ev('amount', ''), { min: 0, step: 'any', help: 'Điền số tiền HOẶC tỷ lệ % bên dưới — tổng phân bổ không được vượt số tiền gốc / 100%.' }) +
           F('sharePercent', 'Tỷ lệ phân bổ (%)', 'number', ev('sharePercent', ''), { min: 0, step: 'any' }) +
@@ -2564,13 +2564,13 @@
             ? D.commitmentPaidTotal(cm, cmActsCur)
             : cmActsCur.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0);
           paidHtml = '<div class="fld wide"><span>Đã thanh toán (từ các khoản thanh toán)</span>' +
-            '<p class="sub" style="margin:2px 0"><strong>' + fmtMoney(paidTotal, cmCur) + '</strong> — số này tự tính từ các khoản thanh toán đã ghi cho cam kết này; muốn ghi thêm, dùng nút "Ghi thanh toán" ở chi tiết dòng ngân sách.</p></div>';
+            '<p class="sub note--inline"><strong>' + fmtMoney(paidTotal, cmCur) + '</strong> — số này tự tính từ các khoản thanh toán đã ghi cho cam kết này; muốn ghi thêm, dùng nút "Ghi thanh toán" ở chi tiết dòng ngân sách.</p></div>';
         }
         return formShell('commitment', e.id ? 'Sửa cam kết chi' : 'Thêm cam kết chi',
           F('budgetLineId', 'Dòng ngân sách *', 'select', cmLineId, { options: visibleList('budgetLines').map(function (x) { return [x.id, x.name]; }), emptyLabel: '— Chọn dòng —', attrs: ' data-refresh-editor="1"' }) +
           F('title', 'Nội dung cam kết *', 'text', ev('title', cm.title), { required: true, wide: true }) +
           F('amount', 'Số tiền cam kết', 'number', ev('amount', cm.amount), { min: 0, step: 'any' }) +
-          '<div class="fld"><span>Tiền tệ (theo dòng ngân sách)</span><p class="sub" style="margin:2px 0"><strong>' + esc(cmCur) + '</strong></p></div>' +
+          '<div class="fld"><span>Tiền tệ (theo dòng ngân sách)</span><p class="sub note--inline"><strong>' + esc(cmCur) + '</strong></p></div>' +
           F('status', 'Trạng thái', 'select', ev('status', cm.status || 'open'), { options: [['open', 'Đang mở'], ['partially_actualised', 'Thanh toán một phần'], ['settled', 'Đã thanh toán xong'], ['cancelled', 'Đã hủy']] }) +
           paidHtml,
           'Lưu cam kết');
@@ -2580,10 +2580,10 @@
         var payLine = Store.get('budgetLines', payCm.budgetLineId || e.context.budgetLineId) || {};
         var payCur = payLine.currency || payCm.currency || 'VND';
         return formShell('commitmentPayment', 'Ghi thanh toán — ' + (payCm.title || 'cam kết chi'),
-          '<div class="fld wide"><span>Cam kết</span><p class="sub" style="margin:2px 0"><strong>' + esc(payCm.title || '—') + '</strong> · tổng cam kết ' + fmtMoney(payCm.amount, payCur) + ' · dòng ngân sách: ' + esc(payLine.name || '—') + '</p></div>' +
+          '<div class="fld wide"><span>Cam kết</span><p class="sub note--inline"><strong>' + esc(payCm.title || '—') + '</strong> · tổng cam kết ' + fmtMoney(payCm.amount, payCur) + ' · dòng ngân sách: ' + esc(payLine.name || '—') + '</p></div>' +
           F('title', 'Nội dung khoản chi', 'text', ev('title', 'Thanh toán cho: ' + (payCm.title || 'cam kết chi')), { wide: true }) +
           F('amount', 'Số tiền lần thanh toán này *', 'number', ev('amount', ''), { required: true, min: 0, step: 'any' }) +
-          '<div class="fld"><span>Tiền tệ (theo dòng ngân sách)</span><p class="sub" style="margin:2px 0"><strong>' + esc(payCur) + '</strong></p></div>' +
+          '<div class="fld"><span>Tiền tệ (theo dòng ngân sách)</span><p class="sub note--inline"><strong>' + esc(payCur) + '</strong></p></div>' +
           F('date', 'Ngày thanh toán', 'date', ev('date', todayISO())) +
           F('description', 'Ghi chú / Chứng từ', 'text', ev('description', ''), { wide: true }),
           'Lưu thanh toán');
@@ -2598,7 +2598,7 @@
           F('commitmentId', 'Cam kết liên quan (nếu có)', 'select', ev('commitmentId', ac.commitmentId), { options: visibleList('commitments').filter(function (x) { return !lineId || x.budgetLineId === lineId; }).map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Không gắn cam kết —' }) +
           F('title', 'Nội dung khoản chi *', 'text', ev('title', ac.title), { required: true, wide: true }) +
           F('amount', 'Số tiền', 'number', ev('amount', ac.amount), { min: 0, step: 'any' }) +
-          '<div class="fld"><span>Tiền tệ (theo dòng ngân sách)</span><p class="sub" style="margin:2px 0"><strong>' + esc(acCur) + '</strong></p></div>' +
+          '<div class="fld"><span>Tiền tệ (theo dòng ngân sách)</span><p class="sub note--inline"><strong>' + esc(acCur) + '</strong></p></div>' +
           F('date', 'Ngày chi', 'date', ev('date', ac.date || todayISO())) +
           // R2-09: nguồn là enum cố định, không còn text tự do.
           F('source', 'Nguồn chi', 'select', ev('source', ac.source || 'manual'), { options: [['manual', 'Nhập tay'], ['invoice', 'Hóa đơn'], ['import', 'Nhập từ file']] }) +
@@ -2616,7 +2616,7 @@
           F('publishedAt', 'Ngày đăng', 'datetime-local', ev('publishedAt', toDatetimeLocalValue(po.publishedAt))) +
           F('contentItemId', 'Content gốc của publication này', 'select', ev('contentItemId', po.contentItemId || e.context.contentItemId || ''), { options: visibleList('contentItems').map(function (x) { return [x.id, x.title]; }), emptyLabel: '— Chưa gắn content gốc —' }) +
           F('variantId', 'Phiên bản theo kênh của publication này', 'select', ev('variantId', po.variantId || ''), { options: Store.list('variants').map(function (x) { return [x.id, contentTitle(x.contentItemId) + ' — ' + (x.channelLabel || labelStatus(x.platform))]; }), emptyLabel: '— Chưa gắn phiên bản —', help: 'Đăng lại (repost) = tạo một post/publication MỚI ở đây — không sửa đè link/số liệu của publication trước.' }) +
-          F('campaignId', 'Campaign của publication này', 'select', ev('campaignId', po.campaignId), { options: campaignPairs(), emptyLabel: '— Không thuộc campaign —', help: 'Campaign lưu ở PUBLICATION: khi dùng lại content thường xuyên cho một campaign, chọn campaign tại đây — campaign của content gốc KHÔNG bị đổi.' }),
+          F('campaignId', 'Campaign của publication này', 'select', ev('campaignId', po.campaignId), { options: campaignPairs(), emptyLabel: '— Không thuộc campaign —', help: 'Lưu ở publication này — campaign của content gốc KHÔNG bị đổi.' }),
           'Lưu post');
       }
       case 'adcr': {
@@ -3253,9 +3253,7 @@
     html += taskReadonlyNote();
     if (UI.taskDraftConflict && draft) html += '<div class="notice warn" role="alert">Task này vừa được người khác cập nhật. Bản nháp bạn đang gõ được giữ nguyên — hãy đối chiếu trước khi bấm Lưu.</div>';
     if (!ro && !ed && statusEd) html += '<div class="notice info" role="note">Vai trò hiện tại chỉ đổi được trạng thái task — các ô khác đã bị khóa.</div>';
-    html += '<div class="panel-meta">' + readinessBadge(t) +
-      (preds.length ? ' <span class="sub">Đang chờ: ' + esc(preds.map(function (x) { var p = taskById(x.predecessorId); return p ? p.title : x.predecessorId; }).join(', ')) + '</span>' : '') +
-      (succs.length ? '<br><span class="sub">Các task đang chờ mình: ' + esc(succs.map(function (x) { var p = taskById(x.successorId); return p ? p.title : x.successorId; }).join(', ')) + '</span>' : '') + '</div>';
+    html += '<div class="panel-meta">' + readinessBadge(t) + '</div>';
     var panelCamp = pv('campaignId', t.campaignId || '');
     var panelPhase = pv('phaseId', t.phaseId || '');
     var panelPhases = panelCamp ? Store.list('phases').filter(function (x) { return x.campaignId === panelCamp; }) : [];
@@ -3372,7 +3370,7 @@
       '<label>Đến ngày<input type="date" name="to" value="' + esc(UI.ganttRange.to) + '"></label>' +
       '<button class="btn small secondary" type="submit">Đặt khoảng xem</button>' +
       (UI.ganttRange.from || UI.ganttRange.to ? ' <button class="btn small secondary" type="button" data-action="gantt-range-clear">Bỏ khoảng</button>' : '') + '</form>' +
-      '<span class="sub">Kéo thanh để dời lịch, kéo hai đầu để đổi độ dài — thay đổi chỉ áp dụng khi bấm Lưu. Thanh mờ phía dưới là kế hoạch đã duyệt.</span></div>' +
+      '<span class="sub">Quy tắc: Kéo để dời/đổi lịch — chỉ áp dụng khi bấm Lưu. Thanh mờ = kế hoạch đã duyệt.</span></div>' +
       vizLegendHtml([
         { label: 'Campaign', cat: 4 }, { label: 'Giai đoạn', cat: 3 }, { label: 'Activity', cat: 2 }, { label: 'Task', cat: 1 },
         { label: 'Hoàn thành', tone: 'done' }, { label: 'Đang chạy', tone: 'running' }, { label: 'Trễ (viền đỏ)', tone: 'overdue' }, { label: 'Bị chặn (viền tím)', tone: 'blocked' }
@@ -5583,7 +5581,7 @@
     var archPages = archivedList('brandPages').filter(match);
     var archAssets = archivedList('brandAssets').filter(match);
     var ed = canEdit();
-    var html = pageHead('Brand', 'Brand Hub — danh sách Brand, thẻ Identity của từng Brand, cùng trang thương hiệu và tài nguyên dùng chung cho toàn đội.',
+    var html = pageHead('Brand', 'Danh sách Brand, Identity, trang và tài nguyên thương hiệu.',
       (ed ? '<button class="btn" data-action="editor-open" data-kind="brandNew">+ Tạo Brand</button> <button class="btn secondary" data-action="editor-open" data-kind="brandPage">+ Thêm trang</button> <button class="btn secondary" data-action="editor-open" data-kind="brandAsset">+ Thêm tài nguyên</button>' : ''));
     html += readonlyNote() + contextBannerHtml() + collectionBanner('brandPages');
     html += brandSectionHtml(ed);
@@ -5599,7 +5597,7 @@
       '<button class="btn secondary" type="submit">Lọc tài nguyên</button></form>';
     html += tabsHtml([['pages', 'Trang thương hiệu (' + pages.length + ')'], ['assets', 'Tài nguyên (' + assets.length + ')'], ['archived', 'Đã lưu trữ (' + (archPages.length + archAssets.length) + ')']], UI.brandTab, 'brand-tab');
     if (UI.brandTab === 'pages') {
-      if (!pages.length && !collLoadingOrError('brandPages')) html += emptyState('Chưa có trang thương hiệu nào', 'Tạo trang đầu tiên để ghi nhận câu chuyện thương hiệu, giọng điệu, quy chuẩn trình bày…', ed ? '<p><button class="btn" data-action="editor-open" data-kind="brandPage">+ Thêm trang thương hiệu</button></p>' : '');
+      if (!pages.length && !collLoadingOrError('brandPages')) html += emptyState('Chưa có trang thương hiệu nào', 'Tạo trang đầu tiên cho thương hiệu.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="brandPage">+ Thêm trang thương hiệu</button></p>' : '');
       else html += tbl('<tr><th>Trang</th><th>Tóm tắt</th><th>Người phụ trách</th><th>Phiên bản</th><th>Trạng thái bản</th><th>Cập nhật</th><th>Thao tác</th></tr>' + pages.map(function (p) {
         var row = '<tr><td><button class="linklike" data-action="brand-open" data-id="' + esc(p.id) + '"><strong>' + esc(p.title) + '</strong></button></td><td>' + esc(p.summary || '') + '</td><td>' + esc(memberName(p.ownerId)) + '</td><td>' + vizStatusPillHtml('', { tone: 'neutral', label: 'v' + (p.version || 1) }) + '</td><td>' + statusBadge(p.status === 'Approved' ? 'approved' : (p.status === 'Archived' ? 'archived' : 'draft'), p.status === 'Approved' ? 'Đã duyệt' : (p.status === 'Archived' ? 'Lưu trữ' : 'Bản nháp')) + '</td><td>' + esc(D.formatDateVN(p.updatedAt)) + '</td>' +
           '<td class="row-actions"><button class="btn small secondary" data-action="brand-open" data-id="' + esc(p.id) + '">Mở</button> <button class="btn small" data-action="editor-open" data-kind="brandPage" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="brandPages" data-id="' + esc(p.id) + '"' + dis(!ed) + '>Lưu trữ</button></td></tr>';
@@ -6502,7 +6500,7 @@
     function accCur(id) { var a = accById[id]; return a ? (a.currency || 'VND') : 'VND'; }
     var head = '<div data-viz="cash-chart"><h3>Thu–Chi &amp; số dư</h3>';
     if (!txns.length) {
-      return head + '<div class="state-box" data-viz="cash-empty">Chưa có giao dịch Thu–Chi nào — chưa có dữ liệu để vẽ biểu đồ. Khi có giao dịch, biểu đồ cột Thu/Chi theo tháng và bảng số dư sẽ hiện ở đây (không vẽ số 0 giả làm dữ liệu).</div></div>';
+      return head + '<div class="state-box" data-viz="cash-empty">Chưa có giao dịch Thu–Chi nào.</div>' + noteDetailHtml('Quy tắc: không vẽ số 0 giả làm dữ liệu — khi có giao dịch, biểu đồ cột Thu/Chi theo tháng và bảng số dư sẽ hiện ở đây.') + '</div>';
     }
     var monthly = vizCashMonthly(txns, accCur);
     var curs = [];
@@ -6547,7 +6545,7 @@
         tbl('<tr><th>Campaign</th><th>Tiền tệ</th><th>Phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Còn dùng được</th></tr>' + detailRows.map(function (x) {
           return '<tr><td><a href="#/campaigns/' + esc(x.id) + '">' + esc(x.name) + '</a></td><td>' + esc(x.r.currency) + '</td><td>' + fmtMoney(x.r.allocated, x.r.currency) + '</td><td>' + fmtMoney(x.r.actualTotal, x.r.currency) + '</td><td>' + fmtMoney(x.r.openCommitments, x.r.currency) + '</td><td>' + fmtMoney(x.r.available, x.r.currency) + '</td></tr>';
         }).join(''), 'budget-by-campaign', 'campaign-action-plan');
-    } else html += '<div class="state-box" data-viz="workspace-budget-empty">Chưa có dữ liệu ngân sách ở mức workspace để vẽ biểu đồ.</div>';
+    } else html += '<div class="state-box" data-viz="workspace-budget-empty">Chưa có dữ liệu ngân sách ở mức workspace.</div>';
     // KPI nổi bật (số qua rollupKpi ở kpiRollupFor) — tôn trọng ngữ cảnh Brand/Segment.
     var allKpis = Store.list('kpis').filter(function (k) { return matchesBrandSegment(k, campaignContextFallback(k.campaignId)); });
     var featured = allKpis.filter(function (k) { return kpiScopeType(k) === 'campaign'; });
@@ -6561,7 +6559,7 @@
     var mix = contentMixRows(mixItems, mixPubs, mixUnit);
     html += '<h3>Content mix theo Pillar</h3>';
     if (mix.denominator) html += '<div data-viz="workspace-content-mix">' + vizMixChartHtml(mix, mixUnit) + '</div>';
-    else html += '<div class="state-box" data-viz="workspace-content-mix-empty">Chưa có content nào để tính content mix ở mức workspace.</div>';
+    else html += '<div class="state-box" data-viz="workspace-content-mix-empty">Chưa có content nào ở mức workspace.</div>';
     // Thu–Chi
     html += cashChartHtml();
     return html;
@@ -7608,7 +7606,7 @@
   // kéo–thả khóa theo canEdit() ngay trong ganttHtml như mọi Gantt khác.
   function unscheduledHtml(list) {
     var html = '<h3>Chưa xếp lịch (' + list.length + ')</h3>';
-    if (!list.length) html += '<p class="sub">Mọi task trong bộ lọc hiện tại đều đã có đủ ngày bắt đầu và mốc cần hoàn thành.</p>';
+    if (!list.length) html += '<p class="sub">Tất cả task đã đủ ngày.</p>';
     else html += '<ul class="clean">' + list.map(function (t) {
       return '<li><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button> · ' + esc(memberName(t.assigneeId)) + ' · ' + esc(campaignName(t.campaignId)) + ' · ' + statusBadge(t.status) + ' <span class="sub">(thiếu ngày bắt đầu hoặc mốc cần hoàn thành)</span></li>';
     }).join('') + '</ul>';
@@ -7626,7 +7624,7 @@
     };
     var html = '<div data-viz="tasks-timeline"><div class="gantt-toolbar"><span class="sub">Nhóm hàng: </span>' +
       groupBtn('campaign', 'Theo campaign') + ' ' + groupBtn('assignee', 'Theo người phụ trách') + ' ' + groupBtn('none', 'Không nhóm') +
-      ' <span class="sub">Đang hiển thị ' + tl.datedCount + '/' + tl.totalCount + ' task có đủ ngày để vẽ Timeline.</span></div>';
+      '</div>';
     html += ganttHtml(tl.rows, tl.edges);
     html += '</div>';
     html += unscheduledHtml(tl.unscheduled);
@@ -7636,7 +7634,7 @@
     var edges = Store.list('dependencies');
     var blockers = Store.list('blockers');
     var tf = UI.timelineFilter;
-    var html = pageHead('Timeline', 'Một Timeline chung cho mọi campaign và task: xem theo cây campaign hoặc chỉ xem task, với một bộ lọc chung.');
+    var html = pageHead('Timeline', '');
     html += readonlyNote() + collectionBanner('tasks');
     var modeBtn = function (id, label) {
       return '<button type="button" class="btn small ' + (UI.timelineMode === id ? '' : 'secondary') + '" data-action="timeline-mode" data-id="' + id + '">' + label + '</button>';
@@ -7689,7 +7687,7 @@
       if (tf.unassigned && t.assigneeId) return false;
       return true;
     });
-    var html = pageHead('Task', 'Một danh sách task dùng chung ở mọi màn hình. Bấm vào tên task để mở chi tiết và sửa.',
+    var html = pageHead('Task', 'Bấm tên task để mở chi tiết.',
       '<button class="btn secondary" data-action="open-timeline">Mở Timeline</button>' + (ed ? ' <button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button>' : ''));
     html += readonlyNote() + collectionBanner('tasks');
     html += '<details class="filter-details"' + ((typeof window !== 'undefined' && window.innerWidth && window.innerWidth > 820) ? ' open' : '') + '><summary class="filter-summary">Bộ lọc</summary><form class="inline filter-panel" id="task-filter-form"><span class="sub">Lọc task:</span>' +
@@ -7760,7 +7758,7 @@
       html += '<h3>Tỉ trọng yêu cầu theo trạng thái</h3><div data-viz="requests-status-chart">' + vizStackedBarHtml({ segments: reqStatusSegs, total: reqs.length, unitLabel: 'yêu cầu' }) + '</div>';
       html += '<h3>Tỉ trọng yêu cầu theo ưu tiên</h3><div data-viz="requests-priority-chart">' + vizStackedBarHtml({ segments: reqPriSegs, total: reqs.length, unitLabel: 'yêu cầu' }) + '</div>';
     }
-    if (!reqs.length) html += '<div class="state-box">Chưa có yêu cầu nào được ghi nhận.</div>';
+    if (!reqs.length) html += '<div class="state-box">Chưa có yêu cầu nào.</div>';
     else html += tbl('<tr><th>Yêu cầu</th><th>Người yêu cầu</th><th>Campaign liên quan</th><th>Ưu tiên</th><th>Hạn mong muốn</th><th>Trạng thái</th><th>Thao tác</th></tr>' + reqs.map(function (r) {
       var convertedTask = Store.list('tasks').find(function (t) { return cfVal(t, 'marketingRequestId') === r.id; });
       var acts = '';
@@ -7883,7 +7881,7 @@
     var holidays = Store.holidays || [];
     var weekStart = UI.teamWeek, weekEnd = addDaysISO(weekStart, 6);
     var ed = canEdit();
-    var html = pageHead('Team & Workload', 'Tải task theo tuần đã chọn. Chỉ tính task chi tiết (task cha có task con không bị tính trùng) và chỉ phần effort rơi trong tuần này.');
+    var html = pageHead('Team & Workload', 'Quy tắc: Chỉ tính task chi tiết và phần effort rơi trong tuần này.');
     html += '<form class="inline" id="team-week-form"><label>Tuần bắt đầu từ (thứ Hai)<input type="date" id="team-week-input" value="' + esc(weekStart) + '"></label><button class="btn secondary" type="submit">Xem tuần</button> <button class="btn secondary" type="button" data-action="team-week-now">Tuần hiện tại</button></form>';
     html += '<p class="sub">Tuần đang xem: ' + esc(D.formatDateVN(weekStart)) + ' — ' + esc(D.formatDateVN(weekEnd)) + '. Ngày nghỉ chung: ' + (holidays.length ? holidays.map(function (h) { return D.formatDateVN(h); }).join(', ') : '—') + '</p>';
     html += collectionBanner('members');
@@ -7913,7 +7911,7 @@
         Object.keys(perDay).forEach(function (date) { if (perDay[date] > 8) warn.push('Ngày ' + D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + ' giờ (quá 8 giờ/ngày)'); });
         return '<tr><td><strong>' + esc(m.name) + '</strong>' + (m.isActive === false ? ' ' + vizStatusPillHtml('', { tone: 'cancelled', label: 'Ngừng hoạt động' }) : '') + '</td><td>' + esc(m.roleLabel || labelStatus(m.role)) + '</td><td>' + (cap !== null && cap !== undefined ? esc(cap) + ' giờ/tuần' : vizStatusPillHtml('pending', { label: 'Chưa cấu hình' })) + '</td>' +
           '<td>' + ((mDaysOff || []).length ? mDaysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') : '—') + '</td>' +
-          '<td>' + fmtNum(total) + ' giờ' + vizWorkloadBarHtml({ hours: total, capacityHours: cap, overCapacity: (cap !== null && cap !== undefined && total > cap) }) + (unestimated.length ? '<br>' + unestimated.map(function (t) { return vizStatusPillHtml('', { tone: 'pending', label: t.title + ': Chưa ước tính' }); }).join(' ') : '') + '</td>' +
+          '<td>' + fmtNum(total) + ' giờ' + vizWorkloadBarHtml({ hours: total, capacityHours: cap, overCapacity: (cap !== null && cap !== undefined && total > cap) }) + '</td>' +
           '<td>' + (Object.keys(perDay).length ? vizMiniDayBarsHtml({ days: Object.keys(perDay).sort().map(function (date) { return { label: String(D.formatDateVN(date)).slice(0, 5), hours: perDay[date], title: D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + ' giờ' }; }) }) + '<span class="sub">' + Object.keys(perDay).sort().map(function (date) { return D.formatDateVN(date) + ': ' + fmtNum(perDay[date]) + 'h'; }).join(' · ') + '</span>' : '<span class="sub">—</span>') + '</td>' +
           '<td>' + (warn.length ? warn.map(function (w) { return vizStatusPillHtml('overdue', { label: w, derived: true }); }).join(' ') : vizStatusPillHtml('done', { label: 'Ổn' })) + '</td>' +
           '<td><button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Đặt năng lực / ngày nghỉ</button></td></tr>';
@@ -7926,7 +7924,7 @@
   function viewKpi() {
     var ed = canEdit();
     var budgetEd = canBudgetChange();
-    var html = pageHead('KPI & Ngân sách', 'KPI theo mục tiêu/thực đạt/nguồn/thời điểm; ngân sách theo Kế hoạch / Đã duyệt / Đã chi / Cam kết chưa trả / Còn lại.',
+    var html = pageHead('KPI & Ngân sách', 'KPI và ngân sách theo campaign.',
       (ed ? '<button class="btn" data-action="editor-open" data-kind="kpi">+ Tạo KPI</button> ' : '') + (budgetEd ? '<button class="btn secondary" data-action="editor-open" data-kind="budgetLine">+ Tạo dòng ngân sách</button>' : '') + (can('budget.propose') ? ' <button type="button" class="btn secondary" data-action="editor-open" data-kind="budgetProposal">Đề xuất ngân sách</button>' : ''));
     html += readonlyNote();
     html += contextBannerHtml();
@@ -7934,7 +7932,7 @@
     html += '<nav class="inpage-nav" aria-label="Mục trong trang KPI & Ngân sách"><a href="#/kpi" data-kpi-anchor="kpi">KPI</a><a href="#/kpi" data-kpi-anchor="budget">Ngân sách</a><a href="#/kpi" data-kpi-anchor="cash">Thu–Chi</a></nav>';
     html += '<h2 id="kpi-sec-kpi">KPI</h2>';
     // AC22: export KPI của đúng tập đang hiển thị ở trang này (kèm IDs, scope, kỳ, đơn vị).
-    html += '<p><button class="btn secondary" data-action="export-kpi-csv">Xuất CSV KPI (IDs, scope, kỳ, đơn vị)</button></p>';
+    html += '<p><button class="btn secondary" data-action="export-kpi-csv" title="IDs, scope, kỳ, đơn vị">Xuất CSV KPI</button></p>';
     // Lọc Phase cho KPI: CHỈ hiện khi đang chọn đúng 1 Brand (bộ lọc
     // Brand toàn cục). Phase lấy từ filteredBrandPhases() — đã áp sẵn
     // brandFilter nên chỉ còn Phase của Brand đó. Chọn 1 Phase thì chỉ
@@ -7947,7 +7945,7 @@
         return '<option value="' + esc(p.id) + '"' + (String(kpiPhaseSel) === String(p.id) ? ' selected' : '') + '>' + esc(p.name || p.id) + '</option>';
       }).join('');
       html += '<form class="inline" id="kpi-phase-filter-form" data-kpi-phase-filter="1"><label>Phase<select id="kpi-phase-select" data-action-change="kpi-phase" aria-label="Lọc KPI theo Phase">' + kpiPhaseOpts + '</select></label>' +
-        '<span class="sub">Áp cho Brand đang chọn: ' + esc(brandNameOf(UI.brandFilter)) + '. KPI không gắn Phase chỉ hiện khi chọn "Tất cả Phase".</span></form>';
+        '<span class="sub">Quy tắc: KPI không gắn Phase chỉ hiện khi chọn "Tất cả Phase".</span></form>';
       if (kpiPhaseSel !== 'all') {
         var selPhase = kpiPhases.find(function (p) { return String(p.id) === String(kpiPhaseSel); });
         html += '<div class="notice info" data-kpi-phase-active="1">Đang lọc KPI theo Phase: <strong>' + esc(selPhase ? (selPhase.name || selPhase.id) : kpiPhaseSel) + '</strong>.</div>';
@@ -7988,14 +7986,15 @@
       return main;
     }).join(''), 'kpi-main');
     html += '<h2 id="kpi-sec-budget">Ngân sách theo từng tiền tệ (không cộng khác tiền tệ)</h2>';
+    html += '<p class="sub">Quy tắc: Phần đã thanh toán của một cam kết được tính từ các khoản thanh toán liên kết và chỉ tính một lần ở cột Đã chi.</p>';
     // R2-30.5: vai không có quyền xem ngân sách (vd CEO) → ẨN hẳn khối số
     // ngân sách chi tiết, chỉ hiện thông báo.
     if (!canBudget()) {
-      html += '<div class="notice info">Vai trò hiện tại không có quyền xem số liệu ngân sách chi tiết nên phần này được ẩn. KPI ở trên vẫn xem được bình thường.</div>';
+      html += '<div class="notice info">Vai trò hiện tại không xem được chi tiết ngân sách (KPI vẫn xem được).</div>';
       return html;
     }
     // AC22: export ngân sách — chỉ tới được đây khi vai có quyền xem ngân sách (cùng cổng với khối số ở dưới).
-    html += '<p><button class="btn secondary" data-action="export-budget-csv">Xuất CSV ngân sách (dòng + fact + tổng hợp theo scope)</button></p>';
+    html += '<p><button class="btn secondary" data-action="export-budget-csv" title="Dòng + fact + tổng hợp theo scope">Xuất CSV ngân sách</button></p>';
     var linesAll = visibleList('budgetLines').filter(function (b) { return matchesBrandSegment(b, campaignContextFallback(b.campaignId)); });
     var allCommits = Store.list('commitments');
     var allActuals = Store.list('actuals');
@@ -8046,12 +8045,12 @@
       // actuals, open qua D.openCommitmentTotal, remaining qua
       // D.budgetRemaining) + 1 thanh xếp chồng dòng tiền trên hạn mức duyệt.
       html += '<div class="cards" data-viz="kpi-money-cards">' +
-        vizKpiCardHtml({ label: 'Kế hoạch', valueText: fmtMoney(sum.planned, cur), tone: 'neutral', toneLabel: 'Kế hoạch', sub: 'Tổng kế hoạch các dòng ngân sách (' + cur + ')' }) +
-        vizKpiCardHtml({ label: 'Được duyệt', valueText: fmtMoney(sum.approved, cur), tone: 'running', toneLabel: 'Hạn mức', sub: 'Tổng hạn mức đã duyệt (' + cur + ')' }) +
-        vizKpiCardHtml({ label: 'Đã chi', valueText: fmtMoney(sum.spent, cur), tone: 'running', toneLabel: 'Thực chi', sub: 'Tổng thực chi đã ghi (' + cur + ')' }) +
-        vizKpiCardHtml({ label: 'Cam kết chưa trả', valueText: fmtMoney(sum.open, cur), tone: 'pending', toneLabel: 'Cam kết mở', sub: 'Cam kết còn mở chưa thanh toán (' + cur + ')' }) +
-        vizKpiCardHtml({ label: 'Còn phân bổ', valueText: fmtMoney(sum.remaining, cur), tone: sum.remaining < 0 ? 'overdue' : 'done', toneLabel: sum.remaining < 0 ? 'Vượt ngân sách' : 'Còn dùng được', sub: 'Đã duyệt trừ dự kiến sử dụng (' + cur + ')' }) +
-        vizKpiCardHtml({ label: 'Dự kiến sử dụng', valueText: fmtMoney(projected, cur), tone: 'pending', toneLabel: 'Dự kiến', sub: 'Đã chi + cam kết chưa trả (' + cur + ')', progress: sum.approved > 0 ? { value: projected, max: sum.approved, pct: vizPct(projected, sum.approved), tone: projected > sum.approved ? 'overdue' : 'pending', detail: fmtMoney(projected, cur) + ' / ' + fmtMoney(sum.approved, cur) + ' (' + fmtPct(vizPct(projected, sum.approved)) + ')' } : null }) +
+        vizKpiCardHtml({ label: 'Kế hoạch', valueText: fmtMoney(sum.planned, cur), tone: 'neutral', toneLabel: 'Kế hoạch', sub: null }) +
+        vizKpiCardHtml({ label: 'Được duyệt', valueText: fmtMoney(sum.approved, cur), tone: 'running', toneLabel: 'Hạn mức', sub: null }) +
+        vizKpiCardHtml({ label: 'Đã chi', valueText: fmtMoney(sum.spent, cur), tone: 'running', toneLabel: 'Thực chi', sub: null }) +
+        vizKpiCardHtml({ label: 'Cam kết chưa trả', valueText: fmtMoney(sum.open, cur), tone: 'pending', toneLabel: 'Cam kết mở', sub: null }) +
+        vizKpiCardHtml({ label: 'Còn phân bổ', valueText: fmtMoney(sum.remaining, cur), tone: sum.remaining < 0 ? 'overdue' : 'done', toneLabel: sum.remaining < 0 ? 'Vượt ngân sách' : 'Còn dùng được', sub: '= Đã duyệt − Dự kiến sử dụng' }) +
+        vizKpiCardHtml({ label: 'Dự kiến sử dụng', valueText: fmtMoney(projected, cur), tone: 'pending', toneLabel: 'Dự kiến', sub: '= Đã chi + Cam kết chưa trả', progress: sum.approved > 0 ? { value: projected, max: sum.approved, pct: vizPct(projected, sum.approved), tone: projected > sum.approved ? 'overdue' : 'pending', detail: fmtMoney(projected, cur) + ' / ' + fmtMoney(sum.approved, cur) + ' (' + fmtPct(vizPct(projected, sum.approved)) + ')' } : null }) +
         '</div>';
       if (sum.approved > 0) {
         html += '<div data-viz="kpi-budget-stacked"><h4>Dòng tiền trên hạn mức đã duyệt (' + esc(cur) + ')</h4>' + vizStackedBarHtml({ segments: [
@@ -8098,10 +8097,10 @@
           '<td class="row-actions"><button class="btn small secondary" data-action="editor-open" data-kind="budgetLine" data-id="' + esc(b.id) + '"' + dis(!budgetEd) + '>Sửa dòng</button></td></tr>' + detail;
       }).join(''), 'budget-lines');
     });
-    html += '<p class="sub">Phần đã thanh toán của một cam kết được tính từ các khoản thanh toán liên kết và chỉ tính một lần ở cột Đã chi.</p>';
+
     // R3.1-VIZ 5: khối Thu–Chi (sổ cash, tách hẳn ngân sách campaign) —
     // chart cột Thu/Chi theo tháng + số dư + bảng giao dịch ngay dưới.
-    html += '<h2 id="kpi-sec-cash">Thu–Chi &amp; Ngân sách (sổ quỹ)</h2><p><button class="btn secondary" data-action="export-cash-csv">Xuất CSV Thu–Chi (giao dịch kèm tài khoản, scope)</button></p>' + cashChartHtml();
+    html += '<h2 id="kpi-sec-cash">Thu–Chi &amp; Ngân sách (sổ quỹ)</h2><p><button class="btn secondary" data-action="export-cash-csv" title="Giao dịch kèm tài khoản, scope">Xuất CSV Thu–Chi</button></p>' + cashChartHtml();
     return html;
   }
 
@@ -8109,7 +8108,7 @@
   function viewChannels() {
     var accounts = Store.list('channelAccounts');
     var ed = canEdit();
-    var html = pageHead('Kênh & Post', 'Trạng thái kết nối theo từng khả năng và thư viện Post.',
+    var html = pageHead('Kênh & Post', '',
       ed ? '<button class="btn" data-action="editor-open" data-kind="post">+ Thêm Post (nhập tay)</button>' : '');
     html += readonlyNote() + collectionBanner('channelAccounts');
     html += '<h2>Kết nối kênh</h2>';
@@ -8136,7 +8135,7 @@
         { label: 'Đã có code — chờ thông tin / Chờ kết nối', tone: 'pending' },
         { label: 'Đăng ngoài app', tone: 'running' },
         { label: 'Chưa triển khai / Chưa có quyền', tone: 'todo' }
-      ], { chartId: 'channel-legend' }) + '<p class="sub">Mỗi chấm kèm tên mục; rê chuột (hoặc xem dòng chữ phụ) để thấy nhãn đầy đủ của từng mức code và khả năng.</p></div>';
+      ], { chartId: 'channel-legend' }) + '</div>';
     }
     html += accounts.length ? tbl('<tr><th>Kênh</th><th>Tài khoản</th><th>Trạng thái tài khoản</th><th>Mức code (OAuth · Đăng bài · Đồng bộ · Quảng cáo)</th><th>Khả năng (Đọc bài · Đọc số liệu · Đăng bài · Quảng cáo)</th></tr>' +
       accounts.map(function (a) {
@@ -8156,7 +8155,7 @@
       '<form class="inline" id="channel-filter-form"><label>Lọc theo kênh<select id="channel-filter"><option value="all">Tất cả kênh</option>' +
       PLATFORMS.map(function (p) { return '<option value="' + p[0] + '"' + (UI.channelFilter === p[0] ? ' selected' : '') + '>' + p[1] + '</option>'; }).join('') +
       '</select></label><button class="btn secondary" type="submit">Lọc</button></form>';
-    if (!filtered.length) html += emptyState('Chưa có post nào ở kênh đã lọc', 'Thêm post bằng cách nhập tay (nguồn sẽ ghi rõ là nhập tay) hoặc chờ đồng bộ khi kênh được kết nối.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="post">+ Thêm Post</button></p>' : '');
+    if (!filtered.length) html += emptyState('Chưa có post nào ở kênh đã lọc', 'Thêm post bằng cách nhập tay (nguồn sẽ ghi rõ là nhập tay).', ed ? '<p><button class="btn" data-action="editor-open" data-kind="post">+ Thêm Post</button></p>' : '');
     else html += tbl('<tr><th>Post</th><th>Kênh</th><th>Mã bài trên nền tảng</th><th>Ngày đăng</th><th>Lượt xem</th><th>Tiếp cận</th><th>Nguồn</th><th>Campaign đã gắn</th><th>Gắn / đổi campaign</th><th>Thao tác</th></tr>' + filtered.map(function (p) {
       var obs = Store.list('metricObservations').filter(function (o) { return o.externalPostId === p.id; });
       // WAVE-B4: số mới nhất của từng chỉ số lấy qua đúng helper domain cho
@@ -8200,7 +8199,7 @@
     var isCeo = Store.currentRole() === 'ceo';
     var canDraft = can('adsDraft');
     var canApproveAds = can('adsApprove');
-    if (isCeo) html += '<div class="notice info">CEO chỉ xem: mọi thao tác tạo nháp/gửi duyệt/duyệt thay đổi quảng cáo đều bị ẩn và bị tầng dữ liệu chặn.</div>';
+    if (isCeo) html += '<div class="notice info">Chế độ chỉ xem (CEO) — tạo/sửa đã khóa.</div>';
     html += collectionBanner('adAccounts');
     // WAVE-B4: phễu Hiển thị -> Nhấp -> Kết quả ở cấp chiến dịch quảng cáo —
     // tổng qua đúng hàm tổng hợp sẵn có D.aggregateRates (tử/mẫu cộng theo
@@ -8212,7 +8211,7 @@
       Object.keys(aggAds.byCurrency || {}).forEach(function (curKey) {
         var t = aggAds.byCurrency[curKey].totals || {};
         if (t.impressions === null || t.impressions === undefined) return;
-        funnelHtml += '<p class="sub">Tiền tệ: ' + esc(currencyLabel(curKey)) + ' — chỉ cộng ở cấp chiến dịch quảng cáo</p>' + vizFunnelHtml({ steps: [
+        funnelHtml += '<p class="sub">Quy tắc: Chỉ cộng ở một cấp (chiến dịch) để không tính trùng; tách theo tiền tệ: ' + esc(currencyLabel(curKey)) + '</p>' + vizFunnelHtml({ steps: [
           { label: 'Hiển thị', value: t.impressions },
           { label: 'Nhấp', value: t.clicks },
           { label: 'Kết quả', value: t.results }
@@ -8240,7 +8239,7 @@
             rows += '<tr><td>Quảng cáo</td><td>↳↳ ' + esc(ad.name) + '</td><td>' + statusBadge(ad.status, ad.statusLabel) + '</td>' + ratesCells(ad, maxSpend) + '</tr>';
           });
         });
-        html += tbl(rows) + '<p class="sub">Tổng chỉ cộng ở một cấp duy nhất để không tính trùng giữa chiến dịch / nhóm / quảng cáo.</p>';
+        html += tbl(rows);
       });
       html += '</div>';
     });
@@ -8368,7 +8367,7 @@
       '<label>Campaign (IMC)<select name="campaignId"><option value="all">Tất cả campaign</option>' + visibleList('campaigns').map(function (c) { return '<option value="' + esc(c.id) + '"' + (f.campaignId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Cấp tổng hợp quảng cáo<select name="level">' + [['campaign', 'Chiến dịch quảng cáo'], ['adset', 'Nhóm quảng cáo'], ['ad', 'Quảng cáo']].map(function (lv) { return '<option value="' + lv[0] + '"' + (f.level === lv[0] ? ' selected' : '') + '>' + lv[1] + '</option>'; }).join('') + '</select></label>' +
       '<button class="btn" type="submit">Áp dụng lọc</button> <button class="btn secondary" type="button" data-action="report-clear">Xóa lọc</button></form>';
-    html += '<p class="sub">Đang áp dụng: kỳ ' + (f.from || f.to ? (D.formatDateVN(f.from) || '…') + ' — ' + (D.formatDateVN(f.to) || '…') : 'toàn bộ') + ' · tài khoản: ' + (f.accountId === 'all' ? 'tất cả' : esc((Store.get('adAccounts', f.accountId) || {}).name || '')) + ' · campaign: ' + (f.campaignId === 'all' ? 'tất cả' : esc(campaignName(f.campaignId))) + ' · cấp quảng cáo: ' + esc(levelLabel) + '. Số liệu quảng cáo lấy từ dữ liệu theo kỳ của đúng cấp đã chọn; ô thiếu dữ liệu giữ trống, không đổi thành 0.</p>';
+    html += '<p class="sub">Đang áp dụng: kỳ ' + (f.from || f.to ? (D.formatDateVN(f.from) || '…') + ' — ' + (D.formatDateVN(f.to) || '…') : 'toàn bộ') + ' · tài khoản: ' + (f.accountId === 'all' ? 'tất cả' : esc((Store.get('adAccounts', f.accountId) || {}).name || '')) + ' · campaign: ' + (f.campaignId === 'all' ? 'tất cả' : esc(campaignName(f.campaignId))) + ' · cấp quảng cáo: ' + esc(levelLabel) + '.</p>' + noteDetailHtml('Quy tắc: Số liệu quảng cáo lấy từ dữ liệu theo kỳ của đúng cấp đã chọn; ô thiếu dữ liệu giữ trống, không đổi thành 0.');
     if (f.view === 'ops') {
       var tasks = visibleList('tasks');
       var overdue = tasks.filter(isOverdue);
@@ -8492,7 +8491,7 @@
       }
       html += '<div class="panel"><strong>' + esc(s.title) + '</strong> <span class="badge ok">' + esc(s.status || 'Đã chốt') + '</span>' +
         '<p class="sub">Chốt lúc ' + esc(D.formatDateTimeVN(s.frozenAt)) + ' · ' + scopeText + '<br>' + metricsText + '</p>' +
-        '<p>' + esc(s.summary || '') + '</p><p class="sub">Báo cáo đã chốt hiển thị đóng băng — không có nút sửa.</p></div>';
+        '<p>' + esc(s.summary || '') + '</p></div>';
     });
     return html;
   }
@@ -8508,15 +8507,15 @@
       return '<p><span class="badge ok">Đã cấu hình</span> App đã có thông tin kết nối. Đăng nhập bằng email/mật khẩu để vào workspace.</p>' +
         '<form class="inline" id="signin-form"><label>Email<input type="email" name="email" required></label><label>Mật khẩu<input type="password" name="password" required></label><button class="btn" type="submit">Đăng nhập</button></form>';
     }
-    return '<p><span class="badge warn">Chờ kết nối Supabase</span></p><p>Hướng dẫn 3 bước:</p><ol>' +
+    return '<p><span class="badge warn">Chờ kết nối Supabase</span></p><p class="note">Hướng dẫn 3 bước:</p><ol>' +
       '<li>Tạo một Supabase project riêng cho Marketing Workspace.</li>' +
-      '<li>Chạy các migration trong thư mục <code>supabase/</code> theo tài liệu thiết lập đi kèm repo.</li>' +
+      '<li>Chạy các migration trong thư mục <code>supabase/</code>.</li>' +
       '<li>Điền thông tin kết nối công khai vào file <code>config.js</code> — xem mẫu ở <code>config.example.js</code> — rồi tải lại trang.</li></ol>';
   }
   function viewSettings() {
     var ed = canEdit();
     var isOwner = canMemberManage();
-    var html = pageHead('Thiết lập', 'Kết nối dữ liệu, thành viên & vai trò, BU/sản phẩm, năng lực làm việc và kết nối kênh.',
+    var html = pageHead('Thiết lập', '',
       isOwner ? '<button class="btn" data-action="editor-open" data-kind="invite">+ Mời thành viên</button>' : '');
     html += '<h2>Trạng thái kết nối Supabase</h2><div class="panel">';
     html += supabaseConnectionHtml(Store.mode, Store.currentUser(), !!Store.supabaseUser);
@@ -8530,7 +8529,7 @@
       return '<tr><td><strong>' + esc(m.name) + '</strong></td><td>' + esc(m.email) + '</td><td>' + (isOwner ? roleSel : esc(m.roleLabel || labelStatus(m.role))) + '</td><td>' + (isOwner ? activeSel : (m.isActive === false ? 'Ngừng hoạt động' : 'Đang hoạt động')) + '</td>' +
         '<td>' + (m.capacityHoursPerWeek !== null && m.capacityHoursPerWeek !== undefined ? esc(m.capacityHoursPerWeek) + ' giờ/tuần' : 'Chưa cấu hình') + ((m.daysOff || []).length ? '<br><span class="sub">Nghỉ: ' + m.daysOff.map(function (x) { return D.formatDateVN(x); }).join(', ') + '</span>' : '') + ' <button class="btn small secondary" data-action="editor-open" data-kind="memberCap" data-member="' + esc(m.id) + '"' + dis(!canSettings()) + '>Sửa</button></td></tr>';
     }).join(''), 'settings-members');
-    if (!isOwner) html += '<p class="sub">Chỉ Owner mới đổi vai trò / trạng thái hoạt động của thành viên và gửi lời mời.</p>';
+    if (!isOwner) html += '<p class="sub">Chỉ Owner.</p>';
     html += '<h3>Ma trận quyền (4 vai)</h3>';
     var permKeys = Object.keys(Store.PERMISSION_LABELS || {});
     html += tbl('<tr><th>Quyền</th><th>Owner</th><th>Lead</th><th>Member</th><th>CEO</th></tr>' + permKeys.map(function (k) {
@@ -8541,7 +8540,7 @@
       }
       return '<tr><td>' + esc(Store.PERMISSION_LABELS[k]) + '</td>' + cell('owner') + cell('lead') + cell('member') + cell('ceo') + '</tr>';
     }).join(''), 'settings-permissions');
-    html += '<div class="toolbar"><h2 style="margin:0">BU / sản phẩm</h2>' + (canSettings() ? '<button class="btn small" data-action="editor-open" data-kind="bu">+ Thêm BU</button>' : '<span class="sub">Chỉ Owner quản lý BU/sản phẩm.</span>') + '</div>';
+    html += '<div class="toolbar"><h2 style="margin:0">BU / sản phẩm</h2>' + (canSettings() ? '<button class="btn small" data-action="editor-open" data-kind="bu">+ Thêm BU</button>' : '<span class="sub">Chỉ Owner.</span>') + '</div>';
     html += Store.list('businessUnits').length
       ? tbl('<tr><th>BU</th><th>Sản phẩm</th><th>Mô tả</th><th>Thao tác</th></tr>' + Store.list('businessUnits').map(function (b) {
         return '<tr><td><strong>' + esc(b.name) + '</strong></td><td>' + esc((b.products || []).join(', ')) + '</td><td>' + esc(b.description || '—') + '</td><td class="row-actions"><button class="btn small" data-action="editor-open" data-kind="bu" data-id="' + esc(b.id) + '"' + dis(!canSettings()) + '>Sửa</button> <button class="btn small secondary" data-action="archive-item" data-coll="businessUnits" data-id="' + esc(b.id) + '"' + dis(!canSettings()) + '>Lưu trữ</button></td></tr>';
@@ -8568,7 +8567,7 @@
       '<label>Mật khẩu mới (tối thiểu 8 ký tự)<input type="password" name="password" required minlength="8" autocomplete="new-password"></label>' +
       '<label>Nhập lại mật khẩu<input type="password" name="passwordConfirm" required minlength="8" autocomplete="new-password"></label>' +
       '<button class="btn" type="submit">Đặt mật khẩu và vào app</button></form>' +
-      '<p class="sub">Sau khi đặt mật khẩu thành công, bạn sẽ được đưa vào app với phiên đăng nhập chính thức.</p></div>';
+      '</div>';
   }
   function viewLogin() {
     return pageHead('Đăng nhập', 'Đăng nhập bằng email và mật khẩu để vào SAVA Marketing Workspace.') +
@@ -8576,7 +8575,7 @@
       '<label>Email<input type="email" name="email" required autocomplete="username"></label>' +
       '<label>Mật khẩu<input type="password" name="password" required autocomplete="current-password"></label>' +
       '<button class="btn" type="submit">Đăng nhập</button></form>' +
-      '<p class="sub">Chưa có tài khoản? Tài khoản do Owner mời qua email — hãy mở liên kết trong email mời để đặt mật khẩu lần đầu. Quên mật khẩu: nhờ Owner gửi liên kết đặt lại, hoặc dùng tính năng khôi phục của hệ thống tài khoản nếu đã bật.</p></div>';
+      '<p class="sub">Chưa có tài khoản? Tài khoản do Owner mời qua email. Quên mật khẩu: nhờ Owner gửi link đặt lại.</p></div>';
   }
   function viewNoMembership() {
     return pageHead('Tài khoản chưa được gán quyền', 'Bạn đã đăng nhập nhưng chưa thuộc workspace nào.') +
