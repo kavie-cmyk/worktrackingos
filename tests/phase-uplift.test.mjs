@@ -217,13 +217,17 @@ test('PU [domain]: byPhase = tổng đúng các row thuộc phase (cộng từ c
   for (const k of ['views', 'visits', 'freemium', 'paid']) {
     approx(Object.values(f.byPhase).reduce((s, p) => s + p[k], 0), f.totals[k], `sum byPhase ${k} = totals`);
   }
-  // GĐ1 (uplift 0): views KOL T1–T2 = (4+6)x4000 + (4+5)x15000 + (1+1)x25000.
-  approx(f.byPhase['phase-lumus-1'].views, 40000 + 135000 + 50000, 'GĐ1 views');
+  // GĐ1 (uplift 0): views KOL T1–T2 = (4+6)x4000 + (4+5)x15000 + (1+1)x25000
+  // + opens Email T2 = 48,9717 (đợt Email 18/11: T1 opens 0 vì list 0;
+  // T2 list = freemium − paid T1 của kênh khác = 81,6194 -> opens =
+  // 81,6194 × 0,30 × 2 lượt gửi).
+  approx(f.byPhase['phase-lumus-1'].views, 40000 + 135000 + 50000 + 48.971669727272726, 'GĐ1 views (KOL + opens Email T2)');
   // SỬA PHẠM VI đợt Paid Objective: GĐ1 có 8 row Paid có forecast —
   // mỗi tháng T1–T2, Meta + TikTok mỗi kênh có 2 dòng Objective tính
   // được (Traffic + Signup; Awareness chưa có đơn giá -> null,
   // Remarketing Phase 1 ngân sách 0 nên không có dòng) -> 6 + 8 = 14.
-  assert.equal(f.byPhase['phase-lumus-1'].rowCount, 14, 'GĐ1: 6 row KOL + 8 row Paid Objective có forecast');
+  // Đợt Email 18/11: +2 row Email Sends (T1 + T2) có forecast -> 16.
+  assert.equal(f.byPhase['phase-lumus-1'].rowCount, 16, 'GĐ1: 6 row KOL + 8 row Paid Objective + 2 row Email có forecast');
   // Bỏ phase_id trên row -> khớp theo tháng phải cho cùng byPhase.
   const stripped = demo.plan_rows.map((r) => ({ ...r, phase_id: undefined }));
   const f2 = domain.forecastFunnel(stripped, demo.benchmarks, CTX);
@@ -288,7 +292,9 @@ test('PU [domain]: không views_per_unit ở đâu -> mọi số neo cũ giữ n
   const year = domain.forecastFunnel(lumusRows, demo.benchmarks, CTX);
   const yearNoAsm = domain.forecastFunnel(lumusRows, demo.benchmarks, { phases: brandPhases });
   assert.deepEqual(year.totals, yearNoAsm.totals, 'assumption toàn null -> totals bằng khi không có assumption');
-  approx(year.totals.views, 1460000, 'tổng views Lumus giữ nguyên neo');
+  // Neo views cập nhật đợt Email 18/11: 1.460.000 (KOL) + 9.085,8553
+  // opens Email (có uplift theo Phase như mọi tỉ lệ).
+  approx(year.totals.views, 1469085.8552589684, 'tổng views Lumus (KOL + opens Email)');
 });
 
 test('PU [domain]: không benchmark — assumption đủ tỉ lệ CHỈ tính được khi có views_per_unit', () => {

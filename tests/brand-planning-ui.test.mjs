@@ -440,15 +440,24 @@ test('BP-UI [unit]: funnelTotalsFor khớp engine A2 thật — phase totals = b
   for (const k of ['views', 'visits', 'freemium', 'paid']) {
     assert.ok(Math.abs(mine[k] - eng.totals[k]) < 1e-6, 'toàn kỳ lệch ở ' + k + ': ' + mine[k] + ' vs ' + eng.totals[k]);
   }
-  // Theo phase: funnelTotalsFor(rows của phase) == byPhase của engine.
+  // Theo phase: funnelTotalsFor(rows của phase) == forecastFunnel
+  // TRÊN CÙNG TẬP rows của phase (wrapper trung thực với engine).
+  // Đợt Email 18/11: byPhase của lần gọi TOÀN KỲ không còn bằng tổng
+  // lần gọi RIÊNG phase ở views/visits/paid — vì list Email tích luỹ
+  // XUYÊN phase (tồn Free cuối GĐ1 nuôi opens GĐ2), lần gọi riêng
+  // phase bắt đầu list từ 0 ở đầu phase. Freemium vẫn bằng byPhase
+  // tuyệt đối (Email freemium = 0, kênh khác độc lập theo phase).
   for (const pid of ['phase-lumus-1', 'phase-lumus-2', 'phase-lumus-3', 'phase-lumus-4']) {
     const rowsP = lumusRows.filter((r) => r.phase_id === pid);
     const t = h.funnelTotalsFor(rowsP, demo.benchmarks);
     const bp = eng.byPhase[pid];
     assert.ok(bp, 'engine thiếu byPhase ' + pid);
+    const engP = domain.forecastFunnel(rowsP, demo.benchmarks, ctx);
     for (const k of ['views', 'visits', 'freemium', 'paid']) {
-      assert.ok(Math.abs(t[k] - bp[k]) < 1e-6, pid + ' lệch ở ' + k + ': ' + t[k] + ' vs ' + bp[k]);
+      assert.ok(Math.abs(t[k] - engP.totals[k]) < 1e-6, pid + ' lệch wrapper-vs-engine ở ' + k + ': ' + t[k] + ' vs ' + engP.totals[k]);
     }
+    assert.ok(Math.abs(t.freemium - bp.freemium) < 1e-6, pid + ' freemium phải bằng byPhase toàn kỳ (Email freemium = 0)');
+    assert.ok(bp.views >= t.views - 1e-9, pid + ': byPhase toàn kỳ >= tổng riêng phase ở views (list Email tích luỹ xuyên phase)');
   }
   // Uplift: KOL Nano 2027-04 thuộc phase-lumus-2 (uplift 5%, tháng thứ 2 -> n=1):
   // visits = 7 x 4000 x (0.003 x 1.05) x (0.09 x 1.05) ... visits chỉ qua 1 bước uplift.

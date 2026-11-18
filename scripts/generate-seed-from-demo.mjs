@@ -446,7 +446,7 @@ union all select 'marketing_requests', count(*), 1 from public.marketing_request
 union all select 'cash_accounts', count(*), 2 from public.cash_accounts where workspace_id = '${WORKSPACE_ID}'
 union all select 'cash_transactions', count(*), 6 from public.cash_transactions where workspace_id = '${WORKSPACE_ID}'
 union all select 'report_snapshots', count(*), 1 from public.report_snapshots where workspace_id = '${WORKSPACE_ID}'
-union all select 'benchmarks', count(*), 7 from public.benchmarks where workspace_id = '${WORKSPACE_ID}'
+union all select 'benchmarks', count(*), 8 from public.benchmarks where workspace_id = '${WORKSPACE_ID}'
 union all select 'plan_rows', count(*), 237 from public.plan_rows where workspace_id = '${WORKSPACE_ID}'
 union all select 'phase_assumptions', count(*), 12 from public.phase_assumptions where workspace_id = '${WORKSPACE_ID}'
 order by bang;

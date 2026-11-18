@@ -197,7 +197,9 @@ test('VU [demo]: demo-data KHÔNG đặt views uplift mặc định -> mọi s�
     'mọi phase demo phải trống views uplift');
   const ctx = { phases: demo.phases.filter((p) => p.brand_id), phaseAssumptions: demo.phase_assumptions };
   const f = domain.forecastFunnel(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai'), demo.benchmarks, ctx);
-  approx(f.totals.views, 1460000, 'tổng views Lumus giữ neo');
+  // Neo cập nhật đợt Email 18/11: views = 1.460.000 (KOL) + 9.085,8553
+  // opens Email tính từ tồn Free (views uplift vẫn không đặt mặc định).
+  approx(f.totals.views, 1469085.8552589684, 'tổng views Lumus (KOL + opens Email)');
   // Views T1/2027 toàn Lumus (mọi channel có forecast) giữ nguyên mức
   // engine của bản trước 0019: cộng tay từ rows T1.
   const jan = domain.forecastFunnel(demo.plan_rows.filter((r) => r.month === '2027-01'), demo.benchmarks, ctx);

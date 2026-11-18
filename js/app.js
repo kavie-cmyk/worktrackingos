@@ -4480,7 +4480,13 @@
         var qtyTotal = chRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
         var totals = funnelTotalsFor(chRows, benchmarks);
         var rates = effectivePhaseRates(phase, ch, benchmarks);
-        var cells = '<td><strong>' + esc(ch) + '</strong></td>' +
+        // Kênh Email: 3 ô tỉ lệ mang ngữ nghĩa Email — View→Visit =
+        // Open rate, Visit→Freemium = Click/Open, Freemium→Paid =
+        // Click→Paid; opens tính từ TỒN Free (không theo Views mỗi
+        // bài), freemium của Email = 0. Ghi chú ngay dưới tên kênh để
+        // người nhập không hiểu nhầm là "views mỗi bài".
+        var isEmailCh = ch === 'Email Sends' || ch === 'Email CRM' || ch === 'Email' || chRows.some(function (r) { return String(r.group || r.groupName || '') === 'Email'; });
+        var cells = '<td><strong>' + esc(ch) + '</strong>' + (isEmailCh ? '<br><span class="sub" data-phase-email-note="1">Email: Opens từ tồn Free · tỉ lệ = Open rate / Click trên lượt mở / Click → Paid · Freemium = 0</span>' : '') + '</td>' +
           '<td><input class="phase-input" type="number" step="1" min="0" value="' + esc(String(qtyTotal)) + '" data-action-change="phase-qty" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Số lượng của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></td>' +
           (function () {
             // Ô Đơn giá mỗi bài: hiện ĐƠN GIÁ HIỆU DỤNG của Channel trong
@@ -4510,6 +4516,11 @@
             // hiện "—", không cho đặt Views mỗi bài.
             if (!chRows.some(planRowHasQty)) {
               return '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Views mỗi bài (đầu phễu) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '" disabled></td>';
+            }
+            if (isEmailCh) {
+              // Email: opens KHÔNG theo Views mỗi bài (tính từ tồn
+              // Free đầu tháng) -> ô Views mỗi bài khóa, ghi rõ nguồn.
+              return '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Views mỗi bài không áp dụng cho Email (opens tính từ tồn Free) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '" disabled><br><span class="sub" data-phase-email-views-note="1">Từ tồn Free — không theo bài</span></td>';
             }
             var viewsInfo = effectivePhaseViewsPerUnit(phase, ch, benchmarks);
             var viewsLabel = '<br><span class="sub">' + (viewsInfo.source === 'assumption' ? 'Phase Assumption' : (viewsInfo.source === 'benchmark' ? 'Benchmark' : 'Không có')) + '</span>';
@@ -4558,7 +4569,7 @@
         html += budgetDrivenBreakdowns +
           '<p class="sub" data-planning-phase-budget-audience-note="1">Chỉ hiển thị — sửa ở bảng chi tiết Theo tháng.</p>';
       }
-      html += '<p class="sub">Cách tính: Forecast tháng = Số lượng × Views mỗi bài hiệu dụng; tỉ lệ hiệu dụng: Assumption thắng Benchmark, không có cả hai = "—".</p>';
+      html += '<p class="sub">Cách tính: Forecast tháng = Số lượng × Views mỗi bài hiệu dụng; tỉ lệ hiệu dụng: Assumption thắng Benchmark, không có cả hai = "—". Riêng kênh Email: Opens = tồn Free đầu tháng × Open rate × số lượt gửi; Visits = Opens × Click/Open; Paid = Visits × Click→Paid; Freemium của Email = 0.</p>';
       html += noteWithDetailHtml('Nhập 1 giá = đặt tay cho <strong>mọi tháng</strong> trong Phase; xoá trắng = về Benchmark.', 'Đơn giá mỗi bài: ô hiện đơn giá HIỆU DỤNG của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang đơn giá đặt tay, "Benchmark" nghĩa là đang lấy đơn giá Benchmark. Nhập một giá vào ô sẽ ghi đơn giá đặt tay đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × đơn giá hiệu dụng như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ đơn giá đặt tay của cả Phase, quay về Benchmark. Nếu các tháng đang có đơn giá khác nhau (do sửa lẻ ở Theo tháng), ô để trống kèm ghi chú "khác nhau theo tháng".', 'data-planning-phase-price-hint="1"');
       html += '<span data-planning-phase-views-hint="1">' + noteDetailHtml('Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về Views mỗi bài của Benchmark. Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).') + '</span>';
     }

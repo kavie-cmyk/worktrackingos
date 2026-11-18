@@ -361,7 +361,7 @@ test('PPUP-KPI [static]: planningKpiTablesHtml có hàng Tất cả cho Views + 
 });
 
 // ---------- [unit] Phần 2b: hàng Tất cả Views / Paid Users — số neo + tổng ----------
-test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 Views = tổng Views content (101.000, Paid "—" không cộng), T1 Paid = tổng Paid mọi Channel có forecast (engine 2,308005, hiển thị "2"); cột Tổng = tổng cả kỳ (Views 1.460.000 / Paid engine 92,1879, hiển thị "92" — phễu Freemium); CAC T1 không đổi', () => {
+test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 Views = tổng Views content (101.000, Paid "—" không cộng), T1 Paid = tổng Paid mọi Channel có forecast (engine 2,308005, hiển thị "2"); cột Tổng = tổng cả kỳ (Views 1.469.085,86 gồm opens Email / Paid engine 102,4347 gồm Paid Email, hiển thị "102" — đợt Email 18/11); CAC T1 không đổi', () => {
   const { h } = demoHarness();
   const rows = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
   const data = h.planningKpiData(rows, demo.benchmarks, MONTHS_2027);
@@ -390,13 +390,14 @@ test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 View
   });
   approx(data.blended.totals.views, sumViewsByMonth, 'blended totals views = tổng Views theo tháng');
   approx(data.blended.totals.views, sumViewsByChannel, 'blended totals views = tổng Views theo Channel');
-  approx(data.blended.totals.views, 1460000, 'blended totals views neo: 260.000 + 900.000 + 300.000');
+  approx(data.blended.totals.views, 1469085.8552589684, 'blended totals views neo: 260.000 + 900.000 + 300.000 + opens Email 9.085,8553');
   approx(data.blended.totals.paid, sumPaidByMonth, 'blended totals paid = tổng Paid theo tháng (cùng tổng đã phục vụ blended CAC)');
   approx(data.blended.totals.paid, sumPaidByChannel, 'blended totals paid = tổng Paid theo Channel');
   // Neo paid cả kỳ tính lại theo phễu Freemium: uplift lũy kế áp
   // trên f2p GỘP (một lần) thay vì s2f + f2p riêng (hai lần) như
   // phễu cũ — tổng Paid cả kỳ giảm từ 95,8106 xuống 92,1879.
-  approx(data.blended.totals.paid, 92.18790756785299, 'blended totals paid neo (phễu Freemium)');
+  // Đợt Email 18/11: + 10,2468 Paid Email -> 102,4347.
+  approx(data.blended.totals.paid, 102.43472979521258, 'blended totals paid neo (phễu Freemium + Paid Email)');
   // (a) + render: hàng Tất cả tồn tại trong cả 3 bảng, ô T1 + cột Tổng đúng.
   const html = h.planningKpiTablesHtml(rows, demo.benchmarks, MONTHS_2027);
   assert.ok(html.includes('data-planning-kpi-row="views" data-channel="Tất cả"'), 'bảng Views phải có hàng Tất cả');
@@ -405,8 +406,8 @@ test('PPUP-KPI [unit]: hàng Tất cả tồn tại trong cả 3 bảng; T1 View
   assert.equal(kpiCell(html, 'views', 'Tất cả', '2027-01'), '101.000', 'Views Tất cả T1 = 101.000');
   assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), '2', 'Paid Tất cả T1 hiển thị số nguyên (đợt 18/11): fmtPlanningCount(2,308005) = "2"');
   assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), h.fmtPlanningPaid(sumPaidT1), 'Paid Tất cả T1 render = fmtPlanningPaid(tổng Paid T1 chưa làm tròn) — alias của fmtPlanningCount');
-  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.460.000', 'Views Tất cả cột Tổng = tổng Views cả kỳ');
-  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '92', 'Paid Tất cả cột Tổng hiển thị số nguyên: fmtPlanningCount(92,1879…) = "92"');
+  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.469.086', 'Views Tất cả cột Tổng = tổng Views cả kỳ (gồm opens Email)');
+  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '102', 'Paid Tất cả cột Tổng hiển thị số nguyên: fmtPlanningCount(102,4347…) = "102"');
   assert.equal(kpiTotal(html, 'paid', 'Tất cả'), h.fmtPlanningPaid(data.blended.totals.paid), 'Paid Tất cả cột Tổng render từ cùng blended.totals.paid');
   // (e) CAC và mọi số cũ không đổi.
   assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '31.438.407 VND', 'CAC Tất cả T1 không đổi');

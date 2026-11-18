@@ -2293,6 +2293,15 @@
   // B2B: Paid Media (theo Objective), Partnership, Event. Dòng content
   // có qty KHÔNG bao giờ bị phân loại lại theo cơ chế này.
   var BUDGET_DRIVEN_GROUPS = { 'Paid Media': true, 'Partnership': true, 'Event': true };
+  // Kênh Email trong forecast Planning: nhận diện theo group 'Email'
+  // hoặc theo channel. Chuỗi Email (opens -> clicks -> Paid từ TỒN
+  // Free) cài trong forecastFunnel — xem doc ở đầu hàm đó.
+  var EMAIL_CHANNELS = { 'Email Sends': true, 'Email CRM': true, 'Email': true };
+  function _isEmailRow(row) {
+    if (!row) return false;
+    if (_rowGroup(row) === 'Email') return true;
+    return !!EMAIL_CHANNELS[String(row.channel || '')];
+  }
   function _rowGroup(row) {
     if (!row) return null;
     var v = row.group !== undefined && row.group !== null ? row.group : row.groupName;
@@ -2794,6 +2803,36 @@
    *   forecast null cho dòng đó (ngân sách vẫn tính vào tổng ngân sách
    *   qua planBudget, chỉ số đóng góp 0, không bịa số). Cơ chế cũ
    *   (Visits = ngân sách × traffic_share ÷ cost_per_visit) ĐÃ GỠ.
+   * - KÊNH EMAIL (group 'Email' hoặc channel 'Email Sends' /
+   *   'Email CRM' / 'Email') — chuỗi RIÊNG opens -> clicks -> Paid,
+   *   cài bằng 2 LƯỢT trong chính hàm này (forecastFunnel vẫn là
+   *   nguồn funnel duy nhất): lượt 1 tính mọi kênh KHÁC Email để lấy
+   *   chuỗi TỒN Free đầu tháng theo Brand; lượt 2 tính Email từ
+   *   chuỗi tồn đó rồi cộng vào byMonth/totals/byPhase như kênh
+   *   thường. Công thức Email của 1 tháng:
+   *     list_đầu_tháng = opening_free của Brand (Phase sớm nhất có
+   *       opening_free; ctx.openingFree / ctx.openingFreeByBrand ghi
+   *       đè nếu truyền; null/thiếu -> 0 — sản phẩm chưa launch)
+   *       + tích luỹ (freemium − paid) của MỌI kênh khác cộng dồn
+   *       tới hết tháng trước. XẤP XỈ ĐÃ BIẾT: bỏ qua free churn khi
+   *       tính list (list là tồn GỘP chưa trừ churn — khớp cách
+   *       Zac chốt 18/11/2026).
+   *     opens = list_đầu_tháng × open_rate × qty (qty = số lượt gửi
+   *       trong tháng, unit 'sends'); opens nằm ở tầng Views.
+   *     visits (clicks) = opens × click/open; paid = visits ×
+   *       click→paid; freemium của Email = 0 TUYỆT ĐỐI (Email không
+   *       tự tạo freemium nên không tự nuôi list của chính nó).
+   *     Paid của Email ở lượt 2 KHÔNG quay lại sửa list của chính
+   *       tháng đó hay tháng sau (list chỉ gồm kênh khác) — và Paid
+   *       Email cộng vào byMonth.paid nên
+   *       computeOperatingFinancials đếm như New Paid bình thường.
+   *   Ngữ nghĩa cột benchmark cho kênh Email (KHÔNG thêm cột DB):
+   *     view_to_visit = open rate; visit_to_freemium = click/open
+   *     (tầng Freemium ở đây là CLICK, không phải freemium thật);
+   *     freemium_to_paid = click→paid. Ba tỉ lệ vẫn qua cơ chế
+   *     phase_assumptions (ghi đè theo Phase × Channel) + uplift
+   *     của Phase như mọi kênh. output_per_unit của Email để null —
+   *     opens KHÔNG tính theo qty × views mỗi bài.
    * - Trả thêm byPhase: { [phase_id]: { phase_id, views, visits,
    *   freemium, paid, rowCount } } cộng từ CÙNG kết quả từng row đã tính
    *   (rowCount = số row có forecast thuộc phase); row chi tiết thêm
@@ -2818,7 +2857,66 @@
       return _resolvePhase(phases, r || {}, _planMonth(r));
     });
     var byPhase = {};
-    var detail = list.map(function (r, i) {
+    // --- Kênh Email: chuỗi tồn Free đầu tháng theo Brand ----------
+    // emailStockSeries được tính GIỮA 2 lượt (sau lượt 1); trong
+    // lượt 1 nó là null nên nhánh Email trong computeRowForecast
+    // trả base (forecast null) và bị lượt 2 ghi đè.
+    var emailStockSeries = null;
+    // opening_free hiệu dụng của 1 Brand cho list Email: ưu tiên
+    // ctx.openingFreeByBrand[brand] -> ctx.openingFree (khi rows chỉ
+    // thuộc 1 Brand) -> opening_free trên Phase SỚM NHẤT (theo
+    // start_month) của Brand có giá trị; tất cả đều thiếu -> 0.
+    function _emailOpeningFree(brandKey) {
+      if (ctx) {
+        var byBrand = ctx.openingFreeByBrand || ctx.opening_free_by_brand;
+        if (byBrand && byBrand[brandKey] !== undefined && byBrand[brandKey] !== null) {
+          var vb = _planNum(byBrand[brandKey]);
+          if (vb !== null) return vb;
+        }
+        var single = ctx.openingFree !== undefined && ctx.openingFree !== null ? ctx.openingFree : ctx.opening_free;
+        if (single !== undefined && single !== null) {
+          var brandsInRows = {};
+          list.forEach(function (r) { brandsInRows[_planBrandId(r) || ''] = true; });
+          if (Object.keys(brandsInRows).length === 1) {
+            var vs = _planNum(single);
+            if (vs !== null) return vs;
+          }
+        }
+      }
+      var best = null, bestStart = null;
+      phases.forEach(function (p) {
+        if ((_planBrandId(p) || '') !== brandKey) return;
+        var of = _planNum(p.opening_free !== undefined && p.opening_free !== null ? p.opening_free : p.openingFree);
+        if (of === null) return;
+        var sm = _phaseMonth(p, 'start_month', 'startMonth');
+        if (best === null || (sm && (bestStart === null || sm < bestStart))) { best = of; bestStart = sm; }
+      });
+      return best === null ? 0 : best;
+    }
+    // Chuỗi list đầu tháng theo Brand từ kết quả lượt 1 (chỉ kênh
+    // KHÁC Email): list[m] = opening + Σ (freemium − paid) của mọi
+    // tháng trước m. Bỏ qua free churn — xấp xỉ đã chốt (xem doc
+    // đầu hàm).
+    function _freeStockSeries(pass1Detail) {
+      var net = {};
+      (pass1Detail || []).forEach(function (d) {
+        if (!d || !d.forecast || !d.month) return;
+        var k = d.brand_id || '';
+        if (!net[k]) net[k] = {};
+        net[k][d.month] = (net[k][d.month] || 0) + (Number(d.forecast.freemium) || 0) - (Number(d.forecast.paid) || 0);
+      });
+      var keys = {};
+      list.forEach(function (r) { keys[_planBrandId(r) || ''] = true; });
+      var series = {};
+      Object.keys(keys).forEach(function (k) {
+        var stock = _emailOpeningFree(k);
+        var s = {};
+        months.forEach(function (m) { s[m] = stock; stock += (net[k] && net[k][m]) || 0; });
+        series[k] = s;
+      });
+      return series;
+    }
+    function computeRowForecast(r, i) {
       var res = resolved[i];
       var base = {
         rowId: r && r.id !== undefined ? r.id : null,
@@ -2883,6 +2981,41 @@
         return out;
       }
       var views, visits;
+      if (_isEmailRow(r)) {
+        // KÊNH EMAIL — chuỗi opens -> clicks (visits) -> Paid từ
+        // TỒN Free (xem doc đầu hàm). Lượt 1 (emailStockSeries còn
+        // null) bỏ qua: trả base chưa forecast; lượt 2 tính thật.
+        if (!emailStockSeries) return base;
+        var eQty = _planQty(r);
+        var eRates0 = funnelRates();
+        // Ngữ nghĩa cột cho Email: v2v = open rate; v2f =
+        // click/open; f2p = click→paid. Thiếu 1 trong 3 -> forecast
+        // null như kênh thường (không bịa số).
+        if (eQty === null || eRates0.v2v === null || eRates0.v2f === null || eRates0.f2p === null) return base;
+        var eRates = upliftRates(eRates0);
+        var eSeries = emailStockSeries[_planBrandId(r) || ''] || {};
+        var eList = eSeries[base.month] !== undefined && eSeries[base.month] !== null ? eSeries[base.month] : 0;
+        var eOpens = eList * eRates.v2v * eQty;
+        var eVisits = eOpens * eRates.v2f;
+        var ePaid = eVisits * eRates.f2p;
+        // Freemium Email = 0 tuyệt đối; cầu nối Paid->B2B như kênh
+        // content (toàn bộ b2b của Email là bridge).
+        var eB2b = eRates.p2b !== null && eRates.p2b !== undefined ? ePaid * eRates.p2b : 0;
+        base.forecast = { views: eOpens, visits: eVisits, freemium: 0, paid: ePaid, b2b: eB2b, b2bBridge: eB2b, emailOpens: eOpens, emailList: eList };
+        var bmE = base.month && byMonth[base.month];
+        if (bmE) {
+          bmE.views += eOpens; bmE.visits += eVisits; bmE.paid += ePaid; bmE.b2b += eB2b; bmE.b2bBridge += eB2b;
+          bmE.hasForecast = true;
+        }
+        totals.views += eOpens; totals.visits += eVisits; totals.paid += ePaid; totals.b2b += eB2b; totals.b2bBridge += eB2b;
+        if (res.phaseId) {
+          var bpE = byPhase[res.phaseId];
+          if (!bpE) bpE = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, b2bBridge: 0, rowCount: 0 };
+          bpE.views += eOpens; bpE.visits += eVisits; bpE.paid += ePaid; bpE.b2b += eB2b; bpE.b2bBridge += eB2b;
+          bpE.rowCount += 1;
+        }
+        return base;
+      }
       var _qty0 = _planQty(r);
       var _budget0 = _planNum(r && r.budget);
       var _grp0 = _rowGroup(r);
@@ -3026,7 +3159,13 @@
         bp.rowCount += 1;
       }
       return base;
-    });
+    }
+    // 2 LƯỢT TÍNH (kênh Email — xem doc đầu hàm): lượt 1 mọi kênh
+    // KHÁC Email; tính chuỗi tồn Free từ kết quả lượt 1; lượt 2 tính
+    // Email và cộng vào cùng byMonth/totals/byPhase.
+    var detail = list.map(function (r, i) { return _isEmailRow(r) ? null : computeRowForecast(r, i); });
+    emailStockSeries = _freeStockSeries(detail);
+    list.forEach(function (r, i) { if (_isEmailRow(r)) detail[i] = computeRowForecast(r, i); });
     return { steps: FUNNEL_STEPS.slice(), months: months, byMonth: byMonth, totals: totals, rows: detail, byPhase: byPhase };
   }
 
@@ -3396,6 +3535,7 @@
     openCommitmentAmount: openCommitmentAmount,
     budgetActualTotal: budgetActualTotal,
     benchmarkForRow: benchmarkForRow,
+    isEmailRow: _isEmailRow,
     rowGroupOf: rowGroupOf,
     planChannelOrder: planChannelOrder,
     planChannelOrderByGroup: planChannelOrderByGroup,

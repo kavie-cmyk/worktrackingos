@@ -131,17 +131,18 @@ test('PCID [unit]: CAC hiển thị KHÔNG đổi — vẫn làm tròn tới đ�
 test('PCID [unit]: bảng KPI Theo tháng hiển thị số nguyên ở mọi ô Paid/Views/B2B (kể cả hàng Tất cả + cột Tổng); số neo engine không đổi', () => {
   const { h, rows, benchmarks } = demoHarness();
   const data = h.planningKpiData(rows, benchmarks, MONTHS_2027);
-  // Neo ENGINE (giá trị nội bộ, chưa làm tròn) giữ nguyên hệt trước đợt.
-  approx(data.blended.totals.paid, 92.18790756785299, 'Paid cả kỳ fixture (engine) = 92,1879…');
+  // Neo ENGINE (giá trị nội bộ, chưa làm tròn). Cập nhật đợt Email
+  // 18/11: Paid cả kỳ = 92,1879 (cũ) + 10,2468 Paid Email = 102,4347.
+  approx(data.blended.totals.paid, 102.43472979521258, 'Paid cả kỳ fixture (engine) = 102,4347… (gồm Paid Email)');
   approx(data.blended.months['2027-01'].paid, 2.308005, 'Paid Tất cả T1 (engine) = 2,308005');
   approx(data.blended.months['2027-01'].views, 101000, 'Views Tất cả T1 (engine) = 101.000');
   const html = h.planningKpiTablesHtml(rows, benchmarks, MONTHS_2027);
   // Hiển thị: số nguyên ở đúng các ô đã neo.
   assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), '2', 'Paid Tất cả T1 hiển thị "2"');
-  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '92', 'Paid Tất cả cột Tổng hiển thị "92"');
+  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '102', 'Paid Tất cả cột Tổng hiển thị "102" (đợt Email 18/11: gồm Paid Email)');
   assert.equal(kpiCell(html, 'paid', 'KOL Nano', '2027-01'), '0', 'Paid KOL Nano T1 (engine 0,1188) hiển thị "0"');
   assert.equal(kpiCell(html, 'views', 'Tất cả', '2027-01'), '101.000', 'Views Tất cả T1 hiển thị "101.000"');
-  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.460.000', 'Views Tất cả cột Tổng hiển thị "1.460.000"');
+  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.469.086', 'Views Tất cả cột Tổng hiển thị "1.469.086" (1.460.000 + opens Email 9.085,86 làm tròn)');
   assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '31.438.407 VND', 'CAC Tất cả T1 không đổi');
   // Không ô đếm nào của 3 bảng Paid/Views/B2B còn dấu thập phân kiểu "x,yyyy".
   for (const kind of ['paid', 'views', 'b2b']) {

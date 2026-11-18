@@ -139,3 +139,27 @@ tính đang dùng** ngay cạnh con số:
   (`weeklyWorkload(tasks, { weekStart, capacityByMember, holidays })`).
   Capacity và ngày nghỉ lấy từ cấu hình truyền vào — không hardcode
   40h/tuần hay 8h/ngày; thiếu cấu hình thì capacity = `null`.
+
+## 8. Planning forecast — kênh Email (18/11/2026)
+
+Kênh Email (group `Email`, channel `Email Sends`) trong `forecastFunnel`
+(`js/domain.js` — nguồn funnel duy nhất) KHÔNG tính views theo
+`qty × views mỗi bài` như kênh content. Chuỗi riêng, cài bằng 2 lượt
+trong chính `forecastFunnel`:
+
+- Lượt 1 tính mọi kênh khác Email → chuỗi **tồn Free đầu tháng** theo
+  Brand: `list_đầu_tháng = opening_free (null → 0) + Σ (freemium − paid)`
+  của mọi kênh khác cộng dồn tới hết tháng trước. **Xấp xỉ đã biết:**
+  bỏ qua free churn khi tính list. Email không tự tạo freemium nên
+  không tự nuôi list của chính nó; Paid của Email không quay lại sửa
+  list cùng kỳ.
+- Lượt 2: `opens = list × open_rate × số lượt gửi (qty, unit 'sends')`
+  (opens nằm ở tầng Views); `visits (clicks) = opens × click/open`;
+  `paid = visits × click→paid`; **freemium của Email = 0 tuyệt đối**.
+  Paid Email cộng vào `byMonth.paid` nên bảng vận hành đếm như
+  New Paid bình thường.
+- Tỉ lệ lưu vào cột benchmark sẵn có (không thêm cột DB):
+  `view_to_visit` = open rate (Lumus: 0,30), `visit_to_freemium` =
+  click/open (0,10), `freemium_to_paid` = click→paid (0,01);
+  `output_per_unit` để null. Tỉ lệ vẫn ghi đè được theo Phase ×
+  Channel qua `phase_assumptions` và chịu uplift của Phase như mọi kênh.

@@ -175,13 +175,16 @@ test('BP [domain]: forecastFunnel toàn năm — tổng views KOL khớp cộng 
   assert.equal(f.months.length, 12);
   // 65x4000 + 60x15000 + 12x25000 = 260.000 + 900.000 + 300.000
   // Views KHÔNG đổi khi nối Forecast Paid (Paid không suy Views từ tiền).
-  approx(f.totals.views, 1460000, 'total views');
+  // SỬA PHẠM VI đợt Email 18/11: Views cộng thêm OPENS của Email tính
+  // từ tồn Free (không ctx -> không uplift, opening 0): +8.363,3328.
+  approx(f.totals.views, 1468363.3327981387, 'total views (KOL 1.460.000 + opens Email 8.363,3328)');
   // Visits = KOL (780 + 3600 + 1500) + Paid theo Objective Traffic
   // (SỬA PHẠM VI đợt Paid Objective: Meta = ngân sách Traffic cả năm
   // 128.310.000đ / 20.000 = 6.415,5; TikTok = 55.510.000đ / 22.000 =
   // 2.523,1818…; Objective khác không tạo Visits, kênh B2B chưa có
-  // đơn giá nên đóng góp 0).
-  approx(f.totals.visits, 780 + 3600 + 1500 + 128310000 / 20000 + 55510000 / 22000, 'total visits');
+  // đơn giá nên đóng góp 0) + clicks Email (opens × click/open 0,10
+  // = 836,3333 — đợt Email 18/11).
+  approx(f.totals.visits, 780 + 3600 + 1500 + 128310000 / 20000 + 55510000 / 22000 + 836.3332798138637, 'total visits');
 });
 
 test('BP [domain]: forecastFunnel — channel không benchmark -> forecast null, không bịa số; Paid Ads tính theo Objective từ ngân sách (SỬA PHẠM VI đợt Paid Objective)', () => {

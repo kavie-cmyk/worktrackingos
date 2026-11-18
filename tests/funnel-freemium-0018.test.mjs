@@ -107,12 +107,20 @@ test('0018 [demo-data]: benchmarks Lumus dùng key phễu freemium mới, bỏ k
     assert.ok('visit_to_freemium' in b, b.channel + ': thiếu visit_to_freemium');
     assert.ok('freemium_to_paid' in b, b.channel + ': thiếu freemium_to_paid');
   }
-  const withRates = lumus.filter((b) => b.visit_to_freemium != null);
+  // Đợt Email 18/11: benchmark 'Email Sends' dùng CÙNG 2 cột này với
+  // ngữ nghĩa Email (visit_to_freemium = click/open 0,10;
+  // freemium_to_paid = click→paid 0,01) nên tách khỏi vòng 0,09/0,0275.
+  const withRates = lumus.filter((b) => b.visit_to_freemium != null && b.channel !== 'Email Sends');
   assert.ok(withRates.length >= 5, 'KOL + Meta + TikTok phải có tỉ lệ mới');
   for (const b of withRates) {
     assert.equal(b.visit_to_freemium, 0.09, b.channel + ': visit_to_freemium phải = 0.09');
     assert.equal(b.freemium_to_paid, 0.0275, b.channel + ': freemium_to_paid phải = 0.0275 (= 0.5 × 0.055)');
   }
+  const emailBm = lumus.find((b) => b.channel === 'Email Sends');
+  assert.ok(emailBm, 'phải có benchmark Email Sends (đợt Email 18/11)');
+  assert.equal(emailBm.view_to_visit, 0.30, 'Email: view_to_visit = open rate 0,30');
+  assert.equal(emailBm.visit_to_freemium, 0.10, 'Email: visit_to_freemium = click/open 0,10');
+  assert.equal(emailBm.freemium_to_paid, 0.01, 'Email: freemium_to_paid = click→paid 0,01');
   // view_to_visit giữ nguyên như trước:
   const v2v = Object.fromEntries(lumus.map((b) => [b.channel, b.view_to_visit]));
   assert.equal(v2v['KOL Nano'], 0.003);
