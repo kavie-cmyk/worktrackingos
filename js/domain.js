@@ -2824,7 +2824,7 @@
         rowId: r && r.id !== undefined ? r.id : null,
         brand_id: _planBrandId(r), segment: r ? (r.segment || null) : null,
         month: _planMonth(r), channel: r ? (r.channel || null) : null,
-        group: r ? (r.group || null) : null, qty: r ? _planNum(r.qty) : null,
+        group: r ? (r.group || null) : null, qty: r ? _planQty(r) : null,
         phase_id: res.phaseId,
         forecast: null
       };
@@ -2883,7 +2883,7 @@
         return out;
       }
       var views, visits;
-      var _qty0 = _planNum(r && r.qty);
+      var _qty0 = _planQty(r);
       var _budget0 = _planNum(r && r.budget);
       var _grp0 = _rowGroup(r);
       var _isBudgetGroup = !!(_grp0 && BUDGET_DRIVEN_GROUPS[_grp0]);
@@ -2980,7 +2980,7 @@
         }
         return base;
       }
-      var qty = _planNum(r && r.qty);
+      var qty = _planQty(r);
       var output = b ? _benchField(b, 'output_per_unit', 'outputPerUnit') : null;
       // Views mỗi bài GỐC của Phase (assumption.views_per_unit) thắng
       // output_per_unit của Benchmark khi khác null.
