@@ -493,7 +493,6 @@
           id: 'passump-' + pid.replace('phase-', '') + '-' + planSlug(ch),
           phase_id: pid, channel: ch,
           view_to_visit: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null,
-          paid_to_b2b: null, lead_to_account: null, demo_to_account: null,
           views_per_unit: null
         });
       });
@@ -568,21 +567,22 @@
     // suy từ chuỗi tỉ lệ file). Awareness (CPM/CPV), Lead Gen (CPL) và
     // Demo (Cost/Demo): file KHÔNG có đơn giá -> cost_per_result = null
     // (KHÔNG seed) — Objective đó hiện "chưa có đơn giá", ngân sách vẫn
-    // tính vào tổng nhưng chưa ra chỉ số. Mô hình B2B bottom-up: file
-    // nguồn KHÔNG có paid_to_b2b / lead_to_account / demo_to_account /
-    // CPL cho các dòng B2B mới / cost per B2B account -> 3 tỉ lệ B2B để
-    // null trên mọi benchmark (KHÔNG bịa số): chưa có tỉ lệ thì cầu nối
-    // Paid->B2B cho 0 account và phần B2B Google/LinkedIn cho 0 account
-    // như hiện tại; MỌI số hiện tại giữ nguyên tuyệt đối. Cơ chế cũ traffic_share /
+    // tính vào tổng nhưng chưa ra chỉ số. Mô hình B2B (Zac chốt
+    // 18/11/2026): 3 tỉ lệ theo Channel cũ ĐÃ BỎ khỏi seed (engine
+    // không đọc nữa); cầu nối Paid->B2B nay theo Phase qua
+    // phases.b2b_bridge_rate — fixture phases KHÔNG mang key này
+    // (tương đương null -> bridge = 0). Account B2B trực tiếp chỉ qua
+    // cost_per_result.b2b_account (Event/Partnership); Lead Gen/Demo
+    // không quy đổi ra account. Cơ chế cũ traffic_share /
     // cost_per_visit ĐÃ GỠ khỏi benchmark (không còn được dùng trong
     // tính toán). Đơn giá Objective sửa được qua cùng đường với các
     // field benchmark khác (field cost_per_result trên benchmark —
     // app chưa có UI sửa benchmark riêng).
     benchmarks: [
-      { id: 'bench-lumus-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', group: 'KOL', unit_price: 1500000, currency: 'VND', output_per_unit: 4000, view_to_visit: 0.003, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
-      { id: 'bench-lumus-kol-micro', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Micro', group: 'KOL', unit_price: 5500000, currency: 'VND', output_per_unit: 15000, view_to_visit: 0.004, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
-      { id: 'bench-lumus-meta-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, cost_per_result: { awareness: null, traffic: 20000, signup: 20000 / 0.09, remarketing: 20000 / (0.09 * 0.0275) }, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R59 + Lumus Draft Plan (Paid Ads theo Objective) — Traffic = Cost/LPV 20.000đ (cột N); Signup ≈222.222đ và Remarketing (CAC) ≈8.080.808đ SUY TỪ CHUỖI tỉ lệ file (÷0,09 và ÷(0,09×0,0275)); Awareness chưa có CPM/CPV trong file nên để null; hạ nguồn 0,09/0,0275 (visit→freemium 0,09, freemium→paid 0,0275 = 0,5×0,055 gộp từ cột H/I/J)' },
-      { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, cost_per_result: { awareness: null, traffic: 22000, signup: 22000 / 0.09, remarketing: 22000 / (0.09 * 0.0275) }, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R60 + Lumus Draft Plan (Paid Ads theo Objective) — Traffic = Cost/LPV 22.000đ (cột N); Signup ≈244.444đ và Remarketing (CAC) ≈8.888.889đ SUY TỪ CHUỖI tỉ lệ file (÷0,09 và ÷(0,09×0,0275)); Awareness chưa có CPM/CPV trong file nên để null; hạ nguồn 0,09/0,0275 (visit→freemium 0,09, freemium→paid 0,0275 = 0,5×0,055 gộp từ cột H/I/J)' },
+      { id: 'bench-lumus-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', group: 'KOL', unit_price: 1500000, currency: 'VND', output_per_unit: 4000, view_to_visit: 0.003, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
+      { id: 'bench-lumus-kol-micro', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Micro', group: 'KOL', unit_price: 5500000, currency: 'VND', output_per_unit: 15000, view_to_visit: 0.004, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
+      { id: 'bench-lumus-meta-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, cost_per_result: { awareness: null, traffic: 20000, signup: 20000 / 0.09, remarketing: 20000 / (0.09 * 0.0275) }, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R59 + Lumus Draft Plan (Paid Ads theo Objective) — Traffic = Cost/LPV 20.000đ (cột N); Signup ≈222.222đ và Remarketing (CAC) ≈8.080.808đ SUY TỪ CHUỖI tỉ lệ file (÷0,09 và ÷(0,09×0,0275)); Awareness chưa có CPM/CPV trong file nên để null; hạ nguồn 0,09/0,0275 (visit→freemium 0,09, freemium→paid 0,0275 = 0,5×0,055 gộp từ cột H/I/J)' },
+      { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, cost_per_result: { awareness: null, traffic: 22000, signup: 22000 / 0.09, remarketing: 22000 / (0.09 * 0.0275) }, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R60 + Lumus Draft Plan (Paid Ads theo Objective) — Traffic = Cost/LPV 22.000đ (cột N); Signup ≈244.444đ và Remarketing (CAC) ≈8.888.889đ SUY TỪ CHUỖI tỉ lệ file (÷0,09 và ÷(0,09×0,0275)); Awareness chưa có CPM/CPV trong file nên để null; hạ nguồn 0,09/0,0275 (visit→freemium 0,09, freemium→paid 0,0275 = 0,5×0,055 gộp từ cột H/I/J)' },
       // Email Sends (kênh Email, chốt 18/11/2026): ngữ nghĩa cột benchmark
       // RIÊNG cho Email — view_to_visit = OPEN RATE 0,30;
       // visit_to_freemium = CLICK/OPEN 0,10 (tầng "visits" của Email là
@@ -591,9 +591,9 @@
       // opens tính từ TỒN Free đầu tháng × open rate × số lượt gửi
       // (qty, unit 'sends'), KHÔNG theo views mỗi bài; unit_price = null
       // nên ngân sách Email = 0 như trước (số neo ngân sách không đổi).
-      { id: 'bench-lumus-email-sends', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Email Sends', group: 'Email', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: 0.30, visit_to_freemium: 0.10, freemium_to_paid: 0.01, paid_to_b2b: null, direct_budget: false, confidence: 'C — giả định', source: 'Benchmark Email Lumus (chốt 18/11/2026): open rate 0,30 · click/open 0,10 · click→paid 0,01 — lưu vào view_to_visit / visit_to_freemium / freemium_to_paid với ngữ nghĩa Email (opens từ tồn Free, freemium = 0)' },
-      { id: 'bench-lumus-google-search-b2b', brand_id: 'brand-lumus-ai', segment: 'b2b', channel: 'Google Search B2B', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: null, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, cost_per_result: { traffic: null, lead_gen: null }, direct_budget: true, confidence: 'C — giả định', source: 'Lumus Draft Plan — Paid Ads B2B: Google Search tổng $1.600 (chỉ Lead Generation có ngân sách ở Phase 3–4); file KHÔNG có Cost/LPV cho Search và KHÔNG có CPL cho Lead Generation nên cost_per_result để null (chưa có đơn giá)' },
-      { id: 'bench-lumus-linkedin-ads-b2b', brand_id: 'brand-lumus-ai', segment: 'b2b', channel: 'LinkedIn Ads B2B', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: null, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, cost_per_result: { lead_gen: null, demo: null }, direct_budget: true, confidence: 'C — giả định', source: 'Lumus Draft Plan — Paid Ads B2B: LinkedIn Ads tổng $1.600 (chỉ Demo/Contact có ngân sách ở Phase 3–4); file KHÔNG có CPL cho Lead Generation và KHÔNG có Cost/Demo nên cost_per_result để null (chưa có đơn giá)' }
+      { id: 'bench-lumus-email-sends', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Email Sends', group: 'Email', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: 0.30, visit_to_freemium: 0.10, freemium_to_paid: 0.01, direct_budget: false, confidence: 'C — giả định', source: 'Benchmark Email Lumus (chốt 18/11/2026): open rate 0,30 · click/open 0,10 · click→paid 0,01 — lưu vào view_to_visit / visit_to_freemium / freemium_to_paid với ngữ nghĩa Email (opens từ tồn Free, freemium = 0)' },
+      { id: 'bench-lumus-google-search-b2b', brand_id: 'brand-lumus-ai', segment: 'b2b', channel: 'Google Search B2B', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: null, cost_per_result: { traffic: null, lead_gen: null }, direct_budget: true, confidence: 'C — giả định', source: 'Lumus Draft Plan — Paid Ads B2B: Google Search tổng $1.600 (chỉ Lead Generation có ngân sách ở Phase 3–4); file KHÔNG có Cost/LPV cho Search và KHÔNG có CPL cho Lead Generation nên cost_per_result để null (chưa có đơn giá)' },
+      { id: 'bench-lumus-linkedin-ads-b2b', brand_id: 'brand-lumus-ai', segment: 'b2b', channel: 'LinkedIn Ads B2B', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: null, cost_per_result: { lead_gen: null, demo: null }, direct_budget: true, confidence: 'C — giả định', source: 'Lumus Draft Plan — Paid Ads B2B: LinkedIn Ads tổng $1.600 (chỉ Demo/Contact có ngân sách ở Phase 3–4); file KHÔNG có CPL cho Lead Generation và KHÔNG có Cost/Demo nên cost_per_result để null (chưa có đơn giá)' }
     ],
     plan_rows: PLAN_ROWS,
     phase_assumptions: PHASE_ASSUMPTIONS,

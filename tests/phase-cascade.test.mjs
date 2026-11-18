@@ -53,7 +53,7 @@ const PHASES_A = [
   { id: 'p2', brand_id: 'b1', name: 'Phase 2', start_month: '2027-03', end_month: '2027-05', uplift_percent_per_month: 10, views_uplift_percent_per_month: 5 },
   { id: 'p3', brand_id: 'b1', name: 'Phase 3', start_month: '2027-06', end_month: '2027-12', uplift_percent_per_month: 0, views_uplift_percent_per_month: 0 },
 ];
-const ASSUMP_A = [{ phase_id: 'prep', channel: 'Facebook Owned', view_to_visit: 0.01, visit_to_freemium: 0.2, freemium_to_paid: 0.25, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, views_per_unit: 4000 }];
+const ASSUMP_A = [{ phase_id: 'prep', channel: 'Facebook Owned', view_to_visit: 0.01, visit_to_freemium: 0.2, freemium_to_paid: 0.25, views_per_unit: 4000 }]; // mô hình 18/11: assumption không còn 3 field B2B theo Channel (cascade chỉ còn 3 tỉ lệ phễu + views)
 function rowsA() {
   const rows = [];
   for (let m = 1; m <= 12; m++) {
@@ -70,6 +70,7 @@ test('CASCADE A [helper]: effectiveRatesFor/effectiveViewsPerUnitFor cho Phase s
     assert.equal(rates[f].sourcePhaseId, 'prep', f + ' sourcePhaseId');
     assert.equal(rates[f].sourcePhaseName, 'Preparation', f + ' sourcePhaseName');
   }
+  assert.deepEqual(Object.keys(rates).sort(), ['freemium_to_paid', 'view_to_visit', 'visit_to_freemium'], 'cascade chỉ phân giải 3 tỉ lệ phễu — không còn field B2B theo Channel');
   const views = domain.effectiveViewsPerUnitFor(PHASES_A[1], 'Facebook Owned', [], ASSUMP_A, PHASES_A);
   assert.deepEqual(views, { value: 4000, source: 'inherited', sourcePhaseId: 'prep', sourcePhaseName: 'Preparation' });
   // Phase cuối cũng kế thừa từ Preparation (Phase 2 không có assumption nào).

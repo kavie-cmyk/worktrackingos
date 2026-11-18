@@ -41,9 +41,11 @@ function approx(actual, expected, label) {
   assert.ok(typeof actual === 'number' && Math.abs(actual - expected) < 1e-6, `${label}: expected ${expected}, got ${actual}`);
 }
 
-// Benchmark content có paid_to_b2b để B2B khác 0 (kiểm được cả B2B):
-// qty 4 -> views 400, visits 40, freemium 4, paid 0,4, b2b 0,04.
-const BM = [{ brand_id: 'b1', channel: 'KOL X', group: 'KOL', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_freemium: 0.1, freemium_to_paid: 0.1, paid_to_b2b: 0.1, direct_budget: false }];
+// Benchmark content (mô hình 18/11: paid_to_b2b theo Channel đã bỏ
+// nên B2B tầng kênh = 0 ở mọi cách viết số lượng — vẫn kiểm được
+// tính giống hệt nhau của B2B):
+// qty 4 -> views 400, visits 40, freemium 4, paid 0,4, b2b 0.
+const BM = [{ brand_id: 'b1', channel: 'KOL X', group: 'KOL', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_freemium: 0.1, freemium_to_paid: 0.1, direct_budget: false }];
 
 function rowsWith(field, qtyByMonth) {
   return Object.entries(qtyByMonth).map(([month, q], i) => {
@@ -74,10 +76,10 @@ test('PQF (1): chỉ qty / chỉ quantity / chỉ count -> forecast giống hệ
   // Số neo tính tay của chính fixture này (qty T1 = 4):
   approx(fQty.byMonth['2027-01'].views, 400, 'T1 views');
   approx(fQty.byMonth['2027-01'].paid, 0.4, 'T1 paid');
-  approx(fQty.byMonth['2027-01'].b2b, 0.04, 'T1 b2b');
+  assert.equal(fQty.byMonth['2027-01'].b2b, 0, 'T1 b2b = 0 (không còn tỉ lệ theo Channel)');
   approx(fQty.totals.views, 700, 'tổng views 3 tháng');
   approx(fQty.totals.paid, 0.7, 'tổng paid 3 tháng');
-  approx(fQty.totals.b2b, 0.07, 'tổng b2b 3 tháng');
+  assert.equal(fQty.totals.b2b, 0, 'tổng b2b 3 tháng = 0');
   // Ngân sách (planBudget) của 3 cách viết vốn đã giống nhau từ trước;
   // nay forecast khớp cùng một nguồn số lượng với ngân sách.
   for (const rows of [rowsWith('qty', QTY_3M), rowsWith('quantity', QTY_3M), rowsWith('count', QTY_3M)]) {

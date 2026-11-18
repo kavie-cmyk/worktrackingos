@@ -1023,8 +1023,10 @@
   // plan_rows của kênh budget-driven (Paid Media theo Objective;
   // Partnership; Event) mang field `audience` ('b2c'|'b2b'|'both') +
   // `b2b_split_pct` (% ngân sách cho phần B2B khi 'both'). Engine tính
-  // ở domain.forecastFunnel (cầu nối Paid->B2B + Lead/Demo->Account +
-  // Partnership/Event trực tiếp); ở app chỉ đọc/ghi 2 field này và
+  // ở domain.forecastFunnel (ở tầng kênh CHỈ còn account TRỰC TIẾP
+  // qua cost_per_result.b2b_account — Partnership/Event/Paid Media
+  // B2B; cầu nối Paid → B2B tính theo Phase ở tầng tồn, quy đổi
+  // Lead/Demo → Account đã bỏ); ở app chỉ đọc/ghi 2 field này và
   // hiển thị tỉ trọng — KHÔNG fork công thức.
   var PURE_B2C_OBJECTIVE_KEYS = { awareness: true, traffic: true, signup: true, remarketing: true };
   var BUDGET_DRIVEN_GROUPS = { 'Paid Media': true, 'Partnership': true, 'Event': true };
@@ -1557,14 +1559,17 @@
     }
     return null;
   }
-  var PHASE_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account'];
+  var PHASE_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid'];
   // Kênh Website Articles: Views + phễu theo Mô hình SEO (tính tự
-  // động ở engine, xem SEO_ARTICLES_MODEL ở domain.js) — 4 field bị
-  // KHÓA ở lưới Phase + đường lưu; paid_to_b2b vẫn sửa được.
+  // động ở engine, xem SEO_ARTICLES_MODEL ở domain.js) — Views + 3
+  // field tỉ lệ phễu bị KHÓA ở lưới Phase + đường lưu. (Tỉ lệ B2B
+  // không còn theo Channel: cầu nối Paid → B2B là tỉ lệ theo Phase
+  // — phases.b2b_bridge_rate, nhập ở khối Chỉ số vận hành & tài
+  // chính của Phase.)
   var SEO_ARTICLES_CHANNEL = 'Website Articles';
   var SEO_ARTICLES_LOCKED_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid'];
   function isSeoArticlesChannel(channel) { return String(channel || '') === SEO_ARTICLES_CHANNEL; }
-  var PHASE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_freemium: 'visitToFreemium', freemium_to_paid: 'freemiumToPaid', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid', paid_to_b2b: 'paidToB2b', lead_to_account: 'leadToAccount', demo_to_account: 'demoToAccount' };
+  var PHASE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_freemium: 'visitToFreemium', freemium_to_paid: 'freemiumToPaid', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid' };
   // Các Phase SỚM HƠN của `phase` (cùng Brand, start_month nhỏ hơn),
   // sắp xếp gần nhất trước — dùng cho đường DỰ PHÒNG cascade ở app
   // khi domain chưa nạp (đường chính đã qua _resolveFieldCascade của
@@ -1768,9 +1773,10 @@
     if (!totals) return [];
     function n(k) { var v = Number(totals[k]); return isNaN(v) ? 0 : v; }
     // Tầng cuối của phễu (mô hình B2B bottom-up): B2B Accounts — chỉ
-    // thêm khi có account thật (> 0) từ cầu nối Paid->B2B /
-    // Lead/Demo->Account / Partnership/Event; chưa có tỉ lệ/đơn giá
-    // B2B thì tầng này không hiện (không bịa số 0 vào phễu).
+    // thêm khi có account TRỰC TIẾP thật (> 0) ở tầng kênh qua
+    // cost_per_result.b2b_account (Partnership/Event/Paid Media B2B);
+    // chưa có đơn giá B2B thì tầng này không hiện (không bịa số 0
+    // vào phễu). Cầu nối theo Phase nằm ở tầng tồn, không ở đây.
     var b2bTail = n('b2b') > 0 ? [{ label: 'B2B Accounts', value: n('b2b') }] : [];
     // Freemium đọc key mới; totals đời cũ chỉ có signups thì lấy
     // signups làm Freemium (cùng một tầng sau căn chỉnh phễu).
@@ -1888,8 +1894,10 @@
         cell.hasForecast = true;
         cell.views = (cell.views === null ? 0 : cell.views) + fv.views;
         cell.paid = (cell.paid === null ? 0 : cell.paid) + fv.paid;
-        // B2B Accounts MỚI sinh trong tháng (cả 3 nguồn qua engine:
-        // cầu nối Paid->B2B + Lead/Demo->Account + Partnership/Event).
+        // B2B Accounts MỚI sinh trong tháng (ở tầng kênh CHỈ còn
+        // account TRỰC TIẾP qua engine — Partnership/Event/Paid Media
+        // B2B qua cost_per_result.b2b_account; cầu nối theo Phase tính
+        // ở tầng tồn, không cộng ở đây).
         cell.b2b = (cell.b2b === null ? 0 : cell.b2b) + fv.b2b;
       }
     });
@@ -4322,7 +4330,7 @@
           '<p class="sub" data-planning-detail-price-hint="1">Đơn giá chỉ hiển thị ở bảng này — quản ở Theo phase (ô Đơn giá mỗi bài). Đơn giá hiệu dụng = giá Phase của dòng; chưa đặt giá Phase thì đơn giá trống và ngân sách phần đó = 0.</p>' +
           '<p class="sub" data-planning-detail-budget-hint="1">Cách tính: Ngân sách của dòng thường chỉ tự tính (không sửa được) — Ngân sách tháng = Số lượng × Đơn giá hiệu dụng (giá Phase; chưa đặt giá = 0). Chỉ Paid Media nhập ngân sách trực tiếp.</p>' +
           (selHasPaid ? noteWithDetailHtml('Dòng Paid Media: nhập ngân sách trực tiếp theo tháng theo từng Objective; kết quả đặt tại tầng của Objective rồi chảy xuống (không suy ngược). Tổng tháng = cộng các Objective, chỉ đọc.', 'Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Theo mô hình Objective, mỗi tháng hiển thị theo từng Objective: mỗi Objective có ô nhập ngân sách riêng, kết quả đặt tại tầng của Objective đó (Awareness → Views, Traffic → Visits, Signup → Freemium, Remarketing → Paid) = Ngân sách ÷ đơn giá kết quả (cost_per_result) của Benchmark rồi chảy xuống qua tỉ lệ Benchmark — KHÔNG suy ngược lên tầng trên. Objective chưa có đơn giá trong file nguồn (vd Awareness) hiển thị "chưa có đơn giá": ngân sách vẫn tính vào tổng tháng nhưng chưa ra chỉ số. Tổng ngân sách tháng ở dòng tháng là chỉ đọc, bằng cộng các Objective.', 'data-planning-paid-budget-hint="1"') : '') +
-          (selRows.some(planRowIsBudgetDriven) ? noteWithDetailHtml('Audience: chọn B2C / B2B / Cả hai (+ % B2B). Paid User B2C sinh B2B Account qua paid_to_b2b (phần chuyển đổi này bị trừ khỏi Paid EOM).', 'Audience (mô hình B2B bottom-up): mỗi dòng Objective (Paid Media) và mỗi dòng tháng Partnership/Event có chọn B2C / B2B / Cả hai + ô % cho B2B khi chọn Cả hai. Phần B2C của Lead Gen/Demo đặt kết quả tại tầng Freemium rồi chảy xuống; phần B2B thành B2B Account qua lead_to_account / demo_to_account; Partnership/Event: phần B2C ÷ đơn giá Freemium (cost_per_result.signup), phần B2B ÷ cost per B2B Account. Mọi Paid User từ luồng B2C đều sinh B2B Account qua cầu nối paid_to_b2b của Channel. Paid User chuyển sang B2B qua cầu nối paid_to_b2b bị trừ khỏi Paid EOM trong tháng chuyển đổi; B2B Account từ Lead Gen/Demo/Partnership/Event không trừ (chưa từng là Paid B2C). Objective thuần B2C (Awareness/Traffic/Signup/Remarketing) chỉ chạy B2C — lựa chọn B2B bị khóa. Chưa có tỉ lệ/đơn giá B2B thì phần tương ứng cho 0 account.', 'data-planning-audience-hint="1"') : '');
+          (selRows.some(planRowIsBudgetDriven) ? noteWithDetailHtml('Audience: chọn B2C / B2B / Cả hai (+ % B2B). Paid User B2C sinh B2B Account qua Tỉ lệ Paid → B2B của Phase (phần chuyển đổi này bị trừ khỏi Paid EOM).', 'Audience (mô hình B2B bottom-up): mỗi dòng Objective (Paid Media) và mỗi dòng tháng Partnership/Event có chọn B2C / B2B / Cả hai + ô % cho B2B khi chọn Cả hai. Phần B2C của Lead Gen/Demo đặt kết quả tại tầng Freemium rồi chảy xuống; phần B2B chỉ đếm Lead/Demo, không quy thành B2B Account; Partnership/Event: phần B2C ÷ đơn giá Freemium (cost_per_result.signup), phần B2B ÷ cost per B2B Account. Mọi Paid User từ luồng B2C đều sinh B2B Account qua cầu nối Tỉ lệ Paid → B2B của Phase (ô nhập ở khối Chỉ số vận hành & tài chính của Phase). Paid User chuyển sang B2B qua cầu nối này bị trừ khỏi Paid EOM trong tháng chuyển đổi; B2B Account trực tiếp (Partnership/Event/Paid Media B2B) không trừ (chưa từng là Paid B2C). Objective thuần B2C (Awareness/Traffic/Signup/Remarketing) chỉ chạy B2C — lựa chọn B2B bị khóa. Chưa có Tỉ lệ Paid → B2B thì cầu nối cho 0 account; phần B2B của Partnership/Event chưa có đơn giá B2B thì cho 0 account.', 'data-planning-audience-hint="1"') : '');
       }
       html += tbl('<tr><th>Tháng</th><th>Số lượng</th><th>Đơn giá (VNĐ)</th><th>Ngân sách (VNĐ)</th><th>Segment</th><th>Brand</th></tr>' + detailMonthRows + '<tr data-planning-detail-total="1"><td><strong>Tổng dòng</strong></td><td><strong>' + fmtNum(detailTotal) + '</strong></td><td></td><td data-planning-detail-budget-total="1"><strong>' + fmtMoney(detailBudgetTotal, 'VND') + '</strong></td><td colspan="2"></td></tr>', 'planning-detail');
       // Forecast của chính dòng này — dùng NGUYÊN cơ chế sẵn có của Theo
@@ -4387,7 +4395,8 @@
   }
   // Khối "Chỉ số vận hành & tài chính" trong mỗi khối Phase: các ô
   // nhập theo Brand x Phase (paid_churn_rate / free_churn_rate /
-  // monthly_cvr dạng % như các tỉ lệ phase hiện có — lưu dạng phân
+  // monthly_cvr / b2b_bridge_rate dạng % như các tỉ lệ phase hiện
+  // có — lưu dạng phân
   // số; cogs_per_free_user / cogs_per_paid_user / fixed_cost /
   // paid_price dạng VNĐ — paid_price là giá Paid duy nhất của Phase
   // (thay đổi A 18/11). COGS tính theo số
@@ -4399,7 +4408,7 @@
   // thêm 2 ô opening_free / opening_paid (số dư trước tháng 1), nhập
   // MỘT LẦN theo Brand x năm, lưu trên chính Phase đầu tiên đó.
   function planningPhaseOperatingHtml(phase, disAttr, showOpening) {
-    var CAMEL = { paid_churn_rate: 'paidChurnRate', free_churn_rate: 'freeChurnRate', monthly_cvr: 'monthlyCvr', paid_price: 'paidPrice', cogs_per_free_user: 'cogsPerFreeUser', cogs_per_paid_user: 'cogsPerPaidUser', fixed_cost: 'fixedCost', opening_free: 'openingFree', opening_paid: 'openingPaid', b2b_churn_rate: 'b2bChurnRate', arppu_b2b: 'arppuB2b', cogs_per_b2b_account: 'cogsPerB2bAccount', opening_b2b: 'openingB2b' };
+    var CAMEL = { paid_churn_rate: 'paidChurnRate', free_churn_rate: 'freeChurnRate', monthly_cvr: 'monthlyCvr', paid_price: 'paidPrice', cogs_per_free_user: 'cogsPerFreeUser', cogs_per_paid_user: 'cogsPerPaidUser', fixed_cost: 'fixedCost', opening_free: 'openingFree', opening_paid: 'openingPaid', b2b_bridge_rate: 'b2bBridgeRate', b2b_churn_rate: 'b2bChurnRate', arppu_b2b: 'arppuB2b', cogs_per_b2b_account: 'cogsPerB2bAccount', opening_b2b: 'openingB2b' };
     function rateVal(field) {
       var v = phaseNumField(phase, field, CAMEL[field]);
       return v === null ? '' : ratePctText(v);
@@ -4425,11 +4434,12 @@
       '<label>Giá Paid (VNĐ/user/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('paid_price')) + '" data-action-change="phase-operating-money" data-field="paid_price" data-phase-id="' + pid + '" aria-label="Giá Paid của Phase ' + pname + '"' + disAttr + '></label>' +
       '</p>' +
       '<p class="phase-operating-row" data-planning-phase-operating-b2b="1">' +
+      '<label>Tỉ lệ Paid → B2B<input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(rateVal('b2b_bridge_rate')) + '" data-action-change="phase-operating-rate" data-field="b2b_bridge_rate" data-phase-id="' + pid + '" aria-label="Tỉ lệ Paid → B2B của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>B2B churn rate (%/tháng)<input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(rateVal('b2b_churn_rate')) + '" data-action-change="phase-operating-rate" data-field="b2b_churn_rate" data-phase-id="' + pid + '" aria-label="B2B churn rate %/tháng của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>ARPPU B2B (VNĐ/B2B account/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('arppu_b2b')) + '" data-action-change="phase-operating-money" data-field="arppu_b2b" data-phase-id="' + pid + '" aria-label="ARPPU B2B của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>COGS / B2B account (VNĐ/account/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('cogs_per_b2b_account')) + '" data-action-change="phase-operating-money" data-field="cogs_per_b2b_account" data-phase-id="' + pid + '" aria-label="COGS trên mỗi B2B account của Phase ' + pname + '"' + disAttr + '></label>' +
       '</p>' +
-      noteWithDetailHtml('Áp cho mọi tháng của Phase. Cách tính: COGS theo VNĐ/user/tháng; để trống = chỉ số liên quan hiện "—", riêng 2 dòng Profit luôn hiện số.', 'Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng): COGS Free = COGS Free/user × Free EOM, COGS Paid = COGS Paid/user × Paid EOM — không theo % doanh thu. Monthly cvr: mỗi tháng, Free EOM đầu kỳ × Monthly cvr chuyển thành New Paid (cộng thêm cohort Paid từ funnel). Revenue = Giá Paid × Paid EOM (Giá Paid chính là ARPPU hiệu dụng). Tài chính B2B chạy chuỗi tồn riêng: Revenue B2B = ARPPU B2B × B2B EOM, COGS B2B = COGS/B2B account × B2B EOM, Profit tính trên tổng B2C + B2B. Paid User chuyển sang B2B qua cầu nối paid_to_b2b bị trừ khỏi Paid EOM trong tháng chuyển đổi; B2B Account từ Lead Gen/Demo/Partnership/Event không trừ (chưa từng là Paid B2C). Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0 — ngoại trừ 2 dòng Profit (thành phần thiếu tạm tính 0 nên luôn hiện số) và khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0.');
+      noteWithDetailHtml('Áp cho mọi tháng của Phase. Cách tính: COGS theo VNĐ/user/tháng; để trống = chỉ số liên quan hiện "—", riêng 2 dòng Profit luôn hiện số.', 'Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng): COGS Free = COGS Free/user × Free EOM, COGS Paid = COGS Paid/user × Paid EOM — không theo % doanh thu. Monthly cvr: mỗi tháng, Free EOM đầu kỳ × Monthly cvr chuyển thành New Paid (cộng thêm cohort Paid từ funnel). Revenue = Giá Paid × Paid EOM (Giá Paid chính là ARPPU hiệu dụng). Tài chính B2B chạy chuỗi tồn riêng: Revenue B2B = ARPPU B2B × B2B EOM, COGS B2B = COGS/B2B account × B2B EOM, Profit tính trên tổng B2C + B2B. Paid User chuyển sang B2B qua cầu nối Tỉ lệ Paid → B2B của Phase bị trừ khỏi Paid EOM trong tháng chuyển đổi; B2B Account trực tiếp (Partnership/Event/Paid Media B2B) không trừ (chưa từng là Paid B2C). Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0 — ngoại trừ 2 dòng Profit (thành phần thiếu tạm tính 0 nên luôn hiện số) và khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0.');
     if (showOpening) {
       html += '<div class="planning-phase-opening" data-planning-phase-opening="1" data-phase-id="' + pid + '"><h4>Số dư đầu kỳ của Brand (trước tháng 1)</h4>' +
         '<p class="phase-operating-row">' +
@@ -4551,7 +4561,7 @@
     if (!channels.length) {
       html += '<p class="sub">Phase này chưa có dòng plan nào khớp bộ lọc Brand/Segment hiện tại.</p>';
     } else {
-      var rateHeads = [['view_to_visit', 'View→Visit (%)'], ['visit_to_freemium', 'Visit→Freemium (%)'], ['freemium_to_paid', 'Freemium→Paid (%)'], ['paid_to_b2b', 'Paid→B2B (%)'], ['lead_to_account', 'Lead→Account (%)'], ['demo_to_account', 'Demo→Account (%)']];
+      var rateHeads = [['view_to_visit', 'View→Visit (%)'], ['visit_to_freemium', 'Visit→Freemium (%)'], ['freemium_to_paid', 'Freemium→Paid (%)']];
       var body = channels.map(function (ch) {
         var chRows = pRows.filter(function (r) { return String(r.channel || '—') === ch; });
         var qtyTotal = chRows.reduce(function (s, r) { return s + planRowQty(r); }, 0);
@@ -4611,7 +4621,6 @@
           if (isSeoCh && SEO_ARTICLES_LOCKED_RATE_FIELDS.indexOf(rh[0]) !== -1) {
             // Website Articles: 3 tỉ lệ phễu theo Mô hình SEO —
             // KHÔNG render input, chỉ đọc kèm nhãn mô hình.
-            // paid_to_b2b (và lead/demo) vẫn render input như thường.
             cells += '<td data-seo-articles-locked="' + esc(rh[0]) + '"><span class="sub" data-phase-seo-rate-note="' + esc(rh[0]) + '">Mô hình SEO — tính tự động</span></td>';
             return;
           }
@@ -4752,12 +4761,14 @@
       '<p class="sub note">Cách tính: CAC = Ngân sách tháng ÷ Paid forecast tháng. "Tất cả" = tổng ngân sách ÷ tổng Paid; cột Tổng = cả kỳ ÷ cả kỳ (không phải trung bình tháng).</p>' + noteDetailHtml('CAC = Ngân sách dự kiến của Channel trong tháng ÷ Paid Users forecast của Channel trong tháng; Paid Users = 0 (hoặc chưa tính được) thì hiển thị "—". Hàng <strong>Tất cả</strong>: tổng ngân sách của tháng ÷ tổng Paid Users của tháng. Cột Tổng = tổng ngân sách cả kỳ ÷ tổng Paid Users cả kỳ của Channel (KHÔNG phải trung bình các CAC tháng). CAC làm tròn tới đồng.'),
       tbl(head + cacBody, 'planning-kpi-cac'));
     // 4) B2B ACCOUNTS — bảng thứ 5 theo thứ tự hiển thị (sau CAC):
-    // số B2B Account MỚI sinh trong tháng theo Channel, cộng cả 3
-    // nguồn qua engine: cầu nối Paid->B2B (mọi Paid User của luồng
-    // B2C x paid_to_b2b của Channel) + Lead/Demo->Account (phần B2B
-    // của Objective Lead Gen/Demo) + Partnership/Event trực tiếp.
+    // số B2B Account MỚI sinh trong tháng theo Channel — ở bảng này
+    // CHỈ gồm account TRỰC TIẾP qua engine (Partnership/Event/Paid
+    // Media B2B qua cost_per_result.b2b_account). Cầu nối Paid → B2B
+    // tính theo Tỉ lệ Paid → B2B của Phase trên Paid EOM ở tầng tồn
+    // và nằm ở bảng vận hành & tài chính, KHÔNG nằm ở bảng theo
+    // Channel này; Lead Gen/Demo không còn sinh account.
     // Channel chưa có forecast tháng đó -> "—"; có forecast mà chưa
-    // có tỉ lệ/đơn giá B2B -> 0 (đúng số engine tính, không bịa).
+    // có đơn giá B2B -> 0 (đúng số engine tính, không bịa).
     var b2bBody = data.channels.map(function (ch) {
       return rowHtml('b2b', ch,
         function (cell) { return cell.hasForecast ? fmtPlanningCount(cell.b2b) : '—'; },
@@ -4770,7 +4781,7 @@
     b2bBody += '<tr data-planning-kpi-row="b2b" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + b2bBlendedCells +
       '<td data-planning-kpi-total="b2b" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningCount(data.blended.totals.b2b) : '—') + '</strong></td></tr>';
     var b2bHtml = planningKpiSectionHtml('b2b', 'KPI chi tiết theo tháng — B2B Accounts (Forecast)',
-      '<p class="sub note">Cách tính: B2B Accounts mới = cầu nối Paid→B2B + Lead/Demo→Account + Partnership/Event trực tiếp.</p>' + noteDetailHtml('B2B Accounts MỚI sinh trong tháng theo Channel × tháng, từ cùng engine funnel — cộng cả 3 nguồn: (1) cầu nối Paid → B2B: mọi Paid User sinh ra từ luồng B2C (content, Paid Objective B2C, phần B2C của Lead Gen/Demo) × tỉ lệ paid_to_b2b của Channel; (2) phần B2B của Objective Lead Generation / Demo → Account qua lead_to_account / demo_to_account; (3) Partnership/Event trực tiếp = ngân sách B2B ÷ cost per B2B account. Chưa có tỉ lệ/đơn giá B2B thì nguồn đó cho 0 account (hiện "chưa có tỉ lệ"/"chưa có đơn giá" ở nơi nhập). Hàng <strong>Tất cả</strong>: tổng B2B Accounts của mọi Channel có forecast trong tháng. Số hiển thị làm tròn thành số nguyên như bảng Paid Users.'),
+      '<p class="sub note">Cách tính: B2B Accounts mới ở bảng theo Channel này = account TRỰC TIẾP (Partnership/Event/Paid Media B2B qua CAC). Cầu nối Paid → B2B tính theo Phase, nằm ở bảng vận hành &amp; tài chính — không nằm ở bảng này.</p>' + noteDetailHtml('B2B Accounts MỚI sinh trong tháng theo Channel × tháng, từ cùng engine funnel — ở tầng kênh CHỈ gồm account TRỰC TIẾP: Partnership/Event/Paid Media B2B = ngân sách B2B ÷ cost per B2B account (cost_per_result.b2b_account). Lead Gen/Demo không còn sinh account ở tầng kênh (đã bỏ quy đổi Lead/Demo → Account). Cầu nối Paid → B2B KHÔNG nằm ở bảng theo Channel này: cầu nối tính theo Tỉ lệ Paid → B2B của Phase trên Paid EOM ở tầng tồn và nằm ở bảng "Chỉ số vận hành &amp; tài chính". Chưa có đơn giá B2B thì account trực tiếp cho 0 account (hiện "chưa có đơn giá" ở nơi nhập). Hàng <strong>Tất cả</strong>: tổng B2B Accounts trực tiếp của mọi Channel có forecast trong tháng. Số hiển thị làm tròn thành số nguyên như bảng Paid Users.'),
       tbl(head + b2bBody, 'planning-kpi-b2b'));
     // 5) CHỈ SỐ VẬN HÀNH & TÀI CHÍNH — thu gọn như các bảng trên.
     var operatingHtml = planningOperatingTableHtml(rows, benchmarks, months);
@@ -4835,6 +4846,7 @@
               free_churn_rate: phaseNumField(ph, 'free_churn_rate', 'freeChurnRate'),
               monthly_cvr: phaseNumField(ph, 'monthly_cvr', 'monthlyCvr'),
               paid_price: phaseNumField(ph, 'paid_price', 'paidPrice'),
+              b2b_bridge_rate: phaseNumField(ph, 'b2b_bridge_rate', 'b2bBridgeRate'),
               cogs_per_free_user: phaseNumField(ph, 'cogs_per_free_user', 'cogsPerFreeUser'),
               cogs_per_paid_user: phaseNumField(ph, 'cogs_per_paid_user', 'cogsPerPaidUser'),
               fixed_cost: phaseNumField(ph, 'fixed_cost', 'fixedCost'),
@@ -4888,7 +4900,7 @@
         totals[k] = ok ? sum : null;
       });
       var missing = { opening: false, paid_churn_rate: false, free_churn_rate: false, paid_price: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
-      var missingB2b = { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false };
+      var missingB2b = { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false, b2b_bridge_rate: false };
       perBrand.forEach(function (pb) {
         Object.keys(missing).forEach(function (k) { if (pb.missing && pb.missing[k]) missing[k] = true; });
         Object.keys(missingB2b).forEach(function (k) { if (pb.missingB2b && pb.missingB2b[k]) missingB2b[k] = true; });
@@ -4915,7 +4927,8 @@
   };
   var OPERATING_MISSING_B2B_LABELS = {
     opening_b2b: 'B2B đầu kỳ (opening_b2b)',
-    b2b_churn_rate: 'B2B churn rate', arppu_b2b: 'ARPPU B2B', cogs_per_b2b_account: 'COGS / B2B account'
+    b2b_churn_rate: 'B2B churn rate', arppu_b2b: 'ARPPU B2B', cogs_per_b2b_account: 'COGS / B2B account',
+    b2b_bridge_rate: 'Tỉ lệ Paid → B2B'
   };
   function planningOperatingTableHtml(rows, benchmarks, months) {
     var data = planningOperatingData(rows, benchmarks, months);
@@ -4941,12 +4954,12 @@
       .map(function (k) { return OPERATING_MISSING_LABELS[k]; })
       .concat(Object.keys(OPERATING_MISSING_B2B_LABELS).filter(function (k) { return data.missingB2b && data.missingB2b[k]; })
         .map(function (k) { return OPERATING_MISSING_B2B_LABELS[k]; }));
-    var noteFull = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Free user = Freemium của funnel; New Paid = Paid (cohort từ funnel) + Free EOM đầu kỳ × Monthly cvr của Phase chứa tháng (Monthly cvr trống thì phần chuyển đổi = 0); New Free = Free user − New Paid; Paid/Free churn = (tồn đầu kỳ + dòng vào trong tháng) × churn rate của Phase chứa tháng, riêng tháng đầu tiên của kỳ × 0,5; Free EOM = tồn trước + Free user − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn − cầu nối Paid→B2B của tháng (bridge); Revenue = ARPPU hiệu dụng × Paid EOM (ARPPU hiệu dụng = Giá Paid của Phase chứa tháng); COGS Free = COGS Free/user × Free EOM và COGS Paid = COGS Paid/user × Paid EOM, COGS = COGS Free + COGS Paid (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Chuỗi B2B chạy riêng: B2B churn = B2B EOM đầu kỳ × B2B churn rate của Phase; B2B EOM = đầu kỳ + New B2B Accounts − B2B churn. Paid User chuyển sang B2B qua cầu nối paid_to_b2b bị trừ khỏi Paid EOM trong tháng chuyển đổi; B2B Account từ Lead Gen/Demo/Partnership/Event không trừ (chưa từng là Paid B2C). Revenue B2B = ARPPU B2B × B2B EOM; COGS B2B = COGS/B2B account × B2B EOM; hai dòng Profit tính trên TỔNG B2C + B2B (Revenue + Revenue B2B − COGS − COGS B2B − Budget [− fixed cost]). Riêng 2 dòng Profit: thành phần nào thiếu thì tạm tính 0 nên luôn hiện số (thiếu fixed cost thì Profit sau fixed cost bằng Profit trước fixed cost). Khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0 kể cả chưa nhập ARPPU B2B / COGS B2B. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, New B2B Accounts, churn, Revenue, Revenue B2B, COGS, COGS Free, COGS Paid, COGS B2B, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối; dòng tồn B2B EOM cũng lấy giá trị tháng cuối.';
+    var noteFull = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Free user = Freemium của funnel; New Paid = Paid (cohort từ funnel) + Free EOM đầu kỳ × Monthly cvr của Phase chứa tháng (Monthly cvr trống thì phần chuyển đổi = 0); New Free = Free user − New Paid; Paid/Free churn = (tồn đầu kỳ + dòng vào trong tháng) × churn rate của Phase chứa tháng, riêng tháng đầu tiên của kỳ × 0,5; Free EOM = tồn trước + Free user − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn − cầu nối Paid→B2B của tháng (bridge); Revenue = ARPPU hiệu dụng × Paid EOM (ARPPU hiệu dụng = Giá Paid của Phase chứa tháng); COGS Free = COGS Free/user × Free EOM và COGS Paid = COGS Paid/user × Paid EOM, COGS = COGS Free + COGS Paid (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Chuỗi B2B chạy riêng: B2B churn = B2B EOM đầu kỳ × B2B churn rate của Phase; B2B EOM = đầu kỳ + New B2B Accounts − B2B churn. Paid User chuyển sang B2B qua cầu nối Tỉ lệ Paid → B2B của Phase bị trừ khỏi Paid EOM trong tháng chuyển đổi; B2B Account trực tiếp (Partnership/Event/Paid Media B2B) không trừ (chưa từng là Paid B2C). Revenue B2B = ARPPU B2B × B2B EOM; COGS B2B = COGS/B2B account × B2B EOM; hai dòng Profit tính trên TỔNG B2C + B2B (Revenue + Revenue B2B − COGS − COGS B2B − Budget [− fixed cost]). Riêng 2 dòng Profit: thành phần nào thiếu thì tạm tính 0 nên luôn hiện số (thiếu fixed cost thì Profit sau fixed cost bằng Profit trước fixed cost). Khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0 kể cả chưa nhập ARPPU B2B / COGS B2B. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, New B2B Accounts, churn, Revenue, Revenue B2B, COGS, COGS Free, COGS Paid, COGS B2B, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối; dòng tồn B2B EOM cũng lấy giá trị tháng cuối.';
     var noteTail = (data.months.some(function (r) { return r.freeClamped; }) ? 'Có tháng Free EOM phải kẹp về 0 vì công thức cho số âm. ' : '') +
       (missingLabels.length
         ? '<strong>Thiếu đầu vào:</strong> ' + esc(missingLabels.join(', ')) + ' — các chỉ số liên quan hiện "—", riêng 2 dòng Profit vẫn hiện số (thành phần thiếu tạm tính 0) (nhập ở chế độ Theo phase, khối "Chỉ số vận hành & tài chính"; số dư đầu kỳ nhập ở khối Phase đầu tiên của năm).'
         : 'Đủ đầu vào: churn rate / Monthly cvr / giá Paid / COGS Free + COGS Paid / fixed cost theo Phase và số dư đầu kỳ đều đã nhập ở chế độ Theo phase.');
-    var note = '<p class="sub note">Cách tính: Chuỗi tồn theo tháng — New Paid = Paid funnel + Free đầu kỳ × Monthly cvr; churn tháng đầu × 0,5; Free EOM kẹp ≥ 0; B2B chạy chuỗi riêng; Paid chuyển sang B2B qua cầu nối bị trừ khỏi Paid EOM, B2B từ Lead Gen/Demo/Partnership/Event không trừ. Riêng 2 dòng Profit luôn hiện số (thành phần thiếu tạm tính 0).</p>' + noteDetailHtml(noteFull) + '<p class="sub note">' + noteTail + '</p>';
+    var note = '<p class="sub note">Cách tính: Chuỗi tồn theo tháng — New Paid = Paid funnel + Free đầu kỳ × Monthly cvr; churn tháng đầu × 0,5; Free EOM kẹp ≥ 0; B2B chạy chuỗi riêng; Paid chuyển sang B2B qua cầu nối bị trừ khỏi Paid EOM, B2B Account trực tiếp (Partnership/Event/Paid Media B2B) không trừ. Riêng 2 dòng Profit luôn hiện số (thành phần thiếu tạm tính 0).</p>' + noteDetailHtml(noteFull) + '<p class="sub note">' + noteTail + '</p>';
     return planningKpiSectionHtml('operating', 'Chỉ số vận hành & tài chính theo tháng', note, tbl(head + body, 'planning-operating'));
   }
   // --- Audience trên dòng budget-driven (mô hình B2B bottom-up) ---
@@ -5102,7 +5115,7 @@
     var done = function () { toast(okMsg); render(); };
     var fail = function (msg) { toast('Chưa lưu được: ' + msg); render(); };
     if (existing) { saveResult(sUpdate('phase_assumptions', existing.id, patch), done, fail); return; }
-    var obj = { phase_id: phaseId, channel: channel, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, views_per_unit: null };
+    var obj = { phase_id: phaseId, channel: channel, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, views_per_unit: null };
     Object.keys(patch).forEach(function (k) { obj[k] = patch[k]; });
     saveResult(sCreate('phase_assumptions', obj), done, fail);
   }
@@ -5141,7 +5154,7 @@
   // có (savePhaseRate); tiền/số dư là số >= 0. Xoá trắng ô = ghi null
   // (đầu vào thành "thiếu", bảng tài chính hiện "—" cho chỉ số liên
   // quan) — không điền 0 lặng lẽ.
-  var PHASE_OPERATING_RATE_FIELDS = ['paid_churn_rate', 'free_churn_rate', 'monthly_cvr', 'b2b_churn_rate'];
+  var PHASE_OPERATING_RATE_FIELDS = ['paid_churn_rate', 'free_churn_rate', 'monthly_cvr', 'b2b_churn_rate', 'b2b_bridge_rate'];
   var PHASE_OPERATING_MONEY_FIELDS = ['paid_price', 'cogs_per_free_user', 'cogs_per_paid_user', 'fixed_cost', 'arppu_b2b', 'cogs_per_b2b_account'];
   var PHASE_OPENING_FIELDS = ['opening_free', 'opening_paid', 'opening_b2b'];
   var PHASE_OPERATING_LABELS = {
@@ -5150,6 +5163,7 @@
     cogs_per_free_user: 'COGS Free / user', cogs_per_paid_user: 'COGS Paid / user', fixed_cost: 'Chi phí cố định mỗi tháng',
     opening_free: 'Free đầu kỳ', opening_paid: 'Paid đầu kỳ',
     b2b_churn_rate: 'B2B churn rate', arppu_b2b: 'ARPPU B2B', cogs_per_b2b_account: 'COGS / B2B account',
+    b2b_bridge_rate: 'Tỉ lệ Paid → B2B',
     opening_b2b: 'B2B đầu kỳ'
   };
   function savePhaseOperatingField(phaseId, field, raw, isRate) {

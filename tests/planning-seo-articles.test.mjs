@@ -187,7 +187,7 @@ test('SEO [snapshot production]: Articles qty 20/tháng có series 12 tháng; Pa
 });
 
 // ---------- UI: lưới Phase + đường lưu ----------
-test('SEO [UI static]: lưới Phase của Website Articles — 4 field khóa không render input, có nhãn Mô hình SEO; paid_to_b2b vẫn là input', () => {
+test('SEO [UI static]: lưới Phase của Website Articles — 4 field khóa không render input, có nhãn Mô hình SEO; paid_to_b2b không nằm trong danh sách khóa (field đã bỏ khỏi lưới Phase theo mô hình 18/11)', () => {
   const block = section(appSrc, 'function planningPhaseBlockHtml(phase, rows, benchmarks, editable, disAttr)', '// --- 3 bảng KPI chi tiết theo tháng (chế độ Theo tháng) ---');
   assert.match(block, /isSeoArticlesChannel\(ch\)/, 'khối Phase phải nhận diện kênh Website Articles');
   assert.match(block, /data-seo-articles-locked="views_per_unit"/, 'ô Views mỗi bài của Articles là ô khóa chỉ đọc');
@@ -195,18 +195,20 @@ test('SEO [UI static]: lưới Phase của Website Articles — 4 field khóa kh
   assert.match(block, /SEO_ARTICLES_LOCKED_RATE_FIELDS\.indexOf\(rh\[0\]\) !== -1/, '3 tỉ lệ phễu khóa theo danh sách field');
   assert.match(block, /data-seo-articles-locked="[^"]*esc\(rh\[0\]\)/, 'ô tỉ lệ khóa render dạng chỉ đọc theo field');
   assert.match(block, /data-phase-seo-note="1">Mô hình SEO: 350 view tối đa\/bài · \+250 view seeding\/bài mới · CR 2,5% → Free user/, 'dòng ghi chú hằng số mô hình ở dòng kênh');
-  // paid_to_b2b KHÔNG nằm trong danh sách khóa:
+  // paid_to_b2b KHÔNG nằm trong danh sách khóa (và không còn là field
+  // tỉ lệ của lưới Phase nói chung — PHASE_RATE_FIELDS chỉ còn 3 tỉ lệ phễu):
   assert.match(appSrc, /var SEO_ARTICLES_LOCKED_RATE_FIELDS = \['view_to_visit', 'visit_to_freemium', 'freemium_to_paid'\];/);
+  assert.match(appSrc, /var PHASE_RATE_FIELDS = \['view_to_visit', 'visit_to_freemium', 'freemium_to_paid'\];/);
 });
 
-test('SEO [UI static]: đường lưu bỏ qua field khóa của Website Articles (savePhaseRate + savePhaseViews), paid_to_b2b vẫn lưu được', () => {
+test('SEO [UI static]: đường lưu bỏ qua field khóa của Website Articles (savePhaseRate + savePhaseViews)', () => {
   const rate = section(appSrc, 'function savePhaseRate(phaseId, channel, field, raw)', 'function savePhaseViews(phaseId, channel, raw)');
   assert.match(rate, /isSeoArticlesChannel\(channel\) && SEO_ARTICLES_LOCKED_RATE_FIELDS\.indexOf\(field\) !== -1\) \{ render\(\); return; \}/, 'savePhaseRate phải bỏ qua 3 tỉ lệ khóa của Articles');
   const views = section(appSrc, 'function savePhaseViews(phaseId, channel, raw)', 'function savePhaseQty(phaseId, channel, raw)');
   assert.match(views, /isSeoArticlesChannel\(channel\)\) \{ render\(\); return; \}/, 'savePhaseViews phải bỏ qua kênh Articles');
 });
 
-test('SEO [UI render]: render thật khối Phase — dòng Website Articles không có input phase-views/3 tỉ lệ khóa, có input paid_to_b2b + qty; kênh khác vẫn có đủ input', async () => {
+test('SEO [UI render]: render thật khối Phase — dòng Website Articles không có input phase-views/3 tỉ lệ khóa và không còn input paid_to_b2b (đã bỏ khỏi lưới), vẫn có input qty; kênh khác vẫn có đủ input', async () => {
   // Harness theo mẫu tests/planning-count-int-display.test.mjs:
   // helpers Brand+Planning + khối Theo phase với stub Store/D/UI.
   const helpers = section(appSrc, '// ---------- Brand + Planning: ngữ cảnh Brand / Segment toàn cục ----------', 'function canSettings()');
@@ -251,13 +253,14 @@ test('SEO [UI render]: render thật khối Phase — dòng Website Articles kh�
     assert.ok(!art.includes('data-field="' + f + '"'), 'Articles: không có input tỉ lệ ' + f);
     assert.ok(art.includes('data-seo-articles-locked="' + f + '"'), 'Articles: ô khóa chỉ đọc cho ' + f);
   }
-  assert.ok(art.includes('data-field="paid_to_b2b"'), 'Articles: vẫn có input paid_to_b2b');
+  assert.ok(!art.includes('data-field="paid_to_b2b"'), 'Articles: không còn input paid_to_b2b (field tỉ lệ theo Channel đã bỏ khỏi lưới Phase 18/11)');
   assert.ok(art.includes('data-action-change="phase-qty"'), 'Articles: vẫn có input Số lượng');
   assert.ok(art.includes('Mô hình SEO — tính tự động'), 'Articles: nhãn Mô hình SEO');
   assert.ok(art.includes('350 view tối đa/bài'), 'Articles: ghi chú hằng số mô hình');
   const kol = rowOf('KOL Nano');
   assert.ok(kol.includes('data-action-change="phase-views"'), 'KOL Nano: vẫn có input Views mỗi bài như cũ');
   assert.ok(kol.includes('data-field="view_to_visit"'), 'KOL Nano: vẫn có input tỉ lệ như cũ');
+  assert.ok(!kol.includes('data-field="paid_to_b2b"'), 'KOL Nano: cũng không còn input paid_to_b2b');
 });
 
 test('SEO [static domain]: forecastFunnel có đường riêng Articles trước đường content thường; Email vẫn 2 lượt', () => {

@@ -2205,12 +2205,14 @@
   //   view_to_visit, visit_to_freemium, freemium_to_paid,
   //   (fallback key CŨ: visit_to_signup cho visit_to_freemium;
   //   signup_to_first x first_to_paid cho freemium_to_paid),
-  //   paid_to_b2b, lead_to_account, demo_to_account,
   //   direct_budget, cost_per_result } — chấp nhận cả khóa camelCase
-  //   tương ứng. 3 tỉ lệ B2B (paid_to_b2b = cầu nối Paid User -> B2B
-  //   Account theo Channel; lead_to_account / demo_to_account cho phần
-  //   B2B của Objective Lead Gen / Demo) sửa theo Phase + uplift qua
-  //   ĐÚNG cơ chế phase_assumptions như 4 tỉ lệ funnel. cost_per_result
+  //   tương ứng. (BỎ 23/11 — Zac chốt 18/11/2026 23:15: 3 tỉ lệ B2B
+  //   theo Channel paid_to_b2b / lead_to_account / demo_to_account
+  //   KHÔNG còn được engine đọc — cột DB giữ dormant. Cầu nối Paid
+  //   User -> B2B Account nay tính CHUNG theo Phase bằng
+  //   phases.b2b_bridge_rate ở tầng tồn của
+  //   computeOperatingFinancials; Lead Gen / Demo không còn quy đổi
+  //   ra Account ở tầng kênh.) cost_per_result
   //   của Partnership/Event thêm key 'signup' (phần B2C) và 'b2b_account'
   //   (phần B2B: VNĐ / B2B Account). cost_per_result là ĐƠN GIÁ KẾT QUẢ theo Objective của
   //   benchmark Paid Media: object { [objectiveKey]: VNĐ/kết quả } (giá
@@ -2762,8 +2764,13 @@
     return { value: null, source: null };
   }
 
-  var EFFECTIVE_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account'];
-  var EFFECTIVE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_freemium: 'visitToFreemium', freemium_to_paid: 'freemiumToPaid', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid', paid_to_b2b: 'paidToB2b', lead_to_account: 'leadToAccount', demo_to_account: 'demoToAccount' };
+  // BỎ (Zac chốt 18/11/2026 23:15): paid_to_b2b / lead_to_account /
+  // demo_to_account KHÔNG còn trong danh sách tỉ lệ hiệu dụng —
+  // cascade/engine không đọc 3 tỉ lệ theo Channel này nữa (cột DB
+  // giữ dormant); cầu nối Paid -> B2B chuyển sang tỉ lệ theo Phase
+  // phases.b2b_bridge_rate ở tầng tồn (computeOperatingFinancials).
+  var EFFECTIVE_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid'];
+  var EFFECTIVE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_freemium: 'visitToFreemium', freemium_to_paid: 'freemiumToPaid', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid' };
   /**
    * Tỉ lệ HIỆU DỤNG của (phase, channel) — MỘT nguồn cho UI hiển thị
    * (Bước B II-3), cùng quy tắc engine forecastFunnel: từng field qua
@@ -2954,10 +2961,10 @@
    *       bước visit riêng); freemium = round(views × 2,5%) (sign-up
    *       của file = Free user); paid = 0 và b2b = 0 TUYỆT ĐỐI (Paid
    *       của kênh sinh ở tầng vận hành qua Monthly cvr từ tồn Free
-   *       chung; bridge paid_to_b2b vì thế = 0 ở tầng kênh dù field
-   *       vẫn sửa được ở lưới Phase). BỎ QUA hoàn toàn benchmark,
-   *       phase assumptions (trừ paid_to_b2b vốn chỉ dùng cho bridge
-   *       = 0), uplift tỉ lệ và Uplift Views của Phase. qty qua
+   *       chung; cầu nối Paid -> B2B nay tính theo Phase ở tầng tồn
+   *       (phases.b2b_bridge_rate) nên b2b ở tầng kênh = 0). BỎ QUA
+   *       hoàn toàn benchmark, phase assumptions, uplift tỉ lệ và
+   *       Uplift Views của Phase. qty qua
    *       _planQty; nhiều dòng cùng Brand × tháng cộng qty làm cohort
    *       tháng đó và forecast tháng được chia cho các dòng theo tỉ
    *       trọng qty (tháng qty = 0: chia đều cho các dòng của tháng —
@@ -3121,13 +3128,14 @@
           var f2pOld = baseRate('first_to_paid', 'firstToPaid');
           if (s2fOld !== null && f2pOld !== null) f2p = s2fOld * f2pOld;
         }
+        // BỎ (Zac chốt 18/11/2026 23:15): KHÔNG còn đọc 3 tỉ lệ B2B
+        // theo Channel (paid_to_b2b / lead_to_account /
+        // demo_to_account) — tầng kênh không sinh B2B từ các tỉ lệ
+        // này nữa; cầu nối Paid -> B2B tính theo Phase ở tầng tồn.
         return {
           v2v: baseRate('view_to_visit', 'viewToVisit'),
           v2f: v2f,
-          f2p: f2p,
-          p2b: baseRate('paid_to_b2b', 'paidToB2b'),
-          l2a: baseRate('lead_to_account', 'leadToAccount'),
-          d2a: baseRate('demo_to_account', 'demoToAccount')
+          f2p: f2p
         };
       }
       // n = số tháng từ tháng đầu phase tới tháng của row (tháng đầu
@@ -3168,20 +3176,23 @@
         var eOpens = eList * eRates.v2v * eQty;
         var eVisits = eOpens * eRates.v2f;
         var ePaid = eVisits * eRates.f2p;
-        // Freemium Email = 0 tuyệt đối; cầu nối Paid->B2B như kênh
-        // content (toàn bộ b2b của Email là bridge).
-        var eB2b = eRates.p2b !== null && eRates.p2b !== undefined ? ePaid * eRates.p2b : 0;
-        base.forecast = { views: eOpens, visits: eVisits, freemium: 0, paid: ePaid, b2b: eB2b, b2bBridge: eB2b, emailOpens: eOpens, emailList: eList };
+        // Freemium Email = 0 tuyệt đối; b2b tầng kênh của Email = 0
+        // (BỎ cầu nối theo Channel — Zac chốt 18/11/2026 23:15):
+        // Paid của Email vẫn vào tồn Paid chung, cầu nối Paid -> B2B
+        // tính theo Phase ở tầng tồn (b2b_bridge_rate), không sinh
+        // ở tầng kênh. Field b2b/b2bBridge giữ ở forecast = 0 để
+        // cấu trúc kết quả không đổi.
+        base.forecast = { views: eOpens, visits: eVisits, freemium: 0, paid: ePaid, b2b: 0, b2bBridge: 0, emailOpens: eOpens, emailList: eList };
         var bmE = base.month && byMonth[base.month];
         if (bmE) {
-          bmE.views += eOpens; bmE.visits += eVisits; bmE.paid += ePaid; bmE.b2b += eB2b; bmE.b2bBridge += eB2b;
+          bmE.views += eOpens; bmE.visits += eVisits; bmE.paid += ePaid;
           bmE.hasForecast = true;
         }
-        totals.views += eOpens; totals.visits += eVisits; totals.paid += ePaid; totals.b2b += eB2b; totals.b2bBridge += eB2b;
+        totals.views += eOpens; totals.visits += eVisits; totals.paid += ePaid;
         if (res.phaseId) {
           var bpE = byPhase[res.phaseId];
           if (!bpE) bpE = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, b2bBridge: 0, rowCount: 0 };
-          bpE.views += eOpens; bpE.visits += eVisits; bpE.paid += ePaid; bpE.b2b += eB2b; bpE.b2bBridge += eB2b;
+          bpE.views += eOpens; bpE.visits += eVisits; bpE.paid += ePaid;
           bpE.rowCount += 1;
         }
         return base;
@@ -3271,19 +3282,19 @@
           var cpr = _costPerResult(b, objKey);
           if (cpr === null) return base;
           if (objKey === 'lead_gen' || objKey === 'demo') {
-            // Objective có chân B2B: chia ngân sách theo audience.
-            // Phần B2C: kết quả = tiền_B2C / đơn giá kết quả, đặt tại
-            // tầng Freemium rồi chảy XUỐNG Paid bằng f2p (KHÔNG áp
-            // visit_to_freemium ngược). Phần B2B: Leads/Demos =
-            // tiền_B2B / đơn giá, rồi
-            // Accounts = Leads x lead_to_account (hoặc Demos x
-            // demo_to_account); thiếu tỉ lệ -> phần B2B = 0 account.
+            // Objective Lead Gen / Demo: chia ngân sách theo
+            // audience. Phần B2C: kết quả = tiền_B2C / đơn giá kết
+            // quả, đặt tại tầng Freemium rồi chảy XUỐNG Paid bằng
+            // f2p (KHÔNG áp visit_to_freemium ngược); Lead/Demo vẫn
+            // được đếm ở tầng Freemium như cũ. Phần B2B: BỎ quy đổi
+            // Leads/Demos -> Accounts (Zac chốt 18/11/2026 23:15 —
+            // lead_to_account / demo_to_account không còn được đọc):
+            // accounts sinh ra từ quy đổi = 0; B2B Account chỉ còn
+            // từ đường trực tiếp cost_per_result.b2b_account
+            // (Partnership/Event, Paid Media B2B) và cầu nối theo
+            // Phase ở tầng tồn.
             var sh = _audienceShare(r, objKey);
             if (sh.b2c > 0) { vals.freemium = budget * sh.b2c / cpr; flowDown(2); }
-            if (sh.b2b > 0) {
-              var convRate = objKey === 'lead_gen' ? pRates.l2a : pRates.d2a;
-              if (convRate !== null) b2bAcc += (budget * sh.b2b / cpr) * convRate;
-            }
             computed = true;
           } else {
             // Objective thuần B2C (và Traffic): kết quả đặt TẠI tầng
@@ -3295,31 +3306,27 @@
           }
         }
         if (!computed) return base;
-        // CẦU NỐI Paid -> B2B cho MỌI kênh/luồng B2C: Paid User của
-        // dòng (từ phần B2C) x tỉ lệ paid_to_b2b của Channel. Chưa có
-        // tỉ lệ -> 0 account từ cầu nối (không bịa số). Thay đổi B
-        // (18/11): lượng cầu nối được phơi RIÊNG ở field b2bBridge
-        // (row detail + byMonth + totals + byPhase) — MỘT nguồn duy
-        // nhất; computeOperatingFinancials trừ đúng lượng này khỏi
-        // Paid EOM, KHÔNG tính lại cầu nối ở nơi khác. Hai nguồn B2B
-        // còn lại (Lead Gen/Demo trực tiếp, Partnership/Event trực
-        // tiếp) nằm trong b2bAcc nhưng KHÔNG nằm trong b2bBridge.
-        var bridgeAcc = 0;
-        if (pRates.p2b !== null && vals.paid) bridgeAcc = vals.paid * pRates.p2b;
-        b2bAcc += bridgeAcc;
+        // B2B ở tầng kênh của đường budget-driven CHỈ còn account
+        // TRỰC TIẾP trong b2bAcc (Partnership/Event qua
+        // cost_per_result.b2b_account) — KHÔNG phải cầu nối, giữ
+        // nguyên. BỎ cầu nối theo Channel (Zac chốt 18/11/2026
+        // 23:15): bridge suy từ Paid của dòng = 0 ở tầng kênh
+        // (b2bBridge = 0 ở row detail + byMonth + totals + byPhase);
+        // cầu nối thật tính theo Phase ở tầng tồn
+        // (computeOperatingFinancials, phases.b2b_bridge_rate).
         views = vals.views; visits = vals.visits;
         var pFreemium = vals.freemium, pPaid = vals.paid;
-        base.forecast = { views: views, visits: visits, freemium: pFreemium, paid: pPaid, b2b: b2bAcc, b2bBridge: bridgeAcc };
+        base.forecast = { views: views, visits: visits, freemium: pFreemium, paid: pPaid, b2b: b2bAcc, b2bBridge: 0 };
         var bmP = base.month && byMonth[base.month];
         if (bmP) {
-          bmP.views += views; bmP.visits += visits; bmP.freemium += pFreemium; bmP.paid += pPaid; bmP.b2b += b2bAcc; bmP.b2bBridge += bridgeAcc;
+          bmP.views += views; bmP.visits += visits; bmP.freemium += pFreemium; bmP.paid += pPaid; bmP.b2b += b2bAcc;
           bmP.hasForecast = true;
         }
-        totals.views += views; totals.visits += visits; totals.freemium += pFreemium; totals.paid += pPaid; totals.b2b += b2bAcc; totals.b2bBridge += bridgeAcc;
+        totals.views += views; totals.visits += visits; totals.freemium += pFreemium; totals.paid += pPaid; totals.b2b += b2bAcc;
         if (res.phaseId) {
           var bpP = byPhase[res.phaseId];
           if (!bpP) bpP = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, b2bBridge: 0, rowCount: 0 };
-          bpP.views += views; bpP.visits += visits; bpP.freemium += pFreemium; bpP.paid += pPaid; bpP.b2b += b2bAcc; bpP.b2bBridge += bridgeAcc;
+          bpP.views += views; bpP.visits += visits; bpP.freemium += pFreemium; bpP.paid += pPaid; bpP.b2b += b2bAcc;
           bpP.rowCount += 1;
         }
         return base;
@@ -3343,22 +3350,22 @@
       visits = views * v2v;
       var freemium = visits * v2f;
       var paid = freemium * f2p;
-      // CẦU NỐI Paid -> B2B: Paid User của kênh content x tỉ lệ
-      // paid_to_b2b của Channel (sửa theo Phase + uplift như mọi tỉ lệ
-      // funnel). Chưa có tỉ lệ -> 0 account (không bịa số).
-      var b2bC = rates.p2b !== null && rates.p2b !== undefined ? paid * rates.p2b : 0;
-      // Đường content: toàn bộ b2b là cầu nối (b2bBridge === b2b).
-      base.forecast = { views: views, visits: visits, freemium: freemium, paid: paid, b2b: b2bC, b2bBridge: b2bC };
+      // BỎ cầu nối theo Channel ở đường content (Zac chốt
+      // 18/11/2026 23:15): b2b tầng kênh = 0 và b2bBridge tầng kênh
+      // = 0 — Paid của kênh vẫn vào tồn Paid chung, cầu nối Paid ->
+      // B2B tính theo Phase ở tầng tồn (phases.b2b_bridge_rate,
+      // xem computeOperatingFinancials).
+      base.forecast = { views: views, visits: visits, freemium: freemium, paid: paid, b2b: 0, b2bBridge: 0 };
       var bm = base.month && byMonth[base.month];
       if (bm) {
-        bm.views += views; bm.visits += visits; bm.freemium += freemium; bm.paid += paid; bm.b2b += b2bC; bm.b2bBridge += b2bC;
+        bm.views += views; bm.visits += visits; bm.freemium += freemium; bm.paid += paid;
         bm.hasForecast = true;
       }
-      totals.views += views; totals.visits += visits; totals.freemium += freemium; totals.paid += paid; totals.b2b += b2bC; totals.b2bBridge += b2bC;
+      totals.views += views; totals.visits += visits; totals.freemium += freemium; totals.paid += paid;
       if (res.phaseId) {
         var bp = byPhase[res.phaseId];
         if (!bp) bp = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, b2bBridge: 0, rowCount: 0 };
-        bp.views += views; bp.visits += visits; bp.freemium += freemium; bp.paid += paid; bp.b2b += b2bC; bp.b2bBridge += b2bC;
+        bp.views += views; bp.visits += visits; bp.freemium += freemium; bp.paid += paid;
         bp.rowCount += 1;
       }
       return base;
@@ -3474,13 +3481,20 @@
   // gọi chuẩn bị từ cùng engine funnel + planBudget + các ô nhập theo
   // Phase:
   //   input = { months: ['YYYY-MM', ...],
-  //     funnelByMonth: { [month]: { views, visits, freemium, paid, b2b, b2bBridge } },
-  //       // b2bBridge = lượng cầu nối Paid->B2B của tháng do
-  //       // forecastFunnel phơi ra (field b2bBridge) — thay đổi B 18/11
+  //     funnelByMonth: { [month]: { views, visits, freemium, paid, b2b } },
+  //       // b2b ở tầng funnel CHỈ còn account TRỰC TIẾP (Partnership/
+  //       // Event qua cost_per_result.b2b_account); field b2bBridge
+  //       // của funnel từ nay luôn 0 và KHÔNG còn được đọc ở đây —
+  //       // cầu nối tính tại tầng tồn này theo Phase (xem dưới).
   //     budgetByMonth: { [month]: VNĐ },
   //     inputsByMonth: { [month]: { paid_churn_rate, free_churn_rate,
   //       monthly_cvr, paid_price, cogs_per_free_user,
-  //       cogs_per_paid_user, fixed_cost } },  // tỉ lệ dạng phân số;
+  //       cogs_per_paid_user, fixed_cost, b2b_bridge_rate } },
+  //       // tỉ lệ dạng phân số; b2b_bridge_rate = tỉ lệ cầu nối
+  //       // Paid -> B2B của Phase chứa tháng (phases.b2b_bridge_rate,
+  //       // nơi gọi chuẩn bị vào inputsByMonth ĐÚNG như paid_price;
+  //       // cũng chấp nhận truyền thẳng input.phases để hàm tự tra
+  //       // Phase chứa tháng). null/thiếu -> bridge tháng đó = 0.
   //       // paid_price = giá Paid duy nhất của Phase (VNĐ/user/tháng,
   //       // thay đổi A 18/11)
   //     openingFree, openingPaid }              // số dư trước tháng đầu
@@ -3497,11 +3511,17 @@
   //     (x 0,5 nếu t là tháng đầu)
   //   Free EOM_t = Free EOM_{t-1} + Free user_t − New Paid_t − Free
   //     churn_t (kẹp ≥ 0, đánh dấu freeClamped nếu phải kẹp)
-  //   Paid EOM_t = Paid EOM_{t-1} + New Paid_t − Paid churn_t − bridgeConverted_t
-  //     (thay đổi B 18/11: bridgeConverted_t = funnelByMonth[t].b2bBridge,
-  //     trừ SAU churn; nguồn Lead Gen/Demo và Partnership/Event KHÔNG trừ
-  //     vì chưa từng là Paid B2C; phần New Paid từ monthly_cvr không gắn
-  //     Channel nên không thuộc bridge)
+  //   Paid EOM_t = Paid EOM_{t-1} + New Paid_t − Paid churn_t − bridge_t
+  //     (MÔ HÌNH MỚI — Zac chốt 18/11/2026 23:15, thay cầu nối theo
+  //     Channel của thay đổi B: bridge_t = b2b_bridge_rate của Phase
+  //     chứa tháng t (null -> 0) x PaidEOM_pre_t, với PaidEOM_pre_t =
+  //     Paid EOM_{t-1} + New Paid_t − Paid churn_t — tức bridge tính
+  //     trên tồn Paid SAU churn, TRƯỚC bridge, và bị trừ khỏi Paid
+  //     EOM; tồn mang sang tháng sau là số ĐÃ trừ bridge. bridge_t
+  //     cộng vào New B2B Accounts của tháng t và đi qua chuỗi tồn/
+  //     churn B2B như account mới bình thường. Account trực tiếp từ
+  //     Partnership/Event KHÔNG bị trừ khỏi Paid vì chưa từng là
+  //     Paid B2C.)
   //   Total users = Free EOM + Paid EOM
   //   ARPPU hiệu dụng = paid_price của Phase chứa tháng (giá Paid
   //     duy nhất, thay đổi A 18/11). Chưa nhập giá (null) hoặc giá âm
@@ -3549,56 +3569,75 @@
     var openingFree = num(inp.openingFree !== undefined && inp.openingFree !== null ? inp.openingFree : inp.opening_free);
     var openingPaid = num(inp.openingPaid !== undefined && inp.openingPaid !== null ? inp.openingPaid : inp.opening_paid);
     var missing = { opening: openingFree === null || openingPaid === null, paid_churn_rate: false, free_churn_rate: false, paid_price: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
-    // --- Tài chính B2B (mô hình B2B bottom-up) + thay đổi B (18/11):
+    // --- Tài chính B2B (mô hình B2B bottom-up) + cầu nối theo Phase
+    // (Zac chốt 18/11/2026 23:15, thay cầu nối theo Channel):
     // chuỗi tồn B2B Account RIÊNG, song song chuỗi Free/Paid: New B2B
-    // Accounts lấy từ funnelByMonth[m].b2b; B2B churn = B2B EOM đầu kỳ
-    // x b2b_churn_rate (theo Phase, KHÔNG nhân 0,5 tháng đầu như chuỗi
-    // B2C); B2B EOM = đầu kỳ + New − churn; Revenue B2B = arppu_b2b x
-    // B2B EOM; COGS B2B = cogs_per_b2b_account x B2B EOM. QUY TẮC MỚI
-    // (thay đổi B, đảo quy tắc cũ): Paid User chuyển sang B2B qua cầu
-    // nối paid_to_b2b (lượng bridge = funnelByMonth[m].b2bBridge do
-    // forecastFunnel phơi ra, cũng chấp nhận inputsByMonth[m].b2bBridge
-    // / bridgeByMonth[m] như đường dự phòng cùng cơ chế input) BỊ TRỪ
-    // khỏi Paid EOM trong tháng chuyển đổi (sau churn); B2B Account
-    // từ Lead Gen/Demo/Partnership/Event KHÔNG trừ (chưa từng là Paid
-    // B2C). Hai dòng Profit tính trên TỔNG
-    // B2C + B2B. Thiếu đầu vào B2B -> null như quy tắc chung, NGOẠI
-    // TRỪ: khi tồn B2B = 0 và không có account mới (toàn kỳ không hoạt
-    // động B2B, kể cả chưa nhập opening_b2b) thì B2B churn/EOM/Revenue
-    // B2B/COGS B2B = 0; và ngoại lệ 2 dòng Profit (Zac chốt 18/11/2026):
-    // Revenue B2B / COGS B2B null thì tạm tính 0 cho Profit nên Profit
-    // luôn là số. Thiếu đầu vào B2B khi ĐANG có hoạt động B2B
-    // được ghi ở missingB2b (tách khỏi `missing` B2C).
+    // Accounts = account TRỰC TIẾP từ funnelByMonth[m].b2b (chỉ còn
+    // Partnership/Event qua cost_per_result.b2b_account) + bridge
+    // của tháng (tính ở chuỗi Paid bên dưới); B2B churn = B2B EOM
+    // đầu kỳ x b2b_churn_rate (theo Phase, KHÔNG nhân 0,5 tháng đầu
+    // như chuỗi B2C); B2B EOM = đầu kỳ + New − churn; Revenue B2B =
+    // arppu_b2b x B2B EOM; COGS B2B = cogs_per_b2b_account x B2B EOM.
+    // CẦU NỐI MỚI: bridge(m) = b2b_bridge_rate của Phase chứa tháng
+    // m (null -> 0) x PaidEOM_pre(m) (tồn Paid sau churn, trước
+    // bridge); bridge BỊ TRỪ khỏi Paid EOM trong tháng chuyển đổi
+    // và CỘNG vào New B2B Accounts của tháng đó. Account trực tiếp
+    // Partnership/Event KHÔNG trừ khỏi Paid (chưa từng là Paid B2C).
+    // Hai dòng Profit tính trên TỔNG B2C + B2B. Thiếu đầu vào B2B ->
+    // null như quy tắc chung, NGOẠI TRỪ: khi tồn B2B = 0 và không có
+    // account mới (toàn kỳ không hoạt động B2B, kể cả chưa nhập
+    // opening_b2b) thì B2B churn/EOM/Revenue B2B/COGS B2B = 0; và
+    // ngoại lệ 2 dòng Profit (Zac chốt 18/11/2026): Revenue B2B /
+    // COGS B2B null thì tạm tính 0 cho Profit nên Profit luôn là
+    // số. Thiếu đầu vào B2B khi ĐANG có hoạt động B2B được ghi ở
+    // missingB2b (tách khỏi `missing` B2C).
     var openingB2b = num(inp.openingB2b !== undefined && inp.openingB2b !== null ? inp.openingB2b : inp.opening_b2b);
     function funnelB2b(m) {
       var f = funnel[m] || {};
       var v = f.b2b !== undefined && f.b2b !== null ? f.b2b : (f.b2bAccounts !== undefined && f.b2bAccounts !== null ? f.b2bAccounts : f.newB2b);
       return num(v) || 0;
     }
-    // Lượng BRIDGE (cầu nối Paid->B2B) của tháng — MỘT nguồn duy nhất
-    // là field b2bBridge do forecastFunnel tính. Đường vào chính:
-    // funnelByMonth[m].b2bBridge (app planningOperatingData truyền
-    // từ byMonth của forecast). Dự phòng cùng cơ chế input hiện có:
-    // inputsByMonth[m].b2bBridge / b2b_bridge / bridgeConverted,
-    // hoặc inp.bridgeByMonth[m]. Thiếu field -> 0 (không suy từ
-    // tổng b2b, vì tổng gồm cả nguồn không trừ).
-    function funnelBridge(m) {
-      var f = funnel[m] || {};
-      var v = f.b2bBridge !== undefined && f.b2bBridge !== null ? f.b2bBridge
-        : (f.b2b_bridge !== undefined && f.b2b_bridge !== null ? f.b2b_bridge
-        : (f.bridgeConverted !== undefined && f.bridgeConverted !== null ? f.bridgeConverted : f.bridge));
-      if (v !== undefined && v !== null) return num(v) || 0;
+    // Tỉ lệ BRIDGE (cầu nối Paid -> B2B) của tháng — MÔ HÌNH MỚI
+    // theo Phase (Zac chốt 18/11/2026 23:15): đọc b2b_bridge_rate
+    // của Phase chứa tháng ĐÚNG cách paid_price được đọc: ưu tiên
+    // inputsByMonth[m].b2b_bridge_rate / b2bBridgeRate (nơi gọi đã
+    // tra Phase chứa tháng, kể cả khi giá trị là null -> có tỉ lệ
+    // nhưng bridge = 0); thiếu key thì tự tra trong input.phases
+    // (Phase chứa tháng theo start_month..end_month, đọc field
+    // snake_case 'b2b_bridge_rate' trên object phase). Trả
+    // { present, rate }: present = false khi KHÔNG nguồn nào mang
+    // tỉ lệ cho tháng (khi đó bridge = 0 — không còn đường dự phòng).
+    function bridgeRateFor(m) {
       var im = inputsMap[m] || {};
-      var v2 = im.b2bBridge !== undefined && im.b2bBridge !== null ? im.b2bBridge
-        : (im.b2b_bridge !== undefined && im.b2b_bridge !== null ? im.b2b_bridge
-        : (im.bridgeConverted !== undefined && im.bridgeConverted !== null ? im.bridgeConverted : im.bridge_converted));
-      if (v2 !== undefined && v2 !== null) return num(v2) || 0;
-      var bm = inp.bridgeByMonth || inp.b2bBridgeByMonth || {};
-      var v3 = bm[m];
-      if (v3 !== undefined && v3 !== null) return num(v3) || 0;
-      return 0;
+      var v = im.b2b_bridge_rate !== undefined ? im.b2b_bridge_rate
+        : (im.b2bBridgeRate !== undefined ? im.b2bBridgeRate : undefined);
+      if (v !== undefined) return { present: true, rate: num(v) };
+      var phasesIn = Array.isArray(inp.phases) ? inp.phases : (Array.isArray(inp.phaseList) ? inp.phaseList : null);
+      if (phasesIn) {
+        var res = _resolvePhase(phasesIn, {}, m);
+        if (res && res.phase) {
+          var pv = res.phase.b2b_bridge_rate !== undefined ? res.phase.b2b_bridge_rate : res.phase.b2bBridgeRate;
+          if (pv !== undefined) return { present: true, rate: num(pv) };
+        }
+      }
+      return { present: false, rate: null };
     }
-    var hasB2bActivity = (openingB2b !== null && openingB2b > 0) || months.some(function (m) { return funnelB2b(m) > 0; });
+    // Hoạt động B2B gồm cả khả năng sinh bridge: có tháng mang tỉ
+    // lệ bridge > 0 VÀ tồn Paid có
+    // thể > 0 (opening Paid > 0, hoặc có Paid cohort từ funnel,
+    // hoặc có tồn Free + monthly_cvr > 0 để chuyển đổi sang Paid).
+    var paidStockPossible = (openingPaid !== null && openingPaid > 0)
+      || months.some(function (m) { return (num((funnel[m] || {}).paid) || 0) > 0; })
+      || (openingFree !== null && openingFree > 0 && months.some(function (m) {
+        var imx = inputsMap[m] || {};
+        var cv = imx.monthly_cvr !== undefined && imx.monthly_cvr !== null ? imx.monthly_cvr : imx.monthlyCvr;
+        return (num(cv) || 0) > 0;
+      }));
+    var bridgePossible = paidStockPossible && months.some(function (m) {
+      var br = bridgeRateFor(m);
+      return br.present && br.rate !== null && br.rate > 0;
+    });
+    var hasB2bActivity = (openingB2b !== null && openingB2b > 0) || months.some(function (m) { return funnelB2b(m) > 0; }) || bridgePossible;
     var missingB2b = { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false };
     if (hasB2bActivity && openingB2b === null) missingB2b.opening_b2b = true;
     var prevB2b = openingB2b;
@@ -3628,8 +3667,14 @@
         newFree: 0,
         newPaid: cohortPaid,
         newB2b: funnelB2b(m),
-        b2bBridge: funnelBridge(m),
-        bridgeConverted: funnelBridge(m),
+        // b2bBridge/bridgeConverted: giá trị THẬT được tính trong
+        // khối chuỗi Paid bên dưới theo tỉ lệ Phase (cần PaidEOM_pre
+        // sau churn nên không tính được tại điểm tạo row này); khởi
+        // tạo 0 — nếu chuỗi Paid đứt (thiếu opening/churn) thì tháng
+        // giữ bridge = 0 và newB2b chỉ gồm account trực tiếp.
+        b2bBridge: 0,
+        bridgeConverted: 0,
+        b2bBridgeRate: null,
         paidChurn: null, freeChurn: null,
         paidEom: null, freeEom: null, totalUsers: null,
         b2bChurn: null, b2bEom: null,
@@ -3669,10 +3714,26 @@
         var churnFactor = isFirstMonth ? 0.5 : 1;
         row.freeChurn = (prevFree + row.freeUser) * freeChurnRate * churnFactor;
         row.paidChurn = (prevPaid + row.newPaid) * paidChurnRate * churnFactor;
-        // Thay đổi B (18/11): trừ bridge SAU churn — Paid EOM =
-        // tồn trước + New Paid − Paid churn − bridgeConverted(tháng).
-        // bridgeConverted = row.b2bBridge (từ forecastFunnel, một nguồn).
-        row.paidEom = prevPaid + row.newPaid - row.paidChurn - row.b2bBridge;
+        // CẦU NỐI THEO PHASE (Zac chốt 18/11/2026 23:15):
+        // PaidEOM_pre = tồn trước + New Paid − Paid churn (sau
+        // churn, trước bridge); bridge = b2b_bridge_rate của Phase
+        // chứa tháng (null -> 0) x PaidEOM_pre; Paid EOM =
+        // PaidEOM_pre − bridge (tồn mang sang tháng sau đã trừ
+        // bridge — prevPaid gán ở cuối khối này). Không có nguồn
+        // tỉ lệ nào -> bridge = 0. bridge phơi ra ở row.b2bBridge (alias
+        // row.bridgeConverted) và CỘNG vào New B2B Accounts của
+        // tháng (row.newB2b) TRƯỚC khối chuỗi B2B bên dưới, nên
+        // account bridge đi qua tồn/churn B2B như account mới
+        // bình thường. Revenue B2C tính trên Paid EOM đã trừ bridge
+        // (khối Revenue ngay dưới dùng row.paidEom như cũ).
+        var paidEomPre = prevPaid + row.newPaid - row.paidChurn;
+        var brInfo = bridgeRateFor(m);
+        row.b2bBridgeRate = brInfo.present ? brInfo.rate : null;
+        var bridgeAmt = brInfo.present ? (brInfo.rate || 0) * paidEomPre : 0;
+        row.b2bBridge = bridgeAmt;
+        row.bridgeConverted = bridgeAmt;
+        row.newB2b = funnelB2b(m) + bridgeAmt;
+        row.paidEom = paidEomPre - bridgeAmt;
         var freeRaw = prevFree + row.freeUser - row.newPaid - row.freeChurn;
         if (freeRaw < 0) { row.freeClamped = true; freeRaw = 0; }
         row.freeEom = freeRaw;

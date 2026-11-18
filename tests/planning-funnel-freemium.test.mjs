@@ -104,13 +104,13 @@ test('PFF (b2): Objective Signup đặt kết quả TẠI Freemium rồi chảy 
   assert.equal(fc.views, 0, 'không suy ngược lên Views');
 });
 
-test('PFF (b3): Lead Gen + Demo — phần B2C đặt tại Freemium chảy xuống Paid bằng f2p; phần B2B đi thẳng Account như cũ', () => {
+test('PFF (b3): Lead Gen + Demo — phần B2C đặt tại Freemium chảy xuống Paid bằng f2p; phần B2B chỉ đếm Lead/Demo, accounts từ quy đổi = 0 (mô hình 18/11)', () => {
   const bmLead = [{ brand_id: 'b1', channel: 'Google-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, lead_to_account: 0.2, cost_per_result: { lead_gen: 100000 } }];
   const rowLead = [{ id: 'rl', brand_id: 'b1', segment: 'b2b', month: '2027-01', channel: 'Google-like', group: 'Paid Media', qty: null, budget: 10000000, objective: 'lead_gen', audience: 'both', b2b_split_pct: 40 }];
   const fcL = domain.forecastFunnel(rowLead, bmLead).rows[0].forecast;
   approx(fcL.freemium, 60, 'Lead Gen B2C: 6.000.000 / 100.000 = 60 Freemium');
   approx(fcL.paid, 60 * 0.0275, 'Lead Gen Paid = 60 x f2p = 1,65');
-  approx(fcL.b2b, 8, 'Lead Gen B2B: 40 Leads x lead_to_account 20% = 8 Accounts (không đổi)');
+  assert.equal(fcL.b2b, 0, 'Lead Gen B2B: 40 Leads — accounts từ quy đổi lead_to_account = 0 (đã bỏ quy đổi)');
   assert.equal(fcL.visits, 0); assert.equal(fcL.views, 0);
 
   const bmDemo = [{ brand_id: 'b1', channel: 'LinkedIn-like', group: 'Paid Media', direct_budget: true, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, demo_to_account: 0.25, cost_per_result: { demo: 200000 } }];
@@ -118,7 +118,7 @@ test('PFF (b3): Lead Gen + Demo — phần B2C đặt tại Freemium chảy xu�
   const fcD = domain.forecastFunnel(rowDemo, bmDemo).rows[0].forecast;
   approx(fcD.freemium, 30, 'Demo B2C: 6.000.000 / 200.000 = 30 Freemium (trước đặt tại First)');
   approx(fcD.paid, 30 * 0.0275, 'Demo Paid = 30 x f2p = 0,825');
-  approx(fcD.b2b, 5, 'Demo B2B: 20 Demos x demo_to_account 25% = 5 Accounts (không đổi)');
+  assert.equal(fcD.b2b, 0, 'Demo B2B: 20 Demos — accounts từ quy đổi demo_to_account = 0 (đã bỏ quy đổi)');
 });
 
 test('PFF (b4): Partnership/Event B2C đặt tại Freemium qua key đơn giá cost_per_result.signup (GIỮ NGUYÊN key), chảy xuống Paid bằng f2p', () => {

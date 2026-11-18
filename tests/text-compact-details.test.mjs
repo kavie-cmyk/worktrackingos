@@ -6,7 +6,7 @@
 // Các ca dưới đây khoá 3 việc: (1) helper render đúng cấu trúc details +
 // summary "Chi tiết" + aria qua summary; (2) các định nghĩa cốt lõi
 // (CAC từ Paid CHƯA làm tròn, CAC "Tất cả" không phải trung bình, Paid
-// theo Objective không suy ngược, paid_to_b2b, chuỗi tồn A68) vẫn còn
+// theo Objective không suy ngược, cầu nối theo Phase, chuỗi tồn A68) vẫn còn
 // nguyên văn trong app.js sau khi rút; (3) 7 mục [XOÁ] của audit không
 // còn xuất hiện; (4) CSS chú thích hợp nhất 1 hệ (.note/.sub max-width
 // 72ch, .field-help 13px).
@@ -44,9 +44,9 @@ test('TCD [static]: định nghĩa cốt lõi còn nguyên văn trong Chi tiết
     'CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn', // A65
     'KHÔNG phải trung bình các CAC tháng', // A66
     'KHÔNG suy ngược lên tầng trên', // A51 Paid Objective
-    'cầu nối paid_to_b2b của Channel', // A52
+    'cầu nối Tỉ lệ Paid → B2B của Phase', // A52 — viết lại 18/11: cầu nối theo Phase, không còn "paid_to_b2b của Channel"
     'dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối', // A68
-    'Paid User chuyển sang B2B qua cầu nối paid_to_b2b bị trừ khỏi Paid EOM trong tháng chuyển đổi', // A68 B2B — quy tắc MỚI thay đổi B 18/11 (đảo quy tắc không trừ cũ)
+    'Paid User chuyển sang B2B qua cầu nối Tỉ lệ Paid → B2B của Phase bị trừ khỏi Paid EOM trong tháng chuyển đổi', // A68 B2B — quy tắc bridge theo Phase 18/11 (vẫn trừ khỏi Paid EOM)
     'hạn mức chỉ đổi khi đề xuất được Owner duyệt', // A21 (trong Chi tiết)
     'chỉ đổi khi Owner duyệt một đề xuất ngân sách', // A5
   ]) {
