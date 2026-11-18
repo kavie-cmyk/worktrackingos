@@ -286,6 +286,16 @@
     var names = r.pendingPredecessors.map(function (id) { var t = taskById(id); return t ? t.title : id; }).join(', ');
     return vizStatusPillHtml('pending', { label: 'Đang chờ: ' + names });
   }
+  // Đợt tinh gọn chữ/UI 18/11 (theo AUDIT.md): pattern "Chi tiết" chuẩn —
+  // dòng tóm tắt hiển thị mặc định + nút "Chi tiết" (thẻ <details> sẵn có
+  // của app, mở/đóng tại chỗ, aria qua thuộc tính open của summary) chứa
+  // TOÀN VĂN định nghĩa gốc. Không thêm data-action nào (không đổi handler).
+  function noteDetailHtml(fullHtml) {
+    return '<details class="note-details"><summary>Chi tiết</summary><div class="note note--full">' + fullHtml + '</div></details>';
+  }
+  function noteWithDetailHtml(shortHtml, fullHtml, attrs) {
+    return '<p class="sub note"' + (attrs ? ' ' + attrs : '') + '>' + shortHtml + '</p>' + noteDetailHtml(fullHtml);
+  }
   function pageHead(title, sub, actions) {
     return '<div class="page-head"><div><h1>' + esc(title) + '</h1>' + (sub ? '<p class="sub">' + esc(sub) + '</p>' : '') + '</div>' +
       (actions ? '<div class="page-actions">' + actions + '</div>' : '') + '</div>';
@@ -301,13 +311,12 @@
     }).join('') + '</div>';
   }
   function emptyState(title, desc, cta) {
-    return '<div class="state-box"><p><strong>' + esc(title) + '</strong></p>' + (desc ? '<p>' + esc(desc) + '</p>' : '') + (cta || '') + '</div>';
+    return '<div class="state-box"><p><strong>' + esc(title) + '</strong></p>' + (desc ? '<p class="note">' + esc(desc) + '</p>' : '') + (cta || '') + '</div>';
   }
   function setupNotice() {
     return pageHead('Chờ kết nối Supabase', 'Workspace chưa có dữ liệu thật.') +
       '<div class="state-box"><p><strong>Chờ kết nối Supabase</strong></p>' +
-      '<p>App chưa được cấu hình Supabase và chế độ dữ liệu minh họa chưa bật.</p>' +
-      '<p>Vào mục <a href="#/settings">Thiết lập</a> để xem hướng dẫn kết nối, hoặc bật chế độ dữ liệu minh họa để xem thử giao diện.</p></div>';
+      '<p class="note">Chưa cấu hình Supabase. Vào <a href="#/settings">Thiết lập</a> để kết nối, hoặc bật dữ liệu minh họa để xem thử.</p></div>';
   }
 
   // ---------- Quyền (CEO chỉ xem ở cả demo lẫn thật) ----------
@@ -367,9 +376,9 @@
     var amt = budgetLineApprovedAmount(line);
     var cur = line ? (line.currency || 'VND') : 'VND';
     if (line && (line.approvedBy || line.approved_by)) {
-      return '<p class="sub" style="margin:2px 0"><strong>Đã duyệt ' + fmtMoney(amt, cur) + ' · ' + esc(memberName(line.approvedBy || line.approved_by)) + ' · ' + esc(D.formatDateVN(line.approvedAt || line.approved_at)) + '</strong></p>';
+      return '<p class="sub note--inline"><strong>Đã duyệt ' + fmtMoney(amt, cur) + ' · ' + esc(memberName(line.approvedBy || line.approved_by)) + ' · ' + esc(D.formatDateVN(line.approvedAt || line.approved_at)) + '</strong></p>';
     }
-    return '<p class="sub" style="margin:2px 0"><strong>Chưa được duyệt</strong> — số đã duyệt hiện tại: ' + fmtMoney(amt, cur) + '. Số duyệt chỉ thay đổi khi một đề xuất ngân sách được Owner duyệt.</p>';
+    return '<p class="sub note--inline">Quy tắc: <strong>Chưa được duyệt</strong> (hiện tại ' + fmtMoney(amt, cur) + ') — chỉ đổi khi Owner duyệt một đề xuất ngân sách.</p>';
   }
   function budgetLineApprovedCellHtml(line) {
     var cur = line ? (line.currency || 'VND') : 'VND';
@@ -498,7 +507,7 @@
     // nhánh approved: dòng chưa duyệt / vượt trần / thiếu dấu campaign).
     html += ' <span class="budget-fact-decide"><button type="button" class="btn small" data-action="budget-fact-decide" data-kind="' + esc(kind) + '" data-decision="approved" data-id="' + esc(fact.id) + '"' + disAttr + '>Duyệt</button> ' +
       '<button type="button" class="btn small secondary" data-action="budget-fact-decide" data-kind="' + esc(kind) + '" data-decision="rejected" data-id="' + esc(fact.id) + '">Từ chối</button>' +
-      (reason ? '<br><span class="sub budget-approval-block-reason">' + esc(reason) + ' — vẫn có thể từ chối khoản này.</span>' : '') + '</span>';
+      (reason ? '<br><span class="sub budget-approval-block-reason">' + esc(reason) + ' — vẫn từ chối được.</span>' : '') + '</span>';
     return html;
   }
   function budgetProposalCurrentValue(p) {
@@ -536,7 +545,7 @@
     var canDecideBudget = can('budget.decide');
     var html = '<div data-budget-queue="budget"><h2>Hàng đợi ngân sách (' + proposals.length + ')</h2>';
     if (!proposals.length) {
-      html += '<div class="state-box">Chưa có đề xuất ngân sách nào. Dùng nút "Đề xuất ngân sách" ở màn KPI &amp; Ngân sách, trong form dòng ngân sách, hoặc ở khối hạn mức của campaign để tạo đề xuất.</div>';
+      html += '<div class="state-box">Chưa có đề xuất nào. Tạo bằng nút "Đề xuất ngân sách" ở khối hạn mức campaign hoặc form dòng ngân sách.</div>';
       return html + '</div>';
     }
     html += proposals.map(function (p) {
@@ -572,9 +581,9 @@
   function taskPanelReadonly() { return !canEditTask() && !canUpdateTaskStatus(); }
   function taskReadonlyNote() {
     if (!taskPanelReadonly()) return '';
-    return '<div class="notice info" role="note">Bạn đang xem ở chế độ chỉ đọc — vai trò hiện tại' +
+    return '<div class="notice info" role="note">Chế độ chỉ xem' +
       (Store.currentRole ? ' (' + esc(labelStatus(Store.currentRole())) + ')' : '') +
-      ' không có quyền sửa task, nên mọi ô nhập, mục checklist và quan hệ phụ thuộc đã bị khóa. Dữ liệu vẫn được tầng dữ liệu chặn khi lưu.</div>';
+      ' — tạo/sửa đã khóa; mục checklist và quan hệ phụ thuộc đã bị khóa.</div>';
   }
   // Điểm vào chung cho modal sửa (formShell): kind nào là chỉ-đọc theo quyền.
   function editorReadonly(kind) {
@@ -583,13 +592,13 @@
     return false;
   }
   function readonlyFormNote(kind) {
-    return '<div class="notice info" role="note">Bạn đang xem ở chế độ chỉ đọc — vai trò hiện tại' +
+    return '<div class="notice info" role="note">Chế độ chỉ xem' +
       (Store.currentRole ? ' (' + esc(labelStatus(Store.currentRole())) + ')' : '') +
-      ' không có quyền sửa ' + (kind === 'campaign' ? 'campaign' : 'bản ghi này') + ', nên mọi ô nhập đã bị khóa.</div>';
+      ' — tạo/sửa đã khóa.</div>';
   }
   function readonlyNote() {
     if (canEdit()) return '';
-    return '<div class="notice info">Vai trò hiện tại (' + esc(labelStatus(Store.currentRole ? Store.currentRole() : '')) + ') chỉ xem — các thao tác tạo/sửa đã bị khóa.</div>';
+    return '<div class="notice info">Chế độ chỉ xem (' + esc(labelStatus(Store.currentRole ? Store.currentRole() : '')) + ') — tạo/sửa đã khóa.</div>';
   }
   function dis(flag) { return flag ? ' disabled' : ''; }
   // R2-30.4: chỉ gắn tooltip khi control THẬT SỰ bị disabled.
@@ -627,6 +636,15 @@
     return all.filter(isArchived);
   }
   // ---------- Brand + Planning: ngữ cảnh Brand / Segment toàn cục ----------
+  // Pattern "Chi tiết" (đợt tinh gọn 18/11) — bản sao ĐỒNG NHẤT của
+  // helper ở khối helper chung (cạnh pageHead), đặt trong khối này để
+  // mọi hàm Planning/Content dùng chung một cơ chế <details> tại chỗ.
+  function noteDetailHtml(fullHtml) {
+    return '<details class="note-details"><summary>Chi tiết</summary><div class="note note--full">' + fullHtml + '</div></details>';
+  }
+  function noteWithDetailHtml(shortHtml, fullHtml, attrs) {
+    return '<p class="sub note"' + (attrs ? ' ' + attrs : '') + '>' + shortHtml + '</p>' + noteDetailHtml(fullHtml);
+  }
   // Nguồn lọc DUY NHẤT: UI.brandFilter (id brand hoặc 'all') +
   // UI.segmentFilter ('all'|'b2c'|'b2b'). Quy tắc khớp (theo đặc tả giao):
   // bản ghi KHÔNG có brand_id/segment chỉ hiện khi bộ lọc tương ứng đang
@@ -673,7 +691,7 @@
   }
   function contextBannerHtml() {
     if (!contextActive()) return '';
-    return '<div class="notice info" data-context-banner="1">Đang lọc theo ngữ cảnh toàn cục — <strong>' + esc(contextLabel()) + '</strong>. Bản ghi không gắn Brand/Segment chỉ hiện khi chọn "Tất cả". Đổi bộ lọc ở thanh bên (Brand / Segment).</div>';
+    return '<div class="notice info" data-context-banner="1">Đang lọc: <strong>' + esc(contextLabel()) + '</strong>. Bản ghi chưa gắn Brand/Segment chỉ hiện ở "Tất cả".</div>';
   }
   function contextSelectorHtml() {
     var brands = brandsList();
@@ -1969,7 +1987,7 @@
         esc(st.error || st.message || 'Đã xảy ra lỗi khi tải.') +
         ' <button class="btn small secondary" data-action="retry-load">Thử lại</button></div>';
     }
-    if (st.status === 'stale') return '<div class="notice warn">Dữ liệu đang hiển thị có thể đã cũ' + (st.updatedAt ? ' (tải lúc ' + esc(D.formatDateTimeVN(st.updatedAt)) + ')' : '') + '. <button class="btn small secondary" data-action="retry-load">Tải lại</button></div>';
+    if (st.status === 'stale') return '<div class="notice warn">Dữ liệu có thể đã cũ' + (st.updatedAt ? ' · tải lúc ' + esc(D.formatDateTimeVN(st.updatedAt)) : '') + ' <button class="btn small secondary" data-action="retry-load">Tải lại</button></div>';
     return '';
   }
   function collLoadingOrError(coll) { var s = loadStateOf(coll).status; return s === 'loading' || s === 'error' || s === 'denied'; }
@@ -3637,16 +3655,16 @@
         atRisk.push({ campaign: c, reason: reasons.join('. '), overdueCount: od.length, blockedCount: blockedReal.length, totalCount: ct.length, affectedCount: affected });
       }
     });
-    var html = pageHead('Overview', 'Tình hình Marketing tại thời điểm hiện tại.',
+    var html = pageHead('Overview', '',
       canEdit() ? '<a class="btn" href="#/campaigns">+ Tạo campaign</a>' : '');
     html += contextBannerHtml();
     html += collectionBanner('campaigns');
     if (!collLoadingOrError('campaigns') && !campaigns.length && contextActive()) {
-      html += '<div class="state-box">Không có campaign nào khớp bộ lọc Brand/Segment hiện tại (' + esc(contextLabel()) + '). Đổi bộ lọc ở thanh bên để xem thêm.</div>';
+      html += '<div class="state-box">Không có campaign nào khớp lọc hiện tại (' + esc(contextLabel()) + ').</div>';
     }
     if (!collLoadingOrError('campaigns') && !visibleList('campaigns').length) {
-      html += emptyState('Workspace chưa có campaign nào', 'Bắt đầu bằng cách tạo campaign đầu tiên, sau đó thêm giai đoạn, task và content ngay trong trang chi tiết campaign.',
-        '<p><a class="btn" href="#/campaigns">Tới mục IMC & Campaigns để tạo</a> <a class="btn secondary" href="#/settings">Thiết lập BU/sản phẩm trước</a></p>');
+      html += emptyState('Chưa có campaign nào', 'Tạo campaign đầu tiên để bắt đầu.',
+        '<p><a class="btn" href="#/campaigns">Tạo campaign</a> <a href="#/settings">Thiết lập BU/sản phẩm trước</a></p>');
     }
     html += '<div class="cards">' +
       vizKpiCardHtml({ label: 'Campaign đang chạy', valueText: String(running.length), tone: 'running', toneLabel: 'Đang chạy', href: '#/campaigns', hrefLabel: 'Xem danh sách', progress: campaigns.length ? { value: running.length, max: campaigns.length, pct: vizPct(running.length, campaigns.length), tone: 'running', detail: running.length + '/' + campaigns.length + ' campaign (' + fmtPct(vizPct(running.length, campaigns.length)) + ')' } : null }) +
@@ -3661,7 +3679,7 @@
       var p = D.campaignProgress(ctasks2);
       var tone = p.percentage >= 100 ? 'done' : (ctasks2.some(isOverdue) ? 'overdue' : 'running');
       html += '<div class="card"><strong><a href="#/campaigns/' + esc(c.id) + '">' + esc(c.name) + '</a></strong><p class="sub">' + esc(D.formatDateVN(c.startDate)) + ' — ' + esc(D.formatDateVN(c.endDate)) + ' · Người phụ trách: ' + esc(memberName(c.ownerId)) + '</p>' +
-        vizProgressBarHtml({ value: p.completed, max: p.total, pct: p.percentage, tone: tone, detail: 'Tiến độ (chỉ tính task chi tiết, không tính task cha): ' + p.completed + '/' + p.total + ' (' + p.percentage + '%)' }) + '</div>';
+        vizProgressBarHtml({ value: p.completed, max: p.total, pct: p.percentage, tone: tone, detail: p.completed + '/' + p.total + ' task chi tiết (' + p.percentage + '%) — không tính task cha' }) + '</div>';
     });
     html += workspaceChartsHtml();
     html += '<h2>Nguy cơ trễ (kèm lý do cụ thể)</h2>';
@@ -3706,7 +3724,7 @@
     var myContent = Store.list('variants').filter(function (v2) {
       return v2.ownerId === (me && me.id) && v2.scheduledAt && dateInTz(v2.scheduledAt) >= weekStart && dateInTz(v2.scheduledAt) <= weekEnd;
     });
-    var html = pageHead('Task của tôi', 'Task của ' + (me ? me.name : '—') + '. Bấm vào tên task để mở chi tiết và sửa ngay tại chỗ.',
+    var html = pageHead('Task của tôi', 'Task của ' + (me ? me.name : '—') + '.',
       canEdit() ? '<button class="btn" data-action="editor-open" data-kind="task">+ Tạo task</button>' : '');
     html += readonlyNote();
     // WAVE-B1-VIZ2: dải KPI đầu trang — số đếm lấy NGUYÊN từ chính các nhóm
@@ -3718,14 +3736,14 @@
     html += '<div data-viz="my-work-summary"><div class="cards">' + kpiDefs.map(function (k) {
       return vizKpiCardHtml({
         label: k.label, valueText: String(k.count), tone: k.tone, toneLabel: toneLabels[k.tone] || '',
-        sub: k.label === 'Task đang chờ mình' ? 'Task của người khác đang chờ task của bạn hoàn thành trước' : (k.label === 'Chờ mình duyệt' ? 'Content đang chờ bạn duyệt ở hộp duyệt' : null),
+        sub: k.label === 'Task đang chờ mình' ? 'Chờ task của bạn xong' : (k.label === 'Chờ mình duyệt' ? 'Ở hộp duyệt Content' : null),
         progress: (k.mineSubset && mine.length) ? { value: k.count, max: mine.length, pct: vizPct(k.count, mine.length), tone: k.tone, detail: k.count + '/' + mine.length + ' task của tôi (' + fmtPct(vizPct(k.count, mine.length)) + ')' } : null
       });
     }).join('') + '</div>' +
       vizStackedBarHtml({
         segments: kpiDefs.map(function (k) { return { label: k.label, value: k.count, tone: k.tone }; }),
         total: kpiDefs.reduce(function (s, k) { return s + k.count; }, 0),
-        unitLabel: 'lượt đếm theo nhóm (một task có thể thuộc nhiều nhóm cùng lúc)', emptyText: 'Chưa có task nào trong các nhóm để vẽ thanh phân bổ.'
+        unitLabel: 'Đếm theo nhóm — một task có thể nằm ở nhiều nhóm.', emptyText: 'Chưa có task nào trong các nhóm để vẽ thanh phân bổ.'
       }) + '</div>';
     function taskList(list, emptyText) {
       if (!list.length) return '<p class="sub">' + esc(emptyText) + '</p>';
@@ -3756,13 +3774,13 @@
       return '<div class="viz-chart" data-viz="my-work-week-timeline"><h4>Timeline 7 ngày — tuần ' + esc(D.formatDateVN(weekStart)) + ' đến ' + esc(D.formatDateVN(weekEnd)) + '</h4>' + head + rows + '</div>';
     }
     groups.forEach(function (g) {
-      html += '<h2>' + esc(g[0]) + ' (' + g[1].length + ')</h2>' + taskList(g[1], 'Không có task nào trong nhóm này.');
+      html += '<h2>' + esc(g[0]) + ' (' + g[1].length + ')</h2>' + taskList(g[1], 'Chưa có task nào trong nhóm này.');
       if (g[0] === 'Tuần này') html += weekTimelineHtml(g[1]);
     });
     html += '<h2>Chờ mình duyệt (' + myApprovals.length + ')</h2>';
-    html += myApprovals.length ? '<ul class="clean">' + myApprovals.map(function (a) { return '<li><a href="#/content/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> — phiên bản content số ' + esc(a.revision) + ', gửi bởi ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content nào chờ bạn duyệt.</p>';
+    html += myApprovals.length ? '<ul class="clean">' + myApprovals.map(function (a) { return '<li><a href="#/content/approvals">' + esc(contentTitle(a.contentItemId)) + '</a> — phiên bản content số ' + esc(a.revision) + ', gửi bởi ' + esc(memberName(a.requestedBy)) + ' ' + vizStatusPillHtml(a.status) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có content nào chờ bạn duyệt.</p>';
     html += '<h2>Lịch content của tôi tuần này (' + myContent.length + ')</h2>';
-    if (!myContent.length) html += '<p class="sub">Tuần này bạn không có content nào tới lịch đăng.</p>';
+    if (!myContent.length) html += '<p class="sub">Chưa có content nào tới lịch đăng tuần này.</p>';
     else {
       // WAVE-B1-VIZ2: dải lịch theo ngày — gom myContent theo ngày đăng đã
       // có (dateInTz của scheduledAt), chấm màu theo tông trạng thái biến thể.
@@ -3780,6 +3798,15 @@
     return html;
   }
 
+  // Pattern "Chi tiết" (đợt tinh gọn 18/11) — bản sao ĐỒNG NHẤT của
+  // helper ở khối helper chung (cạnh pageHead), đặt trong khối này để
+  // mọi hàm Planning/Content dùng chung một cơ chế <details> tại chỗ.
+  function noteDetailHtml(fullHtml) {
+    return '<details class="note-details"><summary>Chi tiết</summary><div class="note note--full">' + fullHtml + '</div></details>';
+  }
+  function noteWithDetailHtml(shortHtml, fullHtml, attrs) {
+    return '<p class="sub note"' + (attrs ? ' ' + attrs : '') + '>' + shortHtml + '</p>' + noteDetailHtml(fullHtml);
+  }
   // ---------- Planning / Brand: trạng thái rỗng có lời ----------
   // planningEmptyStateHtml(kind, opts): HTML khối rỗng của Planning.
   // kind: 'no-data' (toàn tập plan_rows trống) | 'filtered' (rỗng do bộ
@@ -3790,15 +3817,15 @@
     opts = opts || {};
     if (kind === 'filtered') {
       return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="filtered"><p><strong>Không có dòng Planning nào khớp bộ lọc Brand/Segment hiện tại</strong></p>' +
-        '<p>Đang lọc theo <strong>' + esc(opts.contextLabel || '') + '</strong>. Dữ liệu Planning vẫn có ' + esc(opts.total != null ? String(opts.total) : 'một số') + ' dòng ngoài ngữ cảnh đang chọn — hãy đổi Brand / Segment sang "Tất cả" ở thanh bên để nới lọc và xem thêm.</p></div>';
+        '<p class="note">Đang lọc theo <strong>' + esc(opts.contextLabel || '') + '</strong>. Dữ liệu Planning vẫn có ' + esc(opts.total != null ? String(opts.total) : 'một số') + ' dòng ngoài ngữ cảnh đang chọn — hãy đổi Brand / Segment sang "Tất cả" ở thanh bên để nới lọc và xem thêm.</p></div>';
     }
     if (kind === 'year') {
       return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="year"><p><strong>Không có dòng Planning nào cho năm ' + esc(opts.year != null ? String(opts.year) : '') + '</strong></p>' +
-        '<p>Các dòng khớp bộ lọc hiện tại (' + esc(opts.contextLabel || '') + ') thuộc năm khác. Thử đổi năm ở ô "Năm Planning" phía trên để xem.</p></div>';
+        '<p class="note">Các dòng khớp lọc (' + esc(opts.contextLabel || '') + ') thuộc năm khác — đổi năm ở ô "Năm Planning" để xem.</p></div>';
     }
     // no-data: toàn bộ tập plan_rows trống (chưa có dữ liệu ở bất kỳ lọc/năm nào).
     return '<div class="state-box" data-planning-empty="1" data-planning-empty-kind="no-data"><p><strong>Chưa có dòng Planning nào</strong></p>' +
-      '<p>Dữ liệu hiện chưa có dòng kế hoạch nào — hãy tạo Brand rồi thêm dòng Planning đầu tiên.</p></div>';
+      '<p class="note">Chưa có dòng kế hoạch nào — hãy tạo Brand rồi thêm dòng Planning đầu tiên.</p></div>';
   }
   // brandEmptyStateHtml(opts): khối rỗng toàn tập của mục Brand trong
   // trang Brand (collection brands trống). opts: { canEditBrand }.
@@ -3817,7 +3844,7 @@
   // xem, HOẶC ô nhập tên kênh mới (ô nhập thắng khi có chữ). Nhóm cũng
   // vậy: select nhóm đang có của Brand hoặc nhập mới (ô nhập thắng).
   function planningAddRowHtml(year) {
-    var html = '<p class="planning-add-row-bar" data-planning-add-row-bar="1"><button type="button" class="btn small" data-action="planning-add-row-toggle" aria-expanded="' + (UI.planningAddOpen ? 'true' : 'false') + '">+ Thêm dòng</button> <span class="sub">Thêm một dòng Channel mới vào lưới Planning Theo tháng của năm ' + esc(year) + '.</span></p>';
+    var html = '<p class="planning-add-row-bar" data-planning-add-row-bar="1"><button type="button" class="btn small" data-action="planning-add-row-toggle" aria-expanded="' + (UI.planningAddOpen ? 'true' : 'false') + '">+ Thêm dòng</button></p>';
     if (!UI.planningAddOpen) return html;
     var editable = planningInputsEditable();
     var disAttr = editable ? '' : ' disabled';
@@ -3837,7 +3864,7 @@
     if (!canEdit()) {
       html += '<div class="notice info" data-planning-add-locked="1">Vai trò hiện tại chỉ xem nên không thêm dòng Planning được.</div>';
     } else {
-      html += '<p class="sub">Dòng mới được tạo với Số lượng 0 ở tháng 1/' + esc(year) + ' — sau khi thêm, bấm tên Channel trong lưới để mở bảng chi tiết và sửa Số lượng/Đơn giá từng tháng. Nếu nhập Đơn giá ban đầu và Brand × Channel chưa có Benchmark, hệ thống tạo Benchmark chỉ gồm đơn giá này (các tỉ lệ phễu để trống nên Forecast của kênh mới sẽ báo chưa tính được cho tới khi có tỉ lệ).</p>';
+      html += noteWithDetailHtml('Dòng mới bắt đầu với Số lượng 0 ở tháng 1/' + esc(year) + '.', 'Sau khi thêm, bấm tên Channel trong lưới để mở bảng chi tiết và sửa Số lượng/Đơn giá từng tháng. Nếu nhập Đơn giá ban đầu và Brand × Channel chưa có Benchmark, hệ thống tạo Benchmark chỉ gồm đơn giá này (các tỉ lệ phễu để trống nên Forecast của kênh mới sẽ báo chưa tính được cho tới khi có tỉ lệ).');
     }
     html += '<form class="inline" id="planning-add-row-form" data-year="' + esc(year) + '">' +
       '<label>Brand<select name="brandId" data-action-change="planning-add-brand" aria-label="Brand của dòng mới"' + disAttr + '>' + brandOpts + '</select></label>' +
@@ -3866,8 +3893,9 @@
     var benchmarks = filteredBenchmarks();
     var months = [];
     for (var mi = 1; mi <= 12; mi++) months.push(String(year) + '-' + String(mi).padStart(2, '0'));
-    var html = pageHead('Planning', 'Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Views mỗi bài / Tỉ lệ chuyển đổi theo Phase). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.',
+    var html = pageHead('Planning', 'Kế hoạch Content theo Channel, năm ' + year + ' — Theo tháng (xem lưới, sửa trong bảng chi tiết) hoặc Theo phase. Ngân sách tự tính; riêng Paid Media nhập trực tiếp.',
       '');
+    html += noteDetailHtml('Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Views mỗi bài / Tỉ lệ chuyển đổi theo Phase). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.');
     html += readonlyNote() + contextBannerHtml();
     // Chọn năm
     var yearOpts = [2026, 2027, 2028].map(function (y) { return '<option value="' + y + '"' + (year === y ? ' selected' : '') + '>' + y + '</option>'; }).join('');
@@ -3905,7 +3933,7 @@
     // vào tên Channel ở đầu dòng -> mở BẢNG CHI TIẾT của đúng dòng đó ngay
     // bên dưới lưới (xem khối data-planning-detail ở dưới); trong bảng chi
     // tiết mới có ô sửa Số lượng theo từng tháng.
-    html += '<p class="sub" data-planning-grid-hint="1">Bấm vào tên Channel ở đầu một dòng để mở bảng chi tiết của dòng đó ngay bên dưới lưới — trong bảng chi tiết mới sửa được Số lượng và Đơn giá theo từng tháng (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng trong bảng chi tiết). Bấm dòng khác để chuyển chi tiết sang dòng đó; bấm lại dòng đang mở (hoặc nút "Đóng chi tiết") để đóng.</p>';
+    html += '<p class="sub" data-planning-grid-hint="1">Bấm tên Channel để mở bảng chi tiết và sửa Số lượng/Đơn giá (ngân sách tự tính; Paid Media nhập trực tiếp).</p>';
     // Gom nhóm theo group, trong nhóm gom theo channel.
     var groupOrder = [], groupMap = {};
     rows.forEach(function (r) {
@@ -4087,11 +4115,11 @@
       if (!canEdit()) {
         html += '<div class="notice info" data-planning-detail-locked="1">Vai trò hiện tại chỉ xem nên các ô Số lượng, Đơn giá và Ngân sách Paid Media trong bảng chi tiết đang bị khóa.</div>';
       } else {
-        html += '<p class="sub" data-planning-detail-hint="1">Sửa ô Số lượng hoặc Đơn giá theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng ngân sách nguồn (Số lượng trống, vd Paid Ads) không sửa Số lượng và Đơn giá ở đây — riêng dòng Paid Media thì sửa trực tiếp ô Ngân sách theo tháng (xem chú thích Paid Media bên dưới).</p>' +
-          '<p class="sub" data-planning-detail-price-hint="1">Đơn giá: ô hiện đơn giá hiệu dụng của tháng — nhãn "Benchmark" nghĩa là đang lấy đơn giá Benchmark, nhập số vào ô Đơn giá để chuyển tháng đó sang "đặt tay". Xoá trắng ô Đơn giá rồi ra khỏi ô để bỏ đơn giá đặt tay, quay về đơn giá Benchmark.</p>' +
-          '<p class="sub" data-planning-detail-budget-hint="1">Ngân sách của dòng thường chỉ tự tính (không sửa được): Ngân sách của tháng = Số lượng × Đơn giá hiệu dụng (đơn giá đặt tay nếu có, không thì đơn giá Benchmark). Ngoại lệ duy nhất: dòng thuộc nhóm Paid Media nhập ngân sách trực tiếp theo tháng ở cột Ngân sách (dòng không thuộc Paid Media không có ô nhập ngân sách).</p>' +
-          (selHasPaid ? '<p class="sub" data-planning-paid-budget-hint="1">Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Theo mô hình Objective, mỗi tháng hiển thị theo từng Objective: mỗi Objective có ô nhập ngân sách riêng, kết quả đặt tại tầng của Objective đó (Awareness → Views, Traffic → Visits, Signup → Freemium, Remarketing → Paid) = Ngân sách ÷ đơn giá kết quả (cost_per_result) của Benchmark rồi chảy xuống qua tỉ lệ Benchmark — KHÔNG suy ngược lên tầng trên. Objective chưa có đơn giá trong file nguồn (vd Awareness) hiển thị "chưa có đơn giá": ngân sách vẫn tính vào tổng tháng nhưng chưa ra chỉ số. Tổng ngân sách tháng ở dòng tháng là chỉ đọc, bằng cộng các Objective.</p>' : '') +
-          (selRows.some(planRowIsBudgetDriven) ? '<p class="sub" data-planning-audience-hint="1">Audience (mô hình B2B bottom-up): mỗi dòng Objective (Paid Media) và mỗi dòng tháng Partnership/Event có chọn B2C / B2B / Cả hai + ô % cho B2B khi chọn Cả hai. Phần B2C của Lead Gen/Demo đặt kết quả tại tầng Freemium rồi chảy xuống; phần B2B thành B2B Account qua lead_to_account / demo_to_account; Partnership/Event: phần B2C ÷ đơn giá Freemium (cost_per_result.signup), phần B2B ÷ cost per B2B Account. Mọi Paid User từ luồng B2C đều sinh thêm B2B Account qua cầu nối paid_to_b2b của Channel. Objective thuần B2C (Awareness/Traffic/Signup/Remarketing) chỉ chạy B2C — lựa chọn B2B bị khóa. Chưa có tỉ lệ/đơn giá B2B thì phần tương ứng cho 0 account.</p>' : '');
+        html += noteWithDetailHtml('Sửa rồi rời ô/Enter để lưu — tổng, Budget, Forecast tính lại ngay. Nhập &gt; 0 ở tháng trống sẽ tạo dòng plan mới.', 'Sửa ô Số lượng hoặc Đơn giá theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng ngân sách nguồn (Số lượng trống, vd Paid Ads) không sửa Số lượng và Đơn giá ở đây — riêng dòng Paid Media thì sửa trực tiếp ô Ngân sách theo tháng (xem chú thích Paid Media bên dưới).', 'data-planning-detail-hint="1"') +
+          '<p class="sub" data-planning-detail-price-hint="1">Cách tính: Đơn giá hiệu dụng — "đặt tay" thắng Benchmark. Xoá trắng ô Đơn giá = bỏ đặt tay, quay về đơn giá Benchmark.</p>' +
+          '<p class="sub" data-planning-detail-budget-hint="1">Cách tính: Ngân sách của dòng thường chỉ tự tính (không sửa được) — Ngân sách tháng = Số lượng × Đơn giá hiệu dụng (đặt tay nếu có, không thì Benchmark). Chỉ Paid Media nhập ngân sách trực tiếp.</p>' +
+          (selHasPaid ? noteWithDetailHtml('Dòng Paid Media: nhập ngân sách trực tiếp theo tháng theo từng Objective; kết quả đặt tại tầng của Objective rồi chảy xuống (không suy ngược). Tổng tháng = cộng các Objective, chỉ đọc.', 'Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Theo mô hình Objective, mỗi tháng hiển thị theo từng Objective: mỗi Objective có ô nhập ngân sách riêng, kết quả đặt tại tầng của Objective đó (Awareness → Views, Traffic → Visits, Signup → Freemium, Remarketing → Paid) = Ngân sách ÷ đơn giá kết quả (cost_per_result) của Benchmark rồi chảy xuống qua tỉ lệ Benchmark — KHÔNG suy ngược lên tầng trên. Objective chưa có đơn giá trong file nguồn (vd Awareness) hiển thị "chưa có đơn giá": ngân sách vẫn tính vào tổng tháng nhưng chưa ra chỉ số. Tổng ngân sách tháng ở dòng tháng là chỉ đọc, bằng cộng các Objective.', 'data-planning-paid-budget-hint="1"') : '') +
+          (selRows.some(planRowIsBudgetDriven) ? noteWithDetailHtml('Audience: chọn B2C / B2B / Cả hai (+ % B2B). Paid User B2C luôn sinh thêm B2B Account qua paid_to_b2b.', 'Audience (mô hình B2B bottom-up): mỗi dòng Objective (Paid Media) và mỗi dòng tháng Partnership/Event có chọn B2C / B2B / Cả hai + ô % cho B2B khi chọn Cả hai. Phần B2C của Lead Gen/Demo đặt kết quả tại tầng Freemium rồi chảy xuống; phần B2B thành B2B Account qua lead_to_account / demo_to_account; Partnership/Event: phần B2C ÷ đơn giá Freemium (cost_per_result.signup), phần B2B ÷ cost per B2B Account. Mọi Paid User từ luồng B2C đều sinh thêm B2B Account qua cầu nối paid_to_b2b của Channel. Objective thuần B2C (Awareness/Traffic/Signup/Remarketing) chỉ chạy B2C — lựa chọn B2B bị khóa. Chưa có tỉ lệ/đơn giá B2B thì phần tương ứng cho 0 account.', 'data-planning-audience-hint="1"') : '');
       }
       html += tbl('<tr><th>Tháng</th><th>Số lượng</th><th>Đơn giá (VNĐ)</th><th>Ngân sách (VNĐ)</th><th>Segment</th><th>Brand</th></tr>' + detailMonthRows + '<tr data-planning-detail-total="1"><td><strong>Tổng dòng</strong></td><td><strong>' + fmtNum(detailTotal) + '</strong></td><td></td><td data-planning-detail-budget-total="1"><strong>' + fmtMoney(detailBudgetTotal, 'VND') + '</strong></td><td colspan="2"></td></tr>', 'planning-detail');
       // Forecast của chính dòng này — dùng NGUYÊN cơ chế sẵn có của Theo
@@ -4122,7 +4150,7 @@
       var bMax = Math.max.apply(null, budgetMonthly.map(function (x) { return x.total; }).concat([0]));
       html += '<div class="viz-chart" data-viz="planning-budget-chart">' + budgetMonthly.map(function (x) { return vizBarRowHtml(vizMonthLabel(x.month), x.total, bMax, 'is-alloc', fmtMoney(x.total, 'VND')); }).join('') + '</div>';
       html += tbl('<tr><th>Tháng</th><th>Ngân sách dự kiến</th></tr>' + budgetMonthly.map(function (x) { return '<tr><td>' + esc(vizMonthLabel(x.month)) + '</td><td>' + fmtMoney(x.total, 'VND') + '</td></tr>'; }).join(''), 'planning-budget');
-      html += '<p class="sub">Tổng ngân sách dự kiến cả kỳ: <strong>' + fmtMoney(budgetMonthly.reduce(function (s, x) { return s + x.total; }, 0), 'VND') + '</strong> (tự tính qua hàm planBudget: Số lượng × đơn giá hiệu dụng — đơn giá đặt tay nếu có, không thì đơn giá Benchmark; dòng Paid Media lấy ngân sách đã nhập/lưu ở field budget).</p>';
+      html += '<p class="sub">Cách tính: Tổng cả kỳ: <strong>' + fmtMoney(budgetMonthly.reduce(function (s, x) { return s + x.total; }, 0), 'VND') + '</strong> = Σ Số lượng × Đơn giá hiệu dụng (Paid Media lấy ngân sách đã nhập).</p>';
     } else {
       html += '<div class="state-box">Chưa tính được ngân sách dự kiến — chưa có Benchmark đơn giá khớp hoặc dòng plan chưa có ngân sách nhập thẳng.</div>';
     }
@@ -4203,7 +4231,7 @@
       '<label>COGS Paid / user (VNĐ/user/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('cogs_per_paid_user')) + '" data-action-change="phase-operating-money" data-field="cogs_per_paid_user" data-phase-id="' + pid + '" aria-label="COGS Paid trên mỗi user của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>Chi phí cố định mỗi tháng (VNĐ)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('fixed_cost')) + '" data-action-change="phase-operating-money" data-field="fixed_cost" data-phase-id="' + pid + '" aria-label="Chi phí cố định mỗi tháng của Phase ' + pname + '"' + disAttr + '></label>' +
       '</p>' +
-      '<div class="phase-operating-tiers" data-planning-phase-price-tiers="1" data-field="paid_price_tiers" data-phase-id="' + pid + '"><p class="sub"><strong>Mức giá Paid (paid_price_tiers)</strong> — tối đa 3 mức; ARPPU hiệu dụng = Σ Giá × Tỉ lệ. Tổng Tỉ lệ phải ≤ 100%; dòng để trống cả Giá lẫn Tỉ lệ sẽ bị bỏ khi lưu.</p>' +
+      '<div class="phase-operating-tiers" data-planning-phase-price-tiers="1" data-field="paid_price_tiers" data-phase-id="' + pid + '"><p class="sub">Cách tính: <strong>Mức giá Paid</strong> — tối đa 3 mức; ARPPU = Σ Giá × Tỉ lệ; tổng Tỉ lệ ≤ 100%.</p>' +
       [0, 1, 2].map(function (ti) {
         return '<p class="phase-operating-row" data-planning-price-tier-row="' + ti + '">' +
           '<label>Mức ' + (ti + 1) + ' — Giá (VNĐ)<input class="phase-input" type="number" step="any" min="0" value="' + esc(tierVal(ti, 'price')) + '" data-action-change="phase-price-tier" data-field="paid_price_tiers" data-tier-index="' + ti + '" data-tier-part="price" data-phase-id="' + pid + '" aria-label="Giá mức ' + (ti + 1) + ' của Phase ' + pname + '"' + disAttr + '></label> ' +
@@ -4216,7 +4244,7 @@
       '<label>ARPPU B2B (VNĐ/B2B account/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('arppu_b2b')) + '" data-action-change="phase-operating-money" data-field="arppu_b2b" data-phase-id="' + pid + '" aria-label="ARPPU B2B của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>COGS / B2B account (VNĐ/account/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('cogs_per_b2b_account')) + '" data-action-change="phase-operating-money" data-field="cogs_per_b2b_account" data-phase-id="' + pid + '" aria-label="COGS trên mỗi B2B account của Phase ' + pname + '"' + disAttr + '></label>' +
       '</p>' +
-      '<p class="sub">Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng): COGS Free = COGS Free/user × Free EOM, COGS Paid = COGS Paid/user × Paid EOM — không theo % doanh thu. Monthly cvr: mỗi tháng, Free EOM đầu kỳ × Monthly cvr chuyển thành New Paid (cộng thêm cohort Paid từ funnel). Revenue = ARPPU hiệu dụng (từ 3 mức giá Paid ở trên) × Paid EOM. Tài chính B2B chạy chuỗi tồn riêng: Revenue B2B = ARPPU B2B × B2B EOM, COGS B2B = COGS/B2B account × B2B EOM, Profit tính trên tổng B2C + B2B. Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0 — ngoại trừ khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0.</p>';
+      noteWithDetailHtml('Áp cho mọi tháng của Phase. Cách tính: COGS theo VNĐ/user/tháng; để trống = chỉ số liên quan hiện "—".', 'Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng): COGS Free = COGS Free/user × Free EOM, COGS Paid = COGS Paid/user × Paid EOM — không theo % doanh thu. Monthly cvr: mỗi tháng, Free EOM đầu kỳ × Monthly cvr chuyển thành New Paid (cộng thêm cohort Paid từ funnel). Revenue = ARPPU hiệu dụng (từ 3 mức giá Paid ở trên) × Paid EOM. Tài chính B2B chạy chuỗi tồn riêng: Revenue B2B = ARPPU B2B × B2B EOM, COGS B2B = COGS/B2B account × B2B EOM, Profit tính trên tổng B2C + B2B. Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0 — ngoại trừ khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0.');
     if (showOpening) {
       html += '<div class="planning-phase-opening" data-planning-phase-opening="1" data-phase-id="' + pid + '"><h4>Số dư đầu kỳ của Brand (trước tháng 1)</h4>' +
         '<p class="phase-operating-row">' +
@@ -4237,7 +4265,7 @@
     if (!canEdit()) {
       html += '<div class="notice info" data-planning-phase-locked="1">Vai trò hiện tại chỉ xem nên các ô nhập Phase đang bị khóa.</div>';
     } else {
-      html += '<p class="sub">Sửa ô rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay — Forecast tính lại sau mỗi lần lưu. Tỉ lệ để trống = xóa Assumption của bước đó, quay về kế thừa Benchmark. Số lượng là TỔNG của Channel trong cả Phase, được phân bổ lại về từng tháng theo tỉ lệ hiện tại.</p>';
+      html += '<p class="sub">Sửa rồi rời ô/Enter để lưu — Forecast tính lại ngay. Quy tắc: Tỉ lệ để trống = xoá Assumption, về Benchmark. Số lượng là TỔNG của Channel trong cả Phase, phân bổ lại về từng tháng theo tỉ lệ hiện tại.</p>';
     }
     var phases = filteredBrandPhases().filter(function (p) {
       var months = phaseMonths(p);
@@ -4273,7 +4301,7 @@
     html += '<p class="planning-phase-toolbar" data-planning-phase-toolbar="1">' +
       '<button type="button" class="btn small secondary" data-action="planning-phase-collapse-all" data-phase-ids="' + esc(visiblePhaseIds) + '">Thu gọn tất cả</button> ' +
       '<button type="button" class="btn small secondary" data-action="planning-phase-expand-all" data-phase-ids="' + esc(visiblePhaseIds) + '">Mở tất cả</button> ' +
-      '<span class="sub">Bấm mũi tên hoặc tên Phase ở đầu mỗi khối để thu gọn / mở riêng Phase đó.</span></p>';
+      '</p>';
     groups.forEach(function (g) {
       if (multiBrand || !UI.brandFilter || UI.brandFilter === 'all') {
         html += '<h3 data-planning-phase-brand="' + esc(g.brandId) + '">Brand: ' + esc(g.brandId ? brandNameOf(g.brandId) : 'Chưa gắn Brand') + '</h3>';
@@ -4324,10 +4352,10 @@
     html += '<div class="planning-phase-body" data-planning-phase-body="1" data-phase-id="' + esc(phase.id) + '">';
     // Ô nhập Uplift của Phase (%/tháng)
     html += '<p class="phase-uplift-row"><label>Uplift (%/tháng)<input class="phase-input" type="number" step="any" min="0" name="uplift" value="' + esc(uplift === null ? '' : String(uplift)) + '" data-action-change="phase-uplift" data-phase-id="' + esc(phase.id) + '" data-phase-uplift="' + esc(phase.id) + '" aria-label="Uplift %/tháng của Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></label> ' +
-      '<span class="sub">Uplift áp vào 4 tỉ lệ chuyển đổi theo từng tháng trong Phase (tháng đầu hệ số 1) — do engine tính khi Forecast.</span></p>';
+      '<span class="sub">Quy tắc: Áp vào 4 tỉ lệ chuyển đổi; tháng đầu ×1.</span></p>';
     // Ô nhập Uplift Views của Phase (%/tháng) — ngay cạnh ô Uplift tỉ lệ.
     html += '<p class="phase-uplift-row"><label>Uplift Views (%/tháng)<input class="phase-input" type="number" step="any" min="0" name="views-uplift" value="' + esc(viewsUplift === null ? '' : String(viewsUplift)) + '" data-action-change="phase-views-uplift" data-phase-id="' + esc(phase.id) + '" data-phase-views-uplift="' + esc(phase.id) + '" aria-label="Uplift Views %/tháng của Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></label> ' +
-      '<span class="sub">Uplift Views áp vào Views mỗi bài của các dòng Content theo từng tháng trong Phase (tháng đầu hệ số 1) — không áp cho dòng Paid Media / Partnership / Event (Views suy từ ngân sách). Để trống = không tăng trưởng.</span></p>';
+      '<span class="sub">Quy tắc: Áp vào Views mỗi bài (Content); tháng đầu ×1. Không áp Paid/Partnership/Event. Trống = không tăng trưởng.</span></p>';
     // Khối Chỉ số vận hành & tài chính của Phase (+ số dư đầu kỳ ở
     // khối Phase đầu tiên của năm).
     html += planningPhaseOperatingHtml(phase, disAttr, showOpening);
@@ -4405,7 +4433,7 @@
       }).join('');
       if (paidBreakdowns) {
         html += paidBreakdowns +
-          '<p class="sub" data-planning-phase-paid-note="1">Ngân sách Paid theo Objective ở chế độ Theo phase chỉ HIỂN THỊ (đọc từ cùng các dòng plan_rows) — muốn sửa ngân sách của từng Objective, sửa ở bảng chi tiết Theo tháng.</p>';
+          '<p class="sub" data-planning-phase-paid-note="1">Chỉ hiển thị — sửa ở bảng chi tiết Theo tháng.</p>';
       }
       // Partnership/Event trong Phase: ngân sách + audience + phần
       // B2C/B2B cũng CHỈ ĐỌC tại đây (sửa ở bảng chi tiết Theo tháng).
@@ -4419,11 +4447,11 @@
       }).join('');
       if (budgetDrivenBreakdowns) {
         html += budgetDrivenBreakdowns +
-          '<p class="sub" data-planning-phase-budget-audience-note="1">Ngân sách và Audience của Partnership/Event ở chế độ Theo phase chỉ HIỂN THỊ — muốn sửa ngân sách/Audience, sửa ở bảng chi tiết Theo tháng.</p>';
+          '<p class="sub" data-planning-phase-budget-audience-note="1">Chỉ hiển thị — sửa ở bảng chi tiết Theo tháng.</p>';
       }
-      html += '<p class="sub">Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).</p>';
-      html += '<p class="sub" data-planning-phase-price-hint="1">Đơn giá mỗi bài: ô hiện đơn giá HIỆU DỤNG của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang đơn giá đặt tay, "Benchmark" nghĩa là đang lấy đơn giá Benchmark. Nhập một giá vào ô sẽ ghi đơn giá đặt tay đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × đơn giá hiệu dụng như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ đơn giá đặt tay của cả Phase, quay về Benchmark. Nếu các tháng đang có đơn giá khác nhau (do sửa lẻ ở Theo tháng), ô để trống kèm ghi chú "khác nhau theo tháng".</p>';
-      html += '<p class="sub" data-planning-phase-views-hint="1">Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về Views mỗi bài của Benchmark.</p>';
+      html += '<p class="sub">Cách tính: Forecast tháng = Số lượng × Views mỗi bài hiệu dụng; tỉ lệ hiệu dụng: Assumption thắng Benchmark, không có cả hai = "—".</p>';
+      html += noteWithDetailHtml('Nhập 1 giá = đặt tay cho <strong>mọi tháng</strong> trong Phase; xoá trắng = về Benchmark.', 'Đơn giá mỗi bài: ô hiện đơn giá HIỆU DỤNG của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang đơn giá đặt tay, "Benchmark" nghĩa là đang lấy đơn giá Benchmark. Nhập một giá vào ô sẽ ghi đơn giá đặt tay đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × đơn giá hiệu dụng như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ đơn giá đặt tay của cả Phase, quay về Benchmark. Nếu các tháng đang có đơn giá khác nhau (do sửa lẻ ở Theo tháng), ô để trống kèm ghi chú "khác nhau theo tháng".', 'data-planning-phase-price-hint="1"');
+      html += '<span data-planning-phase-views-hint="1">' + noteDetailHtml('Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về Views mỗi bài của Benchmark. Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).') + '</span>';
     }
     // Chart funnel theo Phase (totals của Phase qua cùng engine + ctx)
     // — pTotals đã tính một lần ở đầu khối cho dòng tóm tắt của thanh
@@ -4448,8 +4476,12 @@
   // còn tiêu đề) — số liệu vẫn tính lại từ state ở lần mở ra sau.
   function planningKpiSectionHtml(key, title, note, tableHtml) {
     var collapsed = !!((UI.planningKpiCollapsed || {})[key]);
+    // Đợt tinh gọn 18/11: note dạng block (tóm tắt + nút "Chi tiết" qua
+    // noteWithDetailHtml/noteDetailHtml) render nguyên khối; note chuỗi
+    // thường giữ nguyên dạng <p class="sub"> như trước.
+    var noteHtml = (typeof note === 'string' && note.indexOf('<details') !== -1) ? '<div class="note-block">' + note + '</div>' : '<p class="sub">' + note + '</p>';
     return '<div class="panel planning-kpi-section" data-planning-kpi-section="' + esc(key) + '"><h3><button type="button" class="linklike" data-action="planning-kpi-toggle" data-id="' + esc(key) + '" aria-expanded="' + (collapsed ? 'false' : 'true') + '">' + (collapsed ? '▸ ' : '▾ ') + esc(title) + '</button></h3>' +
-      (collapsed ? '' : '<p class="sub">' + note + '</p>' + tableHtml) + '</div>';
+      (collapsed ? '' : noteHtml + tableHtml) + '</div>';
   }
   function planningKpiTablesHtml(rows, benchmarks, months) {
     var data = planningKpiData(rows, benchmarks, months);
@@ -4476,7 +4508,7 @@
     viewsBody += '<tr data-planning-kpi-row="views" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + viewsBlendedCells +
       '<td data-planning-kpi-total="views" data-channel="Tất cả"><strong>' + ((data.blended.totals.hasViews && data.blended.totals.views !== null) ? fmtPlanningCount(data.blended.totals.views) : '—') + '</strong></td></tr>';
     var viewsHtml = planningKpiSectionHtml('views', 'KPI chi tiết theo tháng — Views (Forecast)',
-      'Views forecast theo Channel × tháng, lấy từ cùng engine funnel với Forecast ở trên (đã gồm uplift theo Phase). Channel thuộc Paid Media <strong>không có Views</strong> khi Objective Awareness chưa có đơn giá — file nguồn không có CPM/CPV cho Paid nên hiện tại hiển thị "—" ở mọi tháng (khi nào Benchmark có cost_per_result của Awareness thì Views của Paid mới hiện). Channel chưa có Benchmark/Assumption khớp cũng hiển thị "—". Hàng <strong>Tất cả</strong>: tổng Views của mọi Channel có forecast trong tháng (không cộng Channel Paid Media chưa có đơn giá Awareness); tháng không Channel nào có Views thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Views cả kỳ.',
+      '<p class="sub note">Views forecast theo Channel. Paid Media chưa có đơn giá Awareness → "—". Hàng Tất cả = tổng các Channel có forecast.</p>' + noteDetailHtml('Views forecast theo Channel × tháng, lấy từ cùng engine funnel với Forecast ở trên (đã gồm uplift theo Phase). Channel thuộc Paid Media <strong>không có Views</strong> khi Objective Awareness chưa có đơn giá — file nguồn không có CPM/CPV cho Paid nên hiện tại hiển thị "—" ở mọi tháng (khi nào Benchmark có cost_per_result của Awareness thì Views của Paid mới hiện). Channel chưa có Benchmark/Assumption khớp cũng hiển thị "—". Hàng <strong>Tất cả</strong>: tổng Views của mọi Channel có forecast trong tháng (không cộng Channel Paid Media chưa có đơn giá Awareness); tháng không Channel nào có Views thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Views cả kỳ.'),
       tbl(head + viewsBody, 'planning-kpi-views'));
     // 2) PAID USERS — gồm cả Paid Media tính theo từng Objective.
     var paidBody = data.channels.map(function (ch) {
@@ -4491,7 +4523,7 @@
     paidBody += '<tr data-planning-kpi-row="paid" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + paidBlendedCells +
       '<td data-planning-kpi-total="paid" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningCount(data.blended.totals.paid) : '—') + '</strong></td></tr>';
     var paidHtml = planningKpiSectionHtml('paid', 'KPI chi tiết theo tháng — Paid Users (Forecast)',
-      'Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (tính theo từng Objective từ ngân sách: kết quả đặt tại tầng của Objective rồi chảy xuống tới Paid, cộng dồn mọi Objective). Số hiển thị làm tròn thành số nguyên; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn. Hàng <strong>Tất cả</strong>: tổng Paid Users của mọi Channel có forecast trong tháng; tháng không Channel nào có forecast thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Paid Users cả kỳ.',
+      '<p class="sub note">Paid Users forecast (hiển thị làm tròn nguyên). <strong>CAC tính từ số Paid Users CHƯA làm tròn.</strong> Hàng Tất cả = tổng Channel có forecast.</p>' + noteDetailHtml('Paid Users forecast theo Channel × tháng từ cùng engine funnel — gồm cả Paid Media (tính theo từng Objective từ ngân sách: kết quả đặt tại tầng của Objective rồi chảy xuống tới Paid, cộng dồn mọi Objective). Số hiển thị làm tròn thành số nguyên; CAC ở bảng dưới tính từ số Paid Users CHƯA làm tròn. Hàng <strong>Tất cả</strong>: tổng Paid Users của mọi Channel có forecast trong tháng; tháng không Channel nào có forecast thì hiển thị "—". Cột Tổng của hàng Tất cả = tổng Paid Users cả kỳ.'),
       tbl(head + paidBody, 'planning-kpi-paid'));
     // 3) CAC — kèm hàng "Tất cả" (blended).
     var cacBody = data.channels.map(function (ch) {
@@ -4505,7 +4537,7 @@
     cacBody += '<tr data-planning-kpi-row="cac" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + blendedCells +
       '<td data-planning-kpi-total="cac" data-channel="Tất cả"><strong>' + fmtPlanningCac(data.blended.totals.cac) + '</strong></td></tr>';
     var cacHtml = planningKpiSectionHtml('cac', 'KPI chi tiết theo tháng — CAC (VNĐ / Paid User)',
-      'CAC = Ngân sách dự kiến của Channel trong tháng ÷ Paid Users forecast của Channel trong tháng; Paid Users = 0 (hoặc chưa tính được) thì hiển thị "—". Hàng <strong>Tất cả</strong>: tổng ngân sách của tháng ÷ tổng Paid Users của tháng. Cột Tổng = tổng ngân sách cả kỳ ÷ tổng Paid Users cả kỳ của Channel (KHÔNG phải trung bình các CAC tháng). CAC làm tròn tới đồng.',
+      '<p class="sub note">Cách tính: CAC = Ngân sách tháng ÷ Paid forecast tháng. "Tất cả" = tổng ngân sách ÷ tổng Paid; cột Tổng = cả kỳ ÷ cả kỳ (không phải trung bình tháng).</p>' + noteDetailHtml('CAC = Ngân sách dự kiến của Channel trong tháng ÷ Paid Users forecast của Channel trong tháng; Paid Users = 0 (hoặc chưa tính được) thì hiển thị "—". Hàng <strong>Tất cả</strong>: tổng ngân sách của tháng ÷ tổng Paid Users của tháng. Cột Tổng = tổng ngân sách cả kỳ ÷ tổng Paid Users cả kỳ của Channel (KHÔNG phải trung bình các CAC tháng). CAC làm tròn tới đồng.'),
       tbl(head + cacBody, 'planning-kpi-cac'));
     // 4) B2B ACCOUNTS — bảng thứ 5 theo thứ tự hiển thị (sau CAC):
     // số B2B Account MỚI sinh trong tháng theo Channel, cộng cả 3
@@ -4526,7 +4558,7 @@
     b2bBody += '<tr data-planning-kpi-row="b2b" data-channel="Tất cả"><td><strong>Tất cả</strong></td>' + b2bBlendedCells +
       '<td data-planning-kpi-total="b2b" data-channel="Tất cả"><strong>' + (data.blended.totals.hasForecast ? fmtPlanningCount(data.blended.totals.b2b) : '—') + '</strong></td></tr>';
     var b2bHtml = planningKpiSectionHtml('b2b', 'KPI chi tiết theo tháng — B2B Accounts (Forecast)',
-      'B2B Accounts MỚI sinh trong tháng theo Channel × tháng, từ cùng engine funnel — cộng cả 3 nguồn: (1) cầu nối Paid → B2B: mọi Paid User sinh ra từ luồng B2C (content, Paid Objective B2C, phần B2C của Lead Gen/Demo) × tỉ lệ paid_to_b2b của Channel; (2) phần B2B của Objective Lead Generation / Demo → Account qua lead_to_account / demo_to_account; (3) Partnership/Event trực tiếp = ngân sách B2B ÷ cost per B2B account. Chưa có tỉ lệ/đơn giá B2B thì nguồn đó cho 0 account (hiện "chưa có tỉ lệ"/"chưa có đơn giá" ở nơi nhập). Hàng <strong>Tất cả</strong>: tổng B2B Accounts của mọi Channel có forecast trong tháng. Số hiển thị làm tròn thành số nguyên như bảng Paid Users.',
+      '<p class="sub note">Cách tính: B2B Accounts mới = cầu nối Paid→B2B + Lead/Demo→Account + Partnership/Event trực tiếp.</p>' + noteDetailHtml('B2B Accounts MỚI sinh trong tháng theo Channel × tháng, từ cùng engine funnel — cộng cả 3 nguồn: (1) cầu nối Paid → B2B: mọi Paid User sinh ra từ luồng B2C (content, Paid Objective B2C, phần B2C của Lead Gen/Demo) × tỉ lệ paid_to_b2b của Channel; (2) phần B2B của Objective Lead Generation / Demo → Account qua lead_to_account / demo_to_account; (3) Partnership/Event trực tiếp = ngân sách B2B ÷ cost per B2B account. Chưa có tỉ lệ/đơn giá B2B thì nguồn đó cho 0 account (hiện "chưa có tỉ lệ"/"chưa có đơn giá" ở nơi nhập). Hàng <strong>Tất cả</strong>: tổng B2B Accounts của mọi Channel có forecast trong tháng. Số hiển thị làm tròn thành số nguyên như bảng Paid Users.'),
       tbl(head + b2bBody, 'planning-kpi-b2b'));
     // 5) CHỈ SỐ VẬN HÀNH & TÀI CHÍNH — thu gọn như các bảng trên.
     var operatingHtml = planningOperatingTableHtml(rows, benchmarks, months);
@@ -4677,11 +4709,12 @@
       .map(function (k) { return OPERATING_MISSING_LABELS[k]; })
       .concat(Object.keys(OPERATING_MISSING_B2B_LABELS).filter(function (k) { return data.missingB2b && data.missingB2b[k]; })
         .map(function (k) { return OPERATING_MISSING_B2B_LABELS[k]; }));
-    var note = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Free user = Freemium của funnel; New Paid = Paid (cohort từ funnel) + Free EOM đầu kỳ × Monthly cvr của Phase chứa tháng (Monthly cvr trống thì phần chuyển đổi = 0); New Free = Free user − New Paid; Paid/Free churn = (tồn đầu kỳ + dòng vào trong tháng) × churn rate của Phase chứa tháng, riêng tháng đầu tiên của kỳ × 0,5; Free EOM = tồn trước + Free user − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn; Revenue = ARPPU hiệu dụng × Paid EOM (ARPPU hiệu dụng = Σ Giá × Tỉ lệ của 3 mức giá Paid); COGS Free = COGS Free/user × Free EOM và COGS Paid = COGS Paid/user × Paid EOM, COGS = COGS Free + COGS Paid (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Chuỗi B2B chạy riêng: B2B churn = B2B EOM đầu kỳ × B2B churn rate của Phase; B2B EOM = đầu kỳ + New B2B Accounts − B2B churn (account chuyển đổi KHÔNG bị trừ khỏi Paid EOM); Revenue B2B = ARPPU B2B × B2B EOM; COGS B2B = COGS/B2B account × B2B EOM; hai dòng Profit tính trên TỔNG B2C + B2B (Revenue + Revenue B2B − COGS − COGS B2B − Budget [− fixed cost]). Khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0 kể cả chưa nhập ARPPU B2B / COGS B2B. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, New B2B Accounts, churn, Revenue, Revenue B2B, COGS, COGS Free, COGS Paid, COGS B2B, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối; dòng tồn B2B EOM cũng lấy giá trị tháng cuối.' +
-      (data.months.some(function (r) { return r.freeClamped; }) ? ' Có tháng Free EOM phải kẹp về 0 vì công thức cho số âm.' : '') +
+    var noteFull = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Free user = Freemium của funnel; New Paid = Paid (cohort từ funnel) + Free EOM đầu kỳ × Monthly cvr của Phase chứa tháng (Monthly cvr trống thì phần chuyển đổi = 0); New Free = Free user − New Paid; Paid/Free churn = (tồn đầu kỳ + dòng vào trong tháng) × churn rate của Phase chứa tháng, riêng tháng đầu tiên của kỳ × 0,5; Free EOM = tồn trước + Free user − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn; Revenue = ARPPU hiệu dụng × Paid EOM (ARPPU hiệu dụng = Σ Giá × Tỉ lệ của 3 mức giá Paid); COGS Free = COGS Free/user × Free EOM và COGS Paid = COGS Paid/user × Paid EOM, COGS = COGS Free + COGS Paid (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Chuỗi B2B chạy riêng: B2B churn = B2B EOM đầu kỳ × B2B churn rate của Phase; B2B EOM = đầu kỳ + New B2B Accounts − B2B churn (account chuyển đổi KHÔNG bị trừ khỏi Paid EOM); Revenue B2B = ARPPU B2B × B2B EOM; COGS B2B = COGS/B2B account × B2B EOM; hai dòng Profit tính trên TỔNG B2C + B2B (Revenue + Revenue B2B − COGS − COGS B2B − Budget [− fixed cost]). Khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0 kể cả chưa nhập ARPPU B2B / COGS B2B. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, New B2B Accounts, churn, Revenue, Revenue B2B, COGS, COGS Free, COGS Paid, COGS B2B, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối; dòng tồn B2B EOM cũng lấy giá trị tháng cuối.';
+    var noteTail = (data.months.some(function (r) { return r.freeClamped; }) ? 'Có tháng Free EOM phải kẹp về 0 vì công thức cho số âm. ' : '') +
       (missingLabels.length
-        ? ' <strong>Thiếu đầu vào:</strong> ' + esc(missingLabels.join(', ')) + ' — các chỉ số liên quan hiện "—" (nhập ở chế độ Theo phase, khối "Chỉ số vận hành & tài chính"; số dư đầu kỳ nhập ở khối Phase đầu tiên của năm).'
-        : ' Đủ đầu vào: churn rate / Monthly cvr / mức giá Paid / COGS Free + COGS Paid / fixed cost theo Phase và số dư đầu kỳ đều đã nhập ở chế độ Theo phase.');
+        ? '<strong>Thiếu đầu vào:</strong> ' + esc(missingLabels.join(', ')) + ' — các chỉ số liên quan hiện "—" (nhập ở chế độ Theo phase, khối "Chỉ số vận hành & tài chính"; số dư đầu kỳ nhập ở khối Phase đầu tiên của năm).'
+        : 'Đủ đầu vào: churn rate / Monthly cvr / mức giá Paid / COGS Free + COGS Paid / fixed cost theo Phase và số dư đầu kỳ đều đã nhập ở chế độ Theo phase.');
+    var note = '<p class="sub note">Cách tính: Chuỗi tồn theo tháng — New Paid = Paid funnel + Free đầu kỳ × Monthly cvr; churn tháng đầu × 0,5; Free EOM kẹp ≥ 0; B2B chạy chuỗi riêng, không trừ Paid EOM.</p>' + noteDetailHtml(noteFull) + '<p class="sub note">' + noteTail + '</p>';
     return planningKpiSectionHtml('operating', 'Chỉ số vận hành & tài chính theo tháng', note, tbl(head + body, 'planning-operating'));
   }
   // --- Audience trên dòng budget-driven (mô hình B2B bottom-up) ---
@@ -5605,15 +5638,15 @@
     var campaigns = filteredCampaigns();
     var ed = canEdit();
     if (ROUTE.id) return campaignDetailHtml(ROUTE.id);
-    var html = pageHead('IMC & Campaigns', 'Kế hoạch truyền thông tích hợp: danh sách và chi tiết từng campaign. Xem biểu đồ chung ở mục Timeline.',
+    var html = pageHead('IMC & Campaigns', 'Danh sách và chi tiết từng campaign.',
       ed ? '<button class="btn" data-action="editor-open" data-kind="campaign">+ Tạo campaign</button>' : '');
     html += readonlyNote() + contextBannerHtml() + collectionBanner('campaigns');
     if (!campaigns.length && !collLoadingOrError('campaigns') && contextActive()) {
-      return html + '<div class="state-box">Không có campaign nào khớp bộ lọc Brand/Segment hiện tại (' + esc(contextLabel()) + ').</div>';
+      return html + '<div class="state-box">Không có campaign nào khớp lọc hiện tại (' + esc(contextLabel()) + ').</div>';
     }
     if (!campaigns.length && !collLoadingOrError('campaigns')) {
-      return html + emptyState('Chưa có campaign nào — bắt đầu tại đây',
-        'Luồng bắt đầu: (1) vào Thiết lập để tạo BU/sản phẩm nếu cần → (2) tạo campaign → (3) trong trang chi tiết campaign, thêm giai đoạn, activity, task và content. Toàn bộ làm ngay trên giao diện.',
+      return html + emptyState('Chưa có campaign nào',
+        'Tạo campaign đầu tiên để bắt đầu.',
         '<p>' + (ed ? '<button class="btn" data-action="editor-open" data-kind="campaign">+ Tạo campaign đầu tiên</button> ' : '') + '<a class="btn secondary" href="#/settings">Tới Thiết lập</a></p>');
     }
     html += '<h2>Danh sách campaign (' + campaigns.length + ')</h2><div class="cards">' + campaigns.map(function (c) {
@@ -6725,11 +6758,11 @@
     var acts = Store.list('activities').filter(function (a) { return a.campaignId === c.id; });
     var ed = canEdit();
     var html = '<div class="toolbar"><strong>Action Plan — ' + acts.length + ' activity</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm activity</button>' : '') + '</span></div>';
-    html += '<p class="sub">Mỗi dòng là một activity. Số KPI/ngân sách lấy qua đúng hàm tổng hợp dùng chung (rollup KPI, tổng ngân sách theo scope) — bấm vào tên activity để mở drawer chi tiết.</p>';
+    html += '<p class="sub">Bấm tên activity để xem chi tiết.</p>';
     html += '<div class="toolbar"><span class="sub">Nhóm theo:</span><span>' + [['phase', 'Giai đoạn'], ['owner', 'Người phụ trách'], ['channel', 'Kênh'], ['none', 'Không nhóm']].map(function (g) {
       return '<button type="button" class="btn small ' + (UI.actionGroupBy === g[0] ? '' : 'secondary') + '" data-action="action-group" data-id="' + g[0] + '">' + g[1] + '</button>';
     }).join(' ') + '</span></div>';
-    if (!acts.length) return html + emptyState('Chưa có activity nào trong Action Plan', 'Thêm activity đầu tiên — mỗi activity có thể có task, KPI và ngân sách riêng.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm activity</button></p>' : '');
+    if (!acts.length) return html + emptyState('Chưa có activity nào trong Action Plan', 'Thêm activity đầu tiên.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="activity" data-campaign="' + esc(c.id) + '">+ Thêm activity</button></p>' : '');
     function groupKey(a) {
       if (UI.actionGroupBy === 'owner') return 'Người phụ trách: ' + memberName(a.ownerId);
       if (UI.actionGroupBy === 'channel') return 'Kênh: ' + (a.channel || 'Chưa rõ kênh');
@@ -6809,20 +6842,20 @@
         '<div data-viz="activity-mini-charts"><h3>Biểu đồ ngân sách của activity</h3><div data-viz="activity-mini-budget">' +
         vizBudgetGroupsChartHtml(budgetRows.map(function (r) { return { title: act.name + ' (' + r.currency + ')', currency: r.currency, bars: vizBudgetBars(r.ceiling, r.actualTotal, r.openCommitments) }; })) +
         budgetRows.map(function (r) { return vizBudgetUsedBarHtml(r); }).join('') + '</div>' +
-        '<h3>Tiến độ KPI của activity</h3><div data-viz="activity-mini-kpi">' + (kpis.length ? vizKpiProgressHtml(kpis) : '<p class="sub">Chưa có KPI nào cho activity này.</p>') + '</div></div>' +
+        '<h3>Tiến độ KPI của activity</h3><div data-viz="activity-mini-kpi">' + (kpis.length ? vizKpiProgressHtml(kpis) : '') + '</div></div>' +
         '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + ' — ' + statusBadge(x.editorialStatus) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content liên quan</p>');
     }
     if (tab === 'tasks') {
       html += '<h3>Task của activity (' + tasks.length + ')</h3>' +
         (tasks.length ? tbl('<tr><th>Task</th><th>Người phụ trách</th><th>Hạn</th><th>Trạng thái</th></tr>' + tasks.map(function (t) {
           return '<tr><td><button class="linklike" data-action="open-task" data-id="' + esc(t.id) + '"><strong>' + esc(t.title) + '</strong></button>' + checklistBadgeHtml(t) + '</td><td>' + esc(memberName(t.assigneeId)) + '</td><td>' + (t.dueDate ? esc(D.formatDateVN(t.dueDate)) : '—') + (isOverdue(t) ? ' ' + vizStatusPillHtml('overdue', { label: 'Quá hạn', derived: true }) + '' : '') + '</td><td>' + statusBadge(t.status) + '</td></tr>';
-        }).join('')) : '<p class="sub">Chưa có task nào — dùng nút "Tạo task" ở trên.</p>');
+        }).join('')) : '<p class="sub">Chưa có task nào.</p>');
     }
     if (tab === 'kpi') {
       html += '<h3>KPI của activity (' + kpis.length + ')</h3>' +
         (kpis.length ? tbl('<tr><th>KPI</th><th>Phạm vi</th><th>Cách tổng hợp</th><th>Kết quả</th></tr>' + kpis.map(function (k) {
           return '<tr><td><strong>' + esc(k.name) + '</strong>' + (k.definition ? '<br><span class="sub">' + esc(typeof k.definition === 'string' ? k.definition : (k.definition.description || k.definition.how || '')) + '</span>' : '') + '</td><td>' + esc(kpiScopeLabel(k)) + '</td><td>' + esc(k.aggregationMode || 'direct') + '</td><td>' + kpiSummaryHtml(k) + '</td></tr>';
-        }).join('')) : '<p class="sub">Chưa có KPI nào — dùng nút "Thêm KPI" ở trên.</p>');
+        }).join('')) : '<p class="sub">Chưa có KPI nào.</p>');
     }
     if (tab === 'budget') {
       html += '<h3>Ngân sách của activity</h3><p>' + budgetSummaryText(budgetRows) + '</p>' +
@@ -6835,7 +6868,7 @@
           var lineUsed = lineApproved - lineRem;
           var lineBar = lineApproved > 0 ? vizCellBarHtml({ value: Math.max(0, lineUsed), max: lineApproved, tone: lineRem < 0 ? 'overdue' : (lineRem === 0 ? 'pending' : 'running'), text: 'Đã dùng ' + fmtMoney(lineUsed, l.currency) + ' / Được duyệt ' + fmtMoney(lineApproved, l.currency) + ' · Còn lại ' + fmtMoney(lineRem, l.currency) }) : '<span class="sub">Chưa được duyệt ngân sách</span>';
           return '<tr><td>' + esc(l.name) + '</td><td>' + (l.planned === null || l.planned === undefined ? '—' : fmtMoney(l.planned, l.currency)) + '</td><td>' + budgetLineApprovedCellHtml(l) + '</td><td><div data-viz="activity-budget-line-bar">' + lineBar + '</div></td><td>' + esc(l.currency || 'VND') + '</td></tr>';
-        }).join('')) : '<p class="sub">Chưa có dòng ngân sách nào gắn activity này.</p>') +
+        }).join('')) : '<p class="sub">Chưa có dòng ngân sách nào.</p>') +
         '<h3>Cam kết (' + scopedFacts.commitments.length + ')</h3>' +
         (scopedFacts.commitments.length ? tbl('<tr><th>Cam kết</th><th>Số tiền</th><th>Trạng thái</th><th>Duyệt</th><th>Thao tác</th></tr>' + scopedFacts.commitments.map(function (cm) {
           return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency) + '</td><td>' + statusBadge(cm.status) + '</td><td>' + factApprovalControlsHtml(cm, 'commitment') + '</td><td class="row-actions">' + (budgetEd ? '<button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
@@ -6849,7 +6882,7 @@
       var links = hasFn('listCampaignAssets') ? (Store.listCampaignAssets(c.id || '') || []) : [];
       var assetRows = links.map(function (lk) { var a = Store.get('brandAssets', lk.assetId); return a ? '<li><strong>' + esc(a.name) + '</strong>' + (lk.role ? ' — ' + esc(lk.role) : '') + '</li>' : ''; }).join('');
       var dels = tasks.filter(function (t) { return t.deliverable; });
-      html += '<h3>Tài liệu</h3>' + (assetRows ? '<ul class="clean">' + assetRows + '</ul>' : '<p class="sub">Chưa có tài liệu nào được liên kết với campaign này.</p>') +
+      html += '<h3>Tài liệu</h3>' + (assetRows ? '<ul class="clean">' + assetRows + '</ul>' : '<p class="sub">Chưa có tài liệu nào.</p>') +
         '<h3>Đầu ra cần bàn giao của các task</h3>' + (dels.length ? '<ul class="clean">' + dels.map(function (t) { return '<li><strong>' + esc(t.title) + '</strong>: ' + esc(t.deliverable) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Chưa có task nào ghi đầu ra.</p>') +
         '<h3>Content liên quan</h3>' + (contents.length ? '<ul class="clean">' + contents.map(function (x) { return '<li>' + esc(x.title) + '</li>'; }).join('') + '</ul>' : '<p class="sub">Không có content liên quan</p>');
     }
@@ -6904,17 +6937,17 @@
       html += vizBudgetActionChartHtml(c);
       html += vizBudgetStackedHtml(ovBudget);
       ovBudget.forEach(function (r) {
-        if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa thiết lập hạn mức campaign cho ' + esc(r.currency) + ' — các số dưới đây tạm lấy tổng phân bổ đã duyệt làm hạn mức. Đặt hạn mức qua Đề xuất ngân sách ở khối hạn mức campaign phía trên (hạn mức chỉ đổi khi đề xuất được Owner duyệt) để tách rõ "Chưa phân bổ" và "Còn dùng được".</div>';
-        html += '<p class="sub" data-viz="campaign-budget-note">Hạn mức campaign (' + esc(r.currency) + '): <strong>' + fmtMoney(r.ceiling, r.currency) + '</strong> · Chưa phân bổ: <strong>' + fmtMoney(r.unallocated, r.currency) + '</strong> · Còn dùng được: <strong>' + fmtMoney(r.available, r.currency) + '</strong> — "Chưa phân bổ" và "Còn dùng được" là hai số tách biệt, không gộp.</p>';
+        if (!r.ceilingConfigured) html += '<div class="notice warn">Chưa đặt hạn mức campaign cho ' + esc(r.currency) + ' — đang tạm dùng tổng phân bổ đã duyệt.' + noteDetailHtml('Đặt hạn mức qua Đề xuất ngân sách ở khối hạn mức campaign phía trên. Quy tắc: hạn mức chỉ đổi khi đề xuất được Owner duyệt — đặt hạn mức để tách rõ "Chưa phân bổ" và "Còn dùng được".') + '</div>';
+        html += '<p class="sub" data-viz="campaign-budget-note">Hạn mức campaign (' + esc(r.currency) + '): <strong>' + fmtMoney(r.ceiling, r.currency) + '</strong> · Chưa phân bổ: <strong>' + fmtMoney(r.unallocated, r.currency) + '</strong> · Còn dùng được: <strong>' + fmtMoney(r.available, r.currency) + '</strong> — Chưa phân bổ và Còn dùng được là hai số tách biệt, không gộp. Cách tính: Chưa phân bổ = hạn mức − đã phân bổ; Còn dùng được = hạn mức − thực chi − cam kết chưa trả. Hai số này khác nhau và không cộng lẫn nhau.</p>';
         html += '<h4>Bảng số chi tiết ngân sách (' + esc(r.currency) + ')</h4>' + tbl('<tr><th>Hạn mức</th><th>Đã phân bổ</th><th>Chưa phân bổ</th><th>Thực chi</th><th>Cam kết chưa trả</th><th>Dự kiến sử dụng</th><th>Còn dùng được</th></tr>' +
           '<tr><td>' + fmtMoney(r.ceiling, r.currency) + '</td><td>' + fmtMoney(r.allocated, r.currency) + '</td><td>' + fmtMoney(r.unallocated, r.currency) + '</td><td>' + fmtMoney(r.actualTotal, r.currency) + '</td><td>' + fmtMoney(r.openCommitments, r.currency) + '</td><td>' + fmtMoney(r.forecastUse, r.currency) + '</td><td>' + fmtMoney(r.available, r.currency) + '</td></tr>', 'campaign-budget-detail') +
-          '<p class="sub">"Chưa phân bổ" = hạn mức − đã phân bổ cho các activity. "Còn dùng được" = hạn mức − thực chi − cam kết chưa trả. Hai số này khác nhau và không cộng lẫn nhau.</p>';
+          '';
       });
       var ovKpis = Store.list('kpis').filter(function (k) { return k.campaignId === c.id && kpiScopeType(k) === 'campaign'; });
       html += '<h3>KPI kết quả chung</h3>';
       if (ovKpis.length) {
         ovKpis.forEach(function (k) {
-          if (!kpiHasValidSource(k)) html += '<div class="notice warn">KPI "' + esc(k.name) + '" chưa có nguồn/cách tổng hợp hợp lệ (chế độ ' + esc(k.aggregationMode || 'direct') + ') — chưa thể tuyên bố số tổng hợp cho KPI này.</div>';
+          if (!kpiHasValidSource(k)) html += '<div class="notice warn">KPI "' + esc(k.name) + '": chưa có nguồn/cách tổng hợp hợp lệ (' + esc(k.aggregationMode || 'direct') + ') — chưa công bố số.</div>';
         });
         // R3.1-VIZ 1(b): thanh tiến độ KPI (số qua rollupKpi) + bảng số ngay dưới.
         html += '<div data-viz="campaign-kpi-chart">' + vizKpiProgressHtml(ovKpis) + '</div>' + vizKpiTableHtml(ovKpis);
@@ -7005,7 +7038,7 @@
     if (tab === 'docs') {
       var assets = visibleList('brandAssets');
       html += '<div class="toolbar"><strong>Tài liệu & tài nguyên dùng cho campaign</strong>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="brandAsset">+ Thêm tài nguyên</button>' : '') + '</div>';
-      html += '<p class="sub">KV, file nguồn và hướng dẫn lấy từ Brand Hub để dùng thống nhất cho mọi campaign.</p>';
+      html += '<p class="sub">Lấy từ Brand Hub.</p>';
       html += assets.length ? tbl('<tr><th>Tài nguyên</th><th>Loại</th><th>Đường dẫn</th><th>Trạng thái bản</th></tr>' + assets.map(function (a) {
         var url = a.externalUrl || a.url || a.fileUrl || '';
         return '<tr><td><strong>' + esc(a.name) + '</strong></td><td>' + esc(a.type) + '</td><td>' + (url ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">Mở / tải</a>' : '—') + '</td><td>' + esc(brandStatusInfo(a).label) + '</td></tr>';
@@ -7168,6 +7201,15 @@
     })();
   }
 
+  // Pattern "Chi tiết" (đợt tinh gọn 18/11) — bản sao ĐỒNG NHẤT của
+  // helper ở khối helper chung (cạnh pageHead), đặt trong khối này để
+  // mọi hàm Planning/Content dùng chung một cơ chế <details> tại chỗ.
+  function noteDetailHtml(fullHtml) {
+    return '<details class="note-details"><summary>Chi tiết</summary><div class="note note--full">' + fullHtml + '</div></details>';
+  }
+  function noteWithDetailHtml(shortHtml, fullHtml, attrs) {
+    return '<p class="sub note"' + (attrs ? ' ' + attrs : '') + '>' + shortHtml + '</p>' + noteDetailHtml(fullHtml);
+  }
   // ---------- Nội dung (Content) ----------
   // Gộp Duyệt content vào Content: số chờ duyệt dùng ĐÚNG tập mà view
   // approvals cũ hiển thị ở hàng đợi "Tất cả đang chờ" (status pending
@@ -7197,7 +7239,7 @@
     // Tab Duyệt content (gộp từ view approvals cũ): render nguyên hàng
     // đợi duyệt qua viewApprovals() — logic duyệt/vai trò không đổi.
     if (UI.contentMainTab === 'approvals') {
-      return pageHead('Content', 'Quản lý content và duyệt content trong cùng một mục.') + contentMainTabsHtml() + viewApprovals();
+      return pageHead('Content', '') + contentMainTabsHtml() + viewApprovals();
     }
     // R3.1 C.6: Content Plan là điểm vào RIÊNG của đội content — mọi view ở
     // đây (Backlog / Theo Pillar / Lịch đăng / Bảng / Board / Tiến độ /
@@ -7260,7 +7302,7 @@
     });
     var productsAll = [];
     Store.list('businessUnits').forEach(function (b) { (b.products || []).forEach(function (p) { if (productsAll.indexOf(p) === -1) productsAll.push(p); }); });
-    var html = pageHead('Content Plan', 'Lập kế hoạch content theo Pillar, campaign (tùy chọn), kênh và lịch đăng. Tạo content ngay tại đây là luồng bình thường — không cần qua Action Plan hay campaign.',
+    var html = pageHead('Content Plan', 'Kế hoạch theo Pillar, kênh, lịch đăng. Campaign là tuỳ chọn.',
       (ed ? '<button class="btn" data-action="editor-open" data-kind="content">+ Tạo content</button> <button class="btn secondary" data-action="editor-open" data-kind="variant">+ Thêm phiên bản theo kênh</button> <button class="btn secondary" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : ''));
     html += contentMainTabsHtml();
     html += readonlyNote() + collectionBanner('variants');
@@ -7279,7 +7321,7 @@
       '<label>Activity (nâng cao)<select name="activityId"><option value="all">Tất cả</option>' + visibleList('activities').map(function (a) { return '<option value="' + esc(a.id) + '"' + (cf.activityId === a.id ? ' selected' : '') + '>' + esc(a.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Task (nâng cao)<select name="taskId"><option value="all">Tất cả</option>' + visibleList('tasks').map(function (t) { return '<option value="' + esc(t.id) + '"' + (cf.taskId === t.id ? ' selected' : '') + '>' + esc(t.title) + '</option>'; }).join('') + '</select></label>' +
       '<button class="btn secondary" type="submit">Lọc</button></form></details>' +
-      '<p class="sub">Lọc theo Activity/Task là bộ lọc nâng cao theo liên kết task (tùy chọn). Lọc Pillar thấy cả content thuộc campaign lẫn content thường xuyên; lọc Campaign chỉ thấy content/publication thuộc campaign đó.</p>';
+      noteWithDetailHtml('Lọc Pillar gồm cả content campaign và content thường xuyên.', 'Lọc theo Activity/Task là bộ lọc nâng cao theo liên kết task (tùy chọn). Lọc Campaign chỉ thấy content/publication thuộc campaign đó.');
     html += tabsHtml([['backlog', 'Backlog / Ý tưởng'], ['pillars', 'Theo Pillar'], ['calendar', 'Lịch đăng'], ['table', 'Bảng content'], ['board', 'Board sản xuất / duyệt'], ['production', 'Tiến độ sản xuất'], ['library', 'Thư viện Post'], ['mix', 'Content mix'], ['queue', 'Chờ phân loại'], ['manage', 'Quản lý Pillar']], UI.contentTab, 'content-tab');
     function itemActions(x) {
       return '<button class="btn small" data-action="editor-open" data-kind="content" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Sửa</button> <button class="btn small secondary" data-action="editor-open" data-kind="variant" data-content="' + esc(x.id) + '"' + dis(!ed) + '>+ Phiên bản kênh</button> <button class="btn small secondary" data-action="content-prod-tasks" data-id="' + esc(x.id) + '"' + dis(!ed) + '>Tạo task sản xuất</button>';
@@ -7300,7 +7342,7 @@
     if (UI.contentTab === 'backlog') {
       // Backlog/Ý tưởng: nội dung CHƯA có lịch đăng nào — không gán ngày giả.
       var backlog = items.filter(function (x) { return !pubsOfItem(x.id).length && !x.scheduledDate; });
-      html += '<h2>Backlog / Ý tưởng (' + backlog.length + ')</h2><p class="sub">Ý tưởng chưa có lịch đăng chỉ nằm ở đây — hệ thống không tự gán ngày hôm nay hay ngày bất kỳ để lấp ô lịch.</p>';
+      html += '<h2>Backlog / Ý tưởng (' + backlog.length + ')</h2><p class="sub">Quy tắc: Ý tưởng chưa có lịch đăng chỉ nằm ở đây — hệ thống không tự gán ngày hôm nay hay ngày bất kỳ.</p>';
       if (backlog.length) {
         var blSegs = EDITORIAL_STATUSES.map(function (st) {
           var n = backlog.filter(function (x) { return x.editorialStatus === st[0]; }).length;
@@ -7313,7 +7355,7 @@
       html += backlog.length ? tbl(itemHead + backlog.map(itemRow).join(''), 'content-grouped') : emptyState('Backlog đang trống', 'Mọi content đang lọc đều đã có lịch đăng, hoặc chưa có content nào.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="content">+ Tạo ý tưởng mới</button></p>' : '');
     }
     if (UI.contentTab === 'pillars') {
-      html += '<h2>Content theo Pillar</h2><p class="sub">Mỗi content nằm ở đúng MỘT pillar chính. Lọc pillar thấy cả content campaign lẫn content thường xuyên (pillar khác campaign).</p>';
+      html += '<h2>Content theo Pillar</h2><p class="sub">Quy tắc: Mỗi content nằm ở đúng MỘT pillar chính.</p>';
       var groups = {};
       var order = [];
       items.forEach(function (x) { var k = contentPillarId(x) || '__none'; if (!groups[k]) { groups[k] = []; order.push(k); } groups[k].push(x); });
@@ -7330,7 +7372,7 @@
     if (UI.contentTab === 'calendar') {
       var year = UI.calYear, month = UI.calMonth;
       html += '<form class="inline" id="cal-nav-form"><label>Tháng<input type="number" id="cal-month" min="1" max="12" value="' + (month + 1) + '"></label><label>Năm<input type="number" id="cal-year" value="' + year + '"></label><button class="btn secondary" type="submit">Xem tháng</button> <button class="btn secondary" type="button" data-action="cal-today">Về tháng hiện tại</button></form>';
-      html += '<p class="sub">Lịch hiển thị theo TỪNG PUBLICATION: ngày + giờ, tài khoản, trạng thái, nhãn pillar/campaign. Bấm vào một ngày chỉ mở form phiên bản/publication với lịch của ngày đó được điền sẵn — không tự gán campaign/action. Ý tưởng chưa có lịch nằm ở Backlog, không hiện ở lịch.</p>';
+      html += noteWithDetailHtml('Lịch theo từng publication (ngày, giờ, tài khoản, trạng thái).', 'Lịch hiển thị theo TỪNG PUBLICATION: ngày + giờ, tài khoản, trạng thái, nhãn pillar/campaign. Bấm vào một ngày chỉ mở form phiên bản/publication với lịch của ngày đó được điền sẵn — không tự gán campaign/action. Ý tưởng chưa có lịch nằm ở Backlog, không hiện ở lịch.');
       var first = new Date(year, month, 1);
       var start = D.weekStartMonday(first);
       var cells = [];
@@ -7389,7 +7431,7 @@
     }
     if (UI.contentTab === 'production') {
       var sorted = variants.slice().sort(function (a, b) { return String(a.scheduledAt || '').localeCompare(String(b.scheduledAt || '')); });
-      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Task sản xuất chỉ được tạo khi bạn bấm nút "Tạo task sản xuất" ở bảng content (theo template Viết / Thiết kế / Quay dựng / Duyệt) — Lưu content không tự tạo task, và task sản xuất có thể chỉ gắn content, không bắt campaign/action.</p>' + tbl('<tr><th>Lịch đăng</th><th>Content</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
+      html += '<h2>Tiến độ sản xuất theo lịch đăng</h2><p class="sub">Quy tắc: Task sản xuất chỉ tạo khi bấm "Tạo task sản xuất" — Lưu content không tự tạo.</p>' + tbl('<tr><th>Lịch đăng</th><th>Content</th><th>Kênh</th><th>Người sản xuất</th><th>Người duyệt</th><th>Hạn sản xuất</th><th>Hạn duyệt</th><th>Timeline hạn → ngày đăng</th><th>Trạng thái</th><th>Thao tác</th></tr>' + sorted.map(function (v) {
         var tlPts = [
           { label: 'Hạn sản xuất', date: v.productionDeadline ? String(v.productionDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.productionDeadline) || '—', tone: 'running' },
           { label: 'Hạn duyệt', date: v.reviewDeadline ? String(v.reviewDeadline).slice(0, 10) : '', dateText: D.formatDateVN(v.reviewDeadline) || '—', tone: 'pending' },
@@ -7419,7 +7461,7 @@
     }
     if (UI.contentTab === 'library') {
       var posted = pubs.filter(function (p) { return p.kind === 'post'; });
-      html += '<h2>Thư viện Post (' + posted.length + ' publication)</h2><p class="sub">Mỗi dòng là MỘT publication. Đăng lại cùng content tạo một dòng mới riêng — link và số liệu của publication trước không bị ghi đè.</p>';
+      html += '<h2>Thư viện Post (' + posted.length + ' publication)</h2><p class="sub">Quy tắc: Mỗi dòng là MỘT publication. Đăng lại cùng content tạo một dòng mới riêng — không ghi đè dòng cũ.</p>';
       // WAVE-B3: số liệu của lần đăng lấy từ metricObservations đã có trong
       // Store (khóa externalPostId = refId của lần đăng) — chỉ lấy bản ghi
       // MỚI NHẤT cho từng chỉ số; lần đăng không có quan trắc thì để trống.
@@ -7458,7 +7500,7 @@
         '<div class="toolbar"><span class="sub">Đơn vị đếm:</span><span>' +
         '<button type="button" class="btn small ' + (unit === 'content' ? '' : 'secondary') + '" data-action="content-mix-unit" data-id="content">Content gốc</button> ' +
         '<button type="button" class="btn small ' + (unit === 'publication' ? '' : 'secondary') + '" data-action="content-mix-unit" data-id="publication">Publication</button></span></div>' +
-        '<p class="sub">Đơn vị đếm đang chọn: <strong>' + (unit === 'publication' ? 'publication' : 'content gốc') + '</strong> · Mẫu số (tổng số ' + (unit === 'publication' ? 'publication' : 'content gốc') + ' trong kỳ/bộ lọc hiện tại): <strong>' + mix.denominator + '</strong>. Pillar chính tính đúng 1 lần cho 1 content gốc ở đơn vị "content gốc". Kỳ được xác định bằng bộ lọc Từ ngày/Đến ngày ở trên (để trống = toàn bộ).</p>';
+        noteWithDetailHtml('Đơn vị: <strong>' + (unit === 'publication' ? 'publication' : 'content gốc') + '</strong> · Mẫu số: <strong>' + mix.denominator + '</strong> (kỳ theo bộ lọc ngày; trống = toàn bộ).', 'Mẫu số (tổng số ' + (unit === 'publication' ? 'publication' : 'content gốc') + ' trong kỳ/bộ lọc hiện tại). Quy tắc: Pillar chính tính đúng 1 lần cho 1 content gốc ở đơn vị "content gốc".');
       if (!mix.denominator) html += '<div class="state-box">Chưa có dữ liệu để tính content mix trong kỳ/bộ lọc này.</div>';
       else {
         // R3.1-VIZ 4: biểu đồ tỷ trọng theo pillar + theo kênh, dùng ĐÚNG
@@ -7471,7 +7513,7 @@
         // heatMax (thang tô màu, trước đây chỉ có trong tooltip của ô).
         var channelTotal = 0;
         mix.rows.forEach(function (r) { mix.channels.forEach(function (c) { channelTotal += Number(r.byChannel[c]) || 0; }); });
-        var heatNote = '<p class="sub">Cách đọc ma trận: cột <strong>Tỷ trọng</strong> tính trên mẫu số toàn kỳ (<strong>' + mix.denominator + '</strong> ' + (unit === 'publication' ? 'publication' : 'content gốc') + '). Mẫu số của từng Pillar (dùng cho thanh 100% ở mục dưới) là tổng của chính pillar đó. <strong>Thang tô màu tính theo ô đậm nhất (heatMax = ' + heatMax + ')</strong> — ô càng đậm càng gần heatMax, không tính theo mẫu số tỷ trọng.</p>';
+        var heatNote = '<p class="sub">Cách tính: Tỷ trọng tính trên mẫu số toàn kỳ; màu đậm nhạt theo ô lớn nhất (heatMax = ' + heatMax + ').</p>' + noteDetailHtml('Cách đọc ma trận: cột <strong>Tỷ trọng</strong> tính trên mẫu số toàn kỳ (<strong>' + mix.denominator + '</strong> ' + (unit === 'publication' ? 'publication' : 'content gốc') + '). Mẫu số của từng Pillar (dùng cho thanh 100% ở mục dưới) là tổng của chính pillar đó. <strong>Thang tô màu tính theo ô đậm nhất (heatMax = ' + heatMax + ')</strong> — ô càng đậm càng gần heatMax, không tính theo mẫu số tỷ trọng.');
         if (channelTotal < mix.denominator) {
           var missingMix = mix.denominator - channelTotal;
           heatNote += '<p class="sub"><strong>Tổng tỷ trọng theo kênh nhỏ hơn 100%:</strong> còn <strong>' + missingMix + '</strong> ' + (unit === 'publication' ? 'publication' : 'content gốc') + ' (' + (mix.denominator ? (Math.round(missingMix / mix.denominator * 1000) / 10) + '%' : '—') + ' mẫu số) chưa vào cột kênh nào. ' + (unit === 'publication'
@@ -7492,7 +7534,7 @@
           return '<p class="sub"><strong>' + esc(r.pillarId ? pillarName(r.pillarId) : 'Chưa phân loại') + '</strong> — tổng ' + r.total + '</p>' + vizStackedBarHtml({ segments: segs, total: r.total, unitLabel: (unit === 'publication' ? 'publication' : 'content gốc') + ' của pillar này' });
         }).join('') + '</div>';
         var tagList = Object.keys(mix.tagCounts);
-        html += '<p class="sub">Tỷ trọng theo tags phụ (chỉ tham khảo): ' + (tagList.length ? tagList.map(function (t) { return esc(t) + ': ' + mix.tagCounts[t]; }).join(' · ') : '—') + '. <strong>Lưu ý: tỷ trọng theo tags KHÔNG cộng ra tổng</strong> — một content có nhiều tags được tính ở mọi tag của nó, trong khi tổng chính thức chỉ tính theo pillar chính (mỗi content 1 lần).</p>';
+        html += '<p class="sub">Tỷ trọng theo tags phụ (chỉ tham khảo): ' + (tagList.length ? tagList.map(function (t) { return esc(t) + ': ' + mix.tagCounts[t]; }).join(' · ') : '—') + '. Lưu ý: tỷ trọng theo tags KHÔNG cộng ra tổng — tổng chính thức tính theo pillar chính.</p>';
       }
     }
     if (UI.contentTab === 'queue') {
@@ -7503,7 +7545,7 @@
       var orphanPosts = [];
       try { orphanPosts = Store.list('externalPosts').filter(function (p) { return !p.contentItemId; }); } catch (e) { orphanPosts = []; }
       html += '<h2>Chờ phân loại (' + queueItems.length + ' content)</h2>' +
-        '<p class="sub">Post import/đồng bộ về mà thiếu pillar nằm ở hàng đợi riêng này cho tới khi được phân loại thủ công — hệ thống không tự gán pillar và không tạo campaign giả cho chúng. Post đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ, không phải lỗi và không nằm ở đây.</p>' +
+        noteWithDetailHtml('Quy tắc: Post thiếu pillar chờ phân loại tay — hệ thống không tự gán pillar và không tạo campaign giả.', 'Post đã đủ pillar nhưng không thuộc campaign là dữ liệu hợp lệ, không phải lỗi và không nằm ở đây.') +
         '<div class="cards" data-viz="content-queue-cards">' +
         vizKpiCardHtml({ label: 'Content chờ phân loại', valueText: String(queueItems.length), tone: 'pending', toneLabel: 'Chờ phân loại', sub: 'Thiếu pillar chính — cần phân loại thủ công' }) +
         vizKpiCardHtml({ label: 'Post chưa gắn content gốc', valueText: String(orphanPosts.length), tone: 'blocked', toneLabel: 'Chưa gắn gốc', sub: 'Post ngoài hệ thống chưa nối về content gốc' }) +
@@ -7530,7 +7572,7 @@
     if (UI.contentTab === 'manage') {
       var pillarsAll = allPillars();
       html += '<div class="toolbar"><strong>Quản lý Content Pillar (' + pillarsAll.length + ')</strong><span>' + (ed ? '<button class="btn small" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button>' : '') + '</span></div>' +
-        '<p class="sub">Pillar được quản lý theo brand/BU/sản phẩm, có mô tả + hướng dẫn phân loại/ví dụ để đội phân loại nhất quán. Sửa/lưu trữ pillar giữ nguyên ID và lịch sử phân loại của content cũ — không xóa cứng. App không hardcode một bộ pillar cho mọi BU.</p>';
+        noteWithDetailHtml('Pillar theo Brand/BU; lưu trữ giữ nguyên ID và lịch sử phân loại.', 'Pillar được quản lý theo brand/BU/sản phẩm, có mô tả + hướng dẫn phân loại/ví dụ để đội phân loại nhất quán. Sửa/lưu trữ pillar giữ nguyên ID và lịch sử phân loại của content cũ — không xóa cứng. App không hardcode một bộ pillar cho mọi BU.');
       if (!pillarsAll.length) {
         html += emptyState('Chưa có pillar nào', 'Tạo pillar đầu tiên cho phạm vi của đội, hoặc dùng một gợi ý mẫu bên dưới — gợi ý chỉ điền sẵn vào form, bạn xem/sửa rồi mới bấm Lưu tạo.', ed ? '<p><button class="btn" data-action="editor-open" data-kind="pillar">+ Tạo Pillar</button></p>' : '');
         html += '<h3>Gợi ý 4 pillar mẫu (từ đặc tả — bấm để tạo nếu muốn)</h3><div class="cards">' + PILLAR_SUGGESTIONS.map(function (s) {
@@ -7755,7 +7797,7 @@
       var val = snap[name];
       return (val === null || val === undefined || val === '') ? MISSING : val;
     }
-    var html = '<div class="snapshot-box"><p class="sub">Đây là đúng bản content đang chờ duyệt — phiên bản content số ' + esc(a.revision) + '. Quyết định sẽ gắn với phiên bản này.</p>';
+    var html = '<div class="snapshot-box"><p class="sub">Bản đóng băng của phiên bản ' + esc(a.revision) + ' — quyết định gắn với bản này.</p>';
     if (!snap) html += '<div class="notice warn">Chưa có bản đóng băng (snapshot) cho phiên bản này — không hiển thị content hiện tại để tránh duyệt nhầm bản đã sửa.</div>';
     if (v) {
       html += '<p><strong>Kênh:</strong> ' + esc(v.channelLabel || labelStatus(v.platform)) + ' · <strong>Content:</strong> ' + esc(contentTitle(a.contentItemId || v.contentItemId)) + '</p>';
@@ -7784,7 +7826,7 @@
     // Nội dung tab Duyệt content trong view Content (viewContent bọc
     // pageHead + cụm tab chính ở ngoài) — giữ nguyên toàn bộ hàng đợi,
     // nút quyết định và quy tắc vai trò như view approvals cũ.
-    var html = '<p class="sub">Hộp thư chờ mình duyệt: xem đúng bản content được gửi, rồi duyệt / yêu cầu sửa / từ chối kèm nhận xét. Việc sửa content làm ở tab Danh sách, không sửa tại màn duyệt.</p>';
+    var html = '<p class="sub">Duyệt / yêu cầu sửa / từ chối tại đây; sửa nội dung ở tab Danh sách.</p>';
     if (!ok) html += '<div class="notice warn">Vai trò hiện tại (' + esc(labelStatus(Store.currentRole())) + ') không có quyền duyệt — các nút quyết định bị khóa.' + '</div>';
     html += collectionBanner('approvals');
     // WAVE-B4: dải hàng đợi — số chờ theo tab + tuổi chờ lâu nhất (từ mốc
@@ -7810,7 +7852,7 @@
     }
     html += tabsHtml([['mine', 'Chờ mình duyệt (' + minePending.length + ')'], ['all', 'Tất cả đang chờ (' + allPending.length + ')']], UI.approvalsTab, 'approvals-tab');
     html += '<h2>' + (UI.approvalsTab === 'mine' ? 'Chờ mình duyệt' : 'Tất cả đang chờ') + ' (' + pending.length + ')</h2>';
-    if (!pending.length && !collLoadingOrError('approvals')) html += '<div class="state-box">Không có content nào chờ duyệt. Khi thành viên bấm "Gửi duyệt" ở mục Content, bản content sẽ xuất hiện tại đây.</div>';
+    if (!pending.length && !collLoadingOrError('approvals')) html += '<div class="state-box">Chưa có content nào chờ duyệt.</div>';
     pending.forEach(function (a) {
       var waitDays = approvalWaitDays(a);
       html += '<div class="panel"><strong>' + esc(contentTitle(a.contentItemId)) + '</strong> — yêu cầu bởi ' + esc(memberName(a.requestedBy)) + ' lúc ' + esc(D.formatDateTimeVN(a.requestedAt)) +
