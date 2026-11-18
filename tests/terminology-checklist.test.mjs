@@ -97,7 +97,10 @@ test('TERM [static]: Post + Publication là hai khái niệm riêng, thống nh�
 test('TERM [guard]: "Còn dùng được" thống nhất — không còn "Còn có thể dùng"; "Phiên bản content" — không còn "Phiên bản nội dung"', () => {
   assert.ok(src.includes('Còn dùng được'), 'thiếu nhãn Còn dùng được');
   assert.ok(!src.includes('Còn có thể dùng'), 'còn nhãn cũ Còn có thể dùng');
-  assert.match(src, /Còn dùng được: <strong>/);
+  // Vá bổ sung A22 (18/11): ghi chú ngân sách campaign không còn dạng
+  // "Còn dùng được: <strong>{số}</strong>" (bỏ lặp số tóm tắt) — thuật ngữ
+  // "Còn dùng được" nay được khoá qua công thức trong Chi tiết của ghi chú.
+  assert.match(src, /"Còn dùng được" = hạn mức − thực chi − cam kết chưa trả/);
   assert.ok(src.includes('Phiên bản content'), 'thiếu nhãn Phiên bản content');
   assert.ok(!src.includes('Phiên bản nội dung'), 'còn nhãn cũ Phiên bản nội dung');
 });

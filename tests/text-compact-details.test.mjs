@@ -82,3 +82,20 @@ test('TCD [static]: CSS hợp nhất 1 hệ chú thích — .sub/.note 72ch, .fi
   assert.match(css, /\.note-details>summary\{/);
   assert.ok(!css.includes('.viz-daybar-label{font-size:10px'), 'còn khai 10px bị ghi đè của .viz-daybar-label');
 });
+
+test('TCD [static]: vá bổ sung A22/A89 — A22 ghi chú ngân sách qua Chi tiết không lặp số; A89 pill Chưa ước tính được khôi phục', () => {
+  // A22: ghi chú dưới bảng ngân sách campaign dùng pattern Chi tiết, hiển thị
+  // mặc định chỉ còn tóm tắt công thức (không còn fmtMoney lặp số tóm tắt),
+  // toàn văn 2 công thức + "không cộng lẫn nhau" còn nguyên trong Chi tiết.
+  const detail = src.slice(src.indexOf('function campaignDetailHtml(id)'), src.indexOf('// ---------- R3.1: Content Plan'));
+  assert.match(detail, /noteWithDetailHtml\('Cách tính: Chưa phân bổ = hạn mức − đã phân bổ\. Còn dùng được = hạn mức − thực chi − cam kết chưa trả \(hai số khác nhau, không cộng lẫn nhau\)\.'/);
+  assert.match(detail, /"Chưa phân bổ" = hạn mức − đã phân bổ cho các activity\. "Còn dùng được" = hạn mức − thực chi − cam kết chưa trả\. Hai số này khác nhau và không cộng lẫn nhau\./);
+  assert.ok(!detail.includes('Chưa phân bổ: <strong>'), 'A22: còn lặp số tóm tắt Chưa phân bổ');
+  assert.ok(!detail.includes('Còn dùng được: <strong>'), 'A22: còn lặp số tóm tắt Còn dùng được');
+  // A89: pill "{task}: Chưa ước tính" trong ô Effort được khôi phục đúng
+  // baseline f878ac7 (render từ biến unestimated, không còn dead code) và
+  // ghi chú cuối bảng giữ nguyên văn.
+  const team = src.slice(src.indexOf('function viewTeam()'), src.indexOf('// ---------- KPI & Ngân sách ----------'));
+  assert.match(team, /unestimated\.length \? '<br>' \+ unestimated\.map\(function \(t\) \{ return vizStatusPillHtml\('', \{ tone: 'pending', label: t\.title \+ ': Chưa ước tính' \}\); \}\)\.join\(' '\) : ''\)/);
+  assert.ok(team.includes('Task thiếu effort hiển thị "Chưa ước tính" và không tính vào effort đã phân bổ.'), 'A89: mất ghi chú cuối bảng nguyên văn');
+});

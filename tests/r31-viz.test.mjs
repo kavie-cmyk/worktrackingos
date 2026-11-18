@@ -67,8 +67,14 @@ test('R3.1-VIZ [static]: tổng quan campaign — chart phân bổ theo action T
   assert.match(detail, /vizBudgetActionChartHtml\(c\)/);
   assert.ok(detail.indexOf('vizBudgetActionChartHtml(c)') < detail.indexOf('Bảng số chi tiết ngân sách'), 'chart phải nằm trên bảng số chi tiết');
   assert.match(detail, /data-viz="campaign-budget-note"/);
-  assert.match(detail, /Chưa phân bổ: <strong>/);
-  assert.match(detail, /Còn dùng được: <strong>/);
+  // Vá bổ sung A22 (18/11): ghi chú KHÔNG còn lặp số tóm tắt (số chỉ nằm ở
+  // bảng chi tiết ngay bên dưới) — hiển thị mặc định là tóm tắt công thức
+  // qua noteWithDetailHtml, toàn văn định nghĩa nằm trong Chi tiết.
+  assert.match(detail, /noteWithDetailHtml\('Cách tính: Chưa phân bổ = hạn mức/);
+  assert.match(detail, /"Chưa phân bổ" = hạn mức − đã phân bổ cho các activity/);
+  assert.match(detail, /"Còn dùng được" = hạn mức − thực chi − cam kết chưa trả/);
+  assert.doesNotMatch(detail, /Chưa phân bổ: <strong>/, 'A22: ghi chú không được lặp lại số tóm tắt dạng "Chưa phân bổ: <strong>"');
+  assert.doesNotMatch(detail, /Còn dùng được: <strong>/, 'A22: ghi chú không được lặp lại số tóm tắt dạng "Còn dùng được: <strong>"');
   assert.match(detail, /là hai số tách biệt, không gộp/);
   for (const label of ['Hạn mức', 'Đã phân bổ', 'Chưa phân bổ', 'Thực chi', 'Cam kết chưa trả', 'Dự kiến sử dụng', 'Còn dùng được']) {
     assert.ok(detail.includes('<th>' + label + '</th>'), 'bảng chi tiết thiếu cột: ' + label);
