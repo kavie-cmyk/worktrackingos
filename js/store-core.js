@@ -135,7 +135,7 @@
     brands: ['id', 'workspace_id', 'code', 'name', 'tagline', 'description', 'market', 'primary_color', 'color', 'palette', 'voice', 'key_messages', 'funnel_steps', 'status', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     benchmarks: ['id', 'workspace_id', 'brand_id', 'segment', 'channel', 'channel_group', 'unit_price', 'currency', 'output_per_unit', 'view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'visit_to_signup', 'signup_to_first', 'first_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account', 'cost_per_result', 'direct_budget', 'confidence', 'source', 'archived_at', 'created_by', 'created_at', 'updated_at'],
     plan_rows: ['id', 'workspace_id', 'brand_id', 'segment', 'month', 'channel', 'channel_group', 'unit', 'qty', 'audience', 'b2b_split_pct', 'unit_price', 'budget', 'objective', 'phase_id', 'campaign_id', 'activity_id', 'archived_at', 'created_by', 'created_at', 'updated_at'],
-    phase_assumptions: ['id', 'workspace_id', 'phase_id', 'channel', 'view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'visit_to_signup', 'signup_to_first', 'first_to_paid', 'top_funnel_override', 'created_by', 'created_at', 'updated_at']
+    phase_assumptions: ['id', 'workspace_id', 'phase_id', 'channel', 'view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'visit_to_signup', 'signup_to_first', 'first_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account', 'top_funnel_override', 'created_by', 'created_at', 'updated_at']
   };
 
   // Bảng có cột custom_fields → trường giao diện chưa có cột thật được gói vào đây.
