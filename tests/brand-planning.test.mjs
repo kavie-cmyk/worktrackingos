@@ -141,9 +141,12 @@ test('BP [domain]: summarizePlanByMonth đủ 12 tháng + tổng khớp cộng t
   const s = domain.summarizePlanByMonth(lumusRows);
   assert.equal(s.months.length, 12);
   assert.equal(s.byMonth['2027-01'].qty, 4 + 4 + 1 + 21 + 9 + 9 + 11 + 2 + 0 + 2); // 63
-  assert.equal(s.byMonth['2027-01'].budget, 10920000 + 3640000);
+  // Chốt 18/11 (bỏ giá Benchmark): giá KOL nay là giá Phase trên dòng
+  // nên summarize (không truyền benchmarks) cũng thấy ngân sách KOL:
+  // T1 KOL = 4x1,5tr + 4x5,5tr + 1x30tr = 58.000.000đ.
+  assert.equal(s.byMonth['2027-01'].budget, 10920000 + 3640000 + 58000000);
   assert.equal(s.totalQty, 65 + 60 + 12 + 244 + 104 + 104 + 130 + 24 + 6 + 27);
-  assert.equal(s.totalBudget, 546000000 + 182000000 + 41600000 + 41600000, 'SỬA PHẠM VI Paid Objective: +83.200.000đ từ 2 kênh B2B mới');
+  assert.equal(s.totalBudget, 546000000 + 182000000 + 41600000 + 41600000 + 787500000, 'SỬA PHẠM VI Paid Objective: +83.200.000đ từ 2 kênh B2B mới; +787.500.000đ giá Phase KOL (chốt 18/11)');
 });
 
 test('BP [domain]: summarizePlanByChannel kèm group + tổng theo channel', () => {
@@ -216,7 +219,7 @@ test('BP [domain]: planBudget CA SỐ NEO — KOL Nano T1 = 4 x 1.500.000 = 6.00
   const b = domain.planBudget([nanoJan], demo.benchmarks);
   assert.equal(b.total, 6000000);
   assert.equal(b.byMonth['2027-01'].amount, 6000000);
-  assert.equal(b.rows[0].source, 'unit_price');
+  assert.equal(b.rows[0].source, 'manual_unit_price', 'giá Phase trên dòng (chốt 18/11 — nguồn unit_price từ Benchmark đã gỡ)');
 });
 
 test('BP [domain]: planBudget — Paid Ads lấy field budget trực tiếp; tổng kỳ khớp', () => {
@@ -246,7 +249,9 @@ test('BP [domain]: an toàn với rows rỗng / thiếu benchmark — không thr
   assert.equal(domain.forecastFunnel(null, null).rows.length, 0);
   const b = domain.planBudget([], null);
   assert.equal(b.total, 0);
-  assert.equal(domain.planBudget([nanoJan], []).total, 0);
+  // Chốt 18/11: nanoJan mang giá Phase trên dòng nên thiếu benchmarks
+  // vẫn tính được 6.000.000đ (giá không còn phụ thuộc Benchmark).
+  assert.equal(domain.planBudget([nanoJan], []).total, 6000000);
 });
 
 // ---------------------------------------------------------------- SAVA seed (17/11, file Action Plan CAMP 01 + IMC Game Chapter)

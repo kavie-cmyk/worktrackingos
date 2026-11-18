@@ -46,7 +46,7 @@ const BM = [{ brand_id: 'b1', channel: 'KOL X', group: 'KOL', unit_price: 1000, 
 
 function rowsWith(field, qtyByMonth) {
   return Object.entries(qtyByMonth).map(([month, q], i) => {
-    const r = { id: `r-${field}-${month}`, brand_id: 'b1', month, channel: 'KOL X', group: 'KOL', budget: null };
+    const r = { id: `r-${field}-${month}`, brand_id: 'b1', month, channel: 'KOL X', group: 'KOL', budget: null, unit_price: 1000 };
     r[field] = q;
     return r;
   });
@@ -85,14 +85,14 @@ test('PQF (1): chỉ qty / chỉ quantity / chỉ count -> forecast giống hệ
 });
 
 test('PQF (2): có cả qty lẫn quantity -> qty thắng (khớp planQtyOf + planBudget); thiếu qty -> quantity thắng count', () => {
-  const both = [{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'KOL X', group: 'KOL', qty: 4, quantity: 99, count: 77, budget: null }];
+  const both = [{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'KOL X', group: 'KOL', qty: 4, quantity: 99, count: 77, budget: null, unit_price: 1000 }];
   assert.equal(domain.planQtyOf(both[0]), 4, 'planQtyOf: qty thắng');
   assert.equal(domain.planBudget(both, BM).total, 4000, 'planBudget: qty thắng (4 x 1.000)');
   const f = domain.forecastFunnel(both, BM);
   assert.equal(f.rows[0].qty, 4, 'snapshot qty: qty thắng');
   approx(f.rows[0].forecast.views, 400, 'forecast theo qty = 4 (không phải 99/77)');
   approx(f.rows[0].forecast.paid, 0.4, 'paid theo qty');
-  const noQty = [{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'KOL X', group: 'KOL', quantity: 5, count: 99, budget: null }];
+  const noQty = [{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'KOL X', group: 'KOL', quantity: 5, count: 99, budget: null, unit_price: 1000 }];
   assert.equal(domain.planQtyOf(noQty[0]), 5, 'planQtyOf: quantity thắng count');
   assert.equal(domain.planBudget(noQty, BM).total, 5000, 'planBudget: quantity thắng count');
   approx(domain.forecastFunnel(noQty, BM).rows[0].forecast.views, 500, 'forecast: quantity thắng count');
@@ -118,11 +118,11 @@ test('PQF (3b): cổng budget-driven dùng cùng _planQty — dòng nhóm Paid M
   // objective/đơn giá); planBudget lại coi đây là dòng có số lượng.
   // Sau sửa hai đường thống nhất: dòng đi đường content.
   const bmContent = [{ brand_id: 'b1', channel: 'KOL X', group: 'Paid Media', unit_price: 1000, output_per_unit: 100, view_to_visit: 0.1, visit_to_freemium: 0.1, freemium_to_paid: 0.1, paid_to_b2b: null, direct_budget: false }];
-  const rows = [{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'KOL X', group: 'Paid Media', quantity: 4, budget: 999999 }];
+  const rows = [{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'KOL X', group: 'Paid Media', quantity: 4, budget: 999999, unit_price: 1000 }];
   const f = domain.forecastFunnel(rows, bmContent);
   assert.ok(f.rows[0].forecast, 'dòng có quantity phải forecast theo content');
   approx(f.rows[0].forecast.views, 400, 'views = quantity x output');
-  assert.equal(domain.planBudget(rows, bmContent).total, 4000, 'planBudget khớp: quantity x đơn giá, bỏ qua field budget');
+  assert.equal(domain.planBudget(rows, bmContent).total, 4000, 'planBudget khớp: quantity x giá Phase trên dòng, bỏ qua field budget');
 });
 
 test('PQF [static]: domain chỉ còn MỘT nơi chứa chuỗi fallback qty/quantity/count — chính _planQty; forecastFunnel không đọc r.qty thô', () => {

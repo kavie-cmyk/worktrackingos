@@ -74,8 +74,8 @@ const PHASES = [
 ];
 function baseRows() {
   return [
-    { id: 'r-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'KOL Nano', group: 'KOL', qty: 4, budget: null, phase_id: 'ph-1' },
-    { id: 'r-feb', brand_id: 'b1', segment: 'b2c', month: '2027-02', channel: 'KOL Nano', group: 'KOL', qty: 6, budget: null, phase_id: 'ph-2' },
+    { id: 'r-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'KOL Nano', group: 'KOL', qty: 4, budget: null, phase_id: 'ph-1', unit_price: 1500000 },
+    { id: 'r-feb', brand_id: 'b1', segment: 'b2c', month: '2027-02', channel: 'KOL Nano', group: 'KOL', qty: 6, budget: null, phase_id: 'ph-2', unit_price: 1500000 },
   ];
 }
 // Số engine của fixture: Phase 1 Paid = 4 x 4000 x 0,003 x 0,09 x

@@ -846,13 +846,19 @@
   }
   // --- Planning Theo tháng: helper Đơn giá + Ngân sách của ô tháng ---
   // NGÂN SÁCH CHỈ TỰ TÍNH (chốt của Zac): cột Ngân sách trong bảng chi
-  // tiết chỉ HIỂN THỊ, không sửa được; người dùng chỉ sửa Số lượng và
-  // Đơn giá. Thứ tự ưu tiên ngân sách của MỘT dòng (đúng domain.planBudget
+  // tiết chỉ HIỂN THỊ, không sửa được; người dùng chỉ sửa Số lượng ở
+  // Theo tháng. Đơn giá ở bảng chi tiết cũng CHỈ HIỂN THỊ (chốt
+  // 18/11): giá chỉ quản ở Theo phase (ô Đơn giá mỗi bài).
+  // Thứ tự ưu tiên ngân sách của MỘT dòng (đúng domain.planBudget
   // — mọi đường đọc ngân sách đều qua các helper này / planBudgetFor,
   // không fork công thức):
-  //   1) Dòng CÓ số lượng: qty × đơn giá hiệu dụng; đơn giá hiệu dụng =
-  //      đơn giá ĐẶT TAY riêng của dòng (field unit_price) nếu có, không
-  //      thì đơn giá Benchmark khớp. Field budget lưu sẵn trên dòng có
+  //   1) Dòng CÓ số lượng: qty × đơn giá hiệu dụng; đơn giá hiệu dụng
+  //      CHỈ còn là giá Phase của dòng (field unit_price, do ô Đơn giá
+  //      mỗi bài ở Theo phase ghi/xoá) — chốt 18/11 BỎ HẲN giá
+  //      Benchmark: benchmark unit_price không còn được đọc ở bất kỳ
+  //      đường tính giá/ngân sách nào (Benchmark chỉ còn vai trò tỉ lệ
+  //      phễu + cost_per_result của Paid Media). Chưa đặt giá Phase
+  //      thì ngân sách phần đó = 0. Field budget lưu sẵn trên dòng có
   //      qty KHÔNG được dùng.
   //   2) Dòng KHÔNG có số lượng (qty null — ngoại lệ dữ liệu nguồn Paid
   //      Ads): lấy field budget đã lưu trong dữ liệu nguồn. Riêng dòng
@@ -1079,9 +1085,12 @@
   function audienceLabel(aud) {
     return aud === 'b2b' ? 'B2B' : (aud === 'both' ? 'Cả hai' : 'B2C');
   }
-  // Đơn giá ĐẶT TAY riêng của 1 dòng plan: field unit_price (chấp nhận
-  // cả unitPrice / customFields do Store gói) khác null/'' và đọc được
-  // thành số mới tính là đặt tay; còn lại -> null.
+  // Giá Phase của 1 dòng plan (nguồn giá DUY NHẤT còn lại): field
+  // unit_price (chấp nhận cả unitPrice / customFields do Store gói)
+  // khác null/'' và đọc được thành số mới tính là có giá; còn lại ->
+  // null. Giá này do ô "Đơn giá mỗi bài" ở Theo phase ghi/xoá cho mọi
+  // dòng của Channel trong Phase (xem savePhaseUnitPrice). Tên hàm
+  // giữ nguyên (manual = đặt tay tại Phase) để không churn nơi gọi.
   function planRowManualUnitPrice(r) {
     if (!r) return null;
     var v = r.unit_price !== undefined && r.unit_price !== null ? r.unit_price
@@ -1090,23 +1099,17 @@
     return isNaN(Number(v)) ? null : Number(v);
   }
   function planRowHasManualUnitPrice(r) { return planRowManualUnitPrice(r) !== null; }
-  // Đơn giá Benchmark khớp của 1 dòng (null khi không có Benchmark/đơn giá).
-  function planRowBenchmarkUnitPrice(r, benchmarks) {
-    var bm = benchmarkForRow(r, benchmarks);
-    var up = bm ? (bm.unit_price !== undefined ? bm.unit_price : bm.unitPrice) : null;
-    if (up === null || up === undefined || up === '' || isNaN(Number(up))) return null;
-    return Number(up);
-  }
-  // Đơn giá HIỆU DỤNG của 1 dòng: đặt tay thắng Benchmark.
+  // Đơn giá HIỆU DỤNG của 1 dòng: CHỈ còn giá Phase của dòng (field
+  // unit_price do ô Đơn giá mỗi bài ở Theo phase ghi/xoá). Tham số
+  // benchmarks giữ cho tương thích chữ ký nơi gọi — KHÔNG còn đọc
+  // unit_price của Benchmark (đã gỡ hẳn planRowBenchmarkUnitPrice,
+  // chốt 18/11). Chưa đặt giá Phase -> null.
   function planRowEffectiveUnitPrice(r, benchmarks) {
-    var manual = planRowManualUnitPrice(r);
-    if (manual !== null) return manual;
-    return planRowBenchmarkUnitPrice(r, benchmarks);
+    return planRowManualUnitPrice(r);
   }
-  // Nguồn đơn giá hiệu dụng của 1 dòng: 'manual' | 'benchmark' | null.
+  // Nguồn đơn giá hiệu dụng của 1 dòng: 'manual' (giá Phase) | null.
   function planRowUnitPriceSource(r, benchmarks) {
-    if (planRowHasManualUnitPrice(r)) return 'manual';
-    return planRowBenchmarkUnitPrice(r, benchmarks) !== null ? 'benchmark' : null;
+    return planRowHasManualUnitPrice(r) ? 'manual' : null;
   }
   // Ngân sách HIỆU DỤNG của 1 dòng theo thứ tự ưu tiên ở trên.
   function planRowEffectiveBudget(r, benchmarks) {
@@ -1128,10 +1131,10 @@
     return planMonthRows(rows, channel, group, month).some(function (r) { return planRowHasQty(r) && planRowHasManualUnitPrice(r); });
   }
   // Đơn giá hiệu dụng của 1 Ô THÁNG (để hiện ở cột Đơn giá): chỉ tính
-  // các dòng CÓ số lượng. Mọi dòng số lượng cùng một đơn giá hiệu dụng
-  // -> { value, source: 'manual'|'benchmark' }; các dòng lệch giá nhau
-  // -> { value: null, source: 'mixed' }; không có dòng số lượng / không
-  // dòng nào có đơn giá -> { value: null, source: null }.
+  // các dòng CÓ số lượng. Mọi dòng số lượng cùng một giá Phase
+  // -> { value, source: 'manual' }; các dòng lệch giá nhau
+  // -> { value: null, source: 'mixed' }; không có dòng số lượng / có
+  // dòng chưa đặt giá Phase -> { value: null, source: null }.
   function planMonthUnitPriceInfo(rows, channel, group, month, benchmarks) {
     var qtyRows = planMonthRows(rows, channel, group, month).filter(planRowHasQty);
     if (!qtyRows.length) return { value: null, source: null };
@@ -1139,26 +1142,24 @@
     if (prices.some(function (p) { return p === null; })) return { value: null, source: null };
     var first = prices[0];
     if (prices.some(function (p) { return p !== first; })) return { value: null, source: 'mixed' };
-    return { value: first, source: qtyRows.some(planRowHasManualUnitPrice) ? 'manual' : 'benchmark' };
+    return { value: first, source: 'manual' };
   }
   // --- Planning Theo phase: Đơn giá mỗi bài của 1 Channel trong Phase ---
   // MỘT nguồn sự thật: đơn giá của Phase KHÔNG có trường riêng — nó là
   // field unit_price (đặt tay) trên chính các dòng plan của Channel thuộc
   // các tháng trong Phase (xem savePhaseUnitPrice). Hàm này chỉ ĐỌC để
   // trình bày ô nhập ở khối Phase:
-  // - Mọi dòng Số lượng trong Phase cùng một đơn giá hiệu dụng và đều
-  //   đặt tay -> { value, source: 'manual' } (nhãn "đặt tay tại phase").
-  // - Cùng đơn giá hiệu dụng, đều lấy từ Benchmark -> 'benchmark'.
-  // - Đơn giá HIỆU DỤNG khác nhau giữa các tháng (vd sửa lẻ ở Theo tháng
-  //   mỗi tháng một giá đặt tay) -> { value: null, source: 'mixed' }:
-  //   ô nhập để trống kèm ghi chú "khác nhau theo tháng" — KHÔNG bịa một
-  //   con số đại diện; nhập một giá mới sẽ áp đồng nhất cho cả Phase.
-  // - Đơn giá hiệu dụng bằng nhau nhưng nguồn lẫn lộn (một số tháng đặt
-  //   tay, một số tháng Benchmark) -> { value, source: 'mixed' } kèm ghi
-  //   chú lẫn lộn nguồn ở nơi render.
+  // - Mọi dòng Số lượng trong Phase cùng một giá Phase
+  //   -> { value, source: 'manual' } (nhãn "đặt tay tại phase").
+  // - Giá Phase khác nhau giữa các tháng (vd giá đặt tay lẻ theo tháng
+  //   còn từ trước, mỗi tháng một giá) hoặc một số tháng chưa đặt giá
+  //   -> { value: null, source: 'mixed' }: ô nhập để trống kèm ghi chú
+  //   "khác nhau theo tháng" — KHÔNG bịa một con số đại diện; nhập một
+  //   giá mới sẽ áp đồng nhất cho cả Phase.
   // - Không có dòng Số lượng (vd Paid Media) -> { value: null, source: null }.
-  // - Có dòng Số lượng nhưng không dòng nào có đơn giá (không Benchmark,
-  //   không đặt tay) -> { value: null, source: null }.
+  // - Có dòng Số lượng nhưng chưa dòng nào đặt giá Phase
+  //   -> { value: null, source: null } (hiện "Chưa đặt giá"; giá
+  //   Benchmark KHÔNG còn được đọc — chốt 18/11).
   function phaseChannelUnitPriceInfo(chRows, benchmarks) {
     var qtyRows = (chRows || []).filter(planRowHasQty);
     if (!qtyRows.length) return { value: null, source: null };
@@ -1169,10 +1170,7 @@
     if (nonNull.length !== prices.length || nonNull.some(function (x) { return x !== first; })) {
       return { value: null, source: 'mixed' };
     }
-    var manualCount = qtyRows.filter(planRowHasManualUnitPrice).length;
-    if (manualCount === qtyRows.length) return { value: first, source: 'manual' };
-    if (manualCount === 0) return { value: first, source: 'benchmark' };
-    return { value: first, source: 'mixed' };
+    return { value: first, source: 'manual' };
   }
   // --- Planning Theo tháng: helper Thêm dòng (THUẦN, không UI/Store) ---
   // Mọi Channel "hiện có" trong hệ thống: từ plan_rows của mọi Brand +
@@ -1210,7 +1208,7 @@
   }
   // Phase gắn cho dòng plan mới tạo ở tháng `month` của Brand: khớp Brand
   // + tháng nằm trong khoảng phase (ĐÚNG cơ chế các đường tạo dòng hiện
-  // tại dùng — savePlanningMonthQty / savePlanningMonthUnitPrice). Không
+  // tại dùng — savePlanningMonthQty). Không
   // phase nào khớp -> null; khi đó phaseRowsFor vẫn tự suy theo Brand +
   // khoảng tháng ở chế độ Theo phase nếu tháng thuộc một phase.
   function planningPhaseIdForNewRow(brandId, month) {
@@ -1222,11 +1220,12 @@
     });
     return found;
   }
-  // Parse Đơn giá nhập ở bảng chi tiết: chỉ số nguyên >= 0 (VNĐ);
-  // còn lại (chữ, âm, thập phân) -> null để handler chặn lưu và báo
-  // lỗi. Ô TRỐNG không qua hàm này — handler lưu coi trống là lệnh
-  // XOÁ đơn giá đặt tay, quay về đơn giá Benchmark
-  // (xem savePlanningMonthUnitPrice).
+  // Parse Đơn giá nhập ở Theo phase (ô Đơn giá mỗi bài): chỉ số
+  // nguyên >= 0 (VNĐ); còn lại (chữ, âm, thập phân) -> null để handler
+  // chặn lưu và báo lỗi.
+  // Ô TRỐNG không qua hàm này — handler lưu ở Theo phase coi trống
+  // là lệnh XOÁ giá Phase (bỏ giá, đơn giá trống)
+  // (xem savePhaseUnitPrice).
   function parsePlanUnitPrice(raw) {
     if (raw === '' || raw === null || raw === undefined) return null;
     var v = Number(raw);
@@ -3984,7 +3983,7 @@
     if (!canEdit()) {
       html += '<div class="notice info" data-planning-add-locked="1">Vai trò hiện tại chỉ xem nên không thêm dòng Planning được.</div>';
     } else {
-      html += noteWithDetailHtml('Dòng mới bắt đầu với Số lượng 0 ở tháng 1/' + esc(year) + '.', 'Sau khi thêm, bấm tên Channel trong lưới để mở bảng chi tiết và sửa Số lượng/Đơn giá từng tháng. Nếu nhập Đơn giá ban đầu và Brand × Channel chưa có Benchmark, hệ thống tạo Benchmark chỉ gồm đơn giá này (các tỉ lệ phễu để trống nên Forecast của kênh mới sẽ báo chưa tính được cho tới khi có tỉ lệ).');
+      html += noteWithDetailHtml('Dòng mới bắt đầu với Số lượng 0 ở tháng 1/' + esc(year) + '.', 'Sau khi thêm, bấm tên Channel trong lưới để mở bảng chi tiết và sửa Số lượng từng tháng (Đơn giá chỉ hiển thị ở chi tiết, quản ở Theo phase qua ô Đơn giá mỗi bài — dòng mới chưa có giá Phase cho tới khi đặt ở Theo phase).');
     }
     html += '<form class="inline" id="planning-add-row-form" data-year="' + esc(year) + '">' +
       '<label>Brand<select name="brandId" data-action-change="planning-add-brand" aria-label="Brand của dòng mới"' + disAttr + '>' + brandOpts + '</select></label>' +
@@ -3993,7 +3992,6 @@
       '<label>Nhóm có sẵn<select name="groupExisting" aria-label="Chọn Nhóm có sẵn"' + disAttr + '>' + gOpts + '</select></label>' +
       '<label>hoặc Nhóm mới<input type="text" name="groupNew" placeholder="vd: Paid Media" aria-label="Nhập tên Nhóm mới"' + disAttr + '></label>' +
       '<label>Segment<select name="segment" aria-label="Segment của dòng mới"' + disAttr + '>' + segOpts + '</select></label>' +
-      '<label>Đơn giá ban đầu (VNĐ, tuỳ chọn)<input type="number" name="unitPrice" step="1" min="0" placeholder="Để trống = chưa đặt" aria-label="Đơn giá ban đầu"' + disAttr + '></label>' +
       '<button class="btn" type="submit"' + disAttr + '>Thêm dòng</button> ' +
       '<button class="btn secondary" type="button" data-action="planning-add-row-toggle">Đóng form</button>' +
       '</form></div>';
@@ -4017,7 +4015,7 @@
       : (function () { var out = []; for (var mi = 1; mi <= 12; mi++) out.push(String(year) + '-' + String(mi).padStart(2, '0')); return out; })();
     var html = pageHead('Planning', 'Kế hoạch Content theo Channel, năm ' + year + ' — Theo tháng (xem lưới, sửa trong bảng chi tiết) hoặc Theo phase. Ngân sách tự tính; riêng Paid Media nhập trực tiếp.',
       '');
-    html += noteDetailHtml('Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Views mỗi bài / Tỉ lệ chuyển đổi theo Phase). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.');
+    html += noteDetailHtml('Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng theo từng tháng, Đơn giá chỉ hiển thị — quản ở Theo phase qua ô Đơn giá mỗi bài (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Views mỗi bài / Tỉ lệ chuyển đổi theo Phase). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.');
     html += readonlyNote() + contextBannerHtml();
     // Chọn năm
     var yearOpts = [2026, 2027, 2028].map(function (y) { return '<option value="' + y + '"' + (year === y ? ' selected' : '') + '>' + y + '</option>'; }).join('');
@@ -4055,7 +4053,7 @@
     // vào tên Channel ở đầu dòng -> mở BẢNG CHI TIẾT của đúng dòng đó ngay
     // bên dưới lưới (xem khối data-planning-detail ở dưới); trong bảng chi
     // tiết mới có ô sửa Số lượng theo từng tháng.
-    html += '<p class="sub" data-planning-grid-hint="1">Bấm tên Channel để mở bảng chi tiết và sửa Số lượng/Đơn giá (ngân sách tự tính; Paid Media nhập trực tiếp).</p>';
+    html += '<p class="sub" data-planning-grid-hint="1">Bấm tên Channel để mở bảng chi tiết và sửa Số lượng (Đơn giá chỉ hiển thị, quản ở Theo phase; ngân sách tự tính; Paid Media nhập trực tiếp).</p>';
     // Gom nhóm theo group, trong nhóm gom theo channel — thứ tự qua
     // helper chung planChannelOrderByGroup (Bước B II-1, nguồn ở
     // domain); thành viên từng ô vẫn gom từ rows như cũ.
@@ -4136,21 +4134,23 @@
         } else {
           qtyCell = '—';
         }
-        // Ô Đơn giá: hiện ĐƠN GIÁ HIỆU DỤNG của tháng kèm nhãn nguồn —
-        // "đặt tay" khi dòng mang unit_price riêng, "Benchmark" khi lấy
-        // từ Benchmark. Sửa được ở mọi tháng có dòng Số lượng (kể cả qty
-        // = 0: ngân sách vẫn 0 cho tới khi qty > 0) hoặc tháng chưa có
-        // dòng nào nhưng dòng này có Số lượng ở tháng khác (nhập giá sẽ
-        // tạo dòng plan mới mang đơn giá qua savePlanningMonthUnitPrice).
+        // Ô Đơn giá: CHỈ HIỂN THỊ (chốt 18/11 — bỏ hẳn nhập Đơn giá
+        // ở bảng chi tiết cho mọi dòng): hiện GIÁ PHASE của tháng kèm
+        // nhãn nguồn — "giá Phase" khi dòng mang unit_price (đặt qua
+        // ô Đơn giá mỗi bài ở Theo phase), "— / chưa đặt giá" khi
+        // chưa có giá Phase. Giá Benchmark KHÔNG còn được đọc (chốt
+        // 18/11). Giá trị unit_price đã có vẫn giữ nguyên hiệu lực
+        // (vẫn tính vào ngân sách như trước); chỉ đổi/xoá được qua
+        // ô Đơn giá mỗi bài ở Theo phase.
         // Tháng chỉ có dòng ngân sách nguồn (qty trống, vd Paid Ads):
-        // hiện '—', KHÔNG sửa được.
+        // hiện '—'.
         var priceInfo = planMonthUnitPriceInfo(selRows, selChannel, cellGroup, m, benchmarks);
         var priceCell;
         if (cellHasQty || (!cellRows.length && selHasQty)) {
           var priceLabel = priceInfo.source === 'manual'
-            ? ' <span class="sub" data-planning-price-manual="1">đặt tay</span>'
-            : (priceInfo.source === 'benchmark' ? ' <span class="sub" data-planning-price-benchmark="1">Benchmark</span>' : '');
-          priceCell = '<input class="phase-input planning-month-input planning-price-input" type="number" step="1" min="0" value="' + esc(priceInfo.value === null ? '' : String(priceInfo.value)) + '" placeholder="—" data-action-change="planning-month-unit-price" data-channel="' + esc(selChannel) + '" data-group="' + esc(cellGroup) + '" data-month="' + esc(m) + '" aria-label="Đơn giá của ' + esc(selChannel) + ' trong tháng ' + esc(m) + '"' + detailDisAttr + '>' + priceLabel;
+            ? ' <span class="sub" data-planning-price-phase="1">giá Phase</span>'
+            : (priceInfo.value === null ? ' <span class="sub" data-planning-price-none="1">chưa đặt giá</span>' : '');
+          priceCell = '<span data-planning-price-value="1">' + (priceInfo.value === null ? '—' : fmtMoney(priceInfo.value, 'VND')) + '</span>' + priceLabel;
         } else {
           priceCell = '—';
         }
@@ -4160,7 +4160,7 @@
         // nguồn. NGOẠI LỆ Paid Media: ô tháng thuộc nhóm "Paid Media"
         // (dòng qty trống mang field budget) là Ô NHẬP ngân sách trực
         // tiếp theo tháng — cùng mẫu sự kiện change + guard demo/chỉ-xem
-        // như ô Số lượng/Đơn giá; tháng chưa có dòng nhưng dòng Channel
+        // như ô Số lượng; tháng chưa có dòng nhưng dòng Channel
         // này có dòng Paid ở tháng khác cũng hiện ô nhập (nhập > 0 tạo
         // dòng Paid mới qua savePlanningMonthPaidBudget).
         var cellIsPaid = cellRows.some(planRowIsPaidMedia);
@@ -4240,11 +4240,11 @@
         '<p><button class="btn small secondary" data-action="planning-channel-close">Đóng chi tiết</button> <span class="sub">Hoặc bấm lại tên Channel đang mở ở lưới để đóng.</span></p>' +
         (selRows.length ? '' : '<p class="sub">Không có dòng plan nào của dòng này trong kỳ/bộ lọc hiện tại.</p>');
       if (!canEdit()) {
-        html += '<div class="notice info" data-planning-detail-locked="1">Vai trò hiện tại chỉ xem nên các ô Số lượng, Đơn giá và Ngân sách Paid Media trong bảng chi tiết đang bị khóa.</div>';
+        html += '<div class="notice info" data-planning-detail-locked="1">Vai trò hiện tại chỉ xem nên các ô Số lượng và Ngân sách Paid Media trong bảng chi tiết đang bị khóa. Đơn giá chỉ hiển thị.</div>';
       } else {
-        html += noteWithDetailHtml('Sửa rồi rời ô/Enter để lưu — tổng, Budget, Forecast tính lại ngay. Nhập &gt; 0 ở tháng trống sẽ tạo dòng plan mới.', 'Sửa ô Số lượng hoặc Đơn giá theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng ngân sách nguồn (Số lượng trống, vd Paid Ads) không sửa Số lượng và Đơn giá ở đây — riêng dòng Paid Media thì sửa trực tiếp ô Ngân sách theo tháng (xem chú thích Paid Media bên dưới).', 'data-planning-detail-hint="1"') +
-          '<p class="sub" data-planning-detail-price-hint="1">Cách tính: Đơn giá hiệu dụng — "đặt tay" thắng Benchmark. Xoá trắng ô Đơn giá = bỏ đặt tay, quay về đơn giá Benchmark.</p>' +
-          '<p class="sub" data-planning-detail-budget-hint="1">Cách tính: Ngân sách của dòng thường chỉ tự tính (không sửa được) — Ngân sách tháng = Số lượng × Đơn giá hiệu dụng (đặt tay nếu có, không thì Benchmark). Chỉ Paid Media nhập ngân sách trực tiếp.</p>' +
+        html += noteWithDetailHtml('Sửa rồi rời ô/Enter để lưu — tổng, Budget, Forecast tính lại ngay. Nhập &gt; 0 ở tháng trống sẽ tạo dòng plan mới.', 'Sửa ô Số lượng theo tháng rồi ra khỏi ô (hoặc nhấn Enter) để lưu ngay — tổng của dòng, tổng lưới, Budget và Forecast tính lại sau mỗi lần lưu. Chỉ nhập số nguyên từ 0 trở lên. Tháng chưa có dòng plan sẽ tạo dòng plan mới (theo Brand/Segment/Channel của dòng này) khi nhập số lớn hơn 0. Tháng chỉ có dòng ngân sách nguồn (Số lượng trống, vd Paid Ads) không sửa Số lượng ở đây — riêng dòng Paid Media thì sửa trực tiếp ô Ngân sách theo tháng (xem chú thích Paid Media bên dưới). Đơn giá chỉ hiển thị ở bảng này, quản ở Theo phase (ô Đơn giá mỗi bài).', 'data-planning-detail-hint="1"') +
+          '<p class="sub" data-planning-detail-price-hint="1">Đơn giá chỉ hiển thị ở bảng này — quản ở Theo phase (ô Đơn giá mỗi bài). Đơn giá hiệu dụng = giá Phase của dòng; chưa đặt giá Phase thì đơn giá trống và ngân sách phần đó = 0.</p>' +
+          '<p class="sub" data-planning-detail-budget-hint="1">Cách tính: Ngân sách của dòng thường chỉ tự tính (không sửa được) — Ngân sách tháng = Số lượng × Đơn giá hiệu dụng (giá Phase; chưa đặt giá = 0). Chỉ Paid Media nhập ngân sách trực tiếp.</p>' +
           (selHasPaid ? noteWithDetailHtml('Dòng Paid Media: nhập ngân sách trực tiếp theo tháng theo từng Objective; kết quả đặt tại tầng của Objective rồi chảy xuống (không suy ngược). Tổng tháng = cộng các Objective, chỉ đọc.', 'Dòng Paid Media: nhập ngân sách trực tiếp theo tháng ở cột Ngân sách — cột Số lượng và Đơn giá giữ nguyên trạng (—). Theo mô hình Objective, mỗi tháng hiển thị theo từng Objective: mỗi Objective có ô nhập ngân sách riêng, kết quả đặt tại tầng của Objective đó (Awareness → Views, Traffic → Visits, Signup → Freemium, Remarketing → Paid) = Ngân sách ÷ đơn giá kết quả (cost_per_result) của Benchmark rồi chảy xuống qua tỉ lệ Benchmark — KHÔNG suy ngược lên tầng trên. Objective chưa có đơn giá trong file nguồn (vd Awareness) hiển thị "chưa có đơn giá": ngân sách vẫn tính vào tổng tháng nhưng chưa ra chỉ số. Tổng ngân sách tháng ở dòng tháng là chỉ đọc, bằng cộng các Objective.', 'data-planning-paid-budget-hint="1"') : '') +
           (selRows.some(planRowIsBudgetDriven) ? noteWithDetailHtml('Audience: chọn B2C / B2B / Cả hai (+ % B2B). Paid User B2C sinh B2B Account qua paid_to_b2b (phần chuyển đổi này bị trừ khỏi Paid EOM).', 'Audience (mô hình B2B bottom-up): mỗi dòng Objective (Paid Media) và mỗi dòng tháng Partnership/Event có chọn B2C / B2B / Cả hai + ô % cho B2B khi chọn Cả hai. Phần B2C của Lead Gen/Demo đặt kết quả tại tầng Freemium rồi chảy xuống; phần B2B thành B2B Account qua lead_to_account / demo_to_account; Partnership/Event: phần B2C ÷ đơn giá Freemium (cost_per_result.signup), phần B2B ÷ cost per B2B Account. Mọi Paid User từ luồng B2C đều sinh B2B Account qua cầu nối paid_to_b2b của Channel. Paid User chuyển sang B2B qua cầu nối paid_to_b2b bị trừ khỏi Paid EOM trong tháng chuyển đổi; B2B Account từ Lead Gen/Demo/Partnership/Event không trừ (chưa từng là Paid B2C). Objective thuần B2C (Awareness/Traffic/Signup/Remarketing) chỉ chạy B2C — lựa chọn B2B bị khóa. Chưa có tỉ lệ/đơn giá B2B thì phần tương ứng cho 0 account.', 'data-planning-audience-hint="1"') : '');
       }
@@ -4267,8 +4267,9 @@
     // 3 bảng KPI chi tiết theo tháng (Views / Paid Users / CAC) — ngay
     // dưới khu vực lưới + bảng chi tiết, trước chart ngân sách. Số liệu
     // đọc thẳng từ planningKpiData (cùng engine forecast + cùng công
-    // thức ngân sách) nên sửa Số lượng/Đơn giá/Ngân sách Paid ở bất kỳ
-    // chế độ nào cũng phản ánh ngay ở lần render này, không cache.
+    // thức ngân sách) nên sửa Số lượng (Theo tháng) / Đơn giá (Theo
+    // phase) / Ngân sách Paid ở bất kỳ chế độ nào cũng phản ánh ngay
+    // ở lần render này, không cache.
     html += planningKpiTablesHtml(rows, benchmarks, months);
     // Chart ngân sách dự kiến theo tháng (planBudget)
     var budgetMonthly = planBudgetFor(rows, benchmarks);
@@ -4279,7 +4280,7 @@
       html += tbl('<tr><th>Tháng</th><th>Ngân sách dự kiến</th></tr>' + budgetMonthly.map(function (x) { return '<tr><td>' + esc(vizMonthLabel(x.month)) + '</td><td>' + fmtMoney(x.total, 'VND') + '</td></tr>'; }).join(''), 'planning-budget');
       html += '<p class="sub">Cách tính: Tổng cả kỳ: <strong>' + fmtMoney(budgetMonthly.reduce(function (s, x) { return s + x.total; }, 0), 'VND') + '</strong> = Σ Số lượng × Đơn giá hiệu dụng (Paid Media lấy ngân sách đã nhập).</p>';
     } else {
-      html += '<div class="state-box">Chưa tính được ngân sách dự kiến — chưa có Benchmark đơn giá khớp hoặc dòng plan chưa có ngân sách nhập thẳng.</div>';
+      html += '<div class="state-box">Chưa tính được ngân sách dự kiến — dòng plan chưa có giá Phase hoặc chưa có ngân sách nhập thẳng.</div>';
     }
     // Chart funnel Forecast theo Benchmark
     var funnelSteps = forecastFunnelFor(rows, benchmarks);
@@ -4495,16 +4496,12 @@
             if (!chRows.some(planRowHasQty)) return '<td>—</td>';
             var priceInfo = phaseChannelUnitPriceInfo(chRows, benchmarks);
             var priceLabel;
-            if (priceInfo.source === 'mixed' && priceInfo.value === null) {
+            if (priceInfo.source === 'mixed') {
               priceLabel = '<br><span class="sub" data-phase-price-mixed="1">khác nhau theo tháng — nhập một giá để áp đồng nhất cho cả Phase</span>';
-            } else if (priceInfo.source === 'mixed') {
-              priceLabel = '<br><span class="sub" data-phase-price-mixed="1">một số tháng đặt tay, một số tháng Benchmark — nhập một giá để áp đồng nhất cho cả Phase</span>';
             } else if (priceInfo.source === 'manual') {
               priceLabel = '<br><span class="sub" data-phase-price-manual="1">đặt tay tại phase</span>';
-            } else if (priceInfo.source === 'benchmark') {
-              priceLabel = '<br><span class="sub" data-phase-price-benchmark="1">Benchmark</span>';
             } else {
-              priceLabel = '<br><span class="sub">Chưa có đơn giá</span>';
+              priceLabel = '<br><span class="sub" data-phase-price-none="1">Chưa đặt giá</span>';
             }
             return '<td><input class="phase-input planning-price-input phase-unit-price-input" type="number" step="1" min="0" value="' + esc(priceInfo.value === null ? '' : String(priceInfo.value)) + '" placeholder="—" data-action-change="phase-unit-price" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Đơn giá mỗi bài của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' + priceLabel + '</td>';
           })() +
@@ -4570,7 +4567,7 @@
           '<p class="sub" data-planning-phase-budget-audience-note="1">Chỉ hiển thị — sửa ở bảng chi tiết Theo tháng.</p>';
       }
       html += '<p class="sub">Cách tính: Forecast tháng = Số lượng × Views mỗi bài hiệu dụng; tỉ lệ hiệu dụng: Assumption thắng Benchmark, không có cả hai = "—". Riêng kênh Email: Opens = tồn Free đầu tháng × Open rate × số lượt gửi; Visits = Opens × Click/Open; Paid = Visits × Click→Paid; Freemium của Email = 0.</p>';
-      html += noteWithDetailHtml('Nhập 1 giá = đặt tay cho <strong>mọi tháng</strong> trong Phase; xoá trắng = về Benchmark.', 'Đơn giá mỗi bài: ô hiện đơn giá HIỆU DỤNG của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang đơn giá đặt tay, "Benchmark" nghĩa là đang lấy đơn giá Benchmark. Nhập một giá vào ô sẽ ghi đơn giá đặt tay đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × đơn giá hiệu dụng như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ đơn giá đặt tay của cả Phase, quay về Benchmark. Nếu các tháng đang có đơn giá khác nhau (do sửa lẻ ở Theo tháng), ô để trống kèm ghi chú "khác nhau theo tháng".', 'data-planning-phase-price-hint="1"');
+      html += noteWithDetailHtml('Nhập 1 giá = đặt tay cho <strong>mọi tháng</strong> trong Phase; xoá trắng = bỏ giá Phase.', 'Đơn giá mỗi bài: ô hiện GIÁ PHASE của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang giá Phase, "Chưa đặt giá" nghĩa là chưa tháng nào có giá (giá Benchmark không còn được đọc). Nhập một giá vào ô sẽ ghi giá đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × giá Phase như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ giá Phase của cả Phase (đơn giá trống, ngân sách phần đó = 0). Nếu các tháng đang có giá khác nhau (giá đặt tay lẻ theo tháng còn từ trước), ô để trống kèm ghi chú "khác nhau theo tháng". Đây là nơi quản Đơn giá duy nhất cho các dòng (bảng chi tiết Theo tháng chỉ hiển thị Đơn giá).', 'data-planning-phase-price-hint="1"');
       html += '<span data-planning-phase-views-hint="1">' + noteDetailHtml('Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về Views mỗi bài của Benchmark. Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).') + '</span>';
     }
     // Chart funnel theo Phase (totals của Phase qua cùng engine + ctx)
@@ -5154,17 +5151,18 @@
   }
   // Lưu Đơn giá mỗi bài tại Phase: ghi field unit_price (đặt tay) cho
   // MỌI dòng plan CÓ SỐ LƯỢNG của Channel thuộc các tháng trong Phase
-  // — ĐÚNG các dòng mà bảng chi tiết Theo tháng sửa lẻ từng tháng, nên
-  // ngân sách Phase + mọi tổng tính lại qua planBudgetFor /
+  // — đây là nơi quản Đơn giá DUY NHẤT cho các dòng (bảng chi tiết
+  // Theo tháng chỉ hiển thị Đơn giá, không còn đường sửa lẻ từng
+  // tháng), nên ngân sách Phase + mọi tổng tính lại qua planBudgetFor /
   // planRowEffectiveBudget như thường, không có trường giá riêng cho
   // Phase. Cùng guard demo/chỉ-xem như các ô Phase khác
-  // (phaseSaveGuard) và cùng validate với ô Đơn giá Theo tháng
-  // (parsePlanUnitPrice: số nguyên >= 0).
+  // (phaseSaveGuard) và validate qua parsePlanUnitPrice
+  // (số nguyên >= 0).
   // - Nhập số: áp đồng nhất cho cả Phase (kể cả khi các tháng đang lẫn
-  //   lộn giá khác nhau, và kể cả khi số bằng đúng giá Benchmark — ghi
-  //   tường minh để thành đặt tay thật).
-  // - Xoá trắng ô: bỏ đặt tay — unit_price = null cho mọi dòng Số
-  //   lượng trong Phase đang mang giá đặt tay, quay về Benchmark.
+  //   lộn giá khác nhau).
+  // - Xoá trắng ô: bỏ giá Phase — unit_price = null cho mọi dòng Số
+  //   lượng trong Phase đang mang giá Phase (đơn giá trống, ngân sách
+  //   phần đó = 0; KHÔNG quay về giá Benchmark — giá Benchmark đã bỏ).
   // - Sai định dạng (âm/chữ/thập phân): không lưu, toast lỗi.
   // - Channel chỉ có dòng ngân sách nguồn (qty null, vd Paid Media):
   //   không có đơn giá mỗi bài — báo rõ, dữ liệu không đổi.
@@ -5192,7 +5190,7 @@
       var manualRows = qtyRows.filter(planRowHasManualUnitPrice);
       if (!manualRows.length) { render(); return; }
       runJobs(manualRows.map(function (r) { return { id: r.id, unit_price: null }; }),
-        'Đã bỏ Đơn giá đặt tay của ' + channel + ' trong Phase ' + (phase.name || phase.id) + ' — Đơn giá quay về Benchmark, Ngân sách đã tính lại.',
+        'Đã bỏ giá Phase của ' + channel + ' trong Phase ' + (phase.name || phase.id) + ' — Đơn giá để trống, Ngân sách đã tính lại.',
         'Đã bỏ Đơn giá đặt tay của ' + channel + ' trong Phase ' + (phase.name || phase.id));
       return;
     }
@@ -5275,88 +5273,6 @@
       function () { toast('Đã tạo dòng plan và lưu Số lượng ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Tổng, Budget và Forecast đã tính lại.'); render(); },
       function (msg) { toast('Chưa lưu được Số lượng: ' + msg); render(); });
   }
-  // Lưu Đơn giá ĐẶT TAY của ĐÚNG 1 ô tháng (Channel × Group × tháng)
-  // vào field `unit_price` của chính các dòng plan_rows CÓ SỐ LƯỢNG của
-  // ô đó — cùng guard và cùng nguồn plan_rows với Số lượng. Ngân sách
-  // KHÔNG còn đường sửa trực tiếp (chốt của Zac: cột Ngân sách chỉ tự
-  // tính, chỉ hiển thị): sau khi lưu, mọi nơi đọc ngân sách vẫn qua
-  // planRowEffectiveBudget / planBudgetFor (qty × đơn giá hiệu dụng) nên
-  // ngân sách tháng, chart và tổng kỳ khớp ngay, không fork công thức.
-  // - Nhập số nguyên >= 0: ghi unit_price = số đó cho MỌI dòng Số lượng
-  //   trong ô (kể cả khi số bằng đúng đơn giá Benchmark — ghi tường minh
-  //   để tháng thành đặt tay thật, nhãn chuyển "đặt tay").
-  // - Xoá trắng ô: BỎ đặt tay — ghi unit_price = null cho mọi dòng Số
-  //   lượng trong ô đang mang đơn giá đặt tay, đơn giá quay về Benchmark.
-  // - Ô chỉ có dòng ngân sách nguồn (qty trống, vd Paid Ads): không đặt
-  //   đơn giá tại đây — báo rõ, dữ liệu không đổi.
-  // - Ô chưa có dòng nào: tạo 1 dòng plan mới (qty = 0, budget = null,
-  //   unit_price = số đã nhập) suy Brand/Segment/Unit/Phase từ các dòng
-  //   khác của cùng Channel — tháng qty = 0 vẫn đặt được đơn giá, ngân
-  //   sách tháng vẫn 0 cho tới khi Số lượng > 0.
-  function savePlanningMonthUnitPrice(channel, group, month, raw) {
-    if (!planningMonthSaveGuard()) return;
-    if (!/^\d{4}-\d{2}$/.test(String(month || ''))) { toast('Không xác định được tháng của ô Đơn giá.'); render(); return; }
-    var isClear = raw === '' || raw === null || raw === undefined || (typeof raw === 'string' && raw.trim() === '');
-    var yearPrefix = String(month).slice(0, 4) + '-';
-    var yearRows = filteredPlanRows().filter(function (r) { return planRowMonth(r).indexOf(yearPrefix) === 0; });
-    var cellRows = planMonthRows(yearRows, channel, group, month);
-    var qtyRows = cellRows.filter(planRowHasQty);
-    function runJobs(jobs, okToast, failLabel) {
-      var idx = 0, failed = 0;
-      function next() {
-        if (idx >= jobs.length) {
-          if (failed) toast(failLabel + ' nhưng ' + failed + ' dòng chưa lưu được — hãy thử lại.');
-          else toast(okToast);
-          render(); return;
-        }
-        var job = jobs[idx++];
-        saveResult(sUpdate('plan_rows', job.id, { unit_price: job.unit_price }), function () { next(); }, function () { failed++; next(); });
-      }
-      next();
-    }
-    if (isClear) {
-      var manualRows = qtyRows.filter(planRowHasManualUnitPrice);
-      if (!manualRows.length) { render(); return; }
-      var clearJobs = manualRows.map(function (r) { return { id: r.id, unit_price: null }; });
-      runJobs(clearJobs,
-        'Đã bỏ Đơn giá đặt tay cho ' + channel + ' trong tháng ' + month + ' — Đơn giá quay về Benchmark, Ngân sách đã tính lại.',
-        'Đã bỏ Đơn giá đặt tay cho ' + channel + ' trong tháng ' + month);
-      return;
-    }
-    var v = parsePlanUnitPrice(raw);
-    if (v === null) { toast('Đơn giá phải là số nguyên từ 0 trở lên.'); render(); return; }
-    if (qtyRows.length) {
-      var jobs = [];
-      qtyRows.forEach(function (r) { if (planRowManualUnitPrice(r) !== v) jobs.push({ id: r.id, unit_price: v }); });
-      if (!jobs.length) { render(); return; }
-      runJobs(jobs,
-        'Đã lưu Đơn giá đặt tay ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Ngân sách tháng đã tính lại theo Số lượng × đơn giá mới.',
-        'Đã lưu Đơn giá đặt tay ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month);
-      return;
-    }
-    if (cellRows.length) { toast('Ô này chỉ có dòng ngân sách nguồn (chưa có Số lượng) nên không đặt Đơn giá tại đây.'); render(); return; }
-    var siblings = yearRows.filter(function (r) { return String(r.channel || '—') === String(channel) && planRowGroup(r) === String(group) && planRowHasQty(r); });
-    if (!siblings.length) { toast('Không có dòng plan nào của Channel này để tạo dòng cho tháng ' + month + '.'); render(); return; }
-    var tpl = siblings[0];
-    var objP = { month: String(month), channel: String(channel), group: planRowGroup(tpl), qty: 0, budget: null, unit_price: v };
-    if (tpl.brand_id !== undefined && tpl.brand_id !== null) objP.brand_id = tpl.brand_id;
-    else if (tpl.brandId !== undefined && tpl.brandId !== null) objP.brandId = tpl.brandId;
-    var segP = recordSegment(tpl);
-    if (segP) objP.segment = segP;
-    if (tpl.unit !== undefined) objP.unit = tpl.unit;
-    var tplBrandP = recordBrandId(tpl);
-    var newPhaseIdP = null;
-    brandPhasesList().forEach(function (p) {
-      if (newPhaseIdP) return;
-      if (tplBrandP && String(recordBrandId(p) || '') !== String(tplBrandP)) return;
-      if (phaseMonths(p).indexOf(String(month)) !== -1) newPhaseIdP = p.id;
-    });
-    if (newPhaseIdP) objP.phase_id = newPhaseIdP;
-    saveResult(sCreate('plan_rows', objP),
-      function () { toast('Đã tạo dòng plan và lưu Đơn giá đặt tay ' + fmtNum(v) + ' cho ' + channel + ' trong tháng ' + month + ' — Ngân sách sẽ tính theo đơn giá này khi có Số lượng.'); render(); },
-      function (msg) { toast('Chưa lưu được Đơn giá: ' + msg); render(); });
-  }
-
   // Lưu Ngân sách PAID MEDIA của ĐÚNG 1 ô tháng (Channel × Group ×
   // tháng) vào field `budget` của chính các dòng plan_rows Paid Media
   // của ô đó — NGOẠI LỆ có chủ đích của Zac, CHỈ áp cho dòng thuộc
@@ -5367,7 +5283,7 @@
   // trở đi) cũng suy từ chính ngân sách này qua domain.forecastFunnel.
   // - Validate: số nguyên >= 0 qua parsePlanPaidBudget; sai -> không
   //   lưu, toast lỗi, dữ liệu không đổi (kể cả ô trống — Paid không có
-  //   thao tác "xoá trắng về tự tính" như Đơn giá).
+  //   thao tác "xoá trắng về tự tính").
   // - Ô có NHIỀU dòng Paid (vd SAVA Meta Ads tháng 2026-11 có 3 dòng):
   //   phân bổ TỔNG mới về các dòng theo tỉ lệ ngân sách hiện tại bằng
   //   distributeQty — CÙNG cơ chế phân bổ của ô Số lượng
@@ -5495,22 +5411,21 @@
 
   // Lưu form "Thêm dòng" Planning Theo tháng (guard demo/chỉ-xem như
   // các ô sửa Planning). input = { brandId, channelExisting, channelNew,
-  // groupExisting, groupNew, segment, unitPriceRaw, year }.
+  // groupExisting, groupNew, segment, year }.
   // - Channel/Nhóm: ô nhập mới thắng select có sẵn; cả hai đều trống ->
   //   chặn. Brand bắt buộc (form đã bắt chọn khi bộ lọc là "Tất cả").
   // - Trùng dòng (Brand × Channel × Nhóm đã có dòng trong lưới năm đang
   //   xem) -> chặn, mở sẵn bảng chi tiết của dòng đang có.
   // - Tạo 1 dòng plan_rows: tháng 1 của năm đang xem, qty = 0, budget =
-  //   null, unit_price = null (đơn giá ban đầu KHÔNG ghi lên dòng), gắn
-  //   phase_id theo Brand + tháng như các đường tạo dòng hiện tại. Nhờ
-  //   dòng qty = 0 này, kênh mới hiện ngay trong lưới và bảng chi tiết
-  //   sửa được Số lượng/Đơn giá mọi tháng (tháng chưa có dòng thì cơ chế
-  //   tạo dòng khi sửa áp dụng như kênh cũ).
-  // - Đơn giá ban đầu (tuỳ chọn): tạo Benchmark cho Brand × Channel với
-  //   CHỈ đơn giá (output/tỉ lệ phễu = null, segment = null = dùng
-  //   chung như Benchmark KOL) để đơn giá áp cho mọi tháng qua đường
-  //   Benchmark thường. Benchmark của cặp Brand × Channel ĐÃ tồn tại ->
-  //   KHÔNG ghi đè, giữ giá trị cũ và nói rõ trong toast.
+  //   null, KHÔNG kèm giá (unit_price trống), gắn phase_id theo Brand +
+  //   tháng như các đường tạo dòng hiện tại. Nhờ dòng qty = 0 này, kênh
+  //   mới hiện ngay trong lưới và bảng chi tiết sửa được Số lượng mọi
+  //   tháng (tháng chưa có dòng thì cơ chế tạo dòng khi sửa Số lượng áp
+  //   dụng như kênh cũ; Đơn giá chỉ hiển thị ở chi tiết, quản ở Theo
+  //   phase). Giá đặt sau ở Theo phase (ô Đơn giá mỗi bài).
+  // - Ô "Đơn giá ban đầu" + side-effect tạo Benchmark kèm giá ĐÃ GỠ
+  //   (chốt 18/11: giá Benchmark bỏ hẳn — ô đó nhập vào không còn tác
+  //   dụng nên gỡ để khỏi thành bẫy).
   // - Sau khi lưu: đóng form, mở bảng chi tiết của dòng mới; nếu bộ lọc
   //   Brand/Segment toàn cục đang khác Brand/Segment vừa thêm thì chuyển
   //   bộ lọc theo để dòng mới hiện ngay trong lưới.
@@ -5527,12 +5442,6 @@
     var group = String(input.groupNew || '').trim() || String(input.groupExisting || '').trim();
     if (!group) { toast('Hãy chọn Nhóm có sẵn hoặc nhập tên Nhóm mới.'); render(); return; }
     var segment = String(input.segment || '').toLowerCase() === 'b2b' ? 'b2b' : 'b2c';
-    var priceRaw = input.unitPriceRaw;
-    var unitPrice = null;
-    if (priceRaw !== '' && priceRaw !== null && priceRaw !== undefined && String(priceRaw).trim() !== '') {
-      unitPrice = parsePlanUnitPrice(priceRaw);
-      if (unitPrice === null) { toast('Đơn giá ban đầu phải là số nguyên từ 0 trở lên.'); render(); return; }
-    }
     if (planningBrandGridChannels(brandId, year).indexOf(channel) !== -1 &&
       planRowsList().some(function (r) { return String(recordBrandId(r) || '') === brandId && String(r.channel || '') === channel && planRowGroup(r) === group && planRowMonth(r).indexOf(String(year) + '-') === 0; })) {
       UI.planningChannel = channel; UI.planningChannelGroup = group;
@@ -5556,19 +5465,9 @@
       UI.planningChannelGroup = group;
       if (UI.brandFilter && UI.brandFilter !== 'all' && String(UI.brandFilter) !== brandId) UI.brandFilter = brandId;
       if (UI.segmentFilter && UI.segmentFilter !== 'all' && UI.segmentFilter !== segment) UI.segmentFilter = segment;
-      var doneMsg = 'Đã thêm dòng ' + channel + ' vào Planning ' + year + ' của ' + (brand.name || brandId) + ' — bấm tên Channel trong lưới (bảng chi tiết đang mở sẵn) để sửa Số lượng/Đơn giá từng tháng.' +
+      var doneMsg = 'Đã thêm dòng ' + channel + ' vào Planning ' + year + ' của ' + (brand.name || brandId) + ' — bấm tên Channel trong lưới (bảng chi tiết đang mở sẵn) để sửa Số lượng từng tháng (Đơn giá chỉ hiển thị ở chi tiết, quản ở Theo phase).' +
         (isBudgetDrivenGroup ? ' Dòng ' + group + ' mặc định budget-driven: nhập Ngân sách trực tiếp theo tháng và chọn Audience (B2C/B2B/Cả hai) trong bảng chi tiết.' : '');
-      if (unitPrice === null) { toast(doneMsg); render(); return; }
-      var existingBm = benchmarkForRow({ brand_id: brandId, channel: channel }, benchmarksList());
-      if (existingBm) {
-        var oldPrice = existingBm.unit_price !== undefined && existingBm.unit_price !== null ? existingBm.unit_price : existingBm.unitPrice;
-        toast(doneMsg + ' Benchmark của ' + channel + ' đã tồn tại nên KHÔNG ghi đè — đơn giá đang áp dụng vẫn là ' + (oldPrice === null || oldPrice === undefined || isNaN(Number(oldPrice)) ? 'chưa đặt' : fmtNum(Number(oldPrice))) + ' (không phải ' + fmtNum(unitPrice) + ' vừa nhập).');
-        render(); return;
-      }
-      var bmObj = { brand_id: brandId, segment: null, channel: channel, group: group, unit_price: unitPrice, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: null, freemium_to_paid: null, visit_to_signup: null, signup_to_first: null, first_to_paid: null, direct_budget: false, source: 'Thêm dòng Planning — đơn giá ban đầu do người dùng nhập (chỉ đơn giá, chưa có tỉ lệ phễu)' };
-      saveResult(sCreate('benchmarks', bmObj),
-        function () { toast(doneMsg + ' Đã tạo Benchmark ' + fmtNum(unitPrice) + ' cho ' + channel + ' (chỉ đơn giá — chưa có tỉ lệ phễu nên Forecast của kênh này chưa tính được).'); render(); },
-        function (msg) { toast('Đã thêm dòng ' + channel + ' nhưng chưa tạo được Benchmark đơn giá: ' + msg); render(); });
+      toast(doneMsg); render();
     }, function (msg) { toast('Chưa thêm được dòng: ' + msg); render(); });
   }
 
@@ -5620,7 +5519,8 @@
   function brandDetailHtml(b) {
     // Số liệu chi tiết (campaign / dòng plan / ngân sách suy từ plan) áp bộ
     // lọc Segment toàn cục qua filteredPlanRows()/filteredCampaigns();
-    // Benchmark chỉ là bảng tra đơn giá theo Brand nên vẫn lấy theo Brand.
+    // Benchmark lấy theo Brand (phục vụ tỉ lệ/cost của forecast qua
+    // planBudgetFor/funnel — giá KHÔNG còn đọc từ Benchmark, chốt 18/11).
     var bRows = filteredPlanRows().filter(function (r) { return String(recordBrandId(r) || '') === String(b.id); });
     var bCamps = filteredCampaigns().filter(function (c) { return String(recordBrandId(c) || '') === String(b.id); });
     var bBenchmarks = benchmarksList().filter(function (x) { return String(recordBrandId(x) || '') === String(b.id); });
@@ -9529,7 +9429,6 @@
     if (ctxKind === 'phase-qty') { savePhaseQty(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'phase-unit-price') { savePhaseUnitPrice(t.getAttribute('data-phase-id'), t.getAttribute('data-channel'), t.value); return; }
     if (ctxKind === 'planning-month-qty') { savePlanningMonthQty(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
-    if (ctxKind === 'planning-month-unit-price') { savePlanningMonthUnitPrice(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-paid-budget') { savePlanningMonthPaidBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
     if (ctxKind === 'planning-month-paid-objective-budget') { savePlanningMonthPaidObjectiveBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.getAttribute('data-objective'), t.value); return; }
     if (ctxKind === 'planning-driven-budget') { savePlanningDrivenBudget(t.getAttribute('data-channel'), t.getAttribute('data-group'), t.getAttribute('data-month'), t.value); return; }
@@ -9719,7 +9618,7 @@
       savePlanningAddRow({
         brandId: val('brandId'), channelExisting: val('channelExisting'), channelNew: val('channelNew'),
         groupExisting: val('groupExisting'), groupNew: val('groupNew'), segment: val('segment'),
-        unitPriceRaw: val('unitPrice'), year: Number(f.getAttribute('data-year'))
+        year: Number(f.getAttribute('data-year'))
       });
       return;
     }

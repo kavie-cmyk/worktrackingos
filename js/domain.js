@@ -3175,11 +3175,14 @@
    * hiển thị; người dùng chỉ sửa Số lượng và Đơn giá). Thứ tự ưu tiên cho
    * MỘT dòng:
    *   1) Dòng CÓ số lượng (qty khác null): ngân sách = qty × đơn giá hiệu
-   *      dụng. Đơn giá hiệu dụng = đơn giá ĐẶT TAY riêng của dòng (field
-   *      unit_price/unitPrice trên chính dòng plan, khác null) nếu có;
-   *      không thì đơn giá Benchmark khớp brand+channel. Field budget lưu
-   *      sẵn trên dòng có qty KHÔNG được dùng (an toàn neo: dữ liệu nguồn
-   *      hiện không có dòng nào vừa có qty vừa có budget).
+   *      dụng. Đơn giá hiệu dụng CHỈ còn là giá Phase của dòng (field
+   *      unit_price/unitPrice trên chính dòng plan, do ô "Đơn giá mỗi
+   *      bài" ở Theo phase ghi/xoá; chốt 18/11: BỎ HẲN giá Benchmark —
+   *      benchmark unit_price KHÔNG còn được đọc ở đây hay bất kỳ đường
+   *      tính giá/ngân sách nào; dòng chưa đặt giá Phase thì ngân sách
+   *      phần đó = 0). Field budget lưu sẵn trên dòng có qty KHÔNG được
+   *      dùng (an toàn neo: dữ liệu nguồn hiện không có dòng nào vừa có
+   *      qty vừa có budget).
    *   2) Dòng KHÔNG có số lượng (qty null — ngoại lệ dữ liệu nguồn Paid
    *      Ads): ngân sách = field budget đã lưu trong dữ liệu nguồn, vì
    *      không có qty × đơn giá để tính. NGOẠI LỆ UI (chốt bổ sung của
@@ -3188,8 +3191,10 @@
    *      savePlanningMonthPaidBudget ở app.js) vì chỉ số Paid suy ra từ
    *      ngân sách; công thức đọc ở đây KHÔNG đổi — vẫn lấy field budget.
    * Trả tổng theo tháng + kỳ; source của dòng: 'manual_unit_price' /
-   * 'unit_price' / 'direct' / null. totalUnitPrice gồm cả hai nguồn đơn
-   * giá (đặt tay + Benchmark); thêm totalManualUnitPrice tách phần đặt tay.
+   * 'direct' / null ('manual' ở đây = giá Phase trên dòng — nguồn giá
+   * DUY NHẤT còn lại). totalUnitPrice = totalManualUnitPrice (mọi ngân
+   * sách theo đơn giá đều từ giá Phase; giữ cả hai field cho tương
+   * thích nơi đọc cũ).
    */
   /** Giá trị thô của đơn giá đặt tay trên 1 dòng plan: unit_price /
    *  unitPrice top-level, thiếu thì customFields/custom_fields. */
@@ -3205,7 +3210,9 @@
   }
   function planBudget(rows, benchmarks) {
     var list = rows || [];
-    var idx = _benchmarkIndex(benchmarks);
+    // benchmarks giữ trong chữ ký cho tương thích nơi gọi — KHÔNG còn
+    // đọc unit_price của benchmark (chốt 18/11, xem doc ở trên);
+    // benchmark vẫn phục vụ tỉ lệ phễu + cost_per_result ở forecast.
     var months = _planMonthsOf(list);
     var byMonth = {};
     months.forEach(function (m) { byMonth[m] = { month: m, amount: 0, directBudget: 0, unitPriceBudget: 0, manualUnitPriceBudget: 0 }; });
@@ -3226,11 +3233,9 @@
         var manual = r ? _planNum(_manualUnitPriceRaw(r)) : null;
         if (manual !== null) {
           entry.unitPrice = manual; entry.amount = qty * manual; entry.source = 'manual_unit_price';
-        } else {
-          var b = _benchmarkFor(idx, r || {});
-          var price = b ? _benchField(b, 'unit_price', 'unitPrice') : null;
-          if (price !== null) { entry.unitPrice = price; entry.amount = qty * price; entry.source = 'unit_price'; }
         }
+        // Chưa đặt giá Phase -> amount 0, source null (giá Benchmark
+        // bị phớt lờ hoàn toàn — chốt 18/11).
       } else {
         var direct = r ? _planNum(r.budget) : null;
         if (direct !== null) { entry.amount = direct; entry.source = 'direct'; }
@@ -3245,9 +3250,9 @@
         }
       }
       if (entry.source === 'direct') totalDirect += entry.amount;
-      if (entry.source === 'unit_price' || entry.source === 'manual_unit_price') {
+      if (entry.source === 'manual_unit_price') {
         totalUnitPrice += entry.amount;
-        if (entry.source === 'manual_unit_price') totalManualUnitPrice += entry.amount;
+        totalManualUnitPrice += entry.amount;
       }
       total += entry.amount;
       return entry;

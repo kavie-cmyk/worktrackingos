@@ -7,8 +7,9 @@
 //    mẫu sự kiện change + guard demo/chỉ-xem như các ô phase khác;
 //    nhập giá ghi field unit_price (đặt tay) cho MỌI dòng plan có Số
 //    lượng của channel thuộc các tháng trong phase (MỘT nguồn sự
-//    thật, không trường giá riêng cho phase); xoá trắng bỏ đặt tay về
-//    Benchmark; ca lẫn lộn (các tháng giá đặt tay khác nhau) hiển thị
+//    thật, không trường giá riêng cho phase); xoá trắng bỏ giá Phase
+//    (đơn giá trống, ngân sách phần đó = 0 — giá Benchmark đã bỏ hẳn
+//    khỏi chuỗi giá, chốt 18/11); ca lẫn lộn (các tháng giá khác nhau) hiển thị
 //    trung thực: ô trống + ghi chú "khác nhau theo tháng", nhập giá
 //    mới áp đồng nhất cả phase; validate số nguyên >= 0.
 //  Phần 2: 3 bảng render từ planningKpiData — SỐ LIỆU TỪ CHÍNH engine
@@ -94,7 +95,7 @@ function makeHarness(rows, phases, benchmarks, assumptions) {
   };
   const factory = new Function('Store', 'D', 'UI', 'cfVal', 'canEdit', 'toast', 'render', 'sUpdate', 'sCreate', 'saveResult', 'esc', 'fmtNum', 'fmtMoney', 'tbl', 'vizMonthLabel', 'vizFunnelHtml',
     helpers + '\n' + phaseBlock +
-    '\nreturn { UI: UI, phaseChannelUnitPriceInfo: phaseChannelUnitPriceInfo, planningKpiData: planningKpiData, fmtPlanningPaid: fmtPlanningPaid, fmtPlanningCount: fmtPlanningCount, fmtPlanningCac: fmtPlanningCac, planningKpiToggleMap: planningKpiToggleMap, planningKpiTablesHtml: planningKpiTablesHtml, planningPhaseBlockHtml: planningPhaseBlockHtml, savePhaseUnitPrice: savePhaseUnitPrice, savePlanningMonthQty: savePlanningMonthQty, savePlanningMonthUnitPrice: savePlanningMonthUnitPrice, savePlanningMonthPaidBudget: savePlanningMonthPaidBudget, planBudgetFor: planBudgetFor, planRowManualUnitPrice: planRowManualUnitPrice };');
+    '\nreturn { UI: UI, phaseChannelUnitPriceInfo: phaseChannelUnitPriceInfo, planningKpiData: planningKpiData, fmtPlanningPaid: fmtPlanningPaid, fmtPlanningCount: fmtPlanningCount, fmtPlanningCac: fmtPlanningCac, planningKpiToggleMap: planningKpiToggleMap, planningKpiTablesHtml: planningKpiTablesHtml, planningPhaseBlockHtml: planningPhaseBlockHtml, savePhaseUnitPrice: savePhaseUnitPrice, savePlanningMonthQty: savePlanningMonthQty, savePlanningMonthPaidBudget: savePlanningMonthPaidBudget, planBudgetFor: planBudgetFor, planRowManualUnitPrice: planRowManualUnitPrice };');
   const h = factory(Store, domain, UI, cfValStub,
     () => true,
     (m) => state.toasts.push(m),
@@ -143,13 +144,14 @@ function kpiTotal(html, kind, channel) {
 }
 
 // ---------- [static] Phần 1 ----------
-test('PPUP-KPI [static]: khối Phase có cột Đơn giá mỗi bài + ô phase-unit-price + nhãn đặt tay tại phase/Benchmark/mixed + hint; handler change + savePhaseUnitPrice qua guard/parse/sUpdate unit_price', () => {
+test('PPUP-KPI [static]: khối Phase có cột Đơn giá mỗi bài + ô phase-unit-price + nhãn đặt tay tại phase/Chưa đặt giá/mixed (KHÔNG còn nhãn Benchmark cho giá — chốt 18/11) + hint; handler change + savePhaseUnitPrice qua guard/parse/sUpdate unit_price', () => {
   const block = section('function planningPhaseBlockHtml(phase, rows, benchmarks, editable, disAttr)', '// --- Lưu các ô nhập Theo phase');
   assert.match(block, /<th>Đơn giá mỗi bài \(VNĐ\)<\/th>/);
   assert.match(block, /data-action-change="phase-unit-price" data-phase-id="' \+ esc\(phase\.id\)/);
   assert.match(block, /phaseChannelUnitPriceInfo\(chRows, benchmarks\)/);
   assert.match(block, /data-phase-price-manual="1">đặt tay tại phase</);
-  assert.match(block, /data-phase-price-benchmark="1">Benchmark</);
+  assert.match(block, /data-phase-price-none="1">Chưa đặt giá</);
+  assert.ok(!block.includes('data-phase-price-benchmark'), 'nhãn Benchmark cho giá đã gỡ khỏi khối Phase');
   assert.match(block, /data-phase-price-mixed="1">khác nhau theo tháng/);
   assert.match(block, /data-planning-phase-price-hint="1"/);
   assert.match(src, /if \(ctxKind === 'phase-unit-price'\) \{ savePhaseUnitPrice\(t\.getAttribute\('data-phase-id'\), t\.getAttribute\('data-channel'\), t\.value\); return; \}/);
@@ -163,11 +165,11 @@ test('PPUP-KPI [static]: khối Phase có cột Đơn giá mỗi bài + ô phase
 });
 
 // ---------- [unit] Phần 1: info ----------
-test('PPUP-KPI [unit]: phaseChannelUnitPriceInfo — Benchmark / đặt tay đồng nhất / lẫn lộn / không dòng số lượng', () => {
+test('PPUP-KPI [unit]: phaseChannelUnitPriceInfo — chưa đặt giá (Benchmark có giá vẫn null) / đặt tay đồng nhất / lẫn lộn / không dòng số lượng', () => {
   const rows = baseRows1();
   const { h } = makeHarness(rows, PHASES1, BENCH1);
   const chRows = rows.filter((r) => r.channel === 'KOL Nano' && r.phase_id === 'phase-lumus-1');
-  assert.deepEqual(h.phaseChannelUnitPriceInfo(chRows, BENCH1), { value: 1500000, source: 'benchmark' });
+  assert.deepEqual(h.phaseChannelUnitPriceInfo(chRows, BENCH1), { value: null, source: null }, 'Benchmark unit_price 1.500.000 bị phớt lờ — chưa đặt giá Phase thì trống (chốt 18/11)');
   rows[0].unit_price = 2000000; rows[1].unit_price = 2000000;
   assert.deepEqual(h.phaseChannelUnitPriceInfo(chRows, BENCH1), { value: 2000000, source: 'manual' });
   rows[1].unit_price = 3000000;
@@ -191,15 +193,15 @@ test('PPUP-KPI [unit]: ghi giá tại Phase -> unit_price cho mọi dòng số l
   assert.ok(state.toasts.some((t) => t.includes('Đơn giá mỗi bài')), 'toast phải nói rõ đã lưu đơn giá mỗi bài');
 });
 
-test('PPUP-KPI [unit]: xoá trắng ô Phase -> bỏ đặt tay cả Phase, về Benchmark', () => {
+test('PPUP-KPI [unit]: xoá trắng ô Phase -> bỏ giá Phase cả Phase, đơn giá trống, ngân sách = 0 (KHÔNG về Benchmark)', () => {
   const rows = baseRows1();
   rows[0].unit_price = 2000000; rows[1].unit_price = 2500000;
   const { h } = makeHarness(rows, PHASES1, BENCH1);
   h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '');
   assert.equal(rows[0].unit_price, null);
   assert.equal(rows[1].unit_price, null);
-  assert.equal(domain.planBudget([rows[0], rows[1]], BENCH1).total, 15000000, '(4+6) x 1.500.000 Benchmark');
-  // Xoá trắng khi đang Benchmark là no-op.
+  assert.equal(domain.planBudget([rows[0], rows[1]], BENCH1).total, 0, 'bỏ giá Phase -> ngân sách 0 dù Benchmark còn unit_price 1.500.000');
+  // Xoá trắng khi chưa có giá Phase là no-op.
   const rows2 = baseRows1();
   const hz = makeHarness(rows2, PHASES1, BENCH1);
   hz.h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '');
@@ -308,8 +310,8 @@ test('PPUP-KPI [unit]: CAC cột Tổng = tổng ngân sách ÷ tổng paid, KH�
   const benchmarks = [{ brand_id: 'b1', channel: 'X', unit_price: 1000, output_per_unit: 1000, view_to_visit: 0.01, visit_to_signup: 0.1, signup_to_first: 0.5, first_to_paid: 0.2, direct_budget: false }];
   const phases = [{ id: 'ph-test', brand_id: 'b1', name: 'T', start_month: '2027-01', end_month: '2027-12', uplift_percent_per_month: 10 }];
   const rows = [
-    { id: 'r-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'X', group: 'G', qty: 1, budget: null, phase_id: 'ph-test' },
-    { id: 'r-mar', brand_id: 'b1', segment: 'b2c', month: '2027-03', channel: 'X', group: 'G', qty: 10, budget: null, phase_id: 'ph-test' },
+    { id: 'r-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'X', group: 'G', qty: 1, budget: null, phase_id: 'ph-test', unit_price: 1000 },
+    { id: 'r-mar', brand_id: 'b1', segment: 'b2c', month: '2027-03', channel: 'X', group: 'G', qty: 10, budget: null, phase_id: 'ph-test', unit_price: 1000 },
   ];
   const { h } = makeHarness(rows, phases, benchmarks, []);
   const data = h.planningKpiData(rows, benchmarks, ['2027-01', '2027-02', '2027-03']);
@@ -437,7 +439,7 @@ test('PPUP-KPI [unit]: hàng Tất cả — chỉ Paid Media (không Views) thì
 });
 
 // ---------- [unit] Phần 2: sửa ở nơi khác -> bảng cập nhật ----------
-test('PPUP-KPI [unit]: sửa Số lượng / Đơn giá (Theo tháng) và Ngân sách Paid -> 3 bảng KPI cập nhật ngay khi render lại', () => {
+test('PPUP-KPI [unit]: sửa Số lượng (chi tiết) / Đơn giá mỗi bài (Theo phase) và Ngân sách Paid -> 3 bảng KPI cập nhật ngay khi render lại', () => {
   const cloned = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
   const phases = JSON.parse(JSON.stringify(demo.phases.filter((p) => p.brand_id)));
   const benchmarks = JSON.parse(JSON.stringify(demo.benchmarks));
@@ -450,8 +452,10 @@ test('PPUP-KPI [unit]: sửa Số lượng / Đơn giá (Theo tháng) và Ngân 
   html = hz.h.planningKpiTablesHtml(cloned, benchmarks, MONTHS_2027);
   assert.equal(kpiCell(html, 'views', 'KOL Nano', '2027-01'), '32.000');
   assert.equal(kpiCell(html, 'paid', 'KOL Nano', '2027-01'), '0', 'hiển thị số nguyên (đợt 18/11): Paid engine sau khi gấp đôi = 0,2376 -> "0"');
-  // Sửa Đơn giá T1: 1.500.000 -> 3.000.000: ngân sách 8 x 3.000.000 = 24.000.000; CAC = 24.000.000 ÷ 0,2376.
-  hz.h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-01', '3000000');
+  // Sửa Đơn giá mỗi bài ở Phase 1 (Preparation, gồm T1+T2): giá Phase
+  // 1.500.000 -> 3.000.000: ngân sách T1 = 8 x 3.000.000 = 24.000.000;
+  // CAC = 24.000.000 ÷ 0,2376. (Đường sửa giá tại dòng đã gỡ — chốt 18/11.)
+  hz.h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '3000000');
   html = hz.h.planningKpiTablesHtml(cloned, benchmarks, MONTHS_2027);
   assert.equal(kpiCell(html, 'cac', 'KOL Nano', '2027-01'), '101.010.101 VND');
   // Sửa Ngân sách Paid Media T1: 10.920.000 -> 21.840.000 (gấp đôi, phân

@@ -161,9 +161,9 @@ test('BP-UI [unit]: planBudgetFor nối đúng shape thật của domain A ({byM
   assert.deepEqual(h.planBudgetFor([{ month: '2027-01', channel: 'X', qty: 1 }], []), [{ month: '2027-01', total: 123456 }]);
 });
 
-test('BP-UI [unit]: planBudgetFor dự phòng qty × unit_price khi domain chưa có hàm', () => {
+test('BP-UI [unit]: planBudgetFor dự phòng qty × giá Phase (unit_price trên dòng) khi domain chưa có hàm', () => {
   const h = loadHelpers({ domain: {} });
-  const rows = [{ month: '2027-02', channel: 'KOL Nano', qty: 2, brand_id: 'brand-lumus-ai' }];
+  const rows = [{ month: '2027-02', channel: 'KOL Nano', qty: 2, brand_id: 'brand-lumus-ai', unit_price: 1500000 }];
   const benchmarks = [{ brand_id: 'brand-lumus-ai', channel: 'KOL Nano', unit_price: 1500000 }];
   assert.deepEqual(h.planBudgetFor(rows, benchmarks), [{ month: '2027-02', total: 3000000 }]);
 });

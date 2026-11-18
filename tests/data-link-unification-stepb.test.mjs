@@ -118,10 +118,13 @@ const BENCH_SEG = [
   { brand_id: 'b1', channel: 'X', segment: 'b2b', unit_price: 200 },
   { brand_id: 'b1', channel: 'X', segment: 'b2c', unit_price: 100 },
 ];
-test('B-I1 [domain + differential app]: khớp benchmark theo segment — dòng b2b lấy 200 (bản cũ domain lấy 100 do ghi đè key); app benchmarkForRow cho cùng kết quả', () => {
+test('B-I1 [domain + differential app]: khớp benchmark theo segment — dòng b2b lấy 200 (bản cũ domain lấy 100 do ghi đè key); app benchmarkForRow cho cùng kết quả; planBudget KHÔNG còn đọc giá Benchmark (chốt 18/11)', () => {
   const row = { brand_id: 'b1', channel: 'X', segment: 'b2b' };
   assert.equal(domain.benchmarkForRow(row, BENCH_SEG).unit_price, 200);
-  assert.equal(domain.planBudget([{ brand_id: 'b1', channel: 'X', segment: 'b2b', month: '2027-01', qty: 1 }], BENCH_SEG).total, 200);
+  // Chốt 18/11 — bỏ giá Benchmark: dòng không có giá Phase thì ngân sách
+  // = 0 dù Benchmark có unit_price 200; giá chỉ còn từ unit_price trên dòng.
+  assert.equal(domain.planBudget([{ brand_id: 'b1', channel: 'X', segment: 'b2b', month: '2027-01', qty: 1 }], BENCH_SEG).total, 0);
+  assert.equal(domain.planBudget([{ brand_id: 'b1', channel: 'X', segment: 'b2b', month: '2027-01', qty: 1, unit_price: 200 }], BENCH_SEG).total, 200);
   const h = makeAppHarness([], [], BENCH_SEG, []);
   assert.equal(h.benchmarkForRow(row, BENCH_SEG).unit_price, 200, 'app phải khớp domain');
   // Bản trùng key cùng segment: bản ĐẦU thắng (không ghi đè theo thứ tự key).
@@ -161,20 +164,24 @@ test('B-II6 [app + domain]: planBenchmarkCostPerResult = D.costPerResultFor trê
 // =====================================================================
 // I-2 summarizePlanByMonth/ByChannel ủy quyền công thức hiệu dụng
 // =====================================================================
-test('B-I2 [domain]: summarizePlanByMonth — qty fallback quantity (5, không còn 0); dòng qty+budget dùng qty x đơn giá benchmark (200, không cộng budget 999)', () => {
+test('B-I2 [domain]: summarizePlanByMonth — qty fallback quantity (5, không còn 0); dòng qty+budget dùng qty x giá Phase trên dòng (200, không cộng budget 999)', () => {
   const s1 = domain.summarizePlanByMonth([{ quantity: 5, budget: 999, month: '2027-01', channel: 'X' }]);
   assert.equal(s1.totalQty, 5);
   assert.equal(s1.byMonth['2027-01'].qty, 5);
-  const s2 = domain.summarizePlanByMonth([{ qty: 2, budget: 999, month: '2027-01', channel: 'X' }], [{ channel: 'X', unit_price: 100 }]);
+  // Giá Phase trên dòng (chốt 18/11); Benchmark kèm theo có giá khác
+  // (999) để khoá là giá Benchmark KHÔNG được đọc.
+  const s2 = domain.summarizePlanByMonth([{ qty: 2, budget: 999, month: '2027-01', channel: 'X', unit_price: 100 }], [{ channel: 'X', unit_price: 999 }]);
   assert.equal(s2.totalBudget, 200);
   assert.equal(s2.byMonth['2027-01'].budget, 200);
 });
 
 test('B-I2 [domain]: summarizePlanByChannel — thứ tự group->channel (không còn ABC) + ngân sách hiệu dụng theo channel', () => {
   const rows = [
-    { channel: 'Zeta', group: 'G1', month: '2027-01', qty: 1 },
-    { channel: 'Alpha', group: 'G2', month: '2027-01', qty: 2 },
+    { channel: 'Zeta', group: 'G1', month: '2027-01', qty: 1, unit_price: 10 },
+    { channel: 'Alpha', group: 'G2', month: '2027-01', qty: 2, unit_price: 100 },
   ];
+  // Giá Phase trên dòng (chốt 18/11); bench giữ nguyên để chứng minh
+  // summarize không đọc giá Benchmark nữa.
   const bench = [{ channel: 'Zeta', unit_price: 10 }, { channel: 'Alpha', unit_price: 100 }];
   const s = domain.summarizePlanByChannel(rows, bench);
   assert.deepEqual(s.channels.map((c) => c.channel), ['Zeta', 'Alpha'], 'thứ tự theo group xuất hiện đầu tiên, không phải ABC');

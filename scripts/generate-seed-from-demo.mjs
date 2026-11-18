@@ -456,10 +456,10 @@ order by bang;
 select sum(qty) as lumus_content_qty, 776 as ky_vong from public.plan_rows where workspace_id = '${WORKSPACE_ID}' and brand_id = '${lumus}';
 -- Neo 2 — Tổng ngân sách Planning năm 2027, lọc Brand/Segment = Tất cả:
 -- 1.598.700.000đ = Σ (qty × đơn giá hiệu dụng) + Σ budget trực tiếp (Paid),
--- đơn giá hiệu dụng = unit_price của dòng, trống thì benchmark Brand×Channel.
-select sum(case when pr.qty is not null then pr.qty * coalesce(pr.unit_price, b.unit_price, 0) else coalesce(pr.budget, 0) end) as tong_ngan_sach_2027, 1598700000 as ky_vong
+-- đơn giá hiệu dụng = giá Phase trên dòng (unit_price của plan_rows;
+-- giá Benchmark KHÔNG còn được đọc — chốt 18/11, khớp domain.planBudget).
+select sum(case when pr.qty is not null then pr.qty * coalesce(pr.unit_price, 0) else coalesce(pr.budget, 0) end) as tong_ngan_sach_2027, 1598700000 as ky_vong
 from public.plan_rows pr
-left join public.benchmarks b on b.workspace_id = pr.workspace_id and b.brand_id = pr.brand_id and b.channel = pr.channel
 where pr.workspace_id = '${WORKSPACE_ID}' and pr.month like '2027-%';
 -- Neo 3 — Camp 01 budget = 51.539.000đ (Σ planned_amount budget_lines của Camp 01):
 select sum(planned_amount) as camp01_budget, 51539000 as ky_vong from public.budget_lines where workspace_id = '${WORKSPACE_ID}' and campaign_id = '${camp01}';

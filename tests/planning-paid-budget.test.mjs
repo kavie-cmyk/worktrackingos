@@ -113,7 +113,7 @@ const BENCHMARKS = [
 ];
 function baseRows() {
   return [
-    { id: 'r-kol-jan', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'KOL Nano', group: 'KOL', unit: 'assets', qty: 4, budget: null, phase_id: 'phase-lumus-1' },
+    { id: 'r-kol-jan', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'KOL Nano', group: 'KOL', unit: 'assets', qty: 4, budget: null, phase_id: 'phase-lumus-1', unit_price: 1500000 },
     { id: 'r-ads-jan', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'Meta Ads', group: 'Paid Media', unit: null, qty: null, budget: 1000000, phase_id: 'phase-lumus-1' },
     { id: 'r-ads-feb', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-02', channel: 'Meta Ads', group: 'Paid Media', unit: null, qty: null, budget: 2000000, phase_id: 'phase-lumus-1' },
     { id: 'r-camp-jan', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'PR GameK', group: 'Campaign Budget', unit: null, qty: null, budget: 6600000, phase_id: 'phase-lumus-1' },

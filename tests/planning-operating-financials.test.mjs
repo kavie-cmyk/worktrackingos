@@ -325,7 +325,7 @@ function opPhases(withInputs = true) {
   return [{ ...base, paid_churn_rate: 0.02, free_churn_rate: 0.05, paid_price: 50000, cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100 }];
 }
 function opRows() {
-  return [{ id: 'r-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'X', group: 'G', qty: 1, budget: null, phase_id: 'ph-1' }];
+  return [{ id: 'r-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'X', group: 'G', qty: 1, budget: null, phase_id: 'ph-1', unit_price: 1000000 }];
 }
 
 test('POF [static]: khối Phase có các ô nhập operating MỚI (churn + monthly_cvr dạng %, COGS tách Free/Paid + fixed_cost dạng tiền, paid_price dạng tiền qua phase-operating-money) + 2 ô opening (chỉ Phase đầu tiên qua UI.planningOpeningPhaseIds); bảng operating là section thứ 4 cạnh 3 bảng KPI', () => {

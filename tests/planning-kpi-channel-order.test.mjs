@@ -101,12 +101,12 @@ const BENCH = [bench('Website Articles', 100000), bench('KOL Nano', 1500000)];
 const MONTHS = ['2027-01', '2027-02'];
 function shuffledRows() {
   return [
-    { id: 'r-web-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'Website Articles', group: 'Content', qty: 2, budget: null, phase_id: 'ph-ord' },
+    { id: 'r-web-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'Website Articles', group: 'Content', qty: 2, budget: null, phase_id: 'ph-ord', unit_price: 100000 },
     { id: 'r-meta-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'Meta Ads', group: 'Paid Media', qty: null, budget: 10920000, phase_id: 'ph-ord' },
     { id: 'r-tikads-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'TikTok Ads', group: 'Paid Media', qty: null, budget: 5000000, phase_id: 'ph-ord' },
     { id: 'r-fb-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'Facebook Owned', group: 'Owned Social', qty: 3, budget: null, phase_id: 'ph-ord' },
-    { id: 'r-nano-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'KOL Nano', group: 'Content', qty: 4, budget: null, phase_id: 'ph-ord' },
-    { id: 'r-nano-feb', brand_id: 'b1', segment: 'b2c', month: '2027-02', channel: 'KOL Nano', group: 'Content', qty: 6, budget: null, phase_id: 'ph-ord' },
+    { id: 'r-nano-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'KOL Nano', group: 'Content', qty: 4, budget: null, phase_id: 'ph-ord', unit_price: 1500000 },
+    { id: 'r-nano-feb', brand_id: 'b1', segment: 'b2c', month: '2027-02', channel: 'KOL Nano', group: 'Content', qty: 6, budget: null, phase_id: 'ph-ord', unit_price: 1500000 },
   ];
 }
 // Thứ tự lưới (group -> channel): group Content xuất hiện đầu tiên
@@ -158,8 +158,8 @@ test('PKCO [unit]: byChannel vẫn gộp theo tên Channel — KOL Nano 2 dòng/
   assert.equal(nanoEntries.length, 1, 'KOL Nano chỉ có 1 entry dù có 2 dòng');
   const nano = nanoEntries[0];
   assert.equal(nano.rows.length, 2, 'entry gộp đủ 2 dòng');
-  assert.equal(nano.months['2027-01'].budget, 6000000, 'ngân sách T1 = 4 x 1.500.000 (Benchmark)');
-  assert.equal(nano.months['2027-02'].budget, 9000000, 'ngân sách T2 = 6 x 1.500.000 (Benchmark)');
+  assert.equal(nano.months['2027-01'].budget, 6000000, 'ngân sách T1 = 4 x 1.500.000 (giá Phase trên dòng — chốt 18/11)');
+  assert.equal(nano.months['2027-02'].budget, 9000000, 'ngân sách T2 = 6 x 1.500.000 (giá Phase trên dòng — chốt 18/11)');
   approx(nano.months['2027-01'].views, 4000, 'views T1 = 4 x output_per_unit 1000');
   assert.equal(nano.totals.budget, 15000000, 'tổng ngân sách KOL Nano cả kỳ không đổi');
   // Tổng blended = tổng ngân sách mọi dòng: 200.000 + 10.920.000 +

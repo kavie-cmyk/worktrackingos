@@ -19,9 +19,9 @@
   // Ma trận sản lượng Lumus AI theo sheet 01 Execution (T1..T12).
   // Website Articles: 11 ở 10 tháng đầu, 10 ở T11–T12 (tổng 130, khớp file).
   var PLAN_MATRIX = [
-    { channel: 'KOL Nano', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [4, 6, 7, 7, 7, 3, 4, 4, 3, 10, 8, 2] },
-    { channel: 'KOL Micro', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [4, 5, 6, 7, 6, 3, 3, 3, 3, 9, 9, 2] },
-    { channel: 'KOL Expert', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [1, 1, 1, 2, 1, 0, 1, 0, 1, 2, 2, 0] },
+    { channel: 'KOL Nano', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [4, 6, 7, 7, 7, 3, 4, 4, 3, 10, 8, 2], price: 1500000 },
+    { channel: 'KOL Micro', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [4, 5, 6, 7, 6, 3, 3, 3, 3, 9, 9, 2], price: 5500000 },
+    { channel: 'KOL Expert', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [1, 1, 1, 2, 1, 0, 1, 0, 1, 2, 2, 0], price: 30000000 },
     { channel: 'Facebook Owned', group: 'Owned Social', segment: 'b2c', unit: 'posts', qty: [21, 20, 20, 21, 20, 20, 21, 20, 20, 21, 20, 20] },
     { channel: 'TikTok Owned', group: 'Owned Social', segment: 'b2c', unit: 'videos', qty: [9, 9, 8, 9, 9, 8, 9, 9, 8, 9, 9, 8] },
     { channel: 'LinkedIn Owned', group: 'Owned Social', segment: 'b2b', unit: 'posts', qty: [9, 9, 8, 9, 9, 8, 9, 9, 8, 9, 9, 8] },
@@ -126,12 +126,18 @@
     var rows = [];
     PLAN_MATRIX.forEach(function (m) {
       PLAN_MONTHS_2027.forEach(function (month, i) {
-        rows.push({
+        var row = {
           id: 'plan-lumus-' + month + '-' + planSlug(m.channel),
           brand_id: 'brand-lumus-ai', segment: m.segment, month: month,
           channel: m.channel, group: m.group, unit: m.unit, qty: m.qty[i], budget: null,
           phase_id: lumusPhaseIdForMonth(month)
-        });
+        };
+        // Giá Phase trên dòng (chốt 18/11 — chuyển từ giá Benchmark cũ
+        // sang unit_price trên plan_rows như thể đã đặt qua ô "Đơn giá
+        // mỗi bài" ở Theo phase, để số neo ngân sách giữ nguyên; giá
+        // Benchmark không còn được đọc nữa). Chỉ 3 kênh KOL có giá.
+        if (m.price !== undefined && m.price !== null) row.unit_price = m.price;
+        rows.push(row);
       });
     });
     Object.keys(PAID_BUDGET_VND).forEach(function (channel) {

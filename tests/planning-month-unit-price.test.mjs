@@ -1,42 +1,54 @@
 // tests/planning-month-unit-price.test.mjs
-// Planning Theo tháng — cột ĐƠN GIÁ sửa được + NGÂN SÁCH CHỈ TỰ TÍNH
-// trong BẢNG CHI TIẾT (đợt thay thế ô sửa Ngân sách của commit 06d8ffc).
-// Chốt của Zac: "cột ngân sách dự kiến chỉ tự tính thôi, không sửa được —
-// chỉ sửa đơn giá thôi." File này THAY tests/planning-month-budget.test.mjs
-// (đã gỡ): các test PMB neo vào hành vi sửa ngân sách trực tiếp (đặt tay
-// ngân sách qua field budget, phân bổ ngân sách, xoá trắng ngân sách...)
-// bị gỡ vì hành vi đó không còn tồn tại; phần còn đúng (validate, tương
-// tác Số lượng, neo demo) được viết lại theo cơ chế Đơn giá đặt tay.
-// Yêu cầu khóa:
-//  (static) bảng chi tiết có cột "Đơn giá (VNĐ)" với ô sửa
-//       planning-month-unit-price + nhãn nguồn "đặt tay"/"Benchmark" +
-//       chú thích xoá trắng ô Đơn giá; cột Ngân sách CHỈ HIỂN THỊ (span,
-//       không còn input planning-month-budget / savePlanningMonthBudget
-//       ở bất cứ đâu); handler change gọi savePlanningMonthUnitPrice;
-//       hàm lưu qua parsePlanUnitPrice + guard demo + sUpdate/sCreate
-//       plan_rows field unit_price.
-//  (a) đặt đơn giá -> ghi field unit_price, ngân sách tháng = qty × giá
-//      mới; tổng kỳ qua planBudgetFor và domain.planBudget khớp nhau.
-//  (b) xoá trắng ô Đơn giá -> unit_price = null, về đơn giá Benchmark;
-//      xoá trắng ở tháng đang Benchmark là no-op.
-//  (c) validate: âm / chữ / thập phân bị chặn, dữ liệu không đổi.
-//  (d) Paid Ads (qty null): cột Đơn giá hiện '—' không sửa được — gọi
-//      lưu bị chặn, dữ liệu không đổi; ngân sách hiển thị vẫn là ngân
-//      sách nguồn đã lưu (field budget), không có đường sửa.
-//  (e) ô nhiều dòng Số lượng: đặt đơn giá ghi CÙNG unit_price cho mọi
-//      dòng, ngân sách = Σ qty × giá mới.
-//  (g) sửa Số lượng: tháng có đơn giá đặt tay -> ngân sách theo qty mới
-//      × giá đặt tay; tháng Benchmark -> ngân sách theo qty mới × giá
-//      Benchmark. Tháng qty = 0 vẫn đặt được đơn giá (ngân sách 0 cho
-//      tới khi qty > 0).
-//  (h) ô tháng chưa có dòng plan: nhập đơn giá tạo dòng mới qty = 0
-//      mang unit_price.
+// Planning Theo tháng — cột ĐƠN GIÁ trong BẢNG CHI TIẾT.
+// VIẾT LẠI theo 2 chốt của Zac ngày 18/11:
+//  (17:24) "bỏ hẳn nhập đơn giá chi tiết dòng cho mọi dòng — giá chỉ quản
+//       ở phase, riêng paid media thì ko bỏ nha": bảng chi tiết KHÔNG
+//       còn ô sửa Đơn giá (planning-month-unit-price +
+//       savePlanningMonthUnitPrice đã gỡ hẳn); Đơn giá chỉ HIỂN THỊ
+//       (giá hiệu dụng + nhãn nguồn) và chỉ đổi/xoá được qua ô "Đơn giá
+//       mỗi bài" bên Theo phase (savePhaseUnitPrice). Ô Số lượng giữ
+//       nguyên khả sửa; Ngân sách vẫn tự tính. Paid Media giữ nguyên ô
+//       nhập Ngân sách trực tiếp theo Objective.
+//  (17:28) "bỏ hẳn đi, phase nào chưa đặt giá thì để trống, mình tự đặt
+//       sau" — bỏ hẳn giá Benchmark KHỎI chuỗi đơn giá: đơn giá hiệu
+//       dụng CHỈ còn = unit_price trên plan_rows (giá Phase). Benchmark
+//       có unit_price mà dòng chưa có giá Phase -> đơn giá trống, ngân
+//       sách phần đó = 0. Nhãn nguồn "Benchmark" cho giá biến mất; chỉ
+//       còn "giá Phase" / "chưa đặt giá".
+// File này giữ tên cũ (đợt PMUP) nhưng nội dung khoá hành vi MỚI:
+//  (static) bảng chi tiết: cột "Đơn giá (VNĐ)" là span chỉ đọc
+//       data-planning-price-value + nhãn giá Phase/chưa đặt giá; KHÔNG
+//       còn planning-month-unit-price / savePlanningMonthUnitPrice ở
+//       bất cứ đâu; handler giá duy nhất còn lại là phase-unit-price ->
+//       savePhaseUnitPrice (guard + parsePlanUnitPrice + sUpdate
+//       plan_rows field unit_price); cột Ngân sách CHỈ HIỂN THỊ cho
+//       dòng thường (ngoại lệ Paid Media ở file planning-paid-budget).
+//  (unit) chuỗi giá: Benchmark bị phớt lờ hoàn toàn; giá Phase thắng
+//       mọi thứ; Paid Ads qty null lấy budget nguồn; dòng có qty thì
+//       budget lưu sẵn bị bỏ qua.
+//  (a) đặt giá qua Theo phase -> ghi unit_price cho MỌI dòng Số lượng
+//      của Channel trong Phase; ngân sách tháng = qty × giá mới; tổng
+//      kỳ qua planBudgetFor và domain.planBudget khớp nhau.
+//  (b) xoá trắng ô giá Phase -> unit_price = null cả Phase, đơn giá
+//      trống, ngân sách phần đó = 0 (KHÔNG quay về Benchmark); xoá
+//      trắng khi chưa có giá Phase là no-op.
+//  (c) validate qua Theo phase: âm / chữ / thập phân bị chặn.
+//  (d) Paid Ads (qty null): đặt giá Phase bị chặn, dữ liệu không đổi;
+//      ngân sách hiển thị vẫn là ngân sách nguồn.
+//  (e) ô nhiều dòng Số lượng: giá Phase ghi CÙNG unit_price cho mọi
+//      dòng, ngân sách = Σ qty × giá.
+//  (g) sửa Số lượng ở chi tiết: ngân sách theo qty mới × giá Phase của
+//      dòng; tháng chưa đặt giá Phase thì ngân sách = 0 dù Benchmark có
+//      giá; tháng qty = 0 vẫn mang giá Phase (ngân sách 0 tới khi qty > 0).
+//  (h) tháng chưa có dòng plan: lưu giá Phase KHÔNG tạo dòng (chỉ áp
+//      cho dòng đang có) — khác hẳn cơ chế tạo dòng của ô Số lượng.
 //  (an toàn) dòng có qty thì field budget lưu sẵn (nếu có) KHÔNG được
-//      dùng để tính ngân sách — ngân sách luôn = qty × đơn giá hiệu
-//      dụng; dữ liệu demo hiện không có dòng nào vừa có qty vừa có
-//      budget (khoá để neo không lệch âm thầm).
+//      dùng để tính ngân sách; dữ liệu demo hiện không có dòng nào vừa
+//      có qty vừa có budget (khoá để neo không lệch âm thầm).
 // Neo demo: Lumus tổng ngân sách năm = 1.598.700.000đ (gồm 811.200.000đ
-// Paid Ads từ dữ liệu nguồn), content = 776 khi chưa sửa gì.
+// Paid Ads từ dữ liệu nguồn; 787.500.000đ nay là GIÁ PHASE trên dòng KOL
+// — fixture demo đã chuyển giá từ Benchmark sang plan_rows, chốt 18/11),
+// content = 776 khi chưa sửa gì.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -95,7 +107,7 @@ function makeHarness(rows, phases, benchmarks) {
   };
   const factory = new Function('Store', 'D', 'UI', 'cfVal', 'canEdit', 'toast', 'render', 'sUpdate', 'sCreate', 'saveResult', 'esc', 'fmtNum', 'tbl', 'vizFunnelHtml',
     helpers + '\n' + saves +
-    '\nreturn { planRowQty: planRowQty, planRowHasQty: planRowHasQty, planRowHasBudget: planRowHasBudget, planRowDirectBudget: planRowDirectBudget, planRowManualUnitPrice: planRowManualUnitPrice, planRowHasManualUnitPrice: planRowHasManualUnitPrice, planRowBenchmarkUnitPrice: planRowBenchmarkUnitPrice, planRowEffectiveUnitPrice: planRowEffectiveUnitPrice, planRowUnitPriceSource: planRowUnitPriceSource, planRowEffectiveBudget: planRowEffectiveBudget, planMonthRows: planMonthRows, planMonthQty: planMonthQty, planMonthBudget: planMonthBudget, planMonthHasManualUnitPrice: planMonthHasManualUnitPrice, planMonthUnitPriceInfo: planMonthUnitPriceInfo, parsePlanQty: parsePlanQty, parsePlanUnitPrice: parsePlanUnitPrice, planBudgetFor: planBudgetFor, distributeQty: distributeQty, savePlanningMonthQty: savePlanningMonthQty, savePlanningMonthUnitPrice: savePlanningMonthUnitPrice };');
+    '\nreturn { planRowQty: planRowQty, planRowHasQty: planRowHasQty, planRowHasBudget: planRowHasBudget, planRowDirectBudget: planRowDirectBudget, planRowManualUnitPrice: planRowManualUnitPrice, planRowHasManualUnitPrice: planRowHasManualUnitPrice, planRowEffectiveUnitPrice: planRowEffectiveUnitPrice, planRowUnitPriceSource: planRowUnitPriceSource, planRowEffectiveBudget: planRowEffectiveBudget, planMonthRows: planMonthRows, planMonthQty: planMonthQty, planMonthBudget: planMonthBudget, planMonthHasManualUnitPrice: planMonthHasManualUnitPrice, planMonthUnitPriceInfo: planMonthUnitPriceInfo, parsePlanQty: parsePlanQty, parsePlanUnitPrice: parsePlanUnitPrice, planBudgetFor: planBudgetFor, distributeQty: distributeQty, savePlanningMonthQty: savePlanningMonthQty, savePhaseUnitPrice: savePhaseUnitPrice };');
   const h = factory(Store, domain, UI, cfValStub,
     () => true,
     (m) => state.toasts.push(m),
@@ -111,6 +123,8 @@ const PHASES = [
   { id: 'phase-lumus-1', brand_id: 'brand-lumus-ai', name: 'Preparation', start_month: '2027-01', end_month: '2027-02', uplift_percent_per_month: 0 },
   { id: 'phase-lumus-2', brand_id: 'brand-lumus-ai', name: 'Test & Validate', start_month: '2027-03', end_month: '2027-05', uplift_percent_per_month: 5 },
 ];
+// Benchmarks VẪN mang unit_price (như dữ liệu DB hiện tại) để khoá là
+// giá Benchmark KHÔNG còn được đọc ở bất kỳ đường nào (chốt 18/11).
 const BENCHMARKS = [
   { id: 'bench-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', unit_price: 1500000 },
   { id: 'bench-kol-expert', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Expert', unit_price: 30000000 },
@@ -131,24 +145,26 @@ function budgetTotalViaApp(h, rows) {
 }
 
 // ---------- [static] wiring bảng chi tiết ----------
-test('PMUP [static]: bảng chi tiết có cột Đơn giá + ô sửa planning-month-unit-price, nhãn đặt tay/Benchmark, chú thích xoá trắng; cột Ngân sách CHỈ HIỂN THỊ cho dòng thường, không còn ô sửa ngân sách TỔNG QUÁT (ngoại lệ Paid Media ở file planning-paid-budget riêng)', () => {
+test('PMUP [static]: bảng chi tiết — cột Đơn giá CHỈ HIỂN THỊ (span giá hiệu dụng + nhãn giá Phase/chưa đặt giá), KHÔNG còn ô sửa planning-month-unit-price ở bất cứ đâu; cột Ngân sách CHỈ HIỂN THỊ cho dòng thường (ngoại lệ Paid Media ở file planning-paid-budget riêng)', () => {
   const v = section('function viewPlanning()', '// ---------- Planning Theo phase');
   const detail = v.slice(v.indexOf('// Bảng chi tiết của dòng đang chọn'), v.indexOf('// Chart ngân sách dự kiến theo tháng'));
   assert.ok(detail.length > 0);
   assert.match(detail, /<th>Đơn giá \(VNĐ\)<\/th><th>Ngân sách \(VNĐ\)<\/th>/);
-  assert.match(detail, /data-action-change="planning-month-unit-price" data-channel="' \+ esc\(selChannel\)/);
-  assert.match(detail, /class="phase-input planning-month-input planning-price-input" type="number" step="1" min="0"/);
   assert.match(detail, /planMonthUnitPriceInfo\(selRows, selChannel, cellGroup, m, benchmarks\)/);
-  assert.match(detail, /data-planning-price-manual="1">đặt tay</);
-  assert.match(detail, /data-planning-price-benchmark="1">Benchmark</);
+  assert.match(detail, /<span data-planning-price-value="1">/);
+  assert.match(detail, /data-planning-price-phase="1">giá Phase</);
+  assert.match(detail, /data-planning-price-none="1">chưa đặt giá</);
   assert.match(detail, /data-planning-detail-price-hint="1"/);
-  assert.match(detail, /Xoá trắng ô Đơn giá/);
-  assert.match(detail, /quay về đơn giá Benchmark/);
+  assert.match(detail, /Đơn giá chỉ hiển thị ở bảng này — quản ở Theo phase/);
+  assert.match(detail, /chưa đặt giá Phase thì đơn giá trống và ngân sách phần đó = 0/);
+  // GỠ hẳn đường sửa giá tại dòng (chốt 18/11 17:24).
+  assert.ok(!src.includes('planning-month-unit-price'), 'không được còn ô/handler planning-month-unit-price');
+  assert.ok(!src.includes('savePlanningMonthUnitPrice'), 'không được còn hàm savePlanningMonthUnitPrice');
+  assert.ok(!src.includes('data-planning-price-benchmark'), 'nhãn nguồn Benchmark cho giá đã biến mất');
+  assert.ok(!src.includes('data-planning-price-manual'), 'nhãn "đặt tay" tại dòng đã thay bằng "giá Phase"');
   // Ngân sách dòng THƯỜNG: chỉ hiển thị qua span, kèm chú thích "chỉ tự
-  // tính". (SỬA PHẠM VI Đợt Paid Media: câu chữ nay nói rõ "dòng thường"
-  // vì Paid Media là ngoại lệ nhập trực tiếp — khoá riêng ở
-  // tests/planning-paid-budget.test.mjs; nhánh span này vẫn là đường
-  // render của mọi dòng không phải Paid Media.)
+  // tính". (Paid Media là ngoại lệ nhập trực tiếp — khoá riêng ở
+  // tests/planning-paid-budget.test.mjs.)
   assert.match(detail, /<span data-planning-budget-value="1">/);
   assert.match(detail, /data-planning-detail-budget-hint="1"/);
   assert.match(detail, /Ngân sách của dòng thường chỉ tự tính \(không sửa được\)/);
@@ -161,16 +177,15 @@ test('PMUP [static]: bảng chi tiết có cột Đơn giá + ô sửa planning-
   assert.ok(!src.includes('planning-month-budget'), 'không được còn ô/handler planning-month-budget');
   assert.ok(!src.includes('savePlanningMonthBudget'), 'không được còn hàm savePlanningMonthBudget');
   assert.ok(!src.includes('parsePlanBudget'), 'không được còn parsePlanBudget');
-  assert.ok(css.includes('.planning-price-input'), 'CSS thiếu .planning-price-input');
+  assert.ok(css.includes('.planning-price-input'), 'CSS thiếu .planning-price-input (ô giá Phase vẫn dùng)');
 });
 
-test('PMUP [static]: handler change planning-month-unit-price gọi savePlanningMonthUnitPrice(channel, group, month, value); hàm lưu qua parsePlanUnitPrice + guard + sUpdate/sCreate field unit_price', () => {
-  assert.match(src, /if \(ctxKind === 'planning-month-unit-price'\) \{ savePlanningMonthUnitPrice\(t\.getAttribute\('data-channel'\), t\.getAttribute\('data-group'\), t\.getAttribute\('data-month'\), t\.value\); return; \}/);
-  const save = section('function savePlanningMonthUnitPrice(channel, group, month, raw)', '// ---------- Brand Hub ----------');
-  assert.match(save, /planningMonthSaveGuard\(\)/);
+test('PMUP [static]: đường sửa giá DUY NHẤT còn lại là Theo phase — handler change phase-unit-price gọi savePhaseUnitPrice(phaseId, channel, value); hàm lưu qua parsePlanUnitPrice + guard + sUpdate field unit_price (ghi và xoá = null)', () => {
+  assert.match(src, /if \(ctxKind === 'phase-unit-price'\) \{ savePhaseUnitPrice\(t\.getAttribute\('data-phase-id'\), t\.getAttribute\('data-channel'\), t\.value\); return; \}/);
+  const save = section('function savePhaseUnitPrice(phaseId, channel, raw)', '// --- Lưu ô Số lượng trong BẢNG CHI TIẾT');
+  assert.match(save, /phaseSaveGuard\(\)/);
   assert.match(save, /var v = parsePlanUnitPrice\(raw\);/);
   assert.match(save, /sUpdate\('plan_rows', job\.id, \{ unit_price: job\.unit_price \}\)/);
-  assert.match(save, /sCreate\('plan_rows', objP\)/);
   assert.match(save, /unit_price: null/);
 });
 
@@ -185,16 +200,19 @@ test('PMUP [unit]: parsePlanUnitPrice — chỉ số nguyên >= 0; âm/chữ/th�
   assert.equal(h.parsePlanUnitPrice(null), null);
 });
 
-// ---------- thứ tự ưu tiên ngân sách (app + domain cùng một công thức) ----------
-test('PMUP [unit]: ưu tiên ngân sách — đơn giá đặt tay > Benchmark; Paid Ads qty null lấy budget nguồn; dòng có qty thì budget lưu sẵn bị bỏ qua', () => {
+// ---------- chuỗi đơn giá hiệu dụng (app + domain cùng một công thức) ----------
+test('PMUP [unit]: chuỗi giá — Benchmark bị phớt lờ hoàn toàn (dòng chưa có giá Phase -> đơn giá trống, ngân sách 0 dù Benchmark có giá); giá Phase là nguồn duy nhất; Paid Ads qty null lấy budget nguồn; dòng có qty thì budget lưu sẵn bị bỏ qua', () => {
   const rows = baseRows();
   const { h } = makeHarness(rows, PHASES, BENCHMARKS);
-  // Benchmark: KOL Jan qty 4 × 1.500.000.
-  assert.equal(h.planRowEffectiveUnitPrice(rows[0], BENCHMARKS), 1500000);
-  assert.equal(h.planRowUnitPriceSource(rows[0], BENCHMARKS), 'benchmark');
-  assert.equal(h.planRowEffectiveBudget(rows[0], BENCHMARKS), 6000000);
-  assert.deepEqual(h.planMonthUnitPriceInfo(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), { value: 1500000, source: 'benchmark' });
-  // Đặt tay thắng Benchmark.
+  // Chưa đặt giá Phase: Benchmark 1.500.000 KHÔNG còn hiệu lực.
+  assert.equal(h.planRowEffectiveUnitPrice(rows[0], BENCHMARKS), null);
+  assert.equal(h.planRowUnitPriceSource(rows[0], BENCHMARKS), null);
+  assert.equal(h.planRowEffectiveBudget(rows[0], BENCHMARKS), 0);
+  assert.deepEqual(h.planMonthUnitPriceInfo(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), { value: null, source: null });
+  const dNone = domain.planBudget([rows[0]], BENCHMARKS);
+  assert.equal(dNone.total, 0, 'domain cũng phớt lờ giá Benchmark');
+  assert.equal(dNone.rows[0].source, null);
+  // Giá Phase trên dòng là nguồn giá duy nhất.
   rows[0].unit_price = 2000000;
   assert.equal(h.planRowEffectiveUnitPrice(rows[0], BENCHMARKS), 2000000);
   assert.equal(h.planRowUnitPriceSource(rows[0], BENCHMARKS), 'manual');
@@ -207,152 +225,153 @@ test('PMUP [unit]: ưu tiên ngân sách — đơn giá đặt tay > Benchmark; 
   assert.deepEqual(h.planMonthUnitPriceInfo(rows, 'Meta Ads', 'Paid Media', '2027-01', BENCHMARKS), { value: null, source: null });
   // An toàn neo: dòng CÓ qty mà có budget lưu sẵn lệch công thức -> budget
   // bị bỏ qua ở CẢ app lẫn domain (không tự ý cộng budget vào tổng).
-  const conflict = { id: 'r-conflict', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'KOL Nano', group: 'KOL', qty: 4, budget: 999 };
+  const conflict = { id: 'r-conflict', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'KOL Nano', group: 'KOL', qty: 4, budget: 999, unit_price: 1500000 };
   assert.equal(h.planRowEffectiveBudget(conflict, BENCHMARKS), 6000000);
   const db = domain.planBudget([conflict], BENCHMARKS);
   assert.equal(db.total, 6000000);
-  assert.equal(db.rows[0].source, 'unit_price');
-  // Domain: nguồn của từng tầng.
-  const nanoManual = { ...rows[0] };
-  const dAll = domain.planBudget([nanoManual, rows.find((r) => r.id === 'r-kol-feb'), ads], BENCHMARKS);
+  assert.equal(db.rows[0].source, 'manual_unit_price');
+  // Domain: tổng theo nguồn — mọi dòng có qty đều là giá Phase.
+  rows.find((r) => r.id === 'r-kol-feb').unit_price = 1500000;
+  const dAll = domain.planBudget([rows[0], rows.find((r) => r.id === 'r-kol-feb'), ads], BENCHMARKS);
   assert.equal(dAll.rows.find((r) => r.rowId === 'r-kol-jan').source, 'manual_unit_price');
-  assert.equal(dAll.rows.find((r) => r.rowId === 'r-kol-feb').source, 'unit_price');
+  assert.equal(dAll.rows.find((r) => r.rowId === 'r-kol-feb').source, 'manual_unit_price');
   assert.equal(dAll.rows.find((r) => r.rowId === 'r-ads-jan').source, 'direct');
-  assert.equal(dAll.totalManualUnitPrice, 8000000);
+  assert.equal(dAll.totalManualUnitPrice, 8000000 + 9000000);
   assert.equal(dAll.totalUnitPrice, 8000000 + 9000000);
   assert.equal(dAll.totalDirect, 1000000);
   assert.equal(dAll.total, 18000000);
 });
 
-// ---------- (a) đặt đơn giá ----------
-test('PMUP (a): đặt Đơn giá KOL Nano 2027-01 = 2.000.000 -> ghi unit_price, ngân sách tháng = 4 × 2.000.000 = 8.000.000, tổng kỳ tăng đúng +2.000.000 và khớp domain', () => {
+// ---------- (a) đặt giá qua Theo phase ----------
+test('PMUP (a): đặt Đơn giá mỗi bài KOL Nano ở Phase 1 = 2.000.000 -> ghi unit_price cho CẢ 2 tháng của Phase, ngân sách tháng 1 = 4 × 2.000.000 = 8.000.000, tổng kỳ tăng đúng phần giá Phase mới và khớp domain', () => {
   const rows = baseRows();
   const { h, state } = makeHarness(rows, PHASES, BENCHMARKS);
   const before = budgetTotalViaApp(h, rows);
-  h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-01', '2000000');
+  assert.equal(before, 1000000, 'trước khi đặt giá Phase: chỉ còn ngân sách nguồn của Paid Ads (giá Benchmark không tính)');
+  h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '2000000');
   assert.equal(rows.find((r) => r.id === 'r-kol-jan').unit_price, 2000000);
-  assert.deepEqual(state.updates, [{ coll: 'plan_rows', id: 'r-kol-jan', patch: { unit_price: 2000000 } }]);
+  assert.equal(rows.find((r) => r.id === 'r-kol-feb').unit_price, 2000000);
+  assert.equal(state.updates.length, 2);
+  assert.ok(state.updates.every((u) => u.coll === 'plan_rows' && u.patch.unit_price === 2000000));
   assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), 8000000);
+  assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-02', BENCHMARKS), 12000000);
   assert.equal(h.planMonthHasManualUnitPrice(rows, 'KOL Nano', 'KOL', '2027-01'), true);
-  assert.equal(budgetTotalViaApp(h, rows) - before, 2000000);
+  assert.equal(budgetTotalViaApp(h, rows) - before, 20000000);
   assert.equal(domain.planBudget(rows, BENCHMARKS).total, budgetTotalViaApp(h, rows), 'domain.planBudget và planBudgetFor phải khớp');
-  assert.ok(state.toasts.some((m) => /Đã lưu Đơn giá đặt tay 2000000/.test(m)), 'phải có toast đã lưu đơn giá đặt tay: ' + state.toasts.join(' | '));
+  assert.ok(state.toasts.some((m) => /Đã lưu Đơn giá mỗi bài đặt tay 2000000/.test(m)), 'phải có toast đã lưu giá Phase: ' + state.toasts.join(' | '));
 });
 
-test('PMUP (a): đặt Đơn giá bằng đúng giá Benchmark (1.500.000) vẫn ghi unit_price tường minh để tháng thành đặt tay thật', () => {
+test('PMUP (a): đặt giá Phase bằng đúng số tiền giá Benchmark cũ (1.500.000) vẫn ghi unit_price tường minh — giá đến từ dòng, không phải Benchmark', () => {
   const rows = baseRows();
   const { h, state } = makeHarness(rows, PHASES, BENCHMARKS);
-  h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-01', '1500000');
+  h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '1500000');
   assert.equal(rows.find((r) => r.id === 'r-kol-jan').unit_price, 1500000);
-  assert.equal(state.updates.length, 1);
+  assert.equal(state.updates.length, 2);
   assert.equal(h.planRowUnitPriceSource(rows[0], BENCHMARKS), 'manual');
   assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), 6000000);
 });
 
-// ---------- (b) xoá trắng quay về Benchmark ----------
-test('PMUP (b): xoá trắng ô Đơn giá đang đặt tay -> unit_price = null, ngân sách về đúng Benchmark và tổng kỳ về đúng ban đầu; xoá trắng ô đang Benchmark là no-op', () => {
+// ---------- (b) xoá trắng ô giá Phase ----------
+test('PMUP (b): xoá trắng ô Đơn giá mỗi bài -> unit_price = null cả Phase, đơn giá TRỐNG và ngân sách = 0 (KHÔNG quay về Benchmark), tổng kỳ về đúng ban đầu; xoá trắng khi chưa có giá Phase là no-op', () => {
   const rows = baseRows();
   const { h, state } = makeHarness(rows, PHASES, BENCHMARKS);
   const before = budgetTotalViaApp(h, rows);
-  h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-01', '2000000');
-  assert.equal(budgetTotalViaApp(h, rows), before + 2000000);
-  h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-01', '');
+  h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '2000000');
+  assert.equal(budgetTotalViaApp(h, rows), before + 20000000);
+  h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '');
   assert.equal(rows.find((r) => r.id === 'r-kol-jan').unit_price, null);
-  assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), 6000000);
+  assert.equal(rows.find((r) => r.id === 'r-kol-feb').unit_price, null);
+  assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), 0);
   assert.equal(h.planMonthHasManualUnitPrice(rows, 'KOL Nano', 'KOL', '2027-01'), false);
+  assert.deepEqual(h.planMonthUnitPriceInfo(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), { value: null, source: null });
   assert.equal(budgetTotalViaApp(h, rows), before);
-  assert.ok(state.toasts.some((m) => /Đã bỏ Đơn giá đặt tay/.test(m) && /Benchmark/.test(m)));
+  assert.ok(state.toasts.some((m) => /Đã bỏ giá Phase của KOL Nano/.test(m) && /Đơn giá để trống/.test(m)));
   const updatesBefore = state.updates.length;
-  h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-02', '');
-  assert.equal(state.updates.length, updatesBefore);
-  assert.equal(rows.find((r) => r.id === 'r-kol-feb').unit_price, undefined);
+  h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '');
+  assert.equal(state.updates.length, updatesBefore, 'xoá trắng lần nữa là no-op');
 });
 
 // ---------- (c) validate ----------
-test('PMUP (c): nhập Đơn giá sai (âm / chữ / thập phân) bị chặn — không update/create, dữ liệu không đổi, có toast lỗi', () => {
+test('PMUP (c): nhập Đơn giá mỗi bài sai (âm / chữ / thập phân) bị chặn — không update/create, dữ liệu không đổi, có toast lỗi', () => {
   for (const raw of ['-1000', 'abc', '1.5', '1000.5']) {
     const rows = baseRows();
     const snapshot = rows.map((r) => ({ ...r }));
     const { h, state } = makeHarness(rows, PHASES, BENCHMARKS);
-    h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-01', raw);
+    h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', raw);
     assert.deepEqual(rows, snapshot, 'raw=' + JSON.stringify(raw) + ' không được đổi dữ liệu');
     assert.equal(state.updates.length, 0);
     assert.equal(state.creates.length, 0);
-    assert.ok(state.toasts.some((m) => /Đơn giá phải là số nguyên từ 0 trở lên/.test(m)), 'raw=' + JSON.stringify(raw) + ' phải báo lỗi rõ');
+    assert.ok(state.toasts.some((m) => /Đơn giá mỗi bài phải là số nguyên từ 0 trở lên/.test(m)), 'raw=' + JSON.stringify(raw) + ' phải báo lỗi rõ');
   }
 });
 
 // ---------- (d) Paid Ads ----------
-test('PMUP (d): Paid Ads (qty null) — đặt Đơn giá bị chặn, dữ liệu không đổi; ngân sách hiển thị vẫn là ngân sách nguồn 1.000.000', () => {
+test('PMUP (d): Paid Ads (qty null) — đặt giá Phase bị chặn, dữ liệu không đổi; ngân sách hiển thị vẫn là ngân sách nguồn 1.000.000', () => {
   const rows = baseRows();
   const { h, state } = makeHarness(rows, PHASES, BENCHMARKS);
-  h.savePlanningMonthUnitPrice('Meta Ads', 'Paid Media', '2027-01', '2000000');
+  h.savePhaseUnitPrice('phase-lumus-1', 'Meta Ads', '2000000');
   const ads = rows.find((r) => r.id === 'r-ads-jan');
   assert.equal(ads.unit_price, undefined);
-  assert.equal(ads.budget, 1000000, 'ngân sách nguồn của Paid Ads không có đường sửa');
+  assert.equal(ads.budget, 1000000, 'ngân sách nguồn của Paid Ads không đổi');
   assert.equal(ads.qty, null);
   assert.equal(state.updates.length, 0);
   assert.equal(state.creates.length, 0);
-  assert.ok(state.toasts.some((m) => /chỉ có dòng ngân sách nguồn/.test(m) && /không đặt Đơn giá/.test(m)));
+  assert.ok(state.toasts.some((m) => /chỉ có dòng ngân sách nguồn/.test(m) && /không đặt Đơn giá mỗi bài/.test(m)));
   assert.equal(h.planMonthBudget(rows, 'Meta Ads', 'Paid Media', '2027-01', BENCHMARKS), 1000000);
 });
 
 // ---------- (e) nhiều dòng / ô ----------
-test('PMUP (e): ô nhiều dòng Số lượng — đặt Đơn giá ghi cùng unit_price cho mọi dòng, ngân sách = Σ qty × giá mới', () => {
+test('PMUP (e): ô nhiều dòng Số lượng — giá Phase ghi cùng unit_price cho mọi dòng, ngân sách = Σ qty × giá; xoá trắng -> cả hai dòng mất giá, ngân sách = 0', () => {
   const rows = baseRows();
   const { h } = makeHarness(rows, PHASES, BENCHMARKS);
-  // Dup Channel: qty 4 + 2, Benchmark 1.000.000 -> đặt 1.500.000.
-  h.savePlanningMonthUnitPrice('Dup Channel', 'KOL', '2027-01', '1500000');
+  // Dup Channel: qty 4 + 2 trong Phase 1 -> đặt 1.500.000.
+  h.savePhaseUnitPrice('phase-lumus-1', 'Dup Channel', '1500000');
   assert.equal(rows.find((r) => r.id === 'r-dup-1').unit_price, 1500000);
   assert.equal(rows.find((r) => r.id === 'r-dup-2').unit_price, 1500000);
   assert.equal(h.planMonthBudget(rows, 'Dup Channel', 'KOL', '2027-01', BENCHMARKS), 9000000);
   assert.deepEqual(h.planMonthUnitPriceInfo(rows, 'Dup Channel', 'KOL', '2027-01', BENCHMARKS), { value: 1500000, source: 'manual' });
-  // Xoá trắng: cả hai dòng về Benchmark 1.000.000 -> ngân sách 6.000.000.
-  h.savePlanningMonthUnitPrice('Dup Channel', 'KOL', '2027-01', '');
+  // Xoá trắng: cả hai dòng về trống -> ngân sách 0 (Benchmark 1.000.000 bị phớt lờ).
+  h.savePhaseUnitPrice('phase-lumus-1', 'Dup Channel', '');
   assert.equal(rows.find((r) => r.id === 'r-dup-1').unit_price, null);
   assert.equal(rows.find((r) => r.id === 'r-dup-2').unit_price, null);
-  assert.equal(h.planMonthBudget(rows, 'Dup Channel', 'KOL', '2027-01', BENCHMARKS), 6000000);
+  assert.equal(h.planMonthBudget(rows, 'Dup Channel', 'KOL', '2027-01', BENCHMARKS), 0);
 });
 
-// ---------- (g) tương tác Số lượng <-> Đơn giá/Ngân sách ----------
-test('PMUP (g): sửa Số lượng — tháng ĐẶT TAY đơn giá thì ngân sách theo qty mới × giá đặt tay; tháng Benchmark thì theo qty mới × giá Benchmark; tháng qty = 0 vẫn đặt được đơn giá', () => {
+// ---------- (g) tương tác Số lượng <-> giá Phase/Ngân sách ----------
+test('PMUP (g): sửa Số lượng ở chi tiết — ngân sách theo qty mới × giá Phase của dòng; tháng chưa đặt giá Phase thì ngân sách = 0 dù Benchmark có giá; tháng qty = 0 vẫn mang giá Phase', () => {
   const rows = baseRows();
   const { h } = makeHarness(rows, PHASES, BENCHMARKS);
-  // Benchmark: KOL Feb qty 6 -> 5 thì ngân sách 9.000.000 -> 7.500.000.
+  // Chưa đặt giá Phase: sửa qty Feb 6 -> 5, ngân sách vẫn 0 (Benchmark
+  // 1.500.000 không còn được đọc).
   h.savePlanningMonthQty('KOL Nano', 'KOL', '2027-02', '5');
-  assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-02', BENCHMARKS), 7500000);
-  // Đặt tay 2.000.000 cho Jan (qty 4 -> ngân sách 8.000.000) rồi sửa qty 4 -> 5:
-  // ngân sách chạy theo đơn giá đặt tay -> 10.000.000 (KHÁC ngân sách đặt tay cũ).
-  h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-01', '2000000');
+  assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-02', BENCHMARKS), 0);
+  // Đặt giá Phase 2.000.000 (áp cả Jan + Feb): Jan qty 4 -> 8.000.000,
+  // Feb qty 5 -> 10.000.000; sửa qty Jan 4 -> 5 thì ngân sách chạy theo
+  // giá Phase -> 10.000.000.
+  h.savePhaseUnitPrice('phase-lumus-1', 'KOL Nano', '2000000');
   assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), 8000000);
   h.savePlanningMonthQty('KOL Nano', 'KOL', '2027-01', '5');
   assert.equal(rows.find((r) => r.id === 'r-kol-jan').qty, 5);
   assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), 10000000);
-  // Tháng qty = 0 (KOL Expert 2027-06): đặt đơn giá 10.000.000 được, ngân
-  // sách vẫn 0; tăng qty lên 2 -> ngân sách 20.000.000.
-  h.savePlanningMonthUnitPrice('KOL Expert', 'KOL', '2027-06', '10000000');
+  // Tháng qty = 0 (KOL Expert 2027-06, Phase 2): đặt giá Phase
+  // 10.000.000 được, ngân sách vẫn 0; tăng qty lên 2 -> 20.000.000.
+  h.savePhaseUnitPrice('phase-lumus-2', 'KOL Expert', '10000000');
   assert.equal(rows.find((r) => r.id === 'r-expert-jun').unit_price, 10000000);
   assert.equal(h.planMonthBudget(rows, 'KOL Expert', 'KOL', '2027-06', BENCHMARKS), 0);
   h.savePlanningMonthQty('KOL Expert', 'KOL', '2027-06', '2');
   assert.equal(h.planMonthBudget(rows, 'KOL Expert', 'KOL', '2027-06', BENCHMARKS), 20000000);
 });
 
-// ---------- (h) ô trống ----------
-test('PMUP (h): ô tháng chưa có dòng plan — nhập Đơn giá tạo dòng mới qty = 0 mang unit_price đúng ngữ cảnh', () => {
+// ---------- (h) tháng chưa có dòng ----------
+test('PMUP (h): Phase chưa có dòng nào của Channel — lưu giá Phase KHÔNG tạo dòng, không update, có toast nói rõ (giá chỉ áp cho dòng đang có; tạo dòng là việc của ô Số lượng / Thêm dòng)', () => {
   const rows = baseRows();
   const { h, state } = makeHarness(rows, PHASES, BENCHMARKS);
-  h.savePlanningMonthUnitPrice('KOL Nano', 'KOL', '2027-04', '2500000');
-  assert.equal(state.creates.length, 1);
-  const created = state.creates[0].item;
-  assert.equal(created.month, '2027-04');
-  assert.equal(created.unit_price, 2500000);
-  assert.equal(created.qty, 0);
-  assert.equal(created.budget, null);
-  assert.equal(created.channel, 'KOL Nano');
-  assert.equal(created.brand_id, 'brand-lumus-ai');
-  assert.equal(created.phase_id, 'phase-lumus-2', 'tháng 2027-04 thuộc Phase 2');
-  assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-04', BENCHMARKS), 0, 'qty 0 nên ngân sách vẫn 0 dù đã có đơn giá đặt tay');
-  assert.deepEqual(h.planMonthUnitPriceInfo(rows, 'KOL Nano', 'KOL', '2027-04', BENCHMARKS), { value: 2500000, source: 'manual' });
+  // Phase 2 (2027-03..05) không có dòng KOL Nano nào trong fixture.
+  h.savePhaseUnitPrice('phase-lumus-2', 'KOL Nano', '2500000');
+  assert.equal(state.creates.length, 0);
+  assert.equal(state.updates.length, 0);
+  assert.equal(rows.length, 6);
+  assert.ok(state.toasts.some((m) => /Không có dòng plan nào của Channel KOL Nano trong Phase/.test(m)), 'phải có toast nói rõ: ' + state.toasts.join(' | '));
 });
 
 // ---------- an toàn + neo demo ----------
@@ -361,15 +380,17 @@ test('PMUP [an toàn]: dữ liệu demo KHÔNG có dòng nào vừa có qty vừ
   assert.equal(both.length, 0, 'nếu sau này dữ liệu nguồn thêm dòng qty+budget lệch công thức thì phải dừng và báo delta, không tự ý đổi neo');
 });
 
-test('PMUP [neo]: demo Lumus tổng ngân sách năm = 1.598.700.000đ (gồm Paid Ads direct 811.200.000đ — SỬA PHẠM VI đợt Paid Objective: +83.200.000đ từ 2 kênh Paid B2B mới) và tổng content = 776 khi chưa sửa gì (domain + planBudgetFor đều khớp)', () => {
+test('PMUP [neo]: demo Lumus tổng ngân sách năm = 1.598.700.000đ (Paid Ads direct 811.200.000đ + giá Phase KOL 787.500.000đ trên dòng — fixture đã chuyển giá từ Benchmark sang plan_rows, chốt 18/11) và tổng content = 776 khi chưa sửa gì (domain + planBudgetFor đều khớp)', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
   assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 776);
   const d = domain.planBudget(lumus, demo.benchmarks);
   assert.equal(d.total, 1598700000);
   assert.equal(d.totalDirect, 811200000);
   assert.equal(d.totalUnitPrice, 787500000);
-  assert.equal(d.totalManualUnitPrice, 0, 'chưa sửa gì thì không có đơn giá đặt tay nào');
-  assert.ok(lumus.every((r) => r.unit_price === undefined || r.unit_price === null), 'dữ liệu nguồn không mang sẵn đơn giá đặt tay trên dòng');
+  assert.equal(d.totalManualUnitPrice, 787500000, 'toàn bộ phần qty × đơn giá nay là giá Phase trên dòng');
+  const priced = lumus.filter((r) => r.unit_price !== undefined && r.unit_price !== null);
+  assert.equal(priced.length, 36, '36 dòng KOL (3 kênh × 12 tháng) mang giá Phase trong fixture');
+  assert.ok(priced.every((r) => ['KOL Nano', 'KOL Micro', 'KOL Expert'].includes(r.channel)));
   const { h } = makeHarness([], [], demo.benchmarks);
   const viaApp = h.planBudgetFor(lumus, demo.benchmarks).reduce((s, x) => s + x.total, 0);
   assert.equal(viaApp, 1598700000);
