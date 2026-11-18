@@ -6734,6 +6734,19 @@
       actuals: Store.list('actuals').filter(inScope).map(function (f) { return attach(f, 'actual'); })
     };
   }
+  // Thực chi ĐÃ DUYỆT của một dòng ngân sách (Bước B I-4) — MỘT
+  // nguồn ở domain: D.budgetActualTotal (chỉ fact đã duyệt, cùng
+  // currency với dòng). Thẻ "Đã chi" ở viewKpi, cột actualTotal và
+  // export CSV đều qua helper này; dự phòng khi domain chưa nạp vẫn
+  // lọc đã-duyệt như domain.
+  function budgetActualTotalFor(line, acts) {
+    if (D && typeof D.budgetActualTotal === 'function') return D.budgetActualTotal(line, acts);
+    return (acts || []).reduce(function (s, a) {
+      if (!a) return s;
+      if (typeof D.isApprovedFact === 'function' && !D.isApprovedFact(a)) return s;
+      return s + (Number(a.amount) || 0);
+    }, 0);
+  }
   function summarizeCampaignBudget(c) {
     var facts = budgetFacts(c.id);
     var curs = [];
@@ -6757,14 +6770,17 @@
       var childAllocations = Object.keys(child).map(function (aid) { return { activityId: aid, scopeId: aid, amount: child[aid], currency: cur }; });
       var allocatedSum = childAllocations.reduce(function (s, a) { return s + a.amount; }, 0);
       var configured = !!(ceilingRaw && (ceilingRaw.currency || 'VND') === cur);
-      var s = D.summarizeBudgetScope({ ceiling: configured ? ceilingRaw.amount : allocatedSum, currency: cur, childAllocations: childAllocations, commitments: facts.commitments, actuals: facts.actuals });
-      var b = (s.byCurrency && s.byCurrency[cur]) || s;
-      // SYN-13: currency không có dòng ngân sách nào và cũng không có hạn
-      // mức campaign cấu hình cho currency đó → chưa từng đặt trần cho
-      // currency này, available = null (hiển thị '—') thay vì âm giả.
+      // SYN-13 (Bước B I-0): điều kiện "chưa đặt trần cho currency" nay
+      // nằm TẠI domain summarizeBudgetScope — adapter chỉ truyền cờ
+      // ceilingConfiguredByCurrency (có dòng ngân sách của currency
+      // hoặc có trần campaign cấu hình cho currency = đã đặt trần);
+      // available lấy thẳng từ domain, không còn ghi đè ở adapter.
       var hasLine = facts.lines.some(function (l) { return (l.currency || 'VND') === cur; });
-      var available = (!hasLine && !configured) ? null : b.available;
-      return { currency: cur, ceilingConfigured: configured, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: available };
+      var ceilingConfiguredByCurrency = {};
+      ceilingConfiguredByCurrency[cur] = !!(hasLine || configured);
+      var s = D.summarizeBudgetScope({ ceiling: configured ? ceilingRaw.amount : allocatedSum, currency: cur, childAllocations: childAllocations, commitments: facts.commitments, actuals: facts.actuals, ceilingConfiguredByCurrency: ceilingConfiguredByCurrency });
+      var b = (s.byCurrency && s.byCurrency[cur]) || s;
+      return { currency: cur, ceilingConfigured: configured, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: b.available };
     });
   }
   // Fact thuộc về một activity: qua dòng ngân sách của activity, qua chính
@@ -6793,13 +6809,13 @@
       // SYN-01: truyền facts ĐÃ SCOPE theo activity (scoped.*), không phải
       // facts.* của toàn campaign — trước đây mọi activity đều nhận trọn
       // total campaign (camp-1: cả 3 activity lặp 26tr/47tr, gấp 3 lần).
-      var s = D.summarizeBudgetScope({ ceiling: ceiling, currency: cur, scopeId: act.id, commitments: scoped.commitments, actuals: scoped.actuals });
-      var b = (s.byCurrency && s.byCurrency[cur]) || s;
-      // SYN-13: activity không có dòng ngân sách của currency này → chưa
-      // đặt trần cho currency đó ở scope này, available = null ('—').
+      // SYN-13 (Bước B I-0): cờ trần nằm ở domain như adapter campaign.
       var hasLine = facts.lines.some(function (l) { return l.activityId === act.id && (l.currency || 'VND') === cur; });
-      var available = hasLine ? b.available : null;
-      return { currency: cur, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: available };
+      var ceilingConfiguredByCurrency = {};
+      ceilingConfiguredByCurrency[cur] = !!hasLine;
+      var s = D.summarizeBudgetScope({ ceiling: ceiling, currency: cur, scopeId: act.id, commitments: scoped.commitments, actuals: scoped.actuals, ceilingConfiguredByCurrency: ceilingConfiguredByCurrency });
+      var b = (s.byCurrency && s.byCurrency[cur]) || s;
+      return { currency: cur, ceiling: b.ceiling, allocated: b.allocated, unallocated: b.unallocated, actualTotal: b.actualTotal, openCommitments: b.openCommitments, forecastUse: b.forecastUse, available: b.available };
     }).filter(function (r) { return r.ceiling > 0 || r.actualTotal > 0 || r.openCommitments > 0; });
     return out.length ? out : [{ currency: 'VND', ceiling: 0, allocated: 0, unallocated: 0, actualTotal: 0, openCommitments: 0, forecastUse: 0, available: 0 }];
   }
@@ -8164,7 +8180,10 @@
         var actsCur = acts.filter(function (x) { return factCurrencyMatches(x, b.currency); });
         sum.planned += Number(b.planned || 0);
         sum.approved += Number(b.approved || 0);
-        sum.spent += actsCur.reduce(function (s, a) { return s + Number(a.amount || 0); }, 0);
+        // Bước B I-4: "Đã chi" chỉ tính actual ĐÃ DUYỆT (cùng nguồn
+        // budgetUsageTotal/budgetRemaining) — trước đây cộng thô cả
+        // khoản pending nên lệch với "Còn phân bổ"/"Dự kiến sử dụng".
+        sum.spent += budgetActualTotalFor(b, actsCur);
         sum.open += (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(commitsCur, actsCur) : 0;
         sum.remaining += D.budgetRemaining(b, commits, acts);
       });
@@ -8196,7 +8215,8 @@
         // currency với dòng (như thẻ tiền ở trên + budgetUsageTotal).
         var commitsCur = commits.filter(function (x) { return factCurrencyMatches(x, b.currency); });
         var actsCur = acts.filter(function (x) { return factCurrencyMatches(x, b.currency); });
-        var actualTotal = actsCur.reduce(function (s, a) { return s + Number(a.amount || 0); }, 0);
+        // Bước B I-4: actualTotal của dòng cũng qua budgetActualTotalFor.
+        var actualTotal = budgetActualTotalFor(b, actsCur);
         // R2-02: "Cam kết còn mở" lấy thẳng từ D.openCommitmentTotal — không
         // còn phép tính riêng ở view.
         var openCommit = (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(commitsCur, actsCur) : 0;
@@ -8207,7 +8227,11 @@
           // actual lệch currency không làm giảm phần còn mở ở currency này.
           var cmActs = acts.filter(function (x) { return x.commitmentId === cm.id && factCurrencyMatches(x, cm.currency || cur); });
           var paid = (typeof D.commitmentPaidTotal === 'function') ? D.commitmentPaidTotal(cm, cmActs) : cmActs.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0);
-          var cmOpen = String(cm.status).toLowerCase() === 'cancelled' ? 0 : Math.max(0, Number(cm.amount || 0) - paid);
+          // Bước B I-5: "Còn mở" từng cam kết qua D.openCommitmentAmount
+          // — CÙNG hàm nguồn với tổng D.openCommitmentTotal của cột
+          // tổng (settled/released/chưa duyệt/archive -> 0). Trước đây
+          // phép viết tay chỉ loại 'cancelled' nên dòng con lệch tổng.
+          var cmOpen = (typeof D.openCommitmentAmount === 'function') ? D.openCommitmentAmount(cm, cmActs) : (String(cm.status).toLowerCase() === 'cancelled' ? 0 : Math.max(0, Number(cm.amount || 0) - paid));
           return '<tr><td>' + esc(cm.title) + '</td><td>' + fmtMoney(cm.amount, cm.currency || cur) + '</td><td>' + fmtMoney(paid, cm.currency || cur) + '</td><td>' + fmtMoney(cmOpen, cm.currency || cur) + '</td><td>' + statusBadge(cm.status) + '</td><td>' + factApprovalControlsHtml(cm, 'commitment') + '</td>' +
             '<td class="row-actions">' + (budgetEd ? '<button class="btn small secondary" data-action="editor-open" data-kind="commitment" data-id="' + esc(cm.id) + '">Sửa cam kết</button> <button class="btn small" data-action="editor-open" data-kind="commitmentPayment" data-commitment="' + esc(cm.id) + '">Ghi thanh toán</button> <button class="btn small secondary" data-action="editor-open" data-kind="allocation" data-source-kind="commitment" data-source-id="' + esc(cm.id) + '">Phân bổ chi chung</button>' : '') + '</td></tr>';
         }).join(''), 'budget-commitments') : '<p class="sub">Chưa có cam kết nào.</p>';
@@ -9079,7 +9103,9 @@
       var csCur = cs.filter(function (x) { return factCurrencyMatches(x, l.currency); });
       var asCur = as.filter(function (x) { return factCurrencyMatches(x, l.currency); });
       lineStats[l.id] = {
-        actualTotal: asCur.reduce(function (s, x) { return s + Number(x.amount || 0); }, 0),
+        // Bước B I-4: actual_total trong CSV cũng chỉ tính đã duyệt
+        // qua budgetActualTotalFor (cùng nguồn với UI).
+        actualTotal: budgetActualTotalFor(l, asCur),
         openCommitments: (typeof D.openCommitmentTotal === 'function') ? D.openCommitmentTotal(csCur, asCur) : 0,
         remaining: D.budgetRemaining(l, cs, as)
       };
