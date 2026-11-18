@@ -3397,14 +3397,16 @@
   //   Total users = Free EOM + Paid EOM
   //   ARPPU hiệu dụng = paid_price của Phase chứa tháng (giá Paid
   //     duy nhất, thay đổi A 18/11). Chưa nhập giá (null) hoặc giá âm
-  //     -> coi như THIẾU đầu vào giá (Revenue + 2 Profit null tháng đó,
-  //     missing.paid_price = true).
+  //     -> coi như THIẾU đầu vào giá (Revenue null tháng đó,
+  //     missing.paid_price = true; 2 dòng Profit vẫn tính với
+  //     Revenue tạm tính 0 — xem ngoại lệ Profit dưới đây).
   //   Revenue_t = ARPPU hiệu dụng x Paid EOM_t
   //   COGS TÁCH theo nhóm user: cogsFree_t = cogs_per_free_user x Free
   //     EOM_t; cogsPaid_t = cogs_per_paid_user x Paid EOM_t; COGS_t =
   //     cogsFree_t + cogsPaid_t (đơn giá là SỐ TIỀN trên mỗi user —
   //     VNĐ/user/tháng — KHÔNG theo % doanh thu). Thiếu MỘT trong hai
-  //     đơn giá -> phần COGS tương ứng + COGS tổng + 2 Profit null.
+  //     đơn giá -> phần COGS tương ứng + COGS tổng null (2 dòng
+  //     Profit vẫn tính với phần COGS thiếu tạm tính 0 — xem dưới).
   //   Profit (after COGS + mkt cost) = Revenue − COGS − Budget
   //   Profit (after COGS + fixed cost + mkt cost) = trên − fixed_cost
   // QUYẾT ĐỊNH ĐÃ CHỐT: monthly_cvr null -> nguồn chuyển đổi từ tồn
@@ -3412,9 +3414,16 @@
   // Thiếu đầu vào -> giá trị null ("—" ở UI), TUYỆT ĐỐI không điền 0
   // lặng lẽ: thiếu opening hoặc thiếu 1 tỉ lệ churn của 1 tháng thì
   // chuỗi EOM đứt từ tháng đó (các tháng sau cũng null vì phụ thuộc
-  // tồn trước); thiếu fixed_cost -> chỉ Profit cuối null. Cột Tổng:
-  // dòng flow cộng dồn (null nếu có tháng null), dòng tồn lấy giá trị
-  // tháng cuối.
+  // tồn trước). NGOẠI LỆ (Zac chốt 18/11/2026): riêng 2 dòng Profit
+  // thành phần nào null thì tạm tính 0 nên LUÔN là số — Profit1 =
+  // (Revenue ?? 0) + (Revenue B2B ?? 0) − COGS-cho-Profit −
+  // (COGS B2B ?? 0) − Budget, trong đó COGS-cho-Profit =
+  // (cogsFree ?? 0) + (cogsPaid ?? 0) (= COGS khi đủ cả hai, = phần
+  // còn lại khi thiếu một phần, = 0 khi thiếu cả hai); Profit2 =
+  // Profit1 − (fixed_cost ?? 0) (thiếu fixed_cost thì Profit2 =
+  // Profit1). Cột Tổng: dòng flow cộng dồn (null nếu có tháng null,
+  // riêng 2 dòng Profit luôn cộng được vì mọi tháng đều có số),
+  // dòng tồn lấy giá trị tháng cuối.
   // =====================================================================
   // Phân loại cột Tổng của bảng vận hành — MỘT nguồn (Bước B II-10):
   // dòng FLOW cộng dồn cả kỳ; dòng STOCK lấy giá trị tháng cuối.
@@ -3448,7 +3457,9 @@
     // B2C + B2B. Thiếu đầu vào B2B -> null như quy tắc chung, NGOẠI
     // TRỪ: khi tồn B2B = 0 và không có account mới (toàn kỳ không hoạt
     // động B2B, kể cả chưa nhập opening_b2b) thì B2B churn/EOM/Revenue
-    // B2B/COGS B2B = 0. Thiếu đầu vào B2B khi ĐANG có hoạt động B2B
+    // B2B/COGS B2B = 0; và ngoại lệ 2 dòng Profit (Zac chốt 18/11/2026):
+    // Revenue B2B / COGS B2B null thì tạm tính 0 cho Profit nên Profit
+    // luôn là số. Thiếu đầu vào B2B khi ĐANG có hoạt động B2B
     // được ghi ở missingB2b (tách khỏi `missing` B2C).
     var openingB2b = num(inp.openingB2b !== undefined && inp.openingB2b !== null ? inp.openingB2b : inp.opening_b2b);
     function funnelB2b(m) {
@@ -3589,11 +3600,23 @@
           else missingB2b.cogs_per_b2b_account = true;
         }
       }
-      // Profit tính trên TỔNG B2C + B2B.
-      if (row.revenue !== null && row.cogs !== null && row.revenueB2b !== null && row.cogsB2b !== null) {
-        row.profitAfterCogsMkt = (row.revenue + row.revenueB2b) - (row.cogs + row.cogsB2b) - row.budget;
-      }
-      if (row.profitAfterCogsMkt !== null && fixedCost !== null) row.profitAfterCogsFixedMkt = row.profitAfterCogsMkt - fixedCost;
+      // Profit tính trên TỔNG B2C + B2B — NGOẠI LỆ 2 dòng Profit
+      // (Zac chốt 18/11/2026): thành phần nào null thì tạm tính 0,
+      // 2 dòng Profit LUÔN là số ở mọi tháng (kể cả khi chuỗi tồn
+      // đứt làm Revenue/COGS null). COGS cho Profit tính theo từng
+      // thành phần (cogsFree ?? 0) + (cogsPaid ?? 0): bằng row.cogs
+      // khi đủ cả hai, bằng phần còn lại khi thiếu một phần, bằng 0
+      // khi thiếu cả hai — khớp công thức (Revenue ?? 0) +
+      // (Revenue B2B ?? 0) − (COGS ?? 0) − (COGS B2B ?? 0) − Budget
+      // ở mọi ca COGS đủ hoặc thiếu hẳn. Thiếu fixed_cost thì
+      // Profit2 = Profit1 (fixed_cost tạm tính 0).
+      var _pRev = row.revenue !== null && row.revenue !== undefined ? row.revenue : 0;
+      var _pRevB2b = row.revenueB2b !== null && row.revenueB2b !== undefined ? row.revenueB2b : 0;
+      var _pCogs = (row.cogsFree !== null && row.cogsFree !== undefined ? row.cogsFree : 0)
+        + (row.cogsPaid !== null && row.cogsPaid !== undefined ? row.cogsPaid : 0);
+      var _pCogsB2b = row.cogsB2b !== null && row.cogsB2b !== undefined ? row.cogsB2b : 0;
+      row.profitAfterCogsMkt = (_pRev + _pRevB2b) - _pCogs - _pCogsB2b - row.budget;
+      row.profitAfterCogsFixedMkt = row.profitAfterCogsMkt - (fixedCost !== null && fixedCost !== undefined ? fixedCost : 0);
       return row;
     });
     var FLOW_KEYS = OPERATING_FLOW_KEYS;

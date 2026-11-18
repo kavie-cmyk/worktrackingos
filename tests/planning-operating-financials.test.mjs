@@ -16,10 +16,14 @@
 //   của Phase (VNĐ/user/tháng); ARPPU hiệu dụng = paid_price trực
 //   tiếp; Revenue = ARPPU hiệu dụng x Paid EOM. Thiếu giá (null)
 //   hoặc giá âm -> coi như thiếu (missing.paid_price),
-//   Revenue/Profit null.
+//   Revenue null (2 dòng Profit vẫn tính với Revenue tạm tính 0).
 // - COGS TÁCH: cogsFree = cogs_per_free_user x Free EOM; cogsPaid =
 //   cogs_per_paid_user x Paid EOM; COGS = cogsFree + cogsPaid. Thiếu
-//   một đơn giá -> phần tương ứng + tổng + Profit null.
+//   một đơn giá -> phần tương ứng + tổng null (2 dòng Profit vẫn
+//   tính với phần COGS thiếu tạm tính 0).
+// - NGOẠI LỆ Profit (Zac chốt 18/11/2026): riêng 2 dòng Profit
+//   thành phần nào null thì tạm tính 0 nên LUÔN là số; thiếu
+//   fixed_cost thì Profit2 = Profit1.
 // - TUYỆT ĐỐI không seed số bịa: demo để trống các field tài chính.
 
 import { test } from 'node:test';
@@ -155,7 +159,7 @@ test('POF [domain]: (c) tháng 2 churn KHÔNG còn x0,5 — chuỗi 2 tháng tí
   approx(out.totals.paidEom, 116.522, 'Tổng Paid EOM = tháng cuối');
 });
 
-test('POF [domain]: (e) giá Paid ĐƠN (thay đổi A) — ARPPU = paid_price trực tiếp; thiếu paid_price (null) hoặc giá âm -> Revenue/Profit null + missing.paid_price', () => {
+test('POF [domain]: (e) giá Paid ĐƠN (thay đổi A) — ARPPU = paid_price trực tiếp; thiếu paid_price (null) hoặc giá âm -> Revenue null + missing.paid_price, Profit vẫn là số (Revenue tạm tính 0)', () => {
   const base = {
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 210, paid: 10 } },
@@ -167,14 +171,14 @@ test('POF [domain]: (e) giá Paid ĐƠN (thay đổi A) — ARPPU = paid_price t
   assert.equal(out.missing.paid_price, false, 'có paid_price -> không thiếu');
   approx(out.months[0].arppuEffective, 25000, 'ARPPU hiệu dụng = paid_price trực tiếp');
   approx(out.months[0].revenue, 25000 * 108.9, 'Revenue = paid_price x Paid EOM');
-  // Thiếu giá (null): EOM vẫn tính được, Revenue + 2 Profit null.
+  // Thiếu giá (null): EOM vẫn tính được, Revenue null; Profit vẫn là số (Revenue tạm tính 0, Zac chốt 18/11).
   out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { ...FULL, paid_price: null } } });
   assert.equal(out.missing.paid_price, true, 'paid_price null -> coi như thiếu');
   approx(out.months[0].paidEom, 108.9, 'EOM vẫn tính được');
   assert.equal(out.months[0].arppuEffective, null);
   assert.equal(out.months[0].revenue, null);
-  assert.equal(out.months[0].profitAfterCogsMkt, null);
-  assert.equal(out.months[0].profitAfterCogsFixedMkt, null);
+  approx(out.months[0].profitAfterCogsMkt, -13875500 - 100, 'Profit1 khi thiếu paid_price = 0 − COGS 13.875.500 − Budget 100');
+  approx(out.months[0].profitAfterCogsFixedMkt, -13875500 - 100 - 200000, 'Profit2 khi thiếu paid_price = Profit1 − fixed_cost 200.000');
   // Không truyền key paid_price (undefined) cũng là thiếu như null.
   const noPrice = { ...FULL }; delete noPrice.paid_price;
   out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': noPrice } });
@@ -190,43 +194,132 @@ test('POF [domain]: (e) giá Paid ĐƠN (thay đổi A) — ARPPU = paid_price t
   approx(out.months[0].arppuEffective, 47000, 'camelCase paidPrice -> ARPPU trực tiếp');
 });
 
-test('POF [domain]: thiếu đầu vào -> null ("—") đúng dòng — thiếu opening đứt chuỗi tồn; thiếu paid_price chỉ mất Revenue/Profit; thiếu 1 đơn giá COGS chỉ mất phần đó + tổng + Profit; thiếu fixed_cost chỉ mất Profit cuối; thiếu churn tháng đầu đứt chuỗi cả các tháng sau', () => {
+test('POF [domain]: thiếu đầu vào -> null ("—") đúng dòng — thiếu opening đứt chuỗi tồn; thiếu paid_price chỉ mất Revenue; thiếu 1 đơn giá COGS chỉ mất phần đó + tổng; thiếu fixed_cost không mất dòng nào; thiếu churn tháng đầu đứt chuỗi cả các tháng sau; riêng 2 dòng Profit luôn là số', () => {
   const funnel = { '2027-01': { views: 1, visits: 1, freemium: 210, paid: 10 }, '2027-02': { views: 1, visits: 1, freemium: 210, paid: 10 } };
-  // Thiếu opening: flow vẫn có, churn/EOM/Revenue/COGS/Profit null.
+  // Thiếu opening: flow vẫn có, churn/EOM/Revenue/COGS null; Profit vẫn là số = −Budget (Profit2 trừ thêm fixed_cost).
   let out = domain.computeOperatingFinancials({ months: ['2027-01'], funnelByMonth: funnel, budgetByMonth: { '2027-01': 100 }, inputsByMonth: { '2027-01': FULL }, openingFree: null, openingPaid: null });
   assert.equal(out.missing.opening, true);
   assert.equal(out.months[0].newPaid, 10, 'flow vẫn hiện khi thiếu opening (cohort; cvr null)');
   assert.equal(out.months[0].newFree, 200, 'New Free = Free user − New Paid vẫn hiện');
-  for (const k of ['paidChurn', 'freeChurn', 'paidEom', 'freeEom', 'totalUsers', 'revenue', 'cogs', 'cogsFree', 'cogsPaid', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt']) {
+  for (const k of ['paidChurn', 'freeChurn', 'paidEom', 'freeEom', 'totalUsers', 'revenue', 'cogs', 'cogsFree', 'cogsPaid']) {
     assert.equal(out.months[0][k], null, 'thiếu opening -> ' + k + ' null');
   }
-  // Thiếu paid_price: EOM/COGS tính được, Revenue + 2 Profit null.
+  approx(out.months[0].profitAfterCogsMkt, -100, 'thiếu opening -> Profit1 vẫn là số = −Budget 100 (mọi thành phần tạm tính 0)');
+  approx(out.months[0].profitAfterCogsFixedMkt, -100 - 200000, 'thiếu opening -> Profit2 = Profit1 − fixed_cost 200.000');
+  // Thiếu paid_price: EOM/COGS tính được, Revenue null; Profit vẫn là số.
   out = domain.computeOperatingFinancials({ months: ['2027-01'], funnelByMonth: funnel, budgetByMonth: { '2027-01': 100 }, inputsByMonth: { '2027-01': { ...FULL, paid_price: null } }, openingFree: 1000, openingPaid: 100 });
   assert.equal(out.missing.paid_price, true);
   approx(out.months[0].paidEom, 108.9, 'thiếu paid_price vẫn có EOM');
   approx(out.months[0].cogs, 13875500, 'thiếu paid_price vẫn có COGS');
   assert.equal(out.months[0].revenue, null);
-  assert.equal(out.months[0].profitAfterCogsMkt, null);
-  assert.equal(out.months[0].profitAfterCogsFixedMkt, null);
-  // Thiếu cogs_per_paid_user: cogsFree còn, cogsPaid + tổng + Profit null.
+  approx(out.months[0].profitAfterCogsMkt, -13875500 - 100, 'thiếu paid_price -> Profit1 = 0 − COGS − Budget');
+  approx(out.months[0].profitAfterCogsFixedMkt, -13875500 - 100 - 200000, 'thiếu paid_price -> Profit2 = Profit1 − fixed_cost');
+  // Thiếu cogs_per_paid_user: cogsFree còn, cogsPaid + tổng null; Profit vẫn là số dùng phần COGS còn lại.
   out = domain.computeOperatingFinancials({ months: ['2027-01'], funnelByMonth: funnel, budgetByMonth: { '2027-01': 100 }, inputsByMonth: { '2027-01': { ...FULL, cogs_per_paid_user: null } }, openingFree: 1000, openingPaid: 100 });
   assert.equal(out.missing.cogs_per_paid_user, true);
   assert.equal(out.missing.cogs_per_free_user, false);
   approx(out.months[0].cogsFree, 11697500, 'cogsFree vẫn tính được');
   assert.equal(out.months[0].cogsPaid, null);
   assert.equal(out.months[0].cogs, null, 'thiếu 1 đơn giá -> COGS tổng null');
-  assert.equal(out.months[0].profitAfterCogsMkt, null);
+  approx(out.months[0].profitAfterCogsMkt, 5118300 - 11697500 - 100, 'thiếu cogsPaid -> Profit1 = Revenue − cogsFree (cogsPaid tạm tính 0) − Budget');
   approx(out.months[0].revenue, 5118300, 'Revenue không bị ảnh hưởng bởi thiếu COGS');
-  // Thiếu fixed_cost: chỉ Profit cuối null.
+  // Thiếu fixed_cost: Profit2 = Profit1 (fixed_cost tạm tính 0).
   out = domain.computeOperatingFinancials({ months: ['2027-01'], funnelByMonth: funnel, budgetByMonth: { '2027-01': 100 }, inputsByMonth: { '2027-01': { ...FULL, fixed_cost: null } }, openingFree: 1000, openingPaid: 100 });
   assert.ok(out.months[0].profitAfterCogsMkt !== null, 'thiếu fixed_cost vẫn có Profit (after COGS + mkt)');
-  assert.equal(out.months[0].profitAfterCogsFixedMkt, null);
+  approx(out.months[0].profitAfterCogsMkt, 5118300 - 13875500 - 100, 'Profit1 khi thiếu fixed_cost');
+  approx(out.months[0].profitAfterCogsFixedMkt, 5118300 - 13875500 - 100, 'thiếu fixed_cost -> Profit2 = Profit1');
   // Thiếu free_churn_rate ở tháng 1: chuỗi đứt — tháng 2 đủ input vẫn null.
   out = domain.computeOperatingFinancials({ months: ['2027-01', '2027-02'], funnelByMonth: funnel, budgetByMonth: {}, inputsByMonth: { '2027-01': { ...FULL, free_churn_rate: null }, '2027-02': FULL }, openingFree: 1000, openingPaid: 100 });
   assert.equal(out.missing.free_churn_rate, true);
   assert.equal(out.months[0].freeEom, null);
   assert.equal(out.months[1].freeEom, null, 'chuỗi đã đứt thì tháng sau không tự hồi (không điền 0 lặng lẽ)');
   assert.equal(out.totals.freeEom, null);
+});
+
+test('POF-PROFIT [domain]: (i) thiếu cogsFree -> Profit1 là số = Revenue + Revenue B2B − cogsPaid − cogsB2b − Budget (cogsFree tính 0); Revenue/COGS giữ hành vi null riêng', () => {
+  const out = domain.computeOperatingFinancials({
+    months: ['2027-01'],
+    funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 210, paid: 10 } },
+    budgetByMonth: { '2027-01': 1000000 },
+    inputsByMonth: { '2027-01': { ...FULL, cogs_per_free_user: null } },
+    openingFree: 1000, openingPaid: 100
+  });
+  const r = out.months[0];
+  assert.equal(r.cogsFree, null, '(iv) cogsFree vẫn null khi thiếu đơn giá Free');
+  assert.equal(r.cogs, null, '(iv) COGS tổng vẫn null khi thiếu một phần');
+  approx(r.cogsPaid, 2178000, 'cogsPaid vẫn tính được = 20.000 x 108,9');
+  approx(r.revenue, 5118300, 'Revenue không đổi');
+  assert.equal(r.revenueB2b, 0); assert.equal(r.cogsB2b, 0);
+  approx(r.profitAfterCogsMkt, 5118300 + 0 - 2178000 - 0 - 1000000, '(i) Profit1 = Revenue + Revenue B2B − cogsPaid − cogsB2b − Budget = 1.940.300');
+  approx(r.profitAfterCogsFixedMkt, 1940300 - 200000, '(i) Profit2 = Profit1 − fixed_cost');
+  assert.equal(out.missing.cogs_per_free_user, true, 'cờ missing không đổi');
+});
+
+test('POF-PROFIT [domain]: (ii) thiếu fixedCost -> Profit2 = Profit1; (iii) thiếu mọi thành phần -> Profit1 = −Budget, có fixedCost thì Profit2 = −Budget − fixedCost', () => {
+  // (ii)
+  let out = domain.computeOperatingFinancials({
+    months: ['2027-01'],
+    funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 210, paid: 10 } },
+    budgetByMonth: { '2027-01': 1000000 },
+    inputsByMonth: { '2027-01': { ...FULL, fixed_cost: null } },
+    openingFree: 1000, openingPaid: 100
+  });
+  approx(out.months[0].profitAfterCogsMkt, -9757200, '(ii) Profit1 ca đủ trừ fixed');
+  approx(out.months[0].profitAfterCogsFixedMkt, -9757200, '(ii) Profit2 = Profit1 khi thiếu fixedCost');
+  assert.equal(out.missing.fixed_cost, true, 'cờ missing.fixed_cost không đổi');
+  // (iii) thiếu mọi thành phần: opening null + mọi input null, Budget 500.000
+  const ALL_NULL = { paid_churn_rate: null, free_churn_rate: null, monthly_cvr: null, paid_price: null, cogs_per_free_user: null, cogs_per_paid_user: null, fixed_cost: null };
+  out = domain.computeOperatingFinancials({
+    months: ['2027-01'],
+    funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 210, paid: 10 } },
+    budgetByMonth: { '2027-01': 500000 },
+    inputsByMonth: { '2027-01': ALL_NULL },
+    openingFree: null, openingPaid: null
+  });
+  assert.equal(out.months[0].revenue, null, '(iv) Revenue vẫn null khi thiếu mọi thành phần');
+  assert.equal(out.months[0].cogs, null, '(iv) COGS vẫn null khi thiếu mọi thành phần');
+  approx(out.months[0].profitAfterCogsMkt, -500000, '(iii) Profit1 = −Budget');
+  approx(out.months[0].profitAfterCogsFixedMkt, -500000, '(iii) Profit2 = Profit1 khi fixedCost cũng thiếu');
+  // (iii-b) thiếu mọi thành phần nhưng CÓ fixedCost 300.000
+  out = domain.computeOperatingFinancials({
+    months: ['2027-01'],
+    funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 210, paid: 10 } },
+    budgetByMonth: { '2027-01': 500000 },
+    inputsByMonth: { '2027-01': { ...ALL_NULL, fixed_cost: 300000 } },
+    openingFree: null, openingPaid: null
+  });
+  approx(out.months[0].profitAfterCogsMkt, -500000, '(iii-b) Profit1 = −Budget');
+  approx(out.months[0].profitAfterCogsFixedMkt, -500000 - 300000, '(iii-b) Profit2 = −Budget − fixedCost');
+});
+
+test('POF-PROFIT [domain]: (v) cột Tổng 2 dòng Profit = tổng các tháng ngay cả khi vài tháng thiếu thành phần; (vi) ca đủ đầu vào Profit không đổi so với engine trước sửa', () => {
+  // (vi) ca đủ đầu vào = ca tính tay chuẩn: Profit1 −9.757.200, Profit2 −9.957.200 (đã đối chiếu HEAD cũ)
+  const full = domain.computeOperatingFinancials({
+    months: ['2027-01'],
+    funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 210, paid: 10 } },
+    budgetByMonth: { '2027-01': 1000000 },
+    inputsByMonth: { '2027-01': FULL },
+    openingFree: 1000, openingPaid: 100
+  });
+  approx(full.months[0].profitAfterCogsMkt, -9757200, '(vi) Profit1 đủ đầu vào không đổi');
+  approx(full.months[0].profitAfterCogsFixedMkt, -9957200, '(vi) Profit2 đủ đầu vào không đổi');
+  // (v) 2 tháng: T1 đủ, T2 thiếu paid_price (Revenue T2 null)
+  const out = domain.computeOperatingFinancials({
+    months: ['2027-01', '2027-02'],
+    funnelByMonth: {
+      '2027-01': { views: 0, visits: 0, freemium: 210, paid: 10 },
+      '2027-02': { views: 0, visits: 0, freemium: 210, paid: 10 }
+    },
+    budgetByMonth: { '2027-01': 1000000, '2027-02': 500000 },
+    inputsByMonth: { '2027-01': FULL, '2027-02': { ...FULL, paid_price: null } },
+    openingFree: 1000, openingPaid: 100
+  });
+  assert.equal(out.months[1].revenue, null, '(iv) Revenue T2 vẫn null khi thiếu paid_price');
+  assert.equal(out.totals.revenue, null, '(iv) cột Tổng Revenue vẫn null khi có tháng null');
+  assert.equal(out.totals.cogs, 13875500 + 15338065, 'cột Tổng COGS vẫn cộng được (cả 2 tháng đều có COGS)');
+  approx(out.months[1].profitAfterCogsMkt, -15338065 - 500000, '(v) Profit1 T2 = 0 − COGS T2 15.338.065 − Budget 500.000');
+  approx(out.totals.profitAfterCogsMkt, -9757200 + (-15838065), '(v) Tổng Profit1 = tổng 2 tháng dù Revenue T2 null');
+  approx(out.totals.profitAfterCogsFixedMkt, -9957200 + (-16038065), '(v) Tổng Profit2 = tổng 2 tháng dù Revenue T2 null');
 });
 
 test('POF [domain]: Free EOM âm -> kẹp về 0 và đánh dấu freeClamped', () => {
@@ -407,7 +500,7 @@ test('POF [app unit]: planningOperatingData + bảng — ca tính tay MỚI qua 
   assert.ok(all.includes('data-planning-operating-row="freeEom"'));
 });
 
-test('POF [app unit]: thiếu đầu vào ở app — Phase chưa nhập gì (như demo) thì churn/EOM/Revenue/Profit hiện "—" kèm ghi chú thiếu, flow vẫn hiện', () => {
+test('POF [app unit]: thiếu đầu vào ở app — Phase chưa nhập gì (như demo) thì churn/EOM/Revenue hiện "—" kèm ghi chú thiếu, flow vẫn hiện, riêng 2 dòng Profit luôn hiện số', () => {
   const rows = opRows();
   const phases = opPhases(false);
   const { h } = makeHarness(rows, phases, OP_BENCH, []);
@@ -417,6 +510,9 @@ test('POF [app unit]: thiếu đầu vào ở app — Phase chưa nhập gì (nh
   assert.equal(data.missing.paid_price, true);
   assert.equal(data.months[0].freeEom, null);
   assert.equal(data.months[0].budget, 1000000, 'Budget vẫn hiện');
+  approx(data.months[0].profitAfterCogsMkt, -1000000, 'thiếu mọi thành phần -> Profit1 = −Budget');
+  approx(data.months[0].profitAfterCogsFixedMkt, -1000000, 'thiếu fixed_cost -> Profit2 = Profit1');
+  approx(data.totals.profitAfterCogsMkt, -1000000, 'cột Tổng Profit1 vẫn là số khi thiếu đầu vào');
   const html = h.planningOperatingTableHtml(rows, OP_BENCH, ['2027-01']);
   const cell = (key) => {
     const m = new RegExp('<td data-planning-operating-cell="' + key + '" data-month="2027-01">([^<]*)</td>').exec(html);
@@ -424,10 +520,37 @@ test('POF [app unit]: thiếu đầu vào ở app — Phase chưa nhập gì (nh
   };
   assert.equal(cell('freeEom'), '—');
   assert.equal(cell('revenue'), '—');
-  assert.equal(cell('profitAfterCogsFixedMkt'), '—');
+  assert.equal(cell('profitAfterCogsMkt'), '-1.000.000 VND', 'Profit1 luôn hiện số, không còn "—"');
+  assert.equal(cell('profitAfterCogsFixedMkt'), '-1.000.000 VND', 'Profit2 luôn hiện số, không còn "—"');
   assert.equal(cell('budget'), '1.000.000 VND');
   assert.ok(html.includes('Thiếu đầu vào:'), 'phải ghi chú thiếu đầu vào nào');
   assert.ok(html.includes('Paid churn rate'), 'ghi chú phải nêu tên ô thiếu');
+  assert.ok(html.includes('riêng 2 dòng Profit vẫn hiện số'), 'ghi chú thiếu phải nêu ngoại lệ Profit');
+  assert.ok(html.includes('Riêng 2 dòng Profit: thành phần nào thiếu thì tạm tính 0'), 'noteFull phải nêu ngoại lệ Profit');
+});
+
+test('POF-PROFIT [app unit]: gộp đa Brand — một Brand thiếu mọi đầu vào vẫn gộp Profit ra số, Revenue gộp vẫn null', () => {
+  const benches = [
+    OP_BENCH[0],
+    { ...OP_BENCH[0], id: 'bench-x-b2', brand_id: 'b2' },
+  ];
+  const phases = [
+    ...opPhases(true),
+    { id: 'ph-b2', brand_id: 'b2', name: 'Phase B2', start_month: '2027-01', end_month: '2027-01', uplift_percent_per_month: 0 },
+  ];
+  const rows = [
+    ...opRows(),
+    { id: 'r-jan-b2', brand_id: 'b2', segment: 'b2c', month: '2027-01', channel: 'X', group: 'G', qty: 1, budget: null, phase_id: 'ph-b2', unit_price: 1000000 },
+  ];
+  const { h } = makeHarness(rows, phases, benches, []);
+  const data = h.planningOperatingData(rows, benches, ['2027-01']);
+  // Brand b1 (đủ): Profit1 −8.244.000 / Profit2 −8.444.000; Brand b2 (thiếu hết): Profit = −Budget 1.000.000 cả hai dòng.
+  approx(data.months[0].profitAfterCogsMkt, -8244000 + -1000000, 'gộp Profit1 = −9.244.000 (số, không null)');
+  approx(data.months[0].profitAfterCogsFixedMkt, -8444000 + -1000000, 'gộp Profit2 = −9.444.000 (số, không null)');
+  assert.equal(data.months[0].revenue, null, 'gộp Revenue vẫn null vì Brand b2 thiếu Revenue (phạm vi không lan)');
+  approx(data.totals.profitAfterCogsMkt, -9244000, 'cột Tổng Profit1 gộp đa Brand là số');
+  approx(data.totals.profitAfterCogsFixedMkt, -9444000, 'cột Tổng Profit2 gộp đa Brand là số');
+  assert.equal(data.totals.revenue, null, 'cột Tổng Revenue vẫn null');
 });
 
 test('POF [app unit]: lưu ô Phase — tỉ lệ nhập % lưu dạng phân số (gồm monthly_cvr) và hiển thị lại đúng %; tiền >= 0; xoá trắng về null (thiếu); validate chặn 101% / âm', () => {
@@ -458,9 +581,9 @@ test('POF [app unit]: lưu ô Phase — tỉ lệ nhập % lưu dạng phân s�
   const data = h.planningOperatingData(rows, OP_BENCH, ['2027-01']);
   approx(data.months[0].freeEom, 1160, 'Free EOM tính được sau khi nhập churn + opening qua hàm lưu (thiếu fixed_cost không chặn EOM)');
   approx(data.months[0].revenue, 5445000, 'Revenue tính được sau khi có paid_price');
-  assert.equal(data.months[0].profitAfterCogsFixedMkt, null, 'thiếu fixed_cost -> chỉ Profit cuối là —');
+  approx(data.months[0].profitAfterCogsFixedMkt, -8244000, 'thiếu fixed_cost -> Profit2 = Profit1 (fixed_cost tạm tính 0)');
   h.savePhaseOperatingMoney('ph-1', 'fixed_cost', '200000');
-  approx(h.planningOperatingData(rows, OP_BENCH, ['2027-01']).months[0].profitAfterCogsFixedMkt, -8444000, 'nhập fixed_cost xong Profit cuối hiện ngay');
+  approx(h.planningOperatingData(rows, OP_BENCH, ['2027-01']).months[0].profitAfterCogsFixedMkt, -8444000, 'nhập fixed_cost xong Profit cuối trừ thêm 200.000 ngay');
   // monthly_cvr nhập % lưu phân số; New Paid thêm nguồn chuyển đổi:
   // 10 + 1.000 x 1% = 20 -> Free EOM = 1.000 + 200 − 20 − 30 = 1.150;
   // Paid churn = (100 + 20) x 2% x 0,5 = 1,2 -> Paid EOM = 118,8.

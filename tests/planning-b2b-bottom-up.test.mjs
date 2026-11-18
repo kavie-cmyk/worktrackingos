@@ -171,7 +171,7 @@ test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b c
   assert.deepEqual(out.missingB2b, { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false });
 });
 
-test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ đầu vào B2B nào thì Revenue B2B / COGS B2B = 0 và Profit KHÔNG hiện "—" oan; thiếu arppu_b2b KHI CÓ account thì mới null', () => {
+test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ đầu vào B2B nào thì Revenue B2B / COGS B2B = 0 và Profit KHÔNG hiện "—" oan; thiếu arppu_b2b KHI CÓ account thì Revenue B2B vẫn null nhưng Profit vẫn là số (Revenue B2B tạm tính 0)', () => {
   const base = {
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 0, paid: 10, b2b: 0 } },
@@ -187,7 +187,7 @@ test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ
   // COGS = 10.000 x 965 + 10.000 x 108,9 = 10.739.000; Profit 2 = 5.445.000 - 10.739.000 - 1.000.000 - 200.000.
   approx(r.profitAfterCogsFixedMkt, -6494000, 'Profit bằng đúng ca B2C thuần (công thức MỚI) khi không có B2B');
   assert.deepEqual(out.missingB2b, { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false }, 'không hoạt động B2B thì không báo thiếu đầu vào B2B');
-  // Có account mới + opening_b2b nhưng thiếu arppu_b2b -> Revenue B2B null, Profit null, missingB2b.arppu_b2b = true.
+  // Có account mới + opening_b2b nhưng thiếu arppu_b2b -> Revenue B2B null, missingB2b.arppu_b2b = true; Profit vẫn là số (Revenue B2B tạm tính 0, Zac chốt 18/11).
   const out2 = domain.computeOperatingFinancials({
     ...base,
     funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 0, paid: 10, b2b: 8 } },
@@ -195,7 +195,9 @@ test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ
     openingB2b: 50
   });
   assert.equal(out2.months[0].revenueB2b, null, 'có tồn B2B mà thiếu arppu_b2b -> Revenue B2B null');
-  assert.equal(out2.months[0].profitAfterCogsMkt, null, 'Profit null theo Revenue B2B');
+  // Revenue B2C 5.445.000 − COGS B2C 10.739.000 − COGS B2B 1.680.000 − Budget 1.000.000 (Revenue B2B tính 0)
+  approx(out2.months[0].profitAfterCogsMkt, 5445000 - 10739000 - 1680000 - 1000000, 'Profit vẫn là số khi Revenue B2B null (tạm tính 0) = −7.974.000');
+  approx(out2.months[0].profitAfterCogsFixedMkt, -7974000 - 200000, 'Profit2 = Profit1 − fixed_cost');
   assert.equal(out2.missingB2b.arppu_b2b, true);
   approx(out2.months[0].cogsB2b, 30000 * 56, 'COGS B2B vẫn tính được');
   // Có account mới nhưng thiếu opening_b2b -> chuỗi B2B đứt (null), missingB2b.opening_b2b = true.
