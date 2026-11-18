@@ -4702,7 +4702,16 @@
   // thuộc năm đang xem. Tính RIÊNG theo từng Brand rồi cộng theo tháng
   // (mỗi Brand một chuỗi tồn riêng); Brand nào thiếu đầu vào thì chỉ số
   // liên quan của tháng hiện "—" (gộp: null nếu bất kỳ Brand nào null).
-  var OPERATING_KEYS = ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'paidEom', 'freeEom', 'totalUsers', 'arppuEffective', 'revenue', 'cogs', 'cogsFree', 'cogsPaid', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt', 'newB2b', 'b2bChurn', 'b2bEom', 'revenueB2b', 'cogsB2b'];
+  // Bước B II-10: phân loại flow/tồn lấy từ domain (D.OPERATING_FLOW_KEYS
+  // / D.OPERATING_STOCK_KEYS — cùng danh sách computeOperatingFinancials
+  // dùng cho cột Tổng của nó); arppuEffective là tỉ lệ, thuộc nhóm riêng
+  // (xem I-8 ở planningOperatingData). Thiếu domain thì danh sách cũ.
+  var OPERATING_KEYS = (D && Array.isArray(D.OPERATING_FLOW_KEYS) && Array.isArray(D.OPERATING_STOCK_KEYS))
+    ? D.OPERATING_FLOW_KEYS.concat(D.OPERATING_STOCK_KEYS).concat(['arppuEffective'])
+    : ['budget', 'reach', 'visits', 'freeUser', 'newPaid', 'newFree', 'paidChurn', 'freeChurn', 'paidEom', 'freeEom', 'totalUsers', 'arppuEffective', 'revenue', 'cogs', 'cogsFree', 'cogsPaid', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt', 'newB2b', 'b2bChurn', 'b2bEom', 'revenueB2b', 'cogsB2b'];
+  var OPERATING_STOCK_SET = {};
+  ((D && Array.isArray(D.OPERATING_STOCK_KEYS)) ? D.OPERATING_STOCK_KEYS : ['paidEom', 'freeEom', 'totalUsers', 'b2bEom'])
+    .concat(['arppuEffective']).forEach(function (k) { OPERATING_STOCK_SET[k] = true; });
   function planningOperatingData(rows, benchmarks, months) {
     try {
       if (!D || typeof D.computeOperatingFinancials !== 'function') return null;
@@ -4771,11 +4780,20 @@
           });
           out[k] = ok ? sum : null;
         });
+        // Bước B I-8: ARPPU KHÔNG cộng dồn qua Brand (30.000 + 50.000
+        // = 80.000 là sai). Khi gộp NHIỀU Brand: ARPPU tháng tính lại
+        // từ hai tổng đã gộp = ΣRevenue ÷ ΣPaid EOM (trung bình gia
+        // quyền theo Paid EOM); ΣPaid EOM = 0 hoặc thiếu tổng -> null
+        // ("—"). MỘT Brand giữ nguyên giá trị của Brand đó như trước.
+        if (perBrand.length > 1) {
+          out.arppuEffective = (out.revenue !== null && out.revenue !== undefined && out.paidEom !== null && out.paidEom !== undefined && Number(out.paidEom) !== 0)
+            ? out.revenue / out.paidEom : null;
+        }
         return out;
       });
       var totals = {};
       OPERATING_KEYS.forEach(function (k) {
-        if (k === 'paidEom' || k === 'freeEom' || k === 'totalUsers' || k === 'b2bEom' || k === 'arppuEffective') {
+        if (OPERATING_STOCK_SET[k]) {
           totals[k] = mergedMonths.length ? mergedMonths[mergedMonths.length - 1][k] : null;
           return;
         }
@@ -6547,20 +6565,16 @@
   }
 
   function vizKpiRowFor(k) {
-    var roll = kpiRollupFor(k);
-    var mode = String(k.aggregationMode || k.aggregation_mode || 'direct').toLowerCase();
-    var state = vizKpiState(roll);
-    if (!roll && state.kind !== 'ok') {
-      var d = D.kpiDisplay(k);
-      if (d.isMissing) state = { kind: 'insufficient_data', label: 'Chưa cập nhật', value: null, pct: null };
-      else state = { kind: 'ok', label: '', value: d.value, pct: vizPct(d.value, k.target) };
-    }
+    // Quyết định "thực đạt nào thắng" qua kpiActualDisplay (Bước B
+    // II-11 — một nguồn); ở đây chỉ định dạng state/actualText.
+    var disp = kpiActualDisplay(k);
+    var state = disp.state;
     var actualText = '';
     var targetText = fmtNum(k.target) + (k.unit ? ' ' + k.unit : '');
     if (state.kind === 'ok') {
-      actualText = (mode === 'ratio' ? fmtNum(Math.round(state.value)) : fmtNum(state.value)) + (k.unit ? ' ' + k.unit : '');
+      actualText = (disp.mode === 'ratio' ? fmtNum(Math.round(state.value)) : fmtNum(state.value)) + (k.unit ? ' ' + k.unit : '');
     }
-    return { kpi: k, name: k.name, scopeLabel: kpiScopeLabel(k), state: state, actualText: actualText, targetText: targetText, roll: roll };
+    return { kpi: k, name: k.name, scopeLabel: kpiScopeLabel(k), state: state, actualText: actualText, targetText: targetText, roll: disp.roll };
   }
   function vizKpiProgressHtml(kpis) {
     if (!kpis || !kpis.length) return '<p class="sub">Chưa có KPI nào để vẽ tiến độ.</p>';
@@ -6891,17 +6905,40 @@
     if (mode === 'ratio') return k.numerator !== null && k.numerator !== undefined && k.denominator !== null && k.denominator !== undefined && Number(k.denominator) !== 0;
     return true;
   }
-  function kpiSummaryHtml(k) {
-    var r = kpiRollupFor(k);
-    var mode = String(k.aggregationMode || 'direct').toLowerCase();
-    var autoHtml = kpiAutoInfoHtml(k);
-    if (r && r.status === 'insufficient_data') return '<span class="badge warn">Chưa đủ dữ liệu</span>' + autoHtml;
-    if (r && r.value !== null && r.value !== undefined) {
-      if (mode === 'ratio') return fmtNum(Math.round(r.value)) + ' ' + esc(k.unit || '') + ' <span class="sub">(phạm vi: ' + esc(kpiScopeLabel(k)) + ')</span>' + autoHtml;
-      return fmtNum(r.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + (r.achievementPercent !== null && r.achievementPercent !== undefined ? ' (' + fmtNum(r.achievementPercent) + '%)' : '') + autoHtml;
+  // Quyết định HIỂN THỊ thực đạt của 1 KPI — MỘT nguồn duy nhất
+  // (Bước B II-11) cho vizKpiRowFor, kpiSummaryHtml và ô thực đạt ở
+  // viewKpi: rollup (D.rollupKpi qua kpiRollupFor) THẮNG khi có giá
+  // trị; rollup insufficient_data -> 'insufficient' (không rơi xuống
+  // số tay); không có rollup mới dùng D.kpiDisplay (thiếu -> 'missing'
+  // "Chưa cập nhật"). Trả { kind, source, value, pct, roll, mode,
+  // state } — state theo đúng shape vizKpiState để lớp viz dùng thẳng;
+  // định dạng chữ (ratio làm tròn, "/ target", %) vẫn ở từng nơi gọi.
+  function kpiActualDisplay(k) {
+    var roll = kpiRollupFor(k);
+    var mode = String(k.aggregationMode || k.aggregation_mode || 'direct').toLowerCase();
+    var state = vizKpiState(roll);
+    if (roll && roll.status === 'insufficient_data') {
+      return { kind: 'insufficient', label: 'Chưa đủ dữ liệu', value: null, pct: null, roll: roll, mode: mode, source: 'rollup', state: state };
     }
-    var d = D.kpiDisplay(k);
-    return (d.isMissing ? '<span class="badge warn">Chưa cập nhật</span>' : fmtNum(d.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '')) + autoHtml;
+    if (roll && roll.value !== null && roll.value !== undefined) {
+      return { kind: 'ok', value: roll.value, pct: (roll.achievementPercent === undefined ? null : roll.achievementPercent), roll: roll, mode: mode, source: 'rollup', state: state };
+    }
+    if (!roll) {
+      var d = D.kpiDisplay(k);
+      if (d.isMissing) return { kind: 'missing', label: 'Chưa cập nhật', value: null, pct: null, roll: null, mode: mode, source: 'display', state: { kind: 'insufficient_data', label: 'Chưa cập nhật', value: null, pct: null } };
+      var pctD = vizPct(d.value, k.target);
+      return { kind: 'ok', value: d.value, pct: pctD, roll: null, mode: mode, source: 'display', state: { kind: 'ok', label: '', value: d.value, pct: pctD } };
+    }
+    return { kind: 'insufficient', label: state.label || 'Chưa đủ dữ liệu', value: null, pct: null, roll: roll, mode: mode, source: 'rollup', state: state };
+  }
+  function kpiSummaryHtml(k) {
+    var disp = kpiActualDisplay(k);
+    var autoHtml = kpiAutoInfoHtml(k);
+    if (disp.kind === 'insufficient') return '<span class="badge warn">Chưa đủ dữ liệu</span>' + autoHtml;
+    if (disp.kind === 'missing') return '<span class="badge warn">Chưa cập nhật</span>' + autoHtml;
+    if (disp.source === 'rollup' && disp.mode === 'ratio') return fmtNum(Math.round(disp.value)) + ' ' + esc(k.unit || '') + ' <span class="sub">(phạm vi: ' + esc(kpiScopeLabel(k)) + ')</span>' + autoHtml;
+    if (disp.source === 'rollup') return fmtNum(disp.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + (disp.pct !== null && disp.pct !== undefined ? ' (' + fmtNum(disp.pct) + '%)' : '') + autoHtml;
+    return fmtNum(disp.value) + ' / ' + fmtNum(k.target) + ' ' + esc(k.unit || '') + autoHtml;
   }
   function activityTasks(act) { return Store.list('tasks').filter(function (t) { return t.activityId === act.id && !isArchived(t); }); }
   function activityStatusInfo(act, tasks) {
@@ -8137,10 +8174,14 @@
         ? (D.formatDateVN(k.periodStart) || '…') + ' — ' + (D.formatDateVN(k.periodEnd) || '…')
         : (k.period || '');
       var defText = (k.definition === null || k.definition === undefined) ? '—' : (typeof k.definition === 'string' ? k.definition : (k.definition.description || k.definition.how || '—'));
+      // Bước B II-11: ô thực đạt qua kpiActualDisplay (một quyết định
+      // chung với vizKpiRowFor + kpiSummaryHtml); ở đây chỉ định dạng.
+      var dispK = kpiActualDisplay(k);
       var actualCell;
-      if (roll && roll.status === 'insufficient_data') actualCell = '<span class="badge warn">Chưa đủ dữ liệu</span>';
-      else if (roll && roll.value !== null && roll.value !== undefined) actualCell = fmtNum(String(k.aggregationMode || '').toLowerCase() === 'ratio' ? Math.round(roll.value) : roll.value) + ' ' + esc(k.unit || '') + (roll.achievementPercent !== null && roll.achievementPercent !== undefined ? '<br><span class="sub">Mức đạt: ' + fmtNum(roll.achievementPercent) + '%</span>' : '');
-      else actualCell = d.isMissing ? '<span class="badge warn">Chưa cập nhật</span>' : fmtNum(d.value) + ' ' + esc(k.unit || '');
+      if (dispK.kind === 'insufficient') actualCell = '<span class="badge warn">Chưa đủ dữ liệu</span>';
+      else if (dispK.kind === 'missing') actualCell = '<span class="badge warn">Chưa cập nhật</span>';
+      else if (dispK.source === 'rollup') actualCell = fmtNum(dispK.mode === 'ratio' ? Math.round(dispK.value) : dispK.value) + ' ' + esc(k.unit || '') + (dispK.pct !== null && dispK.pct !== undefined ? '<br><span class="sub">Mức đạt: ' + fmtNum(dispK.pct) + '%</span>' : '');
+      else actualCell = fmtNum(dispK.value) + ' ' + esc(k.unit || '');
       var kAuto = isKpiAuto(k);
       var kAutoAa = k.autoActual || k.auto_actual || null;
       var kUpdatedAt = kAuto && kAutoAa && kAutoAa.latestObservedAt ? kAutoAa.latestObservedAt : k.updatedAt;
