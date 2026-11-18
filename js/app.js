@@ -6151,13 +6151,18 @@
       (over ? ' <span class="badge st-overdue">Vượt năng lực</span>' : '') + '</div>';
   }
   // WAVE-B3: điểm số dư LŨY KẾ theo tháng cho biểu đồ đường Thu–Chi.
-  // Thuần trình bày: chỉ cộng dồn trường `net` (Thu − Chi) mà vizCashMonthly
+  // Thuần trình bày: cộng dồn trường `net` (Thu − Chi) mà vizCashMonthly
   // đã gom theo tháng ở trên — không đọc fact gốc, không định nghĩa số mới.
   // Tháng không rõ ('unknown') bị loại khỏi đường lũy kế (không suy diễn kỳ).
-  function vizCashCumulativePoints(monthly, currency) {
+  // Bước B I-6: điểm bắt đầu = `opening` (tổng opening_balance của các
+  // tài khoản thuộc currency đó, do nơi gọi truyền vào) — trước đây
+  // đường bắt đầu từ 0 nên lệch đúng tổng opening so với bảng số dư
+  // bên dưới (bảng gồm opening theo từng tài khoản). Không truyền
+  // opening -> 0 như cũ (tương thích caller/test cũ).
+  function vizCashCumulativePoints(monthly, currency, opening) {
     var rows = (monthly || []).filter(function (m) { return m && /^\d{4}-\d{2}$/.test(String(m.month)) && (!currency || m.currency === currency); })
       .slice().sort(function (a, b) { return String(a.month).localeCompare(String(b.month)); });
-    var bal = 0;
+    var bal = Number(opening) || 0;
     return rows.map(function (m) { bal += Number(m.net) || 0; return { x: vizMonthLabel(m.month), y: bal }; });
   }
   // WAVE-B3: timeline mốc ngày ngang (vd Hạn sản xuất → Hạn duyệt → Ngày
@@ -6616,8 +6621,20 @@
     } catch (e) { /* rơi xuống tính từ dữ liệu Store hiện tại bên dưới */ }
     var txns = listSafe('cashTransactions');
     return listSafe('cashAccounts').map(function (acc) {
-      var bal = Number(acc.openingBalance || acc.opening_balance || 0);
-      txns.forEach(function (t) { if (t.accountId === acc.id) bal += t.direction === 'in' ? (Number(t.amount) || 0) : -(Number(t.amount) || 0); });
+      // Bước B II-12: số dư qua MỘT công thức ở domain
+      // (D.cashBalanceFor — khớp SQL view + Store): direction khác
+      // 'in'/'out' bị bỏ qua, không còn coi mọi direction lạ là chi.
+      var bal = (D && typeof D.cashBalanceFor === 'function')
+        ? D.cashBalanceFor(acc, txns)
+        : (function () {
+          var b = Number(acc.openingBalance || acc.opening_balance || 0);
+          txns.forEach(function (t) {
+            if (t.accountId !== acc.id) return;
+            if (t.direction === 'in') b += Number(t.amount) || 0;
+            else if (t.direction === 'out') b -= Number(t.amount) || 0;
+          });
+          return b;
+        })();
       return { accountId: acc.id, currency: acc.currency || 'VND', balance: bal };
     });
   }
@@ -6639,8 +6656,15 @@
     // WAVE-B3: đường số dư lũy kế theo tháng — điểm tháng lấy từ chính
     // vizCashMonthly ở trên (net từng tháng), cộng dồn thuần trình bày qua
     // vizCashCumulativePoints; đường nằm ngay dưới cột Thu/Chi cùng tiền tệ.
+    // Bước B I-6: opening của đường = tổng opening_balance của các tài
+    // khoản thuộc currency đó (cùng số dư mở đầu mà bảng số dư dùng).
+    var openingByCur = {};
+    accounts.forEach(function (a) {
+      var cur = a.currency || 'VND';
+      openingByCur[cur] = (openingByCur[cur] || 0) + (Number(a.openingBalance || a.opening_balance || 0) || 0);
+    });
     html += curs.map(function (cur) {
-      var pts = vizCashCumulativePoints(monthly, cur);
+      var pts = vizCashCumulativePoints(monthly, cur, openingByCur[cur] || 0);
       if (!pts.length) return '';
       return '<h4>Đường số dư lũy kế theo tháng (' + esc(cur) + ')</h4><div data-viz="cash-balance-line">' + vizLineAreaSvgHtml({ points: pts, yLabel: 'Số dư lũy kế (' + cur + ')', emptyText: 'Chưa có tháng rõ ràng để vẽ đường số dư lũy kế.' }) + '</div>';
     }).join('');

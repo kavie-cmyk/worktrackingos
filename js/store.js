@@ -3534,12 +3534,22 @@
           });
       }
       var self2 = this;
+      var Domain = this._domain();
       var balances = (this.state.cashAccounts || []).map(function (acc) {
-        var bal = Number(acc.openingBalance || acc.opening_balance || 0);
-        (self2.state.cashTransactions || []).forEach(function (t) {
-          if (t.accountId !== acc.id) return;
-          bal += t.direction === 'in' ? Number(t.amount || 0) : -Number(t.amount || 0);
-        });
+        // Bước B II-12: MỘT công thức số dư ở domain (D.cashBalanceFor
+        // — khớp SQL view cash_account_balances): direction khác
+        // 'in'/'out' bị bỏ qua thay vì coi là chi như bản sao cũ.
+        var bal = (Domain && typeof Domain.cashBalanceFor === 'function')
+          ? Domain.cashBalanceFor(acc, self2.state.cashTransactions || [])
+          : (function () {
+            var b = Number(acc.openingBalance || acc.opening_balance || 0);
+            (self2.state.cashTransactions || []).forEach(function (t) {
+              if (t.accountId !== acc.id) return;
+              if (t.direction === 'in') b += Number(t.amount || 0);
+              else if (t.direction === 'out') b -= Number(t.amount || 0);
+            });
+            return b;
+          })();
         return { accountId: acc.id, workspaceId: acc.workspaceId || null, currency: acc.currency || 'VND', balance: bal };
       });
       return { ok: true, balances: balances };

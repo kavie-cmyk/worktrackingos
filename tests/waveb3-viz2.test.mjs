@@ -80,7 +80,9 @@ test('WAVE-B3 [static]: viewKpi dùng vizKpiCardHtml x6 + stacked dòng tiền +
   assert.match(k, /vizCellBarHtml\(\{ value: lineUsed, max: Number\(b\.approved\)/);
   const cash = section('function cashChartHtml()', 'function workspaceChartsHtml()');
   assert.match(cash, /data-viz="cash-balance-line"/);
-  assert.match(cash, /vizCashCumulativePoints\(monthly, cur\)/);
+  // Bước B I-6: lời gọi nay truyền thêm opening của currency (tham số
+  // thứ 3) để đường lũy kế bắt đầu từ tổng opening của các tài khoản.
+  assert.match(cash, /vizCashCumulativePoints\(monthly, cur, openingByCur\[cur\] \|\| 0\)/);
   assert.match(cash, /vizLineAreaSvgHtml/);
   // Vùng PURE vẫn thuần sau khi thêm helper B3.
   assert.doesNotMatch(pureSrc, /Store\.|SAVA_DOMAIN|budgetLines|commitments/);
