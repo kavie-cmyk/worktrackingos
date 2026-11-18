@@ -156,7 +156,7 @@ test('PCID [unit]: bảng KPI Theo tháng hiển thị số nguyên ở mọi ô
 // ---------- [unit] bảng vận hành: hàng đếm số nguyên, tiền giữ nguyên ----------
 test('PCID [unit]: bảng Chỉ số vận hành — hàng đếm (Paid EOM 108,9 -> "109", Total users 1.268,9 -> "1.269", Paid churn 1,1 -> "1") hiển thị số nguyên; hàng tiền giữ fmtMoney', () => {
   const bench = [{ id: 'bench-x', brand_id: 'b1', channel: 'X', unit_price: 1000000, output_per_unit: 200, view_to_visit: 1, visit_to_signup: 1, signup_to_first: 1, first_to_paid: 0.05, direct_budget: false }];
-  const phases = [{ id: 'ph-1', brand_id: 'b1', name: 'Phase 1', start_month: '2027-01', end_month: '2027-01', uplift_percent_per_month: 0, paid_churn_rate: 0.02, free_churn_rate: 0.05, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100 }];
+  const phases = [{ id: 'ph-1', brand_id: 'b1', name: 'Phase 1', start_month: '2027-01', end_month: '2027-01', uplift_percent_per_month: 0, paid_churn_rate: 0.02, free_churn_rate: 0.05, paid_price: 50000, cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100 }];
   const rows = [{ id: 'r-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'X', group: 'G', qty: 1, budget: null, phase_id: 'ph-1' }];
   const { h, UI } = makeHarness(rows, phases, bench, []);
   UI.planningOpeningPhaseIds = { 'ph-1': true };

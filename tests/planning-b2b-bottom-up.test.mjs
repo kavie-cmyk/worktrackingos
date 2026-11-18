@@ -149,7 +149,7 @@ test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b c
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 300, paid: 10, b2b: 8 } },
     budgetByMonth: { '2027-01': 1000000 },
-    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000 } },
+    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price: 50000, cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000 } },
     openingFree: 1000, openingPaid: 100, openingB2b: 50
   });
   const r = out.months[0];
@@ -175,7 +175,7 @@ test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 0, paid: 10, b2b: 0 } },
     budgetByMonth: { '2027-01': 1000000 },
-    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000 } },
+    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price: 50000, cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000 } },
     openingFree: 1000, openingPaid: 100
   };
   const out = domain.computeOperatingFinancials(base);
@@ -232,14 +232,14 @@ test('PB2B [domain+demo] (d): HỒI QUY — đầu vào B2B trống thì mọi s
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 300, paid: 10 } },
     budgetByMonth: { '2027-01': 1000000 },
-    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000 } },
+    inputsByMonth: { '2027-01': { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price: 50000, cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000 } },
     openingFree: 1000, openingPaid: 100
   });
   // LOẠI 3 — tính lại theo công thức MỚI: Free churn = (1.000 + 300) x 5% x 0,5 = 32,5 ->
   // Free EOM = 1.000 + 300 - 10 - 32,5 = 1.257,5; Paid churn = (100 + 10) x 2% x 0,5 = 1,1 -> Paid EOM = 108,9.
   approx(fin.months[0].freeEom, 1257.5, 'Free EOM công thức MỚI = 1257,5');
   approx(fin.months[0].paidEom, 108.9, 'Paid EOM công thức MỚI = 108,9');
-  assert.deepEqual(fin.missing, { opening: false, paid_churn_rate: false, free_churn_rate: false, paid_price_tiers: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false }, 'hợp đồng missing B2C theo key MỚI (paid_price_tiers + cogs tách Free/Paid)');
+  assert.deepEqual(fin.missing, { opening: false, paid_churn_rate: false, free_churn_rate: false, paid_price: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false }, 'hợp đồng missing B2C theo key MỚI (paid_price + cogs tách Free/Paid)');
 });
 
 test('PB2B [demo] seed: audience đúng đặc tả + đầu vào B2B mới để trống (null) — KHÔNG bịa số', () => {
@@ -498,7 +498,7 @@ test('PB2B [app unit]: savePhaseViews — lưu views_per_unit vào phase_assumpt
 
 test('PB2B [app unit]: bảng tài chính Theo tháng có đủ hàng B2B và tính đúng ca (c) qua đường app — New B2B Accounts / B2B churn / B2B EOM / Revenue B2B / COGS B2B', () => {
   const rows = b2bRows();
-  const phases = [{ ...B2B_PHASES[0], paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000, opening_b2b: 50 }];
+  const phases = [{ ...B2B_PHASES[0], paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price: 50000, cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000, opening_b2b: 50 }];
   const { h, UI } = makeHarness(rows, phases, B2B_BENCH, []);
   UI.planningOpeningPhaseIds = { 'ph-1': true };
   const data = h.planningOperatingData(rows, B2B_BENCH, ['2027-01']);

@@ -12,10 +12,11 @@
 //   Paid churn = (Paid EOM trước + New Paid) x paid_churn_rate.
 //   Free EOM = EOM trước + Free user − New Paid − Free churn (kẹp ≥ 0);
 //   Paid EOM = EOM trước + New Paid − Paid churn.
-// - Giá Paid 3 mức: paid_price_tiers [{ price, pct }] (pct = số phần
-//   trăm 0–100, tổng pct ≤ 100); ARPPU hiệu dụng = Σ price x pct/100;
-//   Revenue = ARPPU hiệu dụng x Paid EOM. Vi phạm validate -> coi như
-//   thiếu (missing.paid_price_tiers), Revenue/Profit null.
+// - Giá Paid ĐƠN (thay đổi A 18/11): paid_price = giá Paid duy nhất
+//   của Phase (VNĐ/user/tháng); ARPPU hiệu dụng = paid_price trực
+//   tiếp; Revenue = ARPPU hiệu dụng x Paid EOM. Thiếu giá (null)
+//   hoặc giá âm -> coi như thiếu (missing.paid_price),
+//   Revenue/Profit null.
 // - COGS TÁCH: cogsFree = cogs_per_free_user x Free EOM; cogsPaid =
 //   cogs_per_paid_user x Paid EOM; COGS = cogsFree + cogsPaid. Thiếu
 //   một đơn giá -> phần tương ứng + tổng + Profit null.
@@ -43,11 +44,13 @@ function section(startMarker, endMarker) {
   return src.slice(a, b);
 }
 
-// Bộ đầu vào đầy đủ dùng chung: giá Paid 3 mức 25.000x50% + 49.000x30%
-// + 99.000x20% -> ARPPU hiệu dụng = 12.500 + 14.700 + 19.800 = 47.000đ.
-const TIERS_47K = [{ price: 25000, pct: 50 }, { price: 49000, pct: 30 }, { price: 99000, pct: 20 }];
-const FULL = { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price_tiers: TIERS_47K, cogs_per_free_user: 10000, cogs_per_paid_user: 20000, fixed_cost: 200000 };
-const MISSING_OK = { opening: false, paid_churn_rate: false, free_churn_rate: false, paid_price_tiers: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
+// Bộ đầu vào đầy đủ dùng chung: giá Paid đơn 47.000đ — ĐÚNG bằng
+// ARPPU trọng số của bộ giá cũ trước thay đổi A (25.000x50% +
+// 49.000x30% + 99.000x20% = 12.500 + 14.700 + 19.800 = 47.000đ)
+// nên mọi số kỳ vọng của file này giữ nguyên.
+const PAID_PRICE_47K = 47000;
+const FULL = { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: null, paid_price: PAID_PRICE_47K, cogs_per_free_user: 10000, cogs_per_paid_user: 20000, fixed_cost: 200000 };
+const MISSING_OK = { opening: false, paid_churn_rate: false, free_churn_rate: false, paid_price: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
 
 // ------------------------------------------------- domain: ca tính tay MỚI
 // Tháng đầu: opening Free 1.000 / Paid 100; Free user vào 210, cohort
@@ -65,7 +68,7 @@ const MISSING_OK = { opening: false, paid_churn_rate: false, free_churn_rate: fa
 //   COGS     = 13.875.500
 //   Profit1  = 5.118.300 − 13.875.500 − 1.000.000         = −9.757.200
 //   Profit2  = Profit1 − 200.000                          = −9.957.200
-test('POF [domain]: CA TÍNH TAY MỚI — tháng đầu churn x0,5 trên (đầu kỳ + dòng vào); COGS tách Free/Paid; ARPPU từ 3 mức giá = 47.000', () => {
+test('POF [domain]: CA TÍNH TAY MỚI — tháng đầu churn x0,5 trên (đầu kỳ + dòng vào); COGS tách Free/Paid; ARPPU = paid_price trực tiếp = 47.000', () => {
   const out = domain.computeOperatingFinancials({
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 210, paid: 10 } },
@@ -85,7 +88,7 @@ test('POF [domain]: CA TÍNH TAY MỚI — tháng đầu churn x0,5 trên (đầ
   approx(r.paidChurn, 1.1, 'Paid churn = (100 + 10) x 2% x 0,5 (tháng đầu)');
   approx(r.paidEom, 108.9, 'Paid EOM = 100 + 10 − 1,1');
   approx(r.totalUsers, 1278.65, 'Total users = Free EOM + Paid EOM');
-  approx(r.arppuEffective, 47000, 'ARPPU hiệu dụng = 25.000x50% + 49.000x30% + 99.000x20%');
+  approx(r.arppuEffective, 47000, 'ARPPU hiệu dụng = paid_price trực tiếp = 47.000');
   approx(r.revenue, 47000 * 108.9, 'Revenue = ARPPU hiệu dụng x Paid EOM = 5.118.300');
   approx(r.cogsFree, 10000 * 1169.75, 'cogsFree = cogs_per_free_user x Free EOM');
   approx(r.cogsPaid, 20000 * 108.9, 'cogsPaid = cogs_per_paid_user x Paid EOM');
@@ -118,10 +121,10 @@ test('POF [domain]: (b) New Paid HAI NGUỒN — monthly_cvr 1% trên tồn Free
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 100, paid: 5 } },
     budgetByMonth: {},
-    inputsByMonth: { '2027-01': { paidChurnRate: 0, freeChurnRate: 0, monthlyCvr: 0.01, paidPriceTiers: TIERS_47K, cogsPerFreeUser: 10000, cogsPerPaidUser: 20000, fixedCost: 0 } },
+    inputsByMonth: { '2027-01': { paidChurnRate: 0, freeChurnRate: 0, monthlyCvr: 0.01, paidPrice: PAID_PRICE_47K, cogsPerFreeUser: 10000, cogsPerPaidUser: 20000, fixedCost: 0 } },
     openingFree: 1000, openingPaid: 100
   });
-  assert.equal(out2.months[0].newPaid, 15, 'key camelCase monthlyCvr/paidPriceTiers/cogsPer* cũng đọc được');
+  assert.equal(out2.months[0].newPaid, 15, 'key camelCase monthlyCvr/paidPrice/cogsPer* cũng đọc được');
 });
 
 test('POF [domain]: (c) tháng 2 churn KHÔNG còn x0,5 — chuỗi 2 tháng tính tay', () => {
@@ -152,33 +155,42 @@ test('POF [domain]: (c) tháng 2 churn KHÔNG còn x0,5 — chuỗi 2 tháng tí
   approx(out.totals.paidEom, 116.522, 'Tổng Paid EOM = tháng cuối');
 });
 
-test('POF [domain]: (e) validate paid_price_tiers — tổng pct > 100 hoặc 1 pct > 100 -> Revenue/Profit null + missing.paid_price_tiers; tổng pct < 100 vẫn hợp lệ', () => {
+test('POF [domain]: (e) giá Paid ĐƠN (thay đổi A) — ARPPU = paid_price trực tiếp; thiếu paid_price (null) hoặc giá âm -> Revenue/Profit null + missing.paid_price', () => {
   const base = {
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 210, paid: 10 } },
     budgetByMonth: { '2027-01': 100 },
     openingFree: 1000, openingPaid: 100
   };
-  let out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { ...FULL, paid_price_tiers: [{ price: 25000, pct: 60 }, { price: 49000, pct: 50 }] } } });
-  assert.equal(out.missing.paid_price_tiers, true, 'tổng pct 110 > 100 -> coi như thiếu');
+  // Có giá: ARPPU hiệu dụng bằng ĐÚNG paid_price, không trọng số gì thêm.
+  let out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { ...FULL, paid_price: 25000 } } });
+  assert.equal(out.missing.paid_price, false, 'có paid_price -> không thiếu');
+  approx(out.months[0].arppuEffective, 25000, 'ARPPU hiệu dụng = paid_price trực tiếp');
+  approx(out.months[0].revenue, 25000 * 108.9, 'Revenue = paid_price x Paid EOM');
+  // Thiếu giá (null): EOM vẫn tính được, Revenue + 2 Profit null.
+  out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { ...FULL, paid_price: null } } });
+  assert.equal(out.missing.paid_price, true, 'paid_price null -> coi như thiếu');
   approx(out.months[0].paidEom, 108.9, 'EOM vẫn tính được');
   assert.equal(out.months[0].arppuEffective, null);
   assert.equal(out.months[0].revenue, null);
   assert.equal(out.months[0].profitAfterCogsMkt, null);
   assert.equal(out.months[0].profitAfterCogsFixedMkt, null);
-  out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { ...FULL, paid_price_tiers: [{ price: 25000, pct: 101 }] } } });
-  assert.equal(out.months[0].revenue, null, 'pct từng mức 101 > 100 -> không hợp lệ');
-  assert.equal(out.missing.paid_price_tiers, true);
-  out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { ...FULL, paid_price_tiers: [{ price: 50000, pct: 50 }] } } });
-  assert.equal(out.missing.paid_price_tiers, false, 'tổng pct 50 ≤ 100 là hợp lệ');
-  approx(out.months[0].arppuEffective, 25000, 'ARPPU hiệu dụng = 50.000 x 50%');
-  approx(out.months[0].revenue, 25000 * 108.9, 'Revenue theo ARPPU hiệu dụng');
-  out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { ...FULL, paid_price_tiers: [] } } });
-  assert.equal(out.months[0].revenue, null, 'chưa nhập mức nào (mảng rỗng) -> thiếu như null');
-  assert.equal(out.missing.paid_price_tiers, true);
+  // Không truyền key paid_price (undefined) cũng là thiếu như null.
+  const noPrice = { ...FULL }; delete noPrice.paid_price;
+  out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': noPrice } });
+  assert.equal(out.months[0].revenue, null, 'chưa nhập giá -> thiếu như null');
+  assert.equal(out.missing.paid_price, true);
+  // Giá âm không hợp lệ -> coi như thiếu.
+  out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { ...FULL, paid_price: -5 } } });
+  assert.equal(out.months[0].revenue, null, 'giá âm -> không hợp lệ');
+  assert.equal(out.missing.paid_price, true);
+  // Key camelCase paidPrice cũng đọc được.
+  out = domain.computeOperatingFinancials({ ...base, inputsByMonth: { '2027-01': { paidChurnRate: 0.02, freeChurnRate: 0.05, monthlyCvr: null, paidPrice: 47000, cogsPerFreeUser: 10000, cogsPerPaidUser: 20000, fixedCost: 200000 } } });
+  assert.equal(out.missing.paid_price, false);
+  approx(out.months[0].arppuEffective, 47000, 'camelCase paidPrice -> ARPPU trực tiếp');
 });
 
-test('POF [domain]: thiếu đầu vào -> null ("—") đúng dòng — thiếu opening đứt chuỗi tồn; thiếu tiers chỉ mất Revenue/Profit; thiếu 1 đơn giá COGS chỉ mất phần đó + tổng + Profit; thiếu fixed_cost chỉ mất Profit cuối; thiếu churn tháng đầu đứt chuỗi cả các tháng sau', () => {
+test('POF [domain]: thiếu đầu vào -> null ("—") đúng dòng — thiếu opening đứt chuỗi tồn; thiếu paid_price chỉ mất Revenue/Profit; thiếu 1 đơn giá COGS chỉ mất phần đó + tổng + Profit; thiếu fixed_cost chỉ mất Profit cuối; thiếu churn tháng đầu đứt chuỗi cả các tháng sau', () => {
   const funnel = { '2027-01': { views: 1, visits: 1, freemium: 210, paid: 10 }, '2027-02': { views: 1, visits: 1, freemium: 210, paid: 10 } };
   // Thiếu opening: flow vẫn có, churn/EOM/Revenue/COGS/Profit null.
   let out = domain.computeOperatingFinancials({ months: ['2027-01'], funnelByMonth: funnel, budgetByMonth: { '2027-01': 100 }, inputsByMonth: { '2027-01': FULL }, openingFree: null, openingPaid: null });
@@ -188,11 +200,11 @@ test('POF [domain]: thiếu đầu vào -> null ("—") đúng dòng — thiếu
   for (const k of ['paidChurn', 'freeChurn', 'paidEom', 'freeEom', 'totalUsers', 'revenue', 'cogs', 'cogsFree', 'cogsPaid', 'profitAfterCogsMkt', 'profitAfterCogsFixedMkt']) {
     assert.equal(out.months[0][k], null, 'thiếu opening -> ' + k + ' null');
   }
-  // Thiếu tiers: EOM/COGS tính được, Revenue + 2 Profit null.
-  out = domain.computeOperatingFinancials({ months: ['2027-01'], funnelByMonth: funnel, budgetByMonth: { '2027-01': 100 }, inputsByMonth: { '2027-01': { ...FULL, paid_price_tiers: null } }, openingFree: 1000, openingPaid: 100 });
-  assert.equal(out.missing.paid_price_tiers, true);
-  approx(out.months[0].paidEom, 108.9, 'thiếu tiers vẫn có EOM');
-  approx(out.months[0].cogs, 13875500, 'thiếu tiers vẫn có COGS');
+  // Thiếu paid_price: EOM/COGS tính được, Revenue + 2 Profit null.
+  out = domain.computeOperatingFinancials({ months: ['2027-01'], funnelByMonth: funnel, budgetByMonth: { '2027-01': 100 }, inputsByMonth: { '2027-01': { ...FULL, paid_price: null } }, openingFree: 1000, openingPaid: 100 });
+  assert.equal(out.missing.paid_price, true);
+  approx(out.months[0].paidEom, 108.9, 'thiếu paid_price vẫn có EOM');
+  approx(out.months[0].cogs, 13875500, 'thiếu paid_price vẫn có COGS');
   assert.equal(out.months[0].revenue, null);
   assert.equal(out.months[0].profitAfterCogsMkt, null);
   assert.equal(out.months[0].profitAfterCogsFixedMkt, null);
@@ -222,7 +234,7 @@ test('POF [domain]: Free EOM âm -> kẹp về 0 và đánh dấu freeClamped', 
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 0, visits: 0, freemium: 0, paid: 50 } },
     budgetByMonth: {},
-    inputsByMonth: { '2027-01': { paid_churn_rate: 0, free_churn_rate: 0, monthly_cvr: null, paid_price_tiers: [{ price: 1000, pct: 100 }], cogs_per_free_user: 100, cogs_per_paid_user: 100, fixed_cost: 0 } },
+    inputsByMonth: { '2027-01': { paid_churn_rate: 0, free_churn_rate: 0, monthly_cvr: null, paid_price: 1000, cogs_per_free_user: 100, cogs_per_paid_user: 100, fixed_cost: 0 } },
     openingFree: 10, openingPaid: 100
   });
   assert.equal(out.months[0].freeClamped, true, '10 + 0 − 50 − 0 < 0 phải kẹp');
@@ -231,9 +243,9 @@ test('POF [domain]: Free EOM âm -> kẹp về 0 và đánh dấu freeClamped', 
 });
 
 // ---------------------------------------------------------------- demo không seed số bịa
-test('POF [demo]: TUYỆT ĐỐI không seed số bịa — mọi Phase demo đều trống các field tài chính MỚI (churn / monthly_cvr / paid_price_tiers / cogs tách / fixed_cost / opening)', () => {
+test('POF [demo]: TUYỆT ĐỐI không seed số bịa — mọi Phase demo đều trống các field tài chính MỚI (churn / monthly_cvr / paid_price / cogs tách / fixed_cost / opening)', () => {
   for (const p of demo.phases) {
-    for (const f of ['paid_churn_rate', 'free_churn_rate', 'monthly_cvr', 'paid_price_tiers', 'cogs_per_free_user', 'cogs_per_paid_user', 'fixed_cost', 'opening_free', 'opening_paid']) {
+    for (const f of ['paid_churn_rate', 'free_churn_rate', 'monthly_cvr', 'paid_price', 'cogs_per_free_user', 'cogs_per_paid_user', 'fixed_cost', 'opening_free', 'opening_paid']) {
       assert.ok(p[f] === undefined || p[f] === null, `phase ${p.id} không được seed sẵn ${f}`);
     }
   }
@@ -298,7 +310,7 @@ function makeHarness(rows, phases, benchmarks, assumptions) {
 // qua fallback của engine): v2v 1, v2s 1 -> freemium 200; f2p gộp
 // 1 x 0,05 -> paid 10; ngân sách = 1 x 1.000.000 = 1.000.000đ.
 // Qua công thức MỚI với opening Free 1.000 / Paid 100, churn Free 5% /
-// Paid 2%, cvr trống, giá Paid 1 mức 50.000đ x 100% (ARPPU 50.000),
+// Paid 2%, cvr trống, giá Paid đơn 50.000đ (ARPPU 50.000),
 // COGS Free = COGS Paid = 10.000đ/user:
 //   Free churn = (1.000 + 200) x 5% x 0,5 = 30; Free EOM = 1.160
 //   Paid churn = (100 + 10) x 2% x 0,5 = 1,1;  Paid EOM = 108,9
@@ -310,13 +322,13 @@ const OP_BENCH = [{ id: 'bench-x', brand_id: 'b1', channel: 'X', unit_price: 100
 function opPhases(withInputs = true) {
   const base = { id: 'ph-1', brand_id: 'b1', name: 'Phase 1', start_month: '2027-01', end_month: '2027-01', uplift_percent_per_month: 0 };
   if (!withInputs) return [base];
-  return [{ ...base, paid_churn_rate: 0.02, free_churn_rate: 0.05, paid_price_tiers: [{ price: 50000, pct: 100 }], cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100 }];
+  return [{ ...base, paid_churn_rate: 0.02, free_churn_rate: 0.05, paid_price: 50000, cogs_per_free_user: 10000, cogs_per_paid_user: 10000, fixed_cost: 200000, opening_free: 1000, opening_paid: 100 }];
 }
 function opRows() {
   return [{ id: 'r-jan', brand_id: 'b1', segment: 'b2c', month: '2027-01', channel: 'X', group: 'G', qty: 1, budget: null, phase_id: 'ph-1' }];
 }
 
-test('POF [static]: khối Phase có các ô nhập operating MỚI (churn + monthly_cvr dạng %, COGS tách Free/Paid + fixed_cost dạng tiền, paid_price_tiers) + 2 ô opening (chỉ Phase đầu tiên qua UI.planningOpeningPhaseIds); bảng operating là section thứ 4 cạnh 3 bảng KPI', () => {
+test('POF [static]: khối Phase có các ô nhập operating MỚI (churn + monthly_cvr dạng %, COGS tách Free/Paid + fixed_cost dạng tiền, paid_price dạng tiền qua phase-operating-money) + 2 ô opening (chỉ Phase đầu tiên qua UI.planningOpeningPhaseIds); bảng operating là section thứ 4 cạnh 3 bảng KPI', () => {
   const opHtml = section('function planningPhaseOperatingHtml(phase, disAttr, showOpening)', 'function planningPhaseModeHtml');
   assert.match(opHtml, /data-planning-phase-operating="1"/);
   assert.match(opHtml, /data-action-change="phase-operating-rate" data-field="paid_churn_rate"/);
@@ -325,7 +337,10 @@ test('POF [static]: khối Phase có các ô nhập operating MỚI (churn + mon
   assert.match(opHtml, /data-action-change="phase-operating-money" data-field="cogs_per_free_user"/);
   assert.match(opHtml, /data-action-change="phase-operating-money" data-field="cogs_per_paid_user"/);
   assert.match(opHtml, /data-action-change="phase-operating-money" data-field="fixed_cost"/);
-  assert.match(opHtml, /paid_price_tiers/);
+  assert.match(opHtml, /data-action-change="phase-operating-money" data-field="paid_price"/);
+  assert.match(opHtml, /Giá Paid \(VNĐ\/user\/tháng\)/);
+  assert.ok(!/phase-price-tier/.test(opHtml), 'không còn bộ sửa nhiều mức giá trong khối Phase');
+  assert.ok(!src.includes('paid_price_' + 'tiers'), 'app.js không còn đọc/ghi cột giá cũ');
   assert.match(opHtml, /data-action-change="phase-opening" data-field="opening_free"/);
   assert.match(opHtml, /data-action-change="phase-opening" data-field="opening_paid"/);
   assert.match(opHtml, /số tiền trên mỗi user/);
@@ -399,7 +414,7 @@ test('POF [app unit]: thiếu đầu vào ở app — Phase chưa nhập gì (nh
   const data = h.planningOperatingData(rows, OP_BENCH, ['2027-01']);
   assert.equal(data.missing.opening, true);
   assert.equal(data.missing.paid_churn_rate, true);
-  assert.equal(data.missing.paid_price_tiers, true);
+  assert.equal(data.missing.paid_price, true);
   assert.equal(data.months[0].freeEom, null);
   assert.equal(data.months[0].budget, 1000000, 'Budget vẫn hiện');
   const html = h.planningOperatingTableHtml(rows, OP_BENCH, ['2027-01']);
@@ -418,10 +433,14 @@ test('POF [app unit]: thiếu đầu vào ở app — Phase chưa nhập gì (nh
 test('POF [app unit]: lưu ô Phase — tỉ lệ nhập % lưu dạng phân số (gồm monthly_cvr) và hiển thị lại đúng %; tiền >= 0; xoá trắng về null (thiếu); validate chặn 101% / âm', () => {
   const rows = opRows();
   const phases = opPhases(false);
-  // Mức giá Paid lưu dạng mảng trên Phase (editor mức giá của app ghi
-  // thẳng field này) — đặt sẵn để bảng tính được khi đủ các ô còn lại.
-  phases[0].paid_price_tiers = [{ price: 50000, pct: 100 }];
+  // Giá Paid đơn trên Phase — đặt sẵn để bảng tính được khi đủ các
+  // ô còn lại (đường lưu thật qua savePhaseOperatingMoney được kiểm
+  // ngay dưới đây).
+  phases[0].paid_price = 50000;
   const { h, state } = makeHarness(rows, phases, OP_BENCH, []);
+  // Lưu Giá Paid qua ĐÚNG cơ chế phase-operating-money (thay đổi A):
+  h.savePhaseOperatingMoney('ph-1', 'paid_price', '50000');
+  assert.equal(phases[0].paid_price, 50000, 'Giá Paid lưu qua phase-operating-money vào field paid_price');
   h.savePhaseOperatingRate('ph-1', 'free_churn_rate', '5');
   assert.equal(phases[0].free_churn_rate, 0.05, 'nhập 5% lưu 0,05 như cơ chế tỉ lệ phase hiện có');
   assert.equal(h.ratePctText(phases[0].free_churn_rate), '5', 'hiển thị lại đúng 5%');
@@ -438,7 +457,7 @@ test('POF [app unit]: lưu ô Phase — tỉ lệ nhập % lưu dạng phân s�
   // Sau khi nhập đủ qua đúng hàm lưu, bảng tính được ngay (không cache).
   const data = h.planningOperatingData(rows, OP_BENCH, ['2027-01']);
   approx(data.months[0].freeEom, 1160, 'Free EOM tính được sau khi nhập churn + opening qua hàm lưu (thiếu fixed_cost không chặn EOM)');
-  approx(data.months[0].revenue, 5445000, 'Revenue tính được sau khi có paid_price_tiers');
+  approx(data.months[0].revenue, 5445000, 'Revenue tính được sau khi có paid_price');
   assert.equal(data.months[0].profitAfterCogsFixedMkt, null, 'thiếu fixed_cost -> chỉ Profit cuối là —');
   h.savePhaseOperatingMoney('ph-1', 'fixed_cost', '200000');
   approx(h.planningOperatingData(rows, OP_BENCH, ['2027-01']).months[0].profitAfterCogsFixedMkt, -8444000, 'nhập fixed_cost xong Profit cuối hiện ngay');
@@ -458,10 +477,12 @@ test('POF [app unit]: lưu ô Phase — tỉ lệ nhập % lưu dạng phân s�
   const updatesBefore = state.updates.length;
   h.savePhaseOperatingRate('ph-1', 'paid_churn_rate', '101');
   h.savePhaseOperatingMoney('ph-1', 'cogs_per_free_user', '-5');
+  h.savePhaseOperatingMoney('ph-1', 'paid_price', '-5');
   h.savePhaseOpening('ph-1', 'opening_free', '-1');
   assert.equal(state.updates.length, updatesBefore, 'nhập sai không được ghi');
   assert.equal(phases[0].paid_churn_rate, 0.02);
   assert.equal(phases[0].cogs_per_free_user, 10000);
+  assert.equal(phases[0].paid_price, 50000, 'Giá Paid âm bị chặn, giá cũ giữ nguyên');
   // Field lạ bị chặn ở whitelist.
   h.savePhaseOperatingRate('ph-1', 'view_to_visit', '5');
   assert.equal(phases[0].view_to_visit, undefined);

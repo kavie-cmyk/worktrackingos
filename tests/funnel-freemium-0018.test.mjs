@@ -1,11 +1,13 @@
 // 0018 — Căn chỉnh phễu freemium (phần migration + store + demo-data):
 //  - File migration 0018 tồn tại, thêm đủ 4 cột mới cho public.phases với
-//    đúng kiểu, KHÔNG xoá cột arppu/cogs_per_user của 0017.
-//  - store-core: TABLE_COLUMNS.phases có đủ 4 cột mới; ánh xạ camelCase
-//    (monthlyCvr, cogsPerFreeUser, cogsPerPaidUser, paidPriceTiers) tự
-//    khớp qua camelToSnake nên không cần FIELD_ALIASES; round-trip
-//    toDbPayload → fromDbRow giữ nguyên giá trị, paid_price_tiers (jsonb
-//    mảng object) qua lại nguyên vẹn cả hai chiều.
+//    đúng kiểu, KHÔNG xoá cột arppu/cogs_per_user của 0017. (Phần
+//    migration 0018 là LỊCH SỬ — giữ nguyên kiểm chứng file đó.)
+//  - store-core: TABLE_COLUMNS.phases có các cột 0018 còn vận hành
+//    (monthly_cvr, cogsPerFreeUser, cogsPerPaidUser); cột giá cũ của
+//    0018 đã được thay bởi paid_price (0020, thay đổi A 18/11) nên
+//    whitelist nay chứa paid_price và KHÔNG còn cột giá cũ; ánh xạ
+//    camelCase tự khớp qua camelToSnake nên không cần FIELD_ALIASES;
+//    round-trip toDbPayload → fromDbRow giữ nguyên giá trị paid_price.
 //  - demo-data: benchmarks Lumus dùng key phễu MỚI (visit_to_freemium
 //    0.09, freemium_to_paid 0.0275), không còn key cũ chi phối;
 //    view_to_visit giữ nguyên; số neo qty/ngân sách không đổi.
@@ -35,60 +37,64 @@ test('0018 [migration]: file 0018 thêm đủ 4 cột phases với đúng kiểu
   assert.match(mig, /monthly_cvr[^\n]*phân số|phân số[^\n]*monthly_cvr/i);
 });
 
-test('0018 [store-core]: TABLE_COLUMNS.phases chứa đủ 4 cột mới', () => {
-  for (const c of ['monthly_cvr', 'cogs_per_free_user', 'cogs_per_paid_user', 'paid_price_tiers']) {
+test('0018+0020 [store-core]: TABLE_COLUMNS.phases chứa cột 0018 còn vận hành + paid_price (0020), không còn cột giá cũ', () => {
+  for (const c of ['monthly_cvr', 'cogs_per_free_user', 'cogs_per_paid_user', 'paid_price']) {
     assert.ok(Core.hasColumn('phases', c), 'phases thiếu cột ' + c);
     assert.ok(Core.TABLE_COLUMNS.phases.includes(c));
   }
+  // Thay đổi A (0020): app không còn đọc/ghi cột giá nhiều mức của 0018
+  // (cột DB vẫn tồn tại để tra lịch sử, chỉ whitelist app là bỏ):
+  assert.ok(!Core.TABLE_COLUMNS.phases.includes('paid_price_' + 'tiers'), 'whitelist phases không được còn cột giá cũ');
   // Cột cũ vẫn còn:
   assert.ok(Core.hasColumn('phases', 'arppu'));
   assert.ok(Core.hasColumn('phases', 'cogs_per_user'));
 });
 
-test('0018 [store-core]: camelCase tự khớp snake_case — không cần FIELD_ALIASES cho phases', () => {
+test('0018+0020 [store-core]: camelCase tự khớp snake_case — không cần FIELD_ALIASES cho phases', () => {
   assert.equal(Core.camelToSnake('monthlyCvr'), 'monthly_cvr');
   assert.equal(Core.camelToSnake('cogsPerFreeUser'), 'cogs_per_free_user');
   assert.equal(Core.camelToSnake('cogsPerPaidUser'), 'cogs_per_paid_user');
-  assert.equal(Core.camelToSnake('paidPriceTiers'), 'paid_price_tiers');
+  assert.equal(Core.camelToSnake('paidPrice'), 'paid_price');
   assert.equal(Core.snakeToCamel('monthly_cvr'), 'monthlyCvr');
   assert.equal(Core.snakeToCamel('cogs_per_free_user'), 'cogsPerFreeUser');
   assert.equal(Core.snakeToCamel('cogs_per_paid_user'), 'cogsPerPaidUser');
-  assert.equal(Core.snakeToCamel('paid_price_tiers'), 'paidPriceTiers');
+  assert.equal(Core.snakeToCamel('paid_price'), 'paidPrice');
   const aliases = Core.FIELD_ALIASES.phases || {};
-  for (const k of ['monthlyCvr', 'cogsPerFreeUser', 'cogsPerPaidUser', 'paidPriceTiers']) {
+  for (const k of ['monthlyCvr', 'cogsPerFreeUser', 'cogsPerPaidUser', 'paidPrice']) {
     assert.ok(!(k in aliases), 'không cần alias cho ' + k);
   }
 });
 
-test('0018 [round-trip]: phase có 4 field mới qua toDbPayload → fromDbRow không rớt, paid_price_tiers nguyên cấu trúc', () => {
-  const tiers = [{ price: 25000, pct: 50 }, { price: 49000, pct: 30 }, { price: 99000, pct: 20 }];
+test('0018+0020 [round-trip]: phase có field mới qua toDbPayload → fromDbRow không rớt, paid_price (giá đơn 0020) giữ nguyên', () => {
+  // Giá đơn 47.000 = ARPPU trọng số của bộ giá cũ 25.000x50% +
+  // 49.000x30% + 99.000x20% (quy đổi ở migration 0020).
   const phase = {
     name: 'Phase 0018', brand_id: 'brand-lumus-ai', start_month: '2027-01', end_month: '2027-02',
-    monthlyCvr: 0.0275, cogsPerFreeUser: 3000, cogsPerPaidUser: 12000, paidPriceTiers: tiers
+    monthlyCvr: 0.0275, cogsPerFreeUser: 3000, cogsPerPaidUser: 12000, paidPrice: 47000
   };
   const payload = Core.toDbPayload('phases', phase, { forInsert: true, workspaceId: 'a0870eed-cbdc-4fde-a3da-0b09d83d83b6' });
   assert.equal(payload.monthly_cvr, 0.0275);
   assert.equal(payload.cogs_per_free_user, 3000);
   assert.equal(payload.cogs_per_paid_user, 12000);
-  assert.deepEqual(payload.paid_price_tiers, tiers);
+  assert.equal(payload.paid_price, 47000);
   const back = Core.fromDbRow('phases', payload);
   assert.equal(back.monthlyCvr, 0.0275);
   assert.equal(back.cogsPerFreeUser, 3000);
   assert.equal(back.cogsPerPaidUser, 12000);
-  assert.deepEqual(back.paidPriceTiers, tiers);
+  assert.equal(back.paidPrice, 47000);
   // Dạng snake_case (như demo-data / dữ liệu đọc thẳng) cũng phải qua được:
   const payload2 = Core.toDbPayload('phases', {
-    monthly_cvr: 0.05, cogs_per_free_user: 1000, cogs_per_paid_user: 9000, paid_price_tiers: tiers
+    monthly_cvr: 0.05, cogs_per_free_user: 1000, cogs_per_paid_user: 9000, paid_price: 47000
   }, { forInsert: true });
   assert.equal(payload2.monthly_cvr, 0.05);
   assert.equal(payload2.cogs_per_free_user, 1000);
   assert.equal(payload2.cogs_per_paid_user, 9000);
-  assert.deepEqual(payload2.paid_price_tiers, tiers);
+  assert.equal(payload2.paid_price, 47000);
   // null (chưa nhập) giữ nguyên null cả hai chiều:
-  const payload3 = Core.toDbPayload('phases', { monthlyCvr: null, cogsPerFreeUser: null, cogsPerPaidUser: null, paidPriceTiers: null }, {});
+  const payload3 = Core.toDbPayload('phases', { monthlyCvr: null, cogsPerFreeUser: null, cogsPerPaidUser: null, paidPrice: null }, {});
   assert.equal(payload3.monthly_cvr, null);
-  assert.equal(payload3.paid_price_tiers, null);
-  assert.equal(Core.fromDbRow('phases', payload3).paidPriceTiers, null);
+  assert.equal(payload3.paid_price, null);
+  assert.equal(Core.fromDbRow('phases', payload3).paidPrice, null);
 });
 
 test('0018 [demo-data]: benchmarks Lumus dùng key phễu freemium mới, bỏ key cũ, view_to_visit giữ nguyên', () => {

@@ -3121,10 +3121,10 @@
   //     funnelByMonth: { [month]: { views, visits, freemium, paid } },
   //     budgetByMonth: { [month]: VNĐ },
   //     inputsByMonth: { [month]: { paid_churn_rate, free_churn_rate,
-  //       monthly_cvr, paid_price_tiers, cogs_per_free_user,
+  //       monthly_cvr, paid_price, cogs_per_free_user,
   //       cogs_per_paid_user, fixed_cost } },  // tỉ lệ dạng phân số;
-  //       // paid_price_tiers = [{ price, pct }] với pct là SỐ PHẦN
-  //       // TRĂM 0–100 của từng mức giá Paid
+  //       // paid_price = giá Paid duy nhất của Phase (VNĐ/user/tháng,
+  //       // thay đổi A 18/11)
   //     openingFree, openingPaid }              // số dư trước tháng đầu
   // Ánh xạ: Budget = ngân sách plan tháng; Reach = Views; Visits =
   // Visits; Free user (dòng vào) = Freemium; New Paid = Paid (cohort
@@ -3141,11 +3141,10 @@
   //     churn_t (kẹp ≥ 0, đánh dấu freeClamped nếu phải kẹp)
   //   Paid EOM_t = Paid EOM_{t-1} + New Paid_t − Paid churn_t
   //   Total users = Free EOM + Paid EOM
-  //   ARPPU hiệu dụng = Σ price x pct/100 trên paid_price_tiers.
-  //     Validate: từng pct phải trong 0–100 và TỔNG pct ≤ 100; vi phạm
+  //   ARPPU hiệu dụng = paid_price của Phase chứa tháng (giá Paid
+  //     duy nhất, thay đổi A 18/11). Chưa nhập giá (null) hoặc giá âm
   //     -> coi như THIẾU đầu vào giá (Revenue + 2 Profit null tháng đó,
-  //     missing.paid_price_tiers = true). Chưa nhập mức nào (null/rỗng)
-  //     cũng là thiếu như vậy.
+  //     missing.paid_price = true).
   //   Revenue_t = ARPPU hiệu dụng x Paid EOM_t
   //   COGS TÁCH theo nhóm user: cogsFree_t = cogs_per_free_user x Free
   //     EOM_t; cogsPaid_t = cogs_per_paid_user x Paid EOM_t; COGS_t =
@@ -3178,7 +3177,7 @@
     function num(v) { return _planNum(v); }
     var openingFree = num(inp.openingFree !== undefined && inp.openingFree !== null ? inp.openingFree : inp.opening_free);
     var openingPaid = num(inp.openingPaid !== undefined && inp.openingPaid !== null ? inp.openingPaid : inp.opening_paid);
-    var missing = { opening: openingFree === null || openingPaid === null, paid_churn_rate: false, free_churn_rate: false, paid_price_tiers: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
+    var missing = { opening: openingFree === null || openingPaid === null, paid_churn_rate: false, free_churn_rate: false, paid_price: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
     // --- Tài chính B2B (mô hình B2B bottom-up): GIỮ NGUYÊN 100% —
     // chuỗi tồn B2B Account RIÊNG, song song chuỗi Free/Paid: New B2B
     // Accounts lấy từ funnelByMonth[m].b2b; B2B churn = B2B EOM đầu kỳ
@@ -3204,25 +3203,10 @@
     var chainBrokenB2b = hasB2bActivity && openingB2b === null;
     var prevFree = openingFree, prevPaid = openingPaid;
     var chainBroken = missing.opening;
-    // ARPPU hiệu dụng từ các mức giá Paid của 1 tháng: mảng
-    // paid_price_tiers / paidPriceTiers [{ price, pct }] (pct = số
-    // phần trăm 0–100). Trả null khi chưa nhập mức nào hoặc vi phạm
-    // validate (pct ngoài 0–100, tổng pct > 100, price âm/thiếu).
-    function tiersArppu(im) {
-      var raw = im.paid_price_tiers !== undefined && im.paid_price_tiers !== null ? im.paid_price_tiers : im.paidPriceTiers;
-      if (!Array.isArray(raw) || raw.length === 0) return null;
-      var sumPct = 0, arppu = 0;
-      for (var i = 0; i < raw.length; i++) {
-        var t = raw[i] || {};
-        var price = num(t.price);
-        var pct = num(t.pct);
-        if (price === null || pct === null || price < 0 || pct < 0 || pct > 100) return null;
-        sumPct += pct;
-        arppu += price * pct / 100;
-      }
-      if (sumPct > 100) return null;
-      return arppu;
-    }
+    // ARPPU hiệu dụng = giá Paid duy nhất của Phase chứa tháng:
+    // paid_price / paidPrice (VNĐ/user/tháng). Trả null khi chưa nhập
+    // giá hoặc giá âm (coi như thiếu đầu vào giá như hành vi thiếu
+    // mức giá trước thay đổi A).
     var rows = months.map(function (m, monthIdx) {
       var isFirstMonth = monthIdx === 0;
       var f = funnel[m] || {};
@@ -3255,7 +3239,8 @@
       var paidChurnRate = inNum('paid_churn_rate', 'paidChurnRate');
       var freeChurnRate = inNum('free_churn_rate', 'freeChurnRate');
       var monthlyCvr = inNum('monthly_cvr', 'monthlyCvr');
-      var arppuEff = tiersArppu(im);
+      var arppuEff = inNum('paid_price', 'paidPrice');
+      if (arppuEff !== null && arppuEff < 0) arppuEff = null;
       var cogsPerFree = inNum('cogs_per_free_user', 'cogsPerFreeUser');
       var cogsPerPaid = inNum('cogs_per_paid_user', 'cogsPerPaidUser');
       var fixedCost = inNum('fixed_cost', 'fixedCost');
@@ -3264,7 +3249,7 @@
       var cogsPerB2b = inNum('cogs_per_b2b_account', 'cogsPerB2bAccount');
       if (paidChurnRate === null) missing.paid_churn_rate = true;
       if (freeChurnRate === null) missing.free_churn_rate = true;
-      if (arppuEff === null) missing.paid_price_tiers = true;
+      if (arppuEff === null) missing.paid_price = true;
       if (cogsPerFree === null) missing.cogs_per_free_user = true;
       if (cogsPerPaid === null) missing.cogs_per_paid_user = true;
       if (fixedCost === null) missing.fixed_cost = true;

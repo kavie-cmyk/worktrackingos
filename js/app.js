@@ -4311,18 +4311,18 @@
   // Khối "Chỉ số vận hành & tài chính" trong mỗi khối Phase: các ô
   // nhập theo Brand x Phase (paid_churn_rate / free_churn_rate /
   // monthly_cvr dạng % như các tỉ lệ phase hiện có — lưu dạng phân
-  // số; cogs_per_free_user / cogs_per_paid_user / fixed_cost dạng
-  // VNĐ; paid_price_tiers = 3 mức giá Paid [{price, pct}] với pct là
-  // SỐ PHẦN TRĂM 0–100). COGS tính theo số tiền trên mỗi user
-  // (VNĐ/user/tháng) tách Free/Paid, KHÔNG theo % doanh thu. Để
-  // trống = chưa có đầu vào (KHÔNG seed số bịa — file nguồn không
-  // có churn/COGS/mức giá); bảng tài chính ở Theo tháng hiện "—"
-  // cho chỉ số liên quan.
+  // số; cogs_per_free_user / cogs_per_paid_user / fixed_cost /
+  // paid_price dạng VNĐ — paid_price là giá Paid duy nhất của Phase
+  // (thay đổi A 18/11). COGS tính theo số
+  // tiền trên mỗi user (VNĐ/user/tháng) tách Free/Paid, KHÔNG theo
+  // % doanh thu. Để trống = chưa có đầu vào (KHÔNG seed số bịa —
+  // file nguồn không có churn/COGS/giá); bảng tài chính ở Theo
+  // tháng hiện "—" cho chỉ số liên quan.
   // showOpening = true chỉ ở khối Phase đầu tiên của năm (theo Brand):
   // thêm 2 ô opening_free / opening_paid (số dư trước tháng 1), nhập
   // MỘT LẦN theo Brand x năm, lưu trên chính Phase đầu tiên đó.
   function planningPhaseOperatingHtml(phase, disAttr, showOpening) {
-    var CAMEL = { paid_churn_rate: 'paidChurnRate', free_churn_rate: 'freeChurnRate', monthly_cvr: 'monthlyCvr', paid_price_tiers: 'paidPriceTiers', cogs_per_free_user: 'cogsPerFreeUser', cogs_per_paid_user: 'cogsPerPaidUser', fixed_cost: 'fixedCost', opening_free: 'openingFree', opening_paid: 'openingPaid', b2b_churn_rate: 'b2bChurnRate', arppu_b2b: 'arppuB2b', cogs_per_b2b_account: 'cogsPerB2bAccount', opening_b2b: 'openingB2b' };
+    var CAMEL = { paid_churn_rate: 'paidChurnRate', free_churn_rate: 'freeChurnRate', monthly_cvr: 'monthlyCvr', paid_price: 'paidPrice', cogs_per_free_user: 'cogsPerFreeUser', cogs_per_paid_user: 'cogsPerPaidUser', fixed_cost: 'fixedCost', opening_free: 'openingFree', opening_paid: 'openingPaid', b2b_churn_rate: 'b2bChurnRate', arppu_b2b: 'arppuB2b', cogs_per_b2b_account: 'cogsPerB2bAccount', opening_b2b: 'openingB2b' };
     function rateVal(field) {
       var v = phaseNumField(phase, field, CAMEL[field]);
       return v === null ? '' : ratePctText(v);
@@ -4330,20 +4330,6 @@
     function moneyVal(field) {
       var v = phaseNumField(phase, field, CAMEL[field]);
       return v === null ? '' : String(v);
-    }
-    // 3 mức giá Paid (paid_price_tiers): đọc mảng [{price, pct}] ở
-    // cả dạng snake/camel/customFields qua phaseField; thiếu/không
-    // phải mảng -> []. Hàng hiển thị luôn đủ 3 dòng: dòng chưa có
-    // mức tương ứng để trống cả Giá lẫn Tỉ lệ (lưu sẽ bỏ dòng trống
-    // hoàn toàn khỏi mảng — xem savePhasePriceTiers).
-    function tiersVal() {
-      var v = phaseField(phase, 'paid_price_tiers', 'paidPriceTiers');
-      return Array.isArray(v) ? v : [];
-    }
-    function tierVal(idx, key) {
-      var t = tiersVal()[idx];
-      if (!t || t[key] === undefined || t[key] === null || t[key] === '' || isNaN(Number(t[key]))) return '';
-      return String(t[key]);
     }
     var pid = esc(phase.id);
     var pname = esc(phase.name || phase.id);
@@ -4358,20 +4344,15 @@
       '<label>COGS Paid / user (VNĐ/user/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('cogs_per_paid_user')) + '" data-action-change="phase-operating-money" data-field="cogs_per_paid_user" data-phase-id="' + pid + '" aria-label="COGS Paid trên mỗi user của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>Chi phí cố định mỗi tháng (VNĐ)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('fixed_cost')) + '" data-action-change="phase-operating-money" data-field="fixed_cost" data-phase-id="' + pid + '" aria-label="Chi phí cố định mỗi tháng của Phase ' + pname + '"' + disAttr + '></label>' +
       '</p>' +
-      '<div class="phase-operating-tiers" data-planning-phase-price-tiers="1" data-field="paid_price_tiers" data-phase-id="' + pid + '"><p class="sub">Cách tính: <strong>Mức giá Paid</strong> — tối đa 3 mức; ARPPU = Σ Giá × Tỉ lệ; tổng Tỉ lệ ≤ 100%.</p>' +
-      [0, 1, 2].map(function (ti) {
-        return '<p class="phase-operating-row" data-planning-price-tier-row="' + ti + '">' +
-          '<label>Mức ' + (ti + 1) + ' — Giá (VNĐ)<input class="phase-input" type="number" step="any" min="0" value="' + esc(tierVal(ti, 'price')) + '" data-action-change="phase-price-tier" data-field="paid_price_tiers" data-tier-index="' + ti + '" data-tier-part="price" data-phase-id="' + pid + '" aria-label="Giá mức ' + (ti + 1) + ' của Phase ' + pname + '"' + disAttr + '></label> ' +
-          '<label>Tỉ lệ (%)<input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(tierVal(ti, 'pct')) + '" data-action-change="phase-price-tier" data-field="paid_price_tiers" data-tier-index="' + ti + '" data-tier-part="pct" data-phase-id="' + pid + '" aria-label="Tỉ lệ % mức ' + (ti + 1) + ' của Phase ' + pname + '"' + disAttr + '></label>' +
-          '</p>';
-      }).join('') +
-      '</div>' +
+      '<p class="phase-operating-row">' +
+      '<label>Giá Paid (VNĐ/user/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('paid_price')) + '" data-action-change="phase-operating-money" data-field="paid_price" data-phase-id="' + pid + '" aria-label="Giá Paid của Phase ' + pname + '"' + disAttr + '></label>' +
+      '</p>' +
       '<p class="phase-operating-row" data-planning-phase-operating-b2b="1">' +
       '<label>B2B churn rate (%/tháng)<input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(rateVal('b2b_churn_rate')) + '" data-action-change="phase-operating-rate" data-field="b2b_churn_rate" data-phase-id="' + pid + '" aria-label="B2B churn rate %/tháng của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>ARPPU B2B (VNĐ/B2B account/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('arppu_b2b')) + '" data-action-change="phase-operating-money" data-field="arppu_b2b" data-phase-id="' + pid + '" aria-label="ARPPU B2B của Phase ' + pname + '"' + disAttr + '></label> ' +
       '<label>COGS / B2B account (VNĐ/account/tháng)<input class="phase-input" type="number" step="any" min="0" value="' + esc(moneyVal('cogs_per_b2b_account')) + '" data-action-change="phase-operating-money" data-field="cogs_per_b2b_account" data-phase-id="' + pid + '" aria-label="COGS trên mỗi B2B account của Phase ' + pname + '"' + disAttr + '></label>' +
       '</p>' +
-      noteWithDetailHtml('Áp cho mọi tháng của Phase. Cách tính: COGS theo VNĐ/user/tháng; để trống = chỉ số liên quan hiện "—".', 'Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng): COGS Free = COGS Free/user × Free EOM, COGS Paid = COGS Paid/user × Paid EOM — không theo % doanh thu. Monthly cvr: mỗi tháng, Free EOM đầu kỳ × Monthly cvr chuyển thành New Paid (cộng thêm cohort Paid từ funnel). Revenue = ARPPU hiệu dụng (từ 3 mức giá Paid ở trên) × Paid EOM. Tài chính B2B chạy chuỗi tồn riêng: Revenue B2B = ARPPU B2B × B2B EOM, COGS B2B = COGS/B2B account × B2B EOM, Profit tính trên tổng B2C + B2B. Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0 — ngoại trừ khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0.');
+      noteWithDetailHtml('Áp cho mọi tháng của Phase. Cách tính: COGS theo VNĐ/user/tháng; để trống = chỉ số liên quan hiện "—".', 'Áp cho mọi tháng thuộc Phase này. COGS tính theo số tiền trên mỗi user (VNĐ/user/tháng): COGS Free = COGS Free/user × Free EOM, COGS Paid = COGS Paid/user × Paid EOM — không theo % doanh thu. Monthly cvr: mỗi tháng, Free EOM đầu kỳ × Monthly cvr chuyển thành New Paid (cộng thêm cohort Paid từ funnel). Revenue = Giá Paid × Paid EOM (Giá Paid chính là ARPPU hiệu dụng). Tài chính B2B chạy chuỗi tồn riêng: Revenue B2B = ARPPU B2B × B2B EOM, COGS B2B = COGS/B2B account × B2B EOM, Profit tính trên tổng B2C + B2B. Để trống ô nào thì chỉ số liên quan ở bảng "Chỉ số vận hành &amp; tài chính" (chế độ Theo tháng) hiện "—" kèm ghi chú thiếu ô đó, không tự điền 0 — ngoại trừ khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0.');
     if (showOpening) {
       html += '<div class="planning-phase-opening" data-planning-phase-opening="1" data-phase-id="' + pid + '"><h4>Số dư đầu kỳ của Brand (trước tháng 1)</h4>' +
         '<p class="phase-operating-row">' +
@@ -4696,7 +4677,7 @@
   // Số liệu: Budget từ planBudgetFor, funnel (Reach/Visits/Free user/
   // New Free/New Paid) từ forecastRawFor — CÙNG nguồn với 3 bảng KPI —
   // chuỗi tồn + Revenue/COGS/Profit do domain.computeOperatingFinancials
-  // tính (KHÔNG fork công thức). Đầu vào churn/Monthly cvr/mức giá Paid/COGS tách Free-Paid/fixed_cost lấy
+  // tính (KHÔNG fork công thức). Đầu vào churn/Monthly cvr/giá Paid/COGS tách Free-Paid/fixed_cost lấy
   // theo Phase chứa tháng (field trên Phase, nhập ở chế độ Theo phase);
   // opening_free/opening_paid lấy từ Phase ĐẦU TIÊN của Brand có tháng
   // thuộc năm đang xem. Tính RIÊNG theo từng Brand rồi cộng theo tháng
@@ -4748,7 +4729,7 @@
               paid_churn_rate: phaseNumField(ph, 'paid_churn_rate', 'paidChurnRate'),
               free_churn_rate: phaseNumField(ph, 'free_churn_rate', 'freeChurnRate'),
               monthly_cvr: phaseNumField(ph, 'monthly_cvr', 'monthlyCvr'),
-              paid_price_tiers: (function () { var v = phaseField(ph, 'paid_price_tiers', 'paidPriceTiers'); return Array.isArray(v) ? v : null; })(),
+              paid_price: phaseNumField(ph, 'paid_price', 'paidPrice'),
               cogs_per_free_user: phaseNumField(ph, 'cogs_per_free_user', 'cogsPerFreeUser'),
               cogs_per_paid_user: phaseNumField(ph, 'cogs_per_paid_user', 'cogsPerPaidUser'),
               fixed_cost: phaseNumField(ph, 'fixed_cost', 'fixedCost'),
@@ -4801,7 +4782,7 @@
         mergedMonths.forEach(function (r) { if (r[k] === null) ok = false; else sum += r[k]; });
         totals[k] = ok ? sum : null;
       });
-      var missing = { opening: false, paid_churn_rate: false, free_churn_rate: false, paid_price_tiers: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
+      var missing = { opening: false, paid_churn_rate: false, free_churn_rate: false, paid_price: false, cogs_per_free_user: false, cogs_per_paid_user: false, fixed_cost: false };
       var missingB2b = { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false };
       perBrand.forEach(function (pb) {
         Object.keys(missing).forEach(function (k) { if (pb.missing && pb.missing[k]) missing[k] = true; });
@@ -4825,7 +4806,7 @@
   var OPERATING_MISSING_LABELS = {
     opening: 'số dư đầu kỳ (Free đầu kỳ / Paid đầu kỳ)',
     paid_churn_rate: 'Paid churn rate', free_churn_rate: 'Free churn rate',
-    paid_price_tiers: 'Mức giá Paid (paid_price_tiers)', cogs_per_free_user: 'COGS Free / user', cogs_per_paid_user: 'COGS Paid / user', fixed_cost: 'Chi phí cố định (fixed cost)'
+    paid_price: 'Giá Paid (paid_price)', cogs_per_free_user: 'COGS Free / user', cogs_per_paid_user: 'COGS Paid / user', fixed_cost: 'Chi phí cố định (fixed cost)'
   };
   var OPERATING_MISSING_B2B_LABELS = {
     opening_b2b: 'B2B đầu kỳ (opening_b2b)',
@@ -4855,11 +4836,11 @@
       .map(function (k) { return OPERATING_MISSING_LABELS[k]; })
       .concat(Object.keys(OPERATING_MISSING_B2B_LABELS).filter(function (k) { return data.missingB2b && data.missingB2b[k]; })
         .map(function (k) { return OPERATING_MISSING_B2B_LABELS[k]; }));
-    var noteFull = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Free user = Freemium của funnel; New Paid = Paid (cohort từ funnel) + Free EOM đầu kỳ × Monthly cvr của Phase chứa tháng (Monthly cvr trống thì phần chuyển đổi = 0); New Free = Free user − New Paid; Paid/Free churn = (tồn đầu kỳ + dòng vào trong tháng) × churn rate của Phase chứa tháng, riêng tháng đầu tiên của kỳ × 0,5; Free EOM = tồn trước + Free user − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn; Revenue = ARPPU hiệu dụng × Paid EOM (ARPPU hiệu dụng = Σ Giá × Tỉ lệ của 3 mức giá Paid); COGS Free = COGS Free/user × Free EOM và COGS Paid = COGS Paid/user × Paid EOM, COGS = COGS Free + COGS Paid (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Chuỗi B2B chạy riêng: B2B churn = B2B EOM đầu kỳ × B2B churn rate của Phase; B2B EOM = đầu kỳ + New B2B Accounts − B2B churn (account chuyển đổi KHÔNG bị trừ khỏi Paid EOM); Revenue B2B = ARPPU B2B × B2B EOM; COGS B2B = COGS/B2B account × B2B EOM; hai dòng Profit tính trên TỔNG B2C + B2B (Revenue + Revenue B2B − COGS − COGS B2B − Budget [− fixed cost]). Khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0 kể cả chưa nhập ARPPU B2B / COGS B2B. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, New B2B Accounts, churn, Revenue, Revenue B2B, COGS, COGS Free, COGS Paid, COGS B2B, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối; dòng tồn B2B EOM cũng lấy giá trị tháng cuối.';
+    var noteFull = 'Chuỗi tồn theo tháng trên funnel của Brand trong ngữ cảnh lọc hiện tại: Free user = Freemium của funnel; New Paid = Paid (cohort từ funnel) + Free EOM đầu kỳ × Monthly cvr của Phase chứa tháng (Monthly cvr trống thì phần chuyển đổi = 0); New Free = Free user − New Paid; Paid/Free churn = (tồn đầu kỳ + dòng vào trong tháng) × churn rate của Phase chứa tháng, riêng tháng đầu tiên của kỳ × 0,5; Free EOM = tồn trước + Free user − New Paid − Free churn (kẹp ≥ 0); Paid EOM = tồn trước + New Paid − Paid churn; Revenue = ARPPU hiệu dụng × Paid EOM (ARPPU hiệu dụng = Giá Paid của Phase chứa tháng); COGS Free = COGS Free/user × Free EOM và COGS Paid = COGS Paid/user × Paid EOM, COGS = COGS Free + COGS Paid (COGS tính theo số tiền trên mỗi user, không theo % doanh thu); Profit trừ dần COGS, ngân sách Marketing (Budget) và chi phí cố định. Chuỗi B2B chạy riêng: B2B churn = B2B EOM đầu kỳ × B2B churn rate của Phase; B2B EOM = đầu kỳ + New B2B Accounts − B2B churn (account chuyển đổi KHÔNG bị trừ khỏi Paid EOM); Revenue B2B = ARPPU B2B × B2B EOM; COGS B2B = COGS/B2B account × B2B EOM; hai dòng Profit tính trên TỔNG B2C + B2B (Revenue + Revenue B2B − COGS − COGS B2B − Budget [− fixed cost]). Khi tồn B2B = 0 và không có account mới thì Revenue B2B / COGS B2B = 0 kể cả chưa nhập ARPPU B2B / COGS B2B. Cột Tổng: dòng flow (Budget, Reach, Visits, Free user, New Paid, New Free, New B2B Accounts, churn, Revenue, Revenue B2B, COGS, COGS Free, COGS Paid, COGS B2B, Profit) cộng dồn cả kỳ; dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối; dòng tồn B2B EOM cũng lấy giá trị tháng cuối.';
     var noteTail = (data.months.some(function (r) { return r.freeClamped; }) ? 'Có tháng Free EOM phải kẹp về 0 vì công thức cho số âm. ' : '') +
       (missingLabels.length
         ? '<strong>Thiếu đầu vào:</strong> ' + esc(missingLabels.join(', ')) + ' — các chỉ số liên quan hiện "—" (nhập ở chế độ Theo phase, khối "Chỉ số vận hành & tài chính"; số dư đầu kỳ nhập ở khối Phase đầu tiên của năm).'
-        : 'Đủ đầu vào: churn rate / Monthly cvr / mức giá Paid / COGS Free + COGS Paid / fixed cost theo Phase và số dư đầu kỳ đều đã nhập ở chế độ Theo phase.');
+        : 'Đủ đầu vào: churn rate / Monthly cvr / giá Paid / COGS Free + COGS Paid / fixed cost theo Phase và số dư đầu kỳ đều đã nhập ở chế độ Theo phase.');
     var note = '<p class="sub note">Cách tính: Chuỗi tồn theo tháng — New Paid = Paid funnel + Free đầu kỳ × Monthly cvr; churn tháng đầu × 0,5; Free EOM kẹp ≥ 0; B2B chạy chuỗi riêng, không trừ Paid EOM.</p>' + noteDetailHtml(noteFull) + '<p class="sub note">' + noteTail + '</p>';
     return planningKpiSectionHtml('operating', 'Chỉ số vận hành & tài chính theo tháng', note, tbl(head + body, 'planning-operating'));
   }
@@ -5056,11 +5037,11 @@
   // (đầu vào thành "thiếu", bảng tài chính hiện "—" cho chỉ số liên
   // quan) — không điền 0 lặng lẽ.
   var PHASE_OPERATING_RATE_FIELDS = ['paid_churn_rate', 'free_churn_rate', 'monthly_cvr', 'b2b_churn_rate'];
-  var PHASE_OPERATING_MONEY_FIELDS = ['cogs_per_free_user', 'cogs_per_paid_user', 'fixed_cost', 'arppu_b2b', 'cogs_per_b2b_account'];
+  var PHASE_OPERATING_MONEY_FIELDS = ['paid_price', 'cogs_per_free_user', 'cogs_per_paid_user', 'fixed_cost', 'arppu_b2b', 'cogs_per_b2b_account'];
   var PHASE_OPENING_FIELDS = ['opening_free', 'opening_paid', 'opening_b2b'];
   var PHASE_OPERATING_LABELS = {
     paid_churn_rate: 'Paid churn rate', free_churn_rate: 'Free churn rate',
-    monthly_cvr: 'Monthly cvr', paid_price_tiers: 'Mức giá Paid',
+    monthly_cvr: 'Monthly cvr', paid_price: 'Giá Paid',
     cogs_per_free_user: 'COGS Free / user', cogs_per_paid_user: 'COGS Paid / user', fixed_cost: 'Chi phí cố định mỗi tháng',
     opening_free: 'Free đầu kỳ', opening_paid: 'Paid đầu kỳ',
     b2b_churn_rate: 'B2B churn rate', arppu_b2b: 'ARPPU B2B', cogs_per_b2b_account: 'COGS / B2B account',
@@ -5106,59 +5087,6 @@
   function savePhaseOpening(phaseId, field, raw) {
     if (PHASE_OPENING_FIELDS.indexOf(field) === -1) { render(); return; }
     savePhaseOperatingField(phaseId, field, raw, false);
-  }
-  // --- Lưu 3 MỨC GIÁ Paid (paid_price_tiers) của Phase ---
-  // Mỗi lần một ô Giá/Tỉ lệ đổi, hàm này đọc CẢ 3 dòng mức giá của
-  // Phase từ DOM (các ô data-action-change="phase-price-tier" cùng
-  // data-phase-id) rồi validate TOÀN BỘ trước khi ghi một lần duy
-  // nhất { paid_price_tiers: [{price, pct}] } lên record Phase:
-  // - Dòng trống hoàn toàn (không Giá, không Tỉ lệ) -> bỏ khỏi mảng.
-  // - Dòng chỉ điền MỘT trong hai ô -> CHẶN lưu + toast rõ (không
-  //   lưu một phần, dữ liệu cũ giữ nguyên).
-  // - Giá phải là số >= 0; từng Tỉ lệ phải trong 0–100; TỔNG Tỉ lệ
-  //   > 100 -> CHẶN lưu + toast rõ (không lưu một phần).
-  // pct lưu là SỐ PHẦN TRĂM 0–100 (khác quy ước phân số của churn /
-  // Monthly cvr) — khớp hợp đồng domain.computeOperatingFinancials.
-  function savePhasePriceTiers(phaseId) {
-    if (!phaseSaveGuard()) return;
-    var inputs = [];
-    try {
-      inputs = Array.prototype.slice.call(document.querySelectorAll('[data-action-change="phase-price-tier"][data-phase-id="' + phaseId + '"]'));
-    } catch (e) { inputs = []; }
-    var rowsByIdx = {};
-    inputs.forEach(function (el) {
-      var idx = el.getAttribute('data-tier-index');
-      var part = el.getAttribute('data-tier-part');
-      if (idx === null || !part) return;
-      if (!rowsByIdx[idx]) rowsByIdx[idx] = { price: '', pct: '' };
-      rowsByIdx[idx][part] = el.value;
-    });
-    var tiers = [];
-    var totalPct = 0;
-    var idxs = Object.keys(rowsByIdx).sort();
-    for (var i = 0; i < idxs.length; i++) {
-      var row = rowsByIdx[idxs[i]];
-      var priceRaw = row.price === null || row.price === undefined ? '' : String(row.price).trim();
-      var pctRaw = row.pct === null || row.pct === undefined ? '' : String(row.pct).trim();
-      if (priceRaw === '' && pctRaw === '') continue; // dòng trống hoàn toàn -> bỏ khỏi mảng
-      if (priceRaw === '' || pctRaw === '') {
-        toast('Mức giá ' + (Number(idxs[i]) + 1) + ' chưa đủ: cần nhập cả Giá và Tỉ lệ (hoặc để trống cả dòng) — chưa lưu mức giá nào.');
-        render(); return;
-      }
-      var price = Number(priceRaw);
-      var pct = Number(pctRaw);
-      if (isNaN(price) || price < 0) { toast('Giá của mức ' + (Number(idxs[i]) + 1) + ' phải là số từ 0 trở lên — chưa lưu mức giá nào.'); render(); return; }
-      if (isNaN(pct) || pct < 0 || pct > 100) { toast('Tỉ lệ của mức ' + (Number(idxs[i]) + 1) + ' phải là số % từ 0 đến 100 — chưa lưu mức giá nào.'); render(); return; }
-      totalPct += pct;
-      tiers.push({ price: price, pct: pct });
-    }
-    if (totalPct > 100) {
-      toast('Tổng Tỉ lệ các mức giá Paid là ' + totalPct + '% — vượt 100% nên chưa lưu. Hãy giảm Tỉ lệ để tổng ≤ 100%.');
-      render(); return;
-    }
-    saveResult(sUpdate('phases', phaseId, { paid_price_tiers: tiers }),
-      function () { toast(tiers.length ? 'Đã lưu ' + tiers.length + ' mức giá Paid cho Phase (tổng Tỉ lệ ' + totalPct + '%) — bảng Chỉ số vận hành & tài chính đã tính lại.' : 'Đã xoá mọi mức giá Paid của Phase — Revenue ở bảng tài chính sẽ hiện "—" cho tới khi nhập lại.'); render(); },
-      function (msg) { toast('Chưa lưu được Mức giá Paid: ' + msg); render(); });
   }
   function savePhaseRate(phaseId, channel, field, raw) {
     if (!phaseSaveGuard()) return;
@@ -9584,7 +9512,6 @@
     if (ctxKind === 'kpi-phase') { UI.kpiPhaseFilter = t.value || 'all'; render(); return; }
     if (ctxKind === 'phase-uplift') { savePhaseUplift(t.getAttribute('data-phase-id'), t.value); return; }
     if (ctxKind === 'phase-views-uplift') { savePhaseViewsUplift(t.getAttribute('data-phase-id'), t.value); return; }
-    if (ctxKind === 'phase-price-tier') { savePhasePriceTiers(t.getAttribute('data-phase-id')); return; }
     if (ctxKind === 'phase-operating-rate') { savePhaseOperatingRate(t.getAttribute('data-phase-id'), t.getAttribute('data-field'), t.value); return; }
     if (ctxKind === 'phase-operating-money') { savePhaseOperatingMoney(t.getAttribute('data-phase-id'), t.getAttribute('data-field'), t.value); return; }
     if (ctxKind === 'phase-opening') { savePhaseOpening(t.getAttribute('data-phase-id'), t.getAttribute('data-field'), t.value); return; }

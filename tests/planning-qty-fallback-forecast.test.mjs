@@ -156,7 +156,7 @@ test('PQF (4) [differential]: fixture Lumus (mọi dòng đều qty) — forecas
   assert.equal(budget.byMonth['2027-01'].amount, 72560000, 'diff budget T1');
   assert.equal(Math.round(budget.byMonth['2027-01'].amount / forecastNoCtx.byMonth['2027-01'].paid), 31438407, 'neo: CAC Tất cả T1 = 31.438.407đ');
   // Hạ nguồn tài chính: cùng đầu vào FULL cố định như bản ghi trước sửa.
-  const FULL = { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: 0.01, paid_price_tiers: [{ price: 25000, pct: 50 }, { price: 49000, pct: 30 }, { price: 99000, pct: 20 }], cogs_per_free_user: 10000, cogs_per_paid_user: 20000, fixed_cost: 200000, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000 };
+  const FULL = { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: 0.01, paid_price: 47000, cogs_per_free_user: 10000, cogs_per_paid_user: 20000, fixed_cost: 200000, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000 };
   const funnelByMonth = {}; const budgetByMonth = {}; const inputsByMonth = {};
   for (const m of forecast.months) {
     funnelByMonth[m] = forecast.byMonth[m];
