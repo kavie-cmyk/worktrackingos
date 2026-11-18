@@ -650,3 +650,12 @@ table.col-resize-measuring th,table.col-resize-measuring td{white-space:nowrap!i
 .planning-kpi-section h3{margin-top:0}
 .phase-input:disabled{opacity:.55;cursor:not-allowed;background:var(--color-surface-sunken)}
 #kpi-phase-filter-form{margin:8px 0}
+/* ===== Nút "Về đầu trang" (Zac 18/11) =====
+   Nút nổi cố định góc dưới-phải ở khung app dùng chung. Góc này đã có
+   .toast (position:fixed; right:18px; bottom:18px; z-index:60) nên nút
+   đặt CAO HƠN vùng toast (bottom:88px) để không chồng lấp khi toast
+   hiện; z-index 59 < 60 của toast để toast luôn nằm trên nếu có va
+   chạm ở màn hình hẹp. Trạng thái ẩn dùng thuộc tính hidden (JS gỡ/bật
+   theo ngưỡng cuộn 400px của window). */
+.back-to-top{position:fixed;right:18px;bottom:88px;z-index:59;border-radius:999px;box-shadow:var(--shadow-pop)}
+.back-to-top[hidden]{display:none}

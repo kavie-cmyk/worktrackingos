@@ -8608,9 +8608,28 @@
     else if (UI.scrollMem[routeKey(ROUTE)] !== undefined && !UI.editor) {
       window.scrollTo(0, UI.scrollMem[routeKey(ROUTE)]);
     }
+    updateBackToTop();
+  }
+  // BACKTOTOP-PURE-BEGIN
+  // Nút "Về đầu trang" (Zac 18/11): nút nổi cố định ở khung app dùng
+  // chung (index.html, ngoài #app nên không bị render lại theo view).
+  // App cuộn theo WINDOW (không có container cuộn nội bộ cho nội dung
+  // chính — bằng chứng: render() dùng window.scrollTo/window.scrollY
+  // để khôi phục vị trí cuộn), nên ngưỡng ẩn/hiện bám window.scrollY.
+  var BACK_TO_TOP_THRESHOLD_PX = 400;
+  function backToTopVisible(scrollY) {
+    var y = Number(scrollY);
+    return isFinite(y) && y > BACK_TO_TOP_THRESHOLD_PX;
+  }
+  // BACKTOTOP-PURE-END
+  function updateBackToTop() {
+    var btn = document.getElementById('back-to-top');
+    if (!btn) return;
+    btn.hidden = !backToTopVisible(window.scrollY);
   }
   window.addEventListener('scroll', function () {
     if (ROUTE) UI.scrollMem[routeKey(ROUTE)] = window.scrollY;
+    updateBackToTop();
   }, { passive: true });
 
   // ---------- R3.1-EXPORT (AC22): export CSV KPI / ngân sách / thu–chi ----------
@@ -8964,6 +8983,7 @@
     if (!t) return;
     var action = t.getAttribute('data-action');
     var id = t.getAttribute('data-id');
+    if (action === 'back-to-top') { window.scrollTo({ top: 0, behavior: 'smooth' }); }
     if (action === 'nav-toggle') {
       var sidebar = document.getElementById('sidebar');
       var backdrop = document.getElementById('sidebar-backdrop');
