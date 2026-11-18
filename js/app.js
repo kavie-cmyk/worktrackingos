@@ -1669,7 +1669,29 @@
         if (d && d.rowId !== undefined && d.rowId !== null) detailById[String(d.rowId)] = d;
       });
     }
+    // Thứ tự Channel KHỚP bảng lưới Planning (viewPlanning): duyệt
+    // GROUP theo thứ tự xuất hiện đầu tiên của planRowGroup trong
+    // rows, trong mỗi group duyệt Channel theo thứ tự xuất hiện đầu
+    // tiên trong group đó, rồi phẳng hoá + khử trùng theo lần xuất
+    // hiện đầu tiên. KHÔNG lấy thứ tự xuất hiện đầu tiên trong rows
+    // thô: khi dòng Paid Media chen trước, Channel của group Content
+    // xuất hiện muộn trong rows thô (vd KOL Nano) sẽ bị đẩy xuống
+    // cuối bảng KPI, lệch khỏi lưới. byChannel vẫn gộp theo tên
+    // Channel như cũ — CHỈ thứ tự đổi, không đổi cách gộp hay số.
     var channelOrder = [];
+    var kpiGroupOrder = [], kpiChannelsByGroup = {};
+    list.forEach(function (r) {
+      if (!r) return;
+      var g = planRowGroup(r);
+      if (!kpiChannelsByGroup[g]) { kpiChannelsByGroup[g] = []; kpiGroupOrder.push(g); }
+      var chInGroup = String(r.channel || '—');
+      if (kpiChannelsByGroup[g].indexOf(chInGroup) === -1) kpiChannelsByGroup[g].push(chInGroup);
+    });
+    kpiGroupOrder.forEach(function (g) {
+      kpiChannelsByGroup[g].forEach(function (chInGroup) {
+        if (channelOrder.indexOf(chInGroup) === -1) channelOrder.push(chInGroup);
+      });
+    });
     var byChannel = {};
     list.forEach(function (r, i) {
       if (!r) return;
@@ -1677,7 +1699,6 @@
       var e = byChannel[ch];
       if (!e) {
         e = byChannel[ch] = { channel: ch, group: planRowGroup(r), rows: [], months: {}, totals: { views: null, paid: null, budget: 0, hasForecast: false, cac: null, b2b: null } };
-        channelOrder.push(ch);
         mlist.forEach(function (m) { e.months[m] = { views: null, paid: null, budget: 0, hasForecast: false, cac: null, b2b: null }; });
       }
       e.rows.push(r);
