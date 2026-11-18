@@ -104,7 +104,7 @@ test('PQF (3): dòng không có field số lượng nào -> forecast null như c
   assert.equal(f.rows[0].qty, null, 'snapshot qty = null');
   assert.equal(f.rows[0].forecast, null, 'forecast = null');
   assert.equal(f.byMonth['2027-01'].hasForecast, false, 'tháng không có forecast');
-  assert.deepEqual(f.totals, { views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0 }, 'totals toàn 0');
+  assert.deepEqual(f.totals, { views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, b2bBridge: 0 }, 'totals toàn 0 (b2bBridge = field cộng thêm của thay đổi B 18/11, 0 khi không có forecast)');
   // qty = '' / không phải số cũng là không có số lượng (cùng _planQty).
   for (const bad of ['', 'abc']) {
     const fb = domain.forecastFunnel([{ id: 'r', brand_id: 'b1', month: '2027-01', channel: 'KOL X', group: 'KOL', quantity: bad, budget: null }], BM);

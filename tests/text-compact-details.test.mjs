@@ -46,7 +46,7 @@ test('TCD [static]: định nghĩa cốt lõi còn nguyên văn trong Chi tiết
     'KHÔNG suy ngược lên tầng trên', // A51 Paid Objective
     'cầu nối paid_to_b2b của Channel', // A52
     'dòng tồn (Paid EOM, Free EOM, Total users) lấy giá trị tháng cuối', // A68
-    'account chuyển đổi KHÔNG bị trừ khỏi Paid EOM', // A68 B2B
+    'Paid User chuyển sang B2B qua cầu nối paid_to_b2b bị trừ khỏi Paid EOM trong tháng chuyển đổi', // A68 B2B — quy tắc MỚI thay đổi B 18/11 (đảo quy tắc không trừ cũ)
     'hạn mức chỉ đổi khi đề xuất được Owner duyệt', // A21 (trong Chi tiết)
     'chỉ đổi khi Owner duyệt một đề xuất ngân sách', // A5
   ]) {

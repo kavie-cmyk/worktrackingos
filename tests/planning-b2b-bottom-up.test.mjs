@@ -144,7 +144,7 @@ test('PB2B [domain] (b4): Objective thuần B2C bị khóa B2B ở engine — au
 });
 
 // ============================================================ (c) tài chính B2B
-test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b churn 4% -> churn 2, EOM 56, Revenue B2B = arppu_b2b x 56; Profit gồm cả B2B; Paid EOM không bị trừ chuyển đổi', () => {
+test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b churn 4% -> churn 2, EOM 56, Revenue B2B = arppu_b2b x 56; Profit gồm cả B2B; Paid EOM giữ nguyên vì fixture chỉ truyền tổng b2b (không truyền b2bBridge — tổng B2B không tự suy thành bridge, thay đổi B 18/11)', () => {
   const out = domain.computeOperatingFinancials({
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 300, paid: 10, b2b: 8 } },
@@ -162,7 +162,8 @@ test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b c
   //   Free churn = (1.000 + 300) x 5% x 0,5 = 32,5; Free EOM = 1.000 + 300 - 10 - 32,5 = 1.257,5
   //   Paid churn = (100 + 10) x 2% x 0,5 = 1,1; Paid EOM = 100 + 10 - 1,1 = 108,9
   //   Revenue B2C = 50.000 x 108,9 = 5.445.000; COGS B2C = 10.000 x 1.257,5 + 10.000 x 108,9 = 13.664.000
-  approx(r.paidEom, 108.9, 'Paid EOM theo công thức MỚI (100 + 10 - 1,1) — chuyển đổi B2B KHÔNG trừ khỏi Paid');
+  approx(r.paidEom, 108.9, 'Paid EOM = 100 + 10 - 1,1 = 108,9 — fixture không có b2bBridge nên bridgeConverted = 0, không trừ (chỉ lượng bridge do forecastFunnel phơi ra mới trừ)');
+  assert.equal(r.b2bBridge, 0, 'không truyền b2bBridge -> bridgeConverted = 0');
   approx(r.profitAfterCogsMkt, (5445000 + 5600000) - (13664000 + 1680000) - 1000000, 'Profit 1 = (Revenue + Revenue B2B) - (COGS + COGS B2B) - Budget');
   approx(r.profitAfterCogsFixedMkt, (5445000 + 5600000) - (13664000 + 1680000) - 1000000 - 200000, 'Profit 2 trừ thêm fixed cost');
   assert.equal(out.totals.b2bEom, 56, 'Tổng B2B EOM = giá trị tháng cuối (dòng tồn)');
@@ -509,6 +510,15 @@ test('PB2B [app unit]: bảng tài chính Theo tháng có đủ hàng B2B và t�
   approx(r.b2bEom, 50 + 9 - 2, 'B2B EOM = 57');
   approx(r.revenueB2b, 100000 * 57, 'Revenue B2B = arppu_b2b x B2B EOM');
   approx(r.cogsB2b, 30000 * 57, 'COGS B2B = cogs_per_b2b_account x B2B EOM');
+  // Thay đổi B (18/11): fixture này CÓ bridge qua đường app — KOL Paid 10 x
+  // paid_to_b2b 10% = bridge 1 (Lead Gen benchmark paid_to_b2b null -> 0).
+  // Paid cohort = 10 + 1,65 = 11,65; Paid churn = (100 + 11,65) x 2% x 0,5
+  // = 1,1165; Paid EOM CŨ (trước thay đổi B) = 100 + 11,65 - 1,1165
+  // = 110,5335 -> MỚI = 110,5335 - bridge 1 = 109,5335.
+  approx(r.b2bBridge, 1, 'bridge qua app = cầu nối KOL 1 (một nguồn từ forecastFunnel)');
+  approx(r.paidEom, 109.5335, 'Paid EOM MỚI = 110,5335 (cũ) - bridge 1');
+  approx(r.revenue, 50000 * 109.5335, 'Revenue Paid theo Paid EOM mới = 5.476.675 (cũ 5.526.675)');
+  approx(r.cogsPaid, 10000 * 109.5335, 'COGS Paid theo Paid EOM mới = 1.095.335 (cũ 1.105.335)');
   const html = h.planningOperatingTableHtml(rows, B2B_BENCH, ['2027-01']);
   for (const key of ['newB2b', 'b2bChurn', 'b2bEom', 'revenueB2b', 'cogsB2b']) {
     assert.ok(html.includes('data-planning-operating-row="' + key + '"'), 'bảng tài chính thiếu hàng ' + key);
