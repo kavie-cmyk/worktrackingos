@@ -2659,31 +2659,116 @@
   function _assumpViewsPerUnit(a) {
     return _assumpField(a, 'views_per_unit', 'viewsPerUnit');
   }
+  /**
+   * Phân giải CASCADE từng field — MỘT logic chung duy nhất cho
+   * effectiveRatesFor / effectiveViewsPerUnitFor / forecastFunnel
+   * (chốt cascade Phase 18/11/2026):
+   *   assumption(phase hiện tại × channel)
+   *   -> assumption của PHASE SỚM HƠN GẦN NHẤT cùng brand × channel
+   *      có giá trị khác null cho field đó
+   *   -> Benchmark của channel.
+   * "Null = kế thừa" áp TỪNG field độc lập. Giá trị kế thừa là giá
+   * trị GỐC (chưa uplift) của phase nguồn — uplift do nơi gọi áp
+   * bằng uplift của CHÍNH phase hiện tại như trước, không cộng dồn.
+   * Tham số:
+   *   phase      — phase hiện tại (object có id; brand qua _planBrandId)
+   *   channel    — channel cần phân giải
+   *   assumpIdx  — index từ _assumptionIndex (ghi đè theo thứ tự mảng:
+   *                assumption sau cùng của cùng (phase, channel) thắng)
+   *   phases     — danh sách phases cùng ngữ cảnh (tuỳ chọn); thiếu /
+   *                không phải mảng -> KHÔNG cascade (hành vi cũ:
+   *                assumption đúng phase -> benchmark)
+   *   getAssump  — hàm đọc field từ 1 assumption -> số | null
+   *   benchValue — giá trị benchmark đã đọc sẵn cho field -> số | null
+   * "Phase sớm hơn" xác định theo start_month: phase hiện tại phải
+   * có MẶT trong `phases` (khớp id) và xác định được start_month;
+   * không thoả -> không cascade. Các phase ứng viên phải cùng brand
+   * (brand null thì ứng viên cũng phải brand null), có start_month
+   * NHỎ HƠN start_month của phase hiện tại; sắp xếp giảm dần theo
+   * start_month (gần nhất trước), hoà start_month thì phần tử đứng
+   * SAU trong mảng `phases` xét trước.
+   * Trả { value, source } với source 'assumption' | 'benchmark' |
+   * null; khi source = 'inherited' kèm sourcePhaseId và
+   * sourcePhaseName (nếu phase nguồn có tên).
+   */
+  function _resolveFieldCascade(phase, channel, assumpIdx, phases, getAssump, benchValue) {
+    var pid = phase && phase.id !== undefined && phase.id !== null && phase.id !== '' ? String(phase.id) : null;
+    if (pid !== null && channel !== null && channel !== undefined && assumpIdx) {
+      var cur = assumpIdx[pid + '|' + String(channel)];
+      if (cur) {
+        var av = getAssump(cur);
+        if (av !== null && av !== undefined) return { value: av, source: 'assumption' };
+      }
+    }
+    if (pid !== null && channel !== null && channel !== undefined && assumpIdx && Array.isArray(phases) && phases.length) {
+      var curEntry = null;
+      for (var ci = 0; ci < phases.length; ci++) {
+        if (phases[ci] && phases[ci].id !== undefined && phases[ci].id !== null && String(phases[ci].id) === pid) { curEntry = phases[ci]; break; }
+      }
+      if (curEntry) {
+        var curStart = _phaseMonth(curEntry, 'start_month', 'startMonth') || _phaseMonth(phase, 'start_month', 'startMonth');
+        if (curStart) {
+          var brand = _planBrandId(phase);
+          if (brand === null) brand = _planBrandId(curEntry);
+          var cands = [];
+          phases.forEach(function (p, idx) {
+            if (!p || p.id === undefined || p.id === null || String(p.id) === pid) return;
+            var sm = _phaseMonth(p, 'start_month', 'startMonth');
+            if (!sm || sm >= curStart) return;
+            var pb = _planBrandId(p);
+            if (brand !== null) { if (pb !== brand) return; }
+            else if (pb !== null) return;
+            cands.push({ phase: p, start: sm, idx: idx });
+          });
+          cands.sort(function (a, b) {
+            if (a.start !== b.start) return a.start < b.start ? 1 : -1;
+            return b.idx - a.idx;
+          });
+          for (var i = 0; i < cands.length; i++) {
+            var candPhase = cands[i].phase;
+            var candAssump = assumpIdx[String(candPhase.id) + '|' + String(channel)];
+            if (!candAssump) continue;
+            var cv = getAssump(candAssump);
+            if (cv !== null && cv !== undefined) {
+              var out = { value: cv, source: 'inherited', sourcePhaseId: String(candPhase.id) };
+              var nm = candPhase.name !== undefined && candPhase.name !== null ? candPhase.name : candPhase.title;
+              if (nm !== undefined && nm !== null && String(nm) !== '') out.sourcePhaseName = String(nm);
+              return out;
+            }
+          }
+        }
+      }
+    }
+    if (benchValue !== null && benchValue !== undefined) return { value: benchValue, source: 'benchmark' };
+    return { value: null, source: null };
+  }
 
   var EFFECTIVE_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account'];
   var EFFECTIVE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_freemium: 'visitToFreemium', freemium_to_paid: 'freemiumToPaid', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid', paid_to_b2b: 'paidToB2b', lead_to_account: 'leadToAccount', demo_to_account: 'demoToAccount' };
   /**
    * Tỉ lệ HIỆU DỤNG của (phase, channel) — MỘT nguồn cho UI hiển thị
-   * (Bước B II-3), cùng quy tắc engine forecastFunnel: assumption
-   * khác null thắng benchmark từng field; fallback key cũ v2f =
-   * visit_to_signup, f2p = signup_to_first × first_to_paid (chỉ khi
-   * đủ cả hai ở tầng hiệu dụng). Trả { [field]: {value, source} }.
+   * (Bước B II-3), cùng quy tắc engine forecastFunnel: từng field qua
+   * _resolveFieldCascade (assumption phase này -> kế thừa phase sớm
+   * hơn gần nhất cùng brand khi truyền `phases` -> benchmark);
+   * fallback key cũ v2f = visit_to_signup, f2p = signup_to_first ×
+   * first_to_paid (chỉ khi đủ cả hai ở tầng hiệu dụng) — fallback giữ
+   * nguyên cách áp ở tầng hiệu dụng, chỉ nguồn từng field nay là
+   * cascade. Nguồn của f2p dạng tích: có yếu tố 'assumption' ->
+   * 'assumption'; không thì có yếu tố 'inherited' -> 'inherited'
+   * kèm sourcePhaseId/sourcePhaseName của yếu tố inherited ĐẦU TIÊN
+   * (theo thứ tự signup_to_first rồi first_to_paid); còn lại
+   * 'benchmark'. Trả { [field]: {value, source[, sourcePhaseId,
+   * sourcePhaseName]} }.
+   * Tham số `phases` tuỳ chọn (tương thích ngược): thiếu -> không
+   * cascade, hành vi như trước cascade.
    */
-  function effectiveRatesFor(phase, channel, benchmarks, assumptions) {
-    var pid = phase ? (phase.id !== undefined && phase.id !== null ? String(phase.id) : null) : null;
-    var assumption = null;
-    (assumptions || []).forEach(function (a) {
-      if (assumption || !a) return;
-      var apid = a.phase_id !== undefined && a.phase_id !== null ? a.phase_id : a.phaseId;
-      if (pid !== null && apid !== undefined && apid !== null && String(apid) === pid && String(a.channel || '') === String(channel)) assumption = a;
-    });
+  function effectiveRatesFor(phase, channel, benchmarks, assumptions, phases) {
+    var assumpIdx = _assumptionIndex(assumptions);
     var bm = benchmarkForRow({ brand_id: _planBrandId(phase), channel: channel }, benchmarks);
     function effField(f) {
-      var av = assumption ? _assumpField(assumption, f, EFFECTIVE_RATE_CAMEL[f]) : null;
-      if (av !== null) return { value: av, source: 'assumption' };
-      var bv = bm ? _benchField(bm, f, EFFECTIVE_RATE_CAMEL[f]) : null;
-      if (bv !== null) return { value: bv, source: 'benchmark' };
-      return { value: null, source: null };
+      var camel = EFFECTIVE_RATE_CAMEL[f];
+      var bv = bm ? _benchField(bm, f, camel) : null;
+      return _resolveFieldCascade(phase, channel, assumpIdx, phases, function (a) { return _assumpField(a, f, camel); }, bv);
     }
     var out = {};
     EFFECTIVE_RATE_FIELDS.forEach(function (f) { out[f] = effField(f); });
@@ -2692,30 +2777,34 @@
       var s2f = effField('signup_to_first');
       var f2pOld = effField('first_to_paid');
       if (s2f.value !== null && f2pOld.value !== null) {
-        out.freemium_to_paid = { value: s2f.value * f2pOld.value, source: (s2f.source === 'assumption' || f2pOld.source === 'assumption') ? 'assumption' : 'benchmark' };
+        if (s2f.source === 'assumption' || f2pOld.source === 'assumption') {
+          out.freemium_to_paid = { value: s2f.value * f2pOld.value, source: 'assumption' };
+        } else if (s2f.source === 'inherited' || f2pOld.source === 'inherited') {
+          var firstInh = s2f.source === 'inherited' ? s2f : f2pOld;
+          var fo = { value: s2f.value * f2pOld.value, source: 'inherited', sourcePhaseId: firstInh.sourcePhaseId };
+          if (firstInh.sourcePhaseName) fo.sourcePhaseName = firstInh.sourcePhaseName;
+          out.freemium_to_paid = fo;
+        } else {
+          out.freemium_to_paid = { value: s2f.value * f2pOld.value, source: 'benchmark' };
+        }
       }
     }
     return out;
   }
   /**
    * Views mỗi bài HIỆU DỤNG của (phase, channel) — MỘT nguồn (Bước B
-   * II-3): assumption.views_per_unit thắng, thiếu thì benchmark
-   * output_per_unit. Trả { value, source }.
+   * II-3): qua _resolveFieldCascade — assumption.views_per_unit của
+   * phase này thắng, thiếu thì kế thừa views_per_unit của phase sớm
+   * hơn gần nhất cùng brand (khi truyền `phases`), thiếu nữa thì
+   * benchmark output_per_unit. Trả { value, source } (+ sourcePhaseId
+   * /sourcePhaseName khi source = 'inherited').
+   * Tham số `phases` tuỳ chọn (tương thích ngược).
    */
-  function effectiveViewsPerUnitFor(phase, channel, benchmarks, assumptions) {
-    var pid = phase ? (phase.id !== undefined && phase.id !== null ? String(phase.id) : null) : null;
-    var assumption = null;
-    (assumptions || []).forEach(function (a) {
-      if (assumption || !a) return;
-      var apid = a.phase_id !== undefined && a.phase_id !== null ? a.phase_id : a.phaseId;
-      if (pid !== null && apid !== undefined && apid !== null && String(apid) === pid && String(a.channel || '') === String(channel)) assumption = a;
-    });
-    var ov = assumption ? _assumpViewsPerUnit(assumption) : null;
-    if (ov !== null) return { value: ov, source: 'assumption' };
+  function effectiveViewsPerUnitFor(phase, channel, benchmarks, assumptions, phases) {
+    var assumpIdx = _assumptionIndex(assumptions);
     var bm = benchmarkForRow({ brand_id: _planBrandId(phase), channel: channel }, benchmarks);
     var bv = bm ? _benchField(bm, 'output_per_unit', 'outputPerUnit') : null;
-    if (bv !== null) return { value: bv, source: 'benchmark' };
-    return { value: null, source: null };
+    return _resolveFieldCascade(phase, channel, assumpIdx, phases, function (a) { return _assumpViewsPerUnit(a); }, bv);
   }
 
   /** 12 tháng 'YYYY-MM' của một năm — MỘT nguồn danh sách tháng kỳ
@@ -2764,8 +2853,11 @@
    *
    * V2 (khi truyền ctx = { phases, phaseAssumptions }):
    * - Phase của row: row.phase_id trước, trống thì khớp brand + khoảng tháng.
-   * - Tỉ lệ gốc từng bước = assumption(phase, channel) nếu khác null,
-   *   ngược lại benchmark. Tỉ lệ hiệu dụng = effectiveRate(tỉ lệ gốc,
+   * - Tỉ lệ gốc từng bước qua _resolveFieldCascade: assumption(phase,
+   *   channel) nếu khác null, thiếu thì KẾ THỪA assumption của phase
+   *   sớm hơn gần nhất cùng brand × channel (từng field độc lập),
+   *   thiếu nữa mới benchmark (cascade Phase 18/11/2026; giá trị kế
+   *   thừa là giá trị gốc chưa uplift). Tỉ lệ hiệu dụng = effectiveRate(tỉ lệ gốc,
    *   phase.uplift_percent_per_month ?? 0, n) với n = số tháng từ
    *   start_month của phase tới tháng của row (tháng đầu phase n = 0).
    *   Uplift tỉ lệ CHỈ áp vào các tỉ lệ chuyển đổi — không áp qty.
@@ -2927,12 +3019,15 @@
         forecast: null
       };
       var b = _benchmarkFor(idx, r || {});
-      var assumption = (res.phaseId && r && r.channel)
-        ? assumpIdx[res.phaseId + '|' + String(r.channel)] || null : null;
+      // Phase cho cascade: phase đã resolve (có mặt trong ctx.phases)
+      // hoặc phase giả mang phaseId + brand của row khi id không tra
+      // thấy — _resolveFieldCascade tự bỏ cascade khi phase không có
+      // trong danh sách (chỉ còn assumption đúng phase -> benchmark
+      // như cũ). Brand cho cascade lấy từ phase/row như _planBrandId.
+      var cascadePhase = res.phase || (res.phaseId ? { id: res.phaseId, brand_id: _planBrandId(r) } : null);
       function baseRate(snake, camel) {
-        var av = _assumpField(assumption, snake, camel);
-        if (av !== null) return av;
-        return b ? _benchField(b, snake, camel) : null;
+        var bv = b ? _benchField(b, snake, camel) : null;
+        return _resolveFieldCascade(cascadePhase, r ? r.channel : null, assumpIdx, phases, function (a) { return _assumpField(a, snake, camel); }, bv).value;
       }
       // Tỉ lệ phễu HIỆU DỤNG (trước uplift) theo phễu MỚI 2 bước dưới
       // views: v2f = visit_to_freemium ?? visit_to_signup (fallback key
@@ -3123,10 +3218,10 @@
       }
       var qty = _planQty(r);
       var output = b ? _benchField(b, 'output_per_unit', 'outputPerUnit') : null;
-      // Views mỗi bài GỐC của Phase (assumption.views_per_unit) thắng
-      // output_per_unit của Benchmark khi khác null.
-      var viewsPerUnit = assumption ? _assumpViewsPerUnit(assumption) : null;
-      var baseViewsPerUnit = viewsPerUnit !== null ? viewsPerUnit : output;
+      // Views mỗi bài GỐC qua _resolveFieldCascade (cùng logic chung):
+      // assumption.views_per_unit của phase này -> kế thừa phase sớm
+      // hơn gần nhất cùng brand -> output_per_unit của Benchmark.
+      var baseViewsPerUnit = _resolveFieldCascade(cascadePhase, r ? r.channel : null, assumpIdx, phases, function (a) { return _assumpViewsPerUnit(a); }, output).value;
       if (qty === null || baseViewsPerUnit === null) return base;
       // Uplift Views RIÊNG của Phase (0019): views mỗi bài HIỆU DỤNG =
       // gốc x (1 + vu/100)^n với CÙNG n của uplift tỉ lệ (monthOffset),

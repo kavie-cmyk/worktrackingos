@@ -1394,7 +1394,8 @@
   // Collection `phase_assumptions` mang {id, phase_id, channel,
   // view_to_visit, visit_to_freemium, freemium_to_paid,
   // views_per_unit} (kèm key cũ visit_to_signup / signup_to_first /
-  // first_to_paid để fallback); field null = kế thừa Benchmark. views_per_unit là
+  // first_to_paid để fallback); field null = kế thừa theo cascade
+  // (Phase trước gần nhất cùng Brand, rồi mới Benchmark). views_per_unit là
   // Views MỖI BÀI của phase×channel (đổi ngữ nghĩa 17/11/2026; ở tầng DB
   // nó vẫn lưu vào cột top_funnel_override — xem store-core).
   // Mọi truy cập đều phòng thủ: collection chưa tồn tại / Store.list ném
@@ -1558,24 +1559,70 @@
   }
   var PHASE_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account'];
   var PHASE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_freemium: 'visitToFreemium', freemium_to_paid: 'freemiumToPaid', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid', paid_to_b2b: 'paidToB2b', lead_to_account: 'leadToAccount', demo_to_account: 'demoToAccount' };
-  // Tỉ lệ HIỆU DỤNG của (phase, channel) cho từng bước phễu: assumption
-  // khác null thắng; thiếu thì kế thừa Benchmark khớp brand+channel;
-  // cả hai đều thiếu -> value null (forecast của channel = null như engine).
+  // Các Phase SỚM HƠN của `phase` (cùng Brand, start_month nhỏ hơn),
+  // sắp xếp gần nhất trước — dùng cho đường DỰ PHÒNG cascade ở app
+  // khi domain chưa nạp (đường chính đã qua _resolveFieldCascade của
+  // domain). Phase không có trong brandPhasesList hoặc không rõ
+  // start_month -> [] (không cascade).
+  function phaseCascadeEarlierPhases(phase) {
+    if (!phase || phase.id === undefined || phase.id === null) return [];
+    var all = brandPhasesList();
+    var cur = null, curIdx = -1;
+    for (var i = 0; i < all.length; i++) { if (String(all[i].id) === String(phase.id)) { cur = all[i]; curIdx = i; break; } }
+    if (!cur) return [];
+    var curStart = phaseStartMonth(cur) || phaseStartMonth(phase);
+    if (!curStart) return [];
+    var brand = recordBrandId(phase) || recordBrandId(cur);
+    var cands = [];
+    all.forEach(function (p, idx) {
+      if (String(p.id) === String(phase.id)) return;
+      var sm = phaseStartMonth(p);
+      if (!sm || sm >= curStart) return;
+      var pb = recordBrandId(p);
+      if (brand) { if (!pb || String(pb) !== String(brand)) return; }
+      else if (pb) return;
+      cands.push({ phase: p, start: sm, idx: idx });
+    });
+    cands.sort(function (a, b) { if (a.start !== b.start) return a.start < b.start ? 1 : -1; return b.idx - a.idx; });
+    return cands.map(function (c) { return c.phase; });
+  }
+  function cascadeSourceLabel(info) {
+    if (!info || info.value === null || info.value === undefined) return 'Không có';
+    if (info.source === 'assumption') return 'Phase Assumption';
+    if (info.source === 'inherited') return 'Kế thừa từ ' + (info.sourcePhaseName || info.sourcePhaseId || 'Phase trước');
+    if (info.source === 'benchmark') return 'Benchmark';
+    return 'Không có';
+  }
+  // Tỉ lệ HIỆU DỤNG của (phase, channel) cho từng bước phễu: qua
+  // cascade — assumption khác null thắng; thiếu thì kế thừa Phase
+  // trước gần nhất cùng Brand; thiếu nữa thì Benchmark khớp
+  // brand+channel; cả ba đều thiếu -> value null (forecast của
+  // channel = null như engine).
   function effectivePhaseRates(phase, channel, benchmarks) {
     // Bước B II-3: MỘT nguồn ở domain — D.effectiveRatesFor(phase,
-    // channel, benchmarks, assumptions) cùng quy tắc engine. Bản tính
-    // tại chỗ bên dưới chỉ còn là dự phòng khi domain chưa nạp.
+    // channel, benchmarks, assumptions, phases) cùng quy tắc engine.
+    // Bản tính tại chỗ bên dưới chỉ còn là dự phòng khi domain chưa nạp.
     if (D && typeof D.effectiveRatesFor === 'function') {
       var phR = phase;
       if (phase && recordBrandId(phase) && !phase.brand_id && !phase.brandId) phR = Object.assign({}, phase, { brand_id: recordBrandId(phase) });
-      try { return D.effectiveRatesFor(phR, channel, benchmarks || benchmarksList(), phaseAssumptionsList()); } catch (e) { /* rơi xuống dự phòng */ }
+      try { return D.effectiveRatesFor(phR, channel, benchmarks || benchmarksList(), phaseAssumptionsList(), brandPhasesList()); } catch (e) { /* rơi xuống dự phòng */ }
     }
     var asm = phase ? phaseAssumptionFor(phase.id, channel) : null;
     var fakeRow = { brand_id: phase ? recordBrandId(phase) : null, channel: channel };
     var bm = benchmarkForRow(fakeRow, benchmarks);
+    var earlier = phaseCascadeEarlierPhases(phase);
     function effField(f) {
       var av = asm ? phaseField(asm, f, PHASE_RATE_CAMEL[f]) : undefined;
       if (av !== undefined && av !== null && av !== '' && !isNaN(Number(av))) return { value: Number(av), source: 'assumption' };
+      for (var i = 0; i < earlier.length; i++) {
+        var candAsm = phaseAssumptionFor(earlier[i].id, channel);
+        var cv = candAsm ? phaseField(candAsm, f, PHASE_RATE_CAMEL[f]) : undefined;
+        if (cv !== undefined && cv !== null && cv !== '' && !isNaN(Number(cv))) {
+          var o = { value: Number(cv), source: 'inherited', sourcePhaseId: String(earlier[i].id) };
+          if (earlier[i].name) o.sourcePhaseName = String(earlier[i].name);
+          return o;
+        }
+      }
       var bv = bm ? phaseField(bm, f, PHASE_RATE_CAMEL[f]) : undefined;
       if (bv !== undefined && bv !== null && bv !== '' && !isNaN(Number(bv))) return { value: Number(bv), source: 'benchmark' };
       return { value: null, source: null };
@@ -1586,12 +1633,23 @@
     // key mới vẫn hiện đúng giá trị hiệu dụng — visit_to_freemium lấy
     // visit_to_signup; freemium_to_paid = signup_to_first x
     // first_to_paid (chỉ khi đủ CẢ HAI key cũ ở tầng hiệu dụng).
+    // Nguồn f2p dạng tích: assumption > inherited (kèm phase nguồn
+    // của yếu tố inherited đầu tiên) > benchmark — như domain.
     if (out.visit_to_freemium.value === null) out.visit_to_freemium = effField('visit_to_signup');
     if (out.freemium_to_paid.value === null) {
       var s2f = effField('signup_to_first');
       var f2pOld = effField('first_to_paid');
       if (s2f.value !== null && f2pOld.value !== null) {
-        out.freemium_to_paid = { value: s2f.value * f2pOld.value, source: (s2f.source === 'assumption' || f2pOld.source === 'assumption') ? 'assumption' : 'benchmark' };
+        if (s2f.source === 'assumption' || f2pOld.source === 'assumption') {
+          out.freemium_to_paid = { value: s2f.value * f2pOld.value, source: 'assumption' };
+        } else if (s2f.source === 'inherited' || f2pOld.source === 'inherited') {
+          var firstInh = s2f.source === 'inherited' ? s2f : f2pOld;
+          var fo = { value: s2f.value * f2pOld.value, source: 'inherited', sourcePhaseId: firstInh.sourcePhaseId };
+          if (firstInh.sourcePhaseName) fo.sourcePhaseName = firstInh.sourcePhaseName;
+          out.freemium_to_paid = fo;
+        } else {
+          out.freemium_to_paid = { value: s2f.value * f2pOld.value, source: 'benchmark' };
+        }
       }
     }
     return out;
@@ -1601,18 +1659,30 @@
     var v = asm ? phaseField(asm, 'views_per_unit', 'viewsPerUnit') : undefined;
     return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v);
   }
-  // Views mỗi bài HIỆU DỤNG của (phase, channel): assumption
-  // views_per_unit khác null thắng; thiếu thì kế thừa output_per_unit
-  // của Benchmark khớp brand+channel; cả hai đều thiếu -> value null.
+  // Views mỗi bài HIỆU DỤNG của (phase, channel): qua cascade —
+  // assumption views_per_unit khác null thắng; thiếu thì kế thừa
+  // views_per_unit của Phase trước gần nhất cùng Brand; thiếu nữa
+  // thì output_per_unit của Benchmark khớp brand+channel; cả ba đều
+  // thiếu -> value null.
   function effectivePhaseViewsPerUnit(phase, channel, benchmarks) {
-    // Bước B II-3: MỘT nguồn ở domain — D.effectiveViewsPerUnitFor.
+    // Bước B II-3: MỘT nguồn ở domain — D.effectiveViewsPerUnitFor
+    // (kèm danh sách phases để cascade).
     if (D && typeof D.effectiveViewsPerUnitFor === 'function') {
       var phV = phase;
       if (phase && recordBrandId(phase) && !phase.brand_id && !phase.brandId) phV = Object.assign({}, phase, { brand_id: recordBrandId(phase) });
-      try { return D.effectiveViewsPerUnitFor(phV, channel, benchmarks || benchmarksList(), phaseAssumptionsList()); } catch (e) { /* rơi xuống dự phòng */ }
+      try { return D.effectiveViewsPerUnitFor(phV, channel, benchmarks || benchmarksList(), phaseAssumptionsList(), brandPhasesList()); } catch (e) { /* rơi xuống dự phòng */ }
     }
     var ov = phaseViewsPerUnitOverride(phase, channel);
     if (ov !== null) return { value: ov, source: 'assumption' };
+    var earlierV = phaseCascadeEarlierPhases(phase);
+    for (var i = 0; i < earlierV.length; i++) {
+      var cv = phaseViewsPerUnitOverride(earlierV[i], channel);
+      if (cv !== null) {
+        var o = { value: cv, source: 'inherited', sourcePhaseId: String(earlierV[i].id) };
+        if (earlierV[i].name) o.sourcePhaseName = String(earlierV[i].name);
+        return o;
+      }
+    }
     var fakeRow = { brand_id: phase ? recordBrandId(phase) : null, channel: channel };
     var bm = benchmarkForRow(fakeRow, benchmarks);
     var bv = bm ? phaseField(bm, 'output_per_unit', 'outputPerUnit') : undefined;
@@ -4374,7 +4444,7 @@
     if (!canEdit()) {
       html += '<div class="notice info" data-planning-phase-locked="1">Vai trò hiện tại chỉ xem nên các ô nhập Phase đang bị khóa.</div>';
     } else {
-      html += '<p class="sub">Sửa rồi rời ô/Enter để lưu — Forecast tính lại ngay. Quy tắc: Tỉ lệ để trống = xoá Assumption, về Benchmark. Số lượng là TỔNG của Channel trong cả Phase, phân bổ lại về từng tháng theo tỉ lệ hiện tại.</p>';
+      html += '<p class="sub">Sửa rồi rời ô/Enter để lưu — Forecast tính lại ngay. Quy tắc: Tỉ lệ để trống = xoá Assumption, về kế thừa Phase trước/Benchmark theo cascade. Số lượng là TỔNG của Channel trong cả Phase, phân bổ lại về từng tháng theo tỉ lệ hiện tại.</p>';
     }
     var phases = filteredBrandPhases().filter(function (p) {
       var months = phaseMonths(p);
@@ -4520,13 +4590,19 @@
               return '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Views mỗi bài không áp dụng cho Email (opens tính từ tồn Free) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '" disabled><br><span class="sub" data-phase-email-views-note="1">Từ tồn Free — không theo bài</span></td>';
             }
             var viewsInfo = effectivePhaseViewsPerUnit(phase, ch, benchmarks);
-            var viewsLabel = '<br><span class="sub">' + (viewsInfo.source === 'assumption' ? 'Phase Assumption' : (viewsInfo.source === 'benchmark' ? 'Benchmark' : 'Không có')) + '</span>';
-            return '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="' + esc(viewsInfo.value === null ? '' : String(Math.round(Number(viewsInfo.value) * 100) / 100)) + '" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Views mỗi bài (đầu phễu) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' + viewsLabel + '</td>';
+            var viewsOwn = phaseViewsPerUnitOverride(phase, ch);
+            var viewsLabel = '<br><span class="sub" data-phase-views-source="' + esc(viewsInfo.source || 'none') + '"' + (viewsInfo.source === 'inherited' ? ' data-source-phase-id="' + esc(viewsInfo.sourcePhaseId || '') + '"' : '') + '>' + esc(cascadeSourceLabel(viewsInfo)) + '</span>' +
+              (viewsInfo.value !== null && viewsInfo.value !== undefined ? '<br><span class="sub" data-phase-effective-value="views_per_unit">Hiệu dụng: ' + esc(String(Math.round(Number(viewsInfo.value) * 100) / 100)) + '</span>' : '');
+            return '<td data-views-source="' + esc(viewsInfo.source || 'none') + '"' + (viewsInfo.source === 'inherited' ? ' data-source-phase-id="' + esc(viewsInfo.sourcePhaseId || '') + '"' : '') + '><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="' + esc(viewsInfo.value === null ? '' : String(Math.round(Number(viewsInfo.value) * 100) / 100)) + '" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" data-own-value="' + esc(viewsOwn === null ? '' : String(viewsOwn)) + '" aria-label="Views mỗi bài (đầu phễu) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' + viewsLabel + '</td>';
           })();
         rateHeads.forEach(function (rh) {
           var eff = rates[rh[0]];
-          cells += '<td data-rate-source="' + esc(eff.source || 'none') + '"><input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(ratePctText(eff.value)) + '" placeholder="—" data-action-change="phase-rate" data-field="' + esc(rh[0]) + '" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Tỉ lệ ' + esc(rh[1]) + ' của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' +
-            '<br><span class="sub">' + (eff.source === 'assumption' ? 'Phase Assumption' : (eff.source === 'benchmark' ? 'Benchmark' : 'Không có')) + '</span></td>';
+          var ownAsm = phaseAssumptionFor(phase.id, ch);
+          var ownRaw = ownAsm ? phaseField(ownAsm, rh[0], PHASE_RATE_CAMEL[rh[0]]) : undefined;
+          var ownVal = (ownRaw === undefined || ownRaw === null || ownRaw === '' || isNaN(Number(ownRaw))) ? null : Number(ownRaw);
+          cells += '<td data-rate-source="' + esc(eff.source || 'none') + '"' + (eff.source === 'inherited' ? ' data-source-phase-id="' + esc(eff.sourcePhaseId || '') + '"' : '') + '><input class="phase-input" type="number" step="any" min="0" max="100" value="' + esc(ratePctText(eff.value)) + '" placeholder="—" data-action-change="phase-rate" data-field="' + esc(rh[0]) + '" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" data-own-value="' + esc(ownVal === null ? '' : ratePctText(ownVal)) + '" aria-label="Tỉ lệ ' + esc(rh[1]) + ' của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' +
+            '<br><span class="sub" data-phase-rate-source="' + esc(eff.source || 'none') + '">' + esc(cascadeSourceLabel(eff)) + '</span>' +
+            (eff.value !== null && eff.value !== undefined ? '<br><span class="sub" data-phase-effective-value="' + esc(rh[0]) + '">Hiệu dụng: ' + esc(ratePctText(eff.value)) + '%</span>' : '') + '</td>';
         });
         cells += '<td>' + (totals ? fmtPlanningCount(totals.visits) : '—') + '</td>' +
           '<td>' + (totals ? fmtPlanningCount(totals.freemium) : '—') + '</td>' +
@@ -4566,9 +4642,9 @@
         html += budgetDrivenBreakdowns +
           '<p class="sub" data-planning-phase-budget-audience-note="1">Chỉ hiển thị — sửa ở bảng chi tiết Theo tháng.</p>';
       }
-      html += '<p class="sub">Cách tính: Forecast tháng = Số lượng × Views mỗi bài hiệu dụng; tỉ lệ hiệu dụng: Assumption thắng Benchmark, không có cả hai = "—". Riêng kênh Email: Opens = tồn Free đầu tháng × Open rate × số lượt gửi; Visits = Opens × Click/Open; Paid = Visits × Click→Paid; Freemium của Email = 0.</p>';
+      html += '<p class="sub">Cách tính: Forecast tháng = Số lượng × Views mỗi bài hiệu dụng; tỉ lệ hiệu dụng: Assumption của Phase thắng, thiếu thì kế thừa Phase trước gần nhất, thiếu nữa mới Benchmark, không có nguồn nào = "—". Riêng kênh Email: Opens = tồn Free đầu tháng × Open rate × số lượt gửi; Visits = Opens × Click/Open; Paid = Visits × Click→Paid; Freemium của Email = 0.</p>';
       html += noteWithDetailHtml('Nhập 1 giá = đặt tay cho <strong>mọi tháng</strong> trong Phase; xoá trắng = bỏ giá Phase.', 'Đơn giá mỗi bài: ô hiện GIÁ PHASE của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang giá Phase, "Chưa đặt giá" nghĩa là chưa tháng nào có giá (giá Benchmark không còn được đọc). Nhập một giá vào ô sẽ ghi giá đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × giá Phase như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ giá Phase của cả Phase (đơn giá trống, ngân sách phần đó = 0). Nếu các tháng đang có giá khác nhau (giá đặt tay lẻ theo tháng còn từ trước), ô để trống kèm ghi chú "khác nhau theo tháng". Đây là nơi quản Đơn giá duy nhất cho các dòng (bảng chi tiết Theo tháng chỉ hiển thị Đơn giá).', 'data-planning-phase-price-hint="1"');
-      html += '<span data-planning-phase-views-hint="1">' + noteDetailHtml('Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về Views mỗi bài của Benchmark. Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng Benchmark; Channel không có cả hai thì để trống và Forecast = — (không bịa số).') + '</span>';
+      html += '<span data-planning-phase-views-hint="1">' + noteDetailHtml('Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Kế thừa từ …" nghĩa là đang lấy Views mỗi bài của Phase trước gần nhất, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về kế thừa Phase trước/Benchmark theo cascade (quay về Views mỗi bài của Benchmark nếu không có Phase trước nào đặt). Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng, thiếu thì kế thừa Phase trước, thiếu nữa mới Benchmark; Channel không có nguồn nào thì để trống và Forecast = — (không bịa số).') + '</span>';
     }
     // Chart funnel theo Phase (totals của Phase qua cùng engine + ctx)
     // — pTotals đã tính một lần ở đầu khối cho dòng tóm tắt của thanh
@@ -5101,9 +5177,10 @@
     if (PHASE_RATE_FIELDS.indexOf(field) === -1) { render(); return; }
     var patch = {};
     if (raw === '' || raw === null || raw === undefined) {
-      // Xóa Assumption của riêng field này -> kế thừa lại Benchmark.
+      // Xóa Assumption của riêng field này -> kế thừa theo cascade
+      // (Phase trước gần nhất, rồi mới Benchmark).
       patch[field] = null;
-      savePhaseAssumption(phaseId, channel, patch, 'Đã xóa tỉ lệ riêng của Phase cho ' + channel + ' — quay về kế thừa Benchmark.');
+      savePhaseAssumption(phaseId, channel, patch, 'Đã xóa tỉ lệ riêng của Phase cho ' + channel + ' — quay về kế thừa Phase trước/Benchmark theo cascade.');
       return;
     }
     var pct = Number(raw);
@@ -5116,7 +5193,7 @@
     var patch = {};
     if (raw === '' || raw === null || raw === undefined) {
       patch.views_per_unit = null;
-      savePhaseAssumption(phaseId, channel, patch, 'Đã xóa Views mỗi bài riêng của Phase cho ' + channel + ' — quay về Views mỗi bài của Benchmark.');
+      savePhaseAssumption(phaseId, channel, patch, 'Đã xóa Views mỗi bài riêng của Phase cho ' + channel + ' — quay về kế thừa Phase trước/Benchmark theo cascade (quay về Views mỗi bài của Benchmark nếu không có Phase trước nào đặt).');
       return;
     }
     var v = Number(raw);
