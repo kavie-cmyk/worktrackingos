@@ -21,7 +21,6 @@
   var PLAN_MATRIX = [
     { channel: 'KOL Nano', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [4, 6, 7, 7, 7, 3, 4, 4, 3, 10, 8, 2], price: 1500000 },
     { channel: 'KOL Micro', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [4, 5, 6, 7, 6, 3, 3, 3, 3, 9, 9, 2], price: 5500000 },
-    { channel: 'KOL Expert', group: 'KOL', segment: 'b2c', unit: 'assets', qty: [1, 1, 1, 2, 1, 0, 1, 0, 1, 2, 2, 0], price: 30000000 },
     { channel: 'Facebook Owned', group: 'Owned Social', segment: 'b2c', unit: 'posts', qty: [21, 20, 20, 21, 20, 20, 21, 20, 20, 21, 20, 20] },
     { channel: 'TikTok Owned', group: 'Owned Social', segment: 'b2c', unit: 'videos', qty: [9, 9, 8, 9, 9, 8, 9, 9, 8, 9, 9, 8] },
     { channel: 'LinkedIn Owned', group: 'Owned Social', segment: 'b2b', unit: 'posts', qty: [9, 9, 8, 9, 9, 8, 9, 9, 8, 9, 9, 8] },
@@ -135,7 +134,7 @@
         // Giá Phase trên dòng (chốt 18/11 — chuyển từ giá Benchmark cũ
         // sang unit_price trên plan_rows như thể đã đặt qua ô "Đơn giá
         // mỗi bài" ở Theo phase, để số neo ngân sách giữ nguyên; giá
-        // Benchmark không còn được đọc nữa). Chỉ 3 kênh KOL có giá.
+        // Benchmark không còn được đọc nữa). Chỉ 2 kênh KOL có giá.
         if (m.price !== undefined && m.price !== null) row.unit_price = m.price;
         rows.push(row);
       });
@@ -481,13 +480,13 @@
     { id: 'phase-sava-create', brand_id: 'brand-sava-meta', segment: 'b2c', campaign_id: 'camp-create-unknown', name: 'CREATE THE UNKNOWN', start_month: '2027-02', end_month: '2027-03', objective: 'Mở rộng tệp Future Builder, nuôi dưỡng phễu: chuyển Game Audience từ quan tâm sang hành động sáng tạo, qua đó nhận diện những Creator/Game Maker Signal tiềm năng.', uplift_percent_per_month: 1, note: 'Khoảng tháng + objective theo file IMC Game Chapter (CAMP 03, T2–T3/2027); campaign demo camp-create-unknown đã seed theo đúng tổng file (49.349.500đ); uplift 1%/tháng là SỐ MẪU.' }
   ];
   // phase_assumptions: tỉ lệ null = kế thừa benchmark của brand×channel.
-  // File nguồn 03 Inputs KHÔNG ghi tỉ lệ riêng theo phase → toàn bộ 12
-  // dòng KOL (3 channel × 4 phase Lumus) để null hết, views_per_unit
+  // File nguồn 03 Inputs KHÔNG ghi tỉ lệ riêng theo phase → toàn bộ 8
+  // dòng KOL (2 channel × 4 phase Lumus) để null hết, views_per_unit
   // (Views mỗi bài của Phase, đổi ngữ nghĩa 17/11/2026) cũng null
   // (engine/UI phải chạy đúng khi assumption toàn null).
   var PHASE_ASSUMPTIONS = (function () {
     var out = [];
-    var kolChannels = ['KOL Nano', 'KOL Micro', 'KOL Expert'];
+    var kolChannels = ['KOL Nano', 'KOL Micro'];
     ['phase-lumus-1', 'phase-lumus-2', 'phase-lumus-3', 'phase-lumus-4'].forEach(function (pid) {
       kolChannels.forEach(function (ch) {
         out.push({
@@ -548,14 +547,14 @@
         primary_color: '#6C4CF1', color: '#6C4CF1',
         palette: ['#6C4CF1', '#1E1B4B', '#38BDF8', '#FFFFFF'],
         voice: 'Chuyên môn, rõ ràng, hướng tới hiệu quả đo được.',
-        key_messages: ['AI hỗ trợ quản lý công việc và năng suất cá nhân', 'Bắt đầu miễn phí, nâng cấp khi thấy giá trị', 'Nội dung chuyên môn AI/productivity từ KOL Expert'],
+        key_messages: ['AI hỗ trợ quản lý công việc và năng suất cá nhân', 'Bắt đầu miễn phí, nâng cấp khi thấy giá trị', 'Nội dung chuyên môn AI/productivity từ đội ngũ chuyên gia'],
         funnel_steps: ['Reach', 'Visit', 'Signup', 'First', 'Paid'],
         status: 'active'
       }
     ],
     // Benchmark = brand × channel (sheet 03 Inputs). Chuỗi hạ nguồn
     // (0018, phễu freemium): visit→freemium 0,09 / freemium→paid 0,0275
-    // DÙNG CHUNG cho cả 3 KOL — 0,0275 là GỘP cặp signup→first 0,5 ×
+    // DÙNG CHUNG cho cả 2 KOL — 0,0275 là GỘP cặp signup→first 0,5 ×
     // first→paid 0,055 của file nguồn (R44–R46); chỉ view→visit khác nhau.
     // Paid Ads: direct_budget = true, unit_price/output/view→visit = null
     // (ngân sách nhập thẳng ở plan_rows.budget của từng dòng Objective).
@@ -582,7 +581,6 @@
     benchmarks: [
       { id: 'bench-lumus-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', group: 'KOL', unit_price: 1500000, currency: 'VND', output_per_unit: 4000, view_to_visit: 0.003, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
       { id: 'bench-lumus-kol-micro', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Micro', group: 'KOL', unit_price: 5500000, currency: 'VND', output_per_unit: 15000, view_to_visit: 0.004, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
-      { id: 'bench-lumus-kol-expert', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Expert', group: 'KOL', unit_price: 30000000, currency: 'VND', output_per_unit: 25000, view_to_visit: 0.005, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, direct_budget: false, confidence: 'C — giả định', source: '03 Inputs — Media kit & Lumus pilot' },
       { id: 'bench-lumus-meta-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'Meta Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, cost_per_result: { awareness: null, traffic: 20000, signup: 20000 / 0.09, remarketing: 20000 / (0.09 * 0.0275) }, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R59 + Lumus Draft Plan (Paid Ads theo Objective) — Traffic = Cost/LPV 20.000đ (cột N); Signup ≈222.222đ và Remarketing (CAC) ≈8.080.808đ SUY TỪ CHUỖI tỉ lệ file (÷0,09 và ÷(0,09×0,0275)); Awareness chưa có CPM/CPV trong file nên để null; hạ nguồn 0,09/0,0275 (visit→freemium 0,09, freemium→paid 0,0275 = 0,5×0,055 gộp từ cột H/I/J)' },
       { id: 'bench-lumus-tiktok-ads', brand_id: 'brand-lumus-ai', segment: 'b2c', channel: 'TikTok Ads', group: 'Paid Media', unit_price: null, currency: 'VND', output_per_unit: null, view_to_visit: null, visit_to_freemium: 0.09, freemium_to_paid: 0.0275, paid_to_b2b: null, lead_to_account: null, demo_to_account: null, cost_per_result: { awareness: null, traffic: 22000, signup: 22000 / 0.09, remarketing: 22000 / (0.09 * 0.0275) }, direct_budget: true, confidence: 'C — giả định', source: '03 Inputs R60 + Lumus Draft Plan (Paid Ads theo Objective) — Traffic = Cost/LPV 22.000đ (cột N); Signup ≈244.444đ và Remarketing (CAC) ≈8.888.889đ SUY TỪ CHUỖI tỉ lệ file (÷0,09 và ÷(0,09×0,0275)); Awareness chưa có CPM/CPV trong file nên để null; hạ nguồn 0,09/0,0275 (visit→freemium 0,09, freemium→paid 0,0275 = 0,5×0,055 gộp từ cột H/I/J)' },
       // Email Sends (kênh Email, chốt 18/11/2026): ngữ nghĩa cột benchmark

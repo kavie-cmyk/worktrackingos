@@ -5,8 +5,8 @@
 // phase/thứ tự channel/tiền đã duyệt/còn mở/số dư), mọi nơi hiển thị
 // gọi nguồn đó — kiểm bằng ca chứng minh của audit + differential
 // (cùng fixture, các nơi hiển thị phải cho cùng kết quả).
-// Số neo giữ nguyên: 776 content; tổng ngân sách fixture
-// 1.598.700.000đ (khóa ở đây qua planBudget + summarizePlanByMonth).
+// Số neo: 764 content; tổng ngân sách fixture
+// 1.238.700.000đ (khóa ở đây qua planBudget + summarizePlanByMonth).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -190,12 +190,12 @@ test('B-I2 [domain]: summarizePlanByChannel — thứ tự group->channel (khôn
   assert.equal(s.totalBudget, 210);
 });
 
-test('B-I2 [neo]: fixture Lumus — summarizePlanByMonth(rows, benchmarks) cho totalQty 776 và totalBudget = planBudget = 1.598.700.000đ', () => {
+test('B-I2 [neo]: fixture Lumus — summarizePlanByMonth(rows, benchmarks) cho totalQty 764 và totalBudget = planBudget = 1.238.700.000đ', () => {
   const rows = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
   const benchmarks = JSON.parse(JSON.stringify(demo.benchmarks));
   const s = domain.summarizePlanByMonth(rows, benchmarks);
-  assert.equal(s.totalQty, 776);
-  assert.equal(s.totalBudget, 1598700000);
+  assert.equal(s.totalQty, 764);
+  assert.equal(s.totalBudget, 1238700000);
   assert.equal(s.totalBudget, domain.planBudget(rows, benchmarks).total);
 });
 

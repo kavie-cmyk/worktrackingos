@@ -10,8 +10,7 @@
 //       Phase + nhãn "giá Phase"; dòng CHƯA có giá Phase -> hiện "—"
 //       + nhãn "chưa đặt giá" DÙ Benchmark của Channel có unit_price.
 //  Differential: render không mutate dòng plan; tổng ngân sách fixture
-//  demo (đã chuyển giá sang giá Phase trên dòng) = 1.598.700.000đ như
-//  baseline trước đợt này.
+//  demo (đã chuyển giá sang giá Phase trên dòng) = 1.238.700.000đ.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -141,7 +140,7 @@ test('PDPR [render]: chi tiết Meta Ads (Paid Media) — ô nhập Ngân sách 
   assert.ok(!html.includes('planning-month-unit-price'), 'Paid Media cũng không có ô Đơn giá tại dòng');
 });
 
-test('PDPR [differential]: render KHÔNG mutate dòng plan; tổng ngân sách fixture demo (giá đã chuyển sang giá Phase trên dòng) = baseline 1.598.700.000đ', () => {
+test('PDPR [differential]: render KHÔNG mutate dòng plan; tổng ngân sách fixture demo (giá đã chuyển sang giá Phase trên dòng) = baseline 1.238.700.000đ', () => {
   const rows = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
   const phases = JSON.parse(JSON.stringify(demo.phases.filter((p) => p.brand_id)));
   const benchmarks = JSON.parse(JSON.stringify(demo.benchmarks));
@@ -151,8 +150,8 @@ test('PDPR [differential]: render KHÔNG mutate dòng plan; tổng ngân sách f
   assert.ok(html.includes('data-planning-price-value="1">1.500.000 VND'), 'KOL Nano demo hiện giá Phase 1.500.000đ từ dòng');
   assert.equal(JSON.stringify(rows), snapshot, 'render không được sửa dữ liệu dòng');
   const total = domain.planBudget(rows, benchmarks);
-  assert.equal(total.total, 1598700000, 'tổng ngân sách fixture = baseline trước đợt bỏ giá Benchmark');
+  assert.equal(total.total, 1238700000, 'tổng ngân sách fixture = baseline tính lại 18/11');
   assert.equal(total.totalDirect, 811200000);
-  assert.equal(total.totalUnitPrice, 787500000);
-  assert.equal(total.totalManualUnitPrice, 787500000, 'phần qty × đơn giá nay toàn bộ là giá Phase');
+  assert.equal(total.totalUnitPrice, 427500000);
+  assert.equal(total.totalManualUnitPrice, 427500000, 'phần qty × đơn giá nay toàn bộ là giá Phase');
 });

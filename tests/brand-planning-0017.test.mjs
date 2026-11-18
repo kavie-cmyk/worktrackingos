@@ -217,8 +217,8 @@ test('0017 [seed]: số INSERT trong seed khớp số dòng demo từng bảng +
   // Workspace đích ở mọi INSERT:
   assert.ok(!/^insert into public\.\w+ \([^)]*\) values \((?!.*a0870eed-cbdc-4fde-a3da-0b09d83d83b6)/m.test(seed.replace(/^insert into public\.asset_versions .*$/gm, '')), 'có INSERT thiếu workspace đích (trừ asset_versions)');
   // 4 số neo ở phần kiểm chứng cuối file:
-  assert.match(seed, /776 as ky_vong/);
-  assert.match(seed, /1598700000 as ky_vong/);
+  assert.match(seed, /764 as ky_vong/);
+  assert.match(seed, /1238700000 as ky_vong/);
   assert.match(seed, /51539000 as ky_vong/);
   assert.match(seed, /115 as ky_vong/);
   // Tiền điều kiện đầu file:

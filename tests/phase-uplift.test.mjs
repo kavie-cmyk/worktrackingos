@@ -92,11 +92,11 @@ test('PU [demo]: SAVA 3 phase PLAY/BUILD/CREATE — segment + campaign_id + kho�
   }
 });
 
-test('PU [demo]: phase_assumptions đủ 3 KOL x 4 phase Lumus, toàn bộ null (kế thừa benchmark)', () => {
-  assert.equal(demo.phase_assumptions.length, 12);
+test('PU [demo]: phase_assumptions đủ 2 KOL x 4 phase Lumus, toàn bộ null (kế thừa benchmark)', () => {
+  assert.equal(demo.phase_assumptions.length, 8);
   const keys = new Set(demo.phase_assumptions.map((a) => `${a.phase_id}|${a.channel}`));
   for (const pid of ['phase-lumus-1', 'phase-lumus-2', 'phase-lumus-3', 'phase-lumus-4']) {
-    for (const ch of ['KOL Nano', 'KOL Micro', 'KOL Expert']) {
+    for (const ch of ['KOL Nano', 'KOL Micro']) {
       assert.ok(keys.has(`${pid}|${ch}`), `thiếu assumption ${pid} x ${ch}`);
     }
   }
@@ -113,8 +113,8 @@ test('PU [demo]: phase_assumptions đủ 3 KOL x 4 phase Lumus, toàn bộ null 
   }
 });
 
-test('PU [demo]: plan_rows Lumus 216 dòng đều có phase_id suy từ khoảng tháng (kể cả Paid Ads — SỬA PHẠM VI đợt Paid Objective)', () => {
-  assert.equal(lumusRows.length, 216);
+test('PU [demo]: plan_rows Lumus 204 dòng đều có phase_id suy từ khoảng tháng (kể cả Paid Ads — SỬA PHẠM VI đợt Paid Objective)', () => {
+  assert.equal(lumusRows.length, 204);
   const expected = (m) => (m <= '2027-02' ? 'phase-lumus-1' : m <= '2027-05' ? 'phase-lumus-2' : m <= '2027-09' ? 'phase-lumus-3' : 'phase-lumus-4');
   for (const r of lumusRows) assert.equal(r.phase_id, expected(r.month), `${r.id} sai phase`);
   assert.ok(lumusRows.filter((r) => r.channel === 'Meta Ads').every((r) => r.phase_id));
@@ -217,17 +217,16 @@ test('PU [domain]: byPhase = tổng đúng các row thuộc phase (cộng từ c
   for (const k of ['views', 'visits', 'freemium', 'paid']) {
     approx(Object.values(f.byPhase).reduce((s, p) => s + p[k], 0), f.totals[k], `sum byPhase ${k} = totals`);
   }
-  // GĐ1 (uplift 0): views KOL T1–T2 = (4+6)x4000 + (4+5)x15000 + (1+1)x25000
-  // + opens Email T2 = 48,9717 (đợt Email 18/11: T1 opens 0 vì list 0;
-  // T2 list = freemium − paid T1 của kênh khác = 81,6194 -> opens =
-  // 81,6194 × 0,30 × 2 lượt gửi).
-  approx(f.byPhase['phase-lumus-1'].views, 40000 + 135000 + 50000 + 48.971669727272726, 'GĐ1 views (KOL + opens Email T2)');
+  // GĐ1 (uplift 0): views KOL T1–T2 = (4+6)x4000 + (4+5)x15000
+  // + opens Email T2 = 42,4073 (đợt Email 18/11, tính lại 18/11:
+  // T1 opens 0 vì list 0; T2 opens từ tồn Free T1 sau khi trừ Paid).
+  approx(f.byPhase['phase-lumus-1'].views, 40000 + 135000 + 42.407294727272726, 'GĐ1 views (KOL + opens Email T2)');
   // SỬA PHẠM VI đợt Paid Objective: GĐ1 có 8 row Paid có forecast —
   // mỗi tháng T1–T2, Meta + TikTok mỗi kênh có 2 dòng Objective tính
   // được (Traffic + Signup; Awareness chưa có đơn giá -> null,
   // Remarketing Phase 1 ngân sách 0 nên không có dòng) -> 6 + 8 = 14.
-  // Đợt Email 18/11: +2 row Email Sends (T1 + T2) có forecast -> 16.
-  assert.equal(f.byPhase['phase-lumus-1'].rowCount, 16, 'GĐ1: 6 row KOL + 8 row Paid Objective + 2 row Email có forecast');
+  // Đợt Email 18/11: +2 row Email Sends (T1 + T2) có forecast -> 14.
+  assert.equal(f.byPhase['phase-lumus-1'].rowCount, 14, 'GĐ1: 4 row KOL + 8 row Paid Objective + 2 row Email có forecast');
   // Bỏ phase_id trên row -> khớp theo tháng phải cho cùng byPhase.
   const stripped = demo.plan_rows.map((r) => ({ ...r, phase_id: undefined }));
   const f2 = domain.forecastFunnel(stripped, demo.benchmarks, CTX);
@@ -292,9 +291,9 @@ test('PU [domain]: không views_per_unit ở đâu -> mọi số neo cũ giữ n
   const year = domain.forecastFunnel(lumusRows, demo.benchmarks, CTX);
   const yearNoAsm = domain.forecastFunnel(lumusRows, demo.benchmarks, { phases: brandPhases });
   assert.deepEqual(year.totals, yearNoAsm.totals, 'assumption toàn null -> totals bằng khi không có assumption');
-  // Neo views cập nhật đợt Email 18/11: 1.460.000 (KOL) + 9.085,8553
-  // opens Email (có uplift theo Phase như mọi tỉ lệ).
-  approx(year.totals.views, 1469085.8552589684, 'tổng views Lumus (KOL + opens Email)');
+  // Neo views cập nhật đợt Email 18/11, tính lại 18/11: 1.160.000
+  // (KOL) + 8.588,2759 opens Email (có uplift theo Phase như mọi tỉ lệ).
+  approx(year.totals.views, 1168588.275859402, 'tổng views Lumus (KOL + opens Email)');
 });
 
 test('PU [domain]: không benchmark — assumption đủ tỉ lệ CHỈ tính được khi có views_per_unit', () => {
@@ -320,10 +319,10 @@ test('PU [domain]: ctx rỗng / assumption vắng mặt -> hành vi v1 trên to�
   const v2 = domain.forecastFunnel(lumusRows, demo.benchmarks, {});
   assert.deepEqual(v2.totals, v1.totals);
   assert.deepEqual(v2.byMonth, v1.byMonth);
-  // planBudget / summarize không đổi hành vi (neo trên tập Lumus 216
+  // planBudget / summarize không đổi hành vi (neo trên tập Lumus 204
   // dòng — SỬA PHẠM VI đợt Paid Objective: tổng ngân sách cộng thêm
   // 83.200.000đ của 2 kênh Paid B2B mới).
-  assert.equal(domain.planBudget(lumusRows, demo.benchmarks).total, 65 * 1500000 + 60 * 5500000 + 12 * 30000000 + 546000000 + 182000000 + 41600000 + 41600000);
+  assert.equal(domain.planBudget(lumusRows, demo.benchmarks).total, 65 * 1500000 + 60 * 5500000 + 546000000 + 182000000 + 41600000 + 41600000);
 });
 
 test('PU [domain]: uplift áp trên tỉ lệ MỚI + assumption key mới override benchmark key cũ (fallback theo từng key hiệu dụng)', () => {

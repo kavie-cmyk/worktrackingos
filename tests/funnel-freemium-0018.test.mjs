@@ -111,7 +111,7 @@ test('0018 [demo-data]: benchmarks Lumus dùng key phễu freemium mới, bỏ k
   // ngữ nghĩa Email (visit_to_freemium = click/open 0,10;
   // freemium_to_paid = click→paid 0,01) nên tách khỏi vòng 0,09/0,0275.
   const withRates = lumus.filter((b) => b.visit_to_freemium != null && b.channel !== 'Email Sends');
-  assert.ok(withRates.length >= 5, 'KOL + Meta + TikTok phải có tỉ lệ mới');
+  assert.ok(withRates.length >= 4, 'KOL (2 kênh) + Meta + TikTok phải có tỉ lệ mới');
   for (const b of withRates) {
     assert.equal(b.visit_to_freemium, 0.09, b.channel + ': visit_to_freemium phải = 0.09');
     assert.equal(b.freemium_to_paid, 0.0275, b.channel + ': freemium_to_paid phải = 0.0275 (= 0.5 × 0.055)');
@@ -125,7 +125,6 @@ test('0018 [demo-data]: benchmarks Lumus dùng key phễu freemium mới, bỏ k
   const v2v = Object.fromEntries(lumus.map((b) => [b.channel, b.view_to_visit]));
   assert.equal(v2v['KOL Nano'], 0.003);
   assert.equal(v2v['KOL Micro'], 0.004);
-  assert.equal(v2v['KOL Expert'], 0.005);
   // cost_per_result của Paid Ads không đổi giá trị (chuỗi mới cho cùng số):
   const meta = lumus.find((b) => b.channel === 'Meta Ads');
   assert.equal(meta.cost_per_result.signup, 20000 / 0.09);
@@ -197,9 +196,9 @@ test('0018 [seed]: seed chứa visit_to_freemium + freemium_to_paid trong phần
   assert.ok(benchInserts.some((l) => l.includes('0.09') && l.includes('0.0275')), 'insert benchmarks phải mang giá trị 0.09 / 0.0275');
 });
 
-test('0018 [demo-data]: số neo không đổi — tổng qty Lumus 776, tổng ngân sách năm 1.598.700.000đ', () => {
+test('0018 [demo-data]: số neo — tổng qty Lumus 764, tổng ngân sách năm 1.238.700.000đ (tính lại sau đợt xoá kênh KOL thứ ba 18/11)', () => {
   const domain = require('../js/domain.js');
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
-  assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 776);
-  assert.equal(domain.planBudget(lumus, demo.benchmarks).total, 1598700000);
+  assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 764);
+  assert.equal(domain.planBudget(lumus, demo.benchmarks).total, 1238700000);
 });

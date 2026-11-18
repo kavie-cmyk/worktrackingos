@@ -116,10 +116,10 @@ test('EMAIL (f): phase_assumptions ghi đè tỉ lệ Email như kênh khác (op
   approx(f.rows[0].forecast.paid, 0.1, 'paid với assumption');
 });
 
-test('EMAIL (g): dữ liệu Lumus thật — neo giữ nguyên (776 content, ngân sách 1.598.700.000đ, freemium không đổi), Email đóng góp opens/paid > 0 từ T2, KOL Nano không đổi', () => {
+test('EMAIL (g): dữ liệu Lumus thật — neo tính lại 18/11 (764 content, ngân sách 1.238.700.000đ), Email đóng góp opens/paid > 0 từ T2, KOL Nano không đổi', () => {
   const rows = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
-  assert.equal(rows.reduce((s, r) => s + (r.qty || 0), 0), 776, 'tổng content Lumus = 776');
-  assert.equal(domain.planBudget(rows, demo.benchmarks).total, 1598700000, 'tổng ngân sách = 1.598.700.000đ');
+  assert.equal(rows.reduce((s, r) => s + (r.qty || 0), 0), 764, 'tổng content Lumus = 764');
+  assert.equal(domain.planBudget(rows, demo.benchmarks).total, 1238700000, 'tổng ngân sách = 1.238.700.000đ');
   const ctx = { phases: demo.phases, phaseAssumptions: demo.phase_assumptions };
   const f = domain.forecastFunnel(rows, demo.benchmarks, ctx);
   const emails = f.rows.filter((r) => r.channel === 'Email Sends');
@@ -129,7 +129,7 @@ test('EMAIL (g): dữ liệu Lumus thật — neo giữ nguyên (776 content, ng
   assert.ok(emails[1].forecast.views > 0, 'opens T2 > 0 khi list đã có Free từ T1');
   const emailPaid = emails.reduce((s, r) => s + r.forecast.paid, 0);
   assert.ok(emailPaid > 0, 'Paid Email cả năm > 0');
-  approx(f.totals.freemium, 2862.9112790681543, 'tổng freemium KHÔNG đổi (Email freemium = 0)');
+  approx(f.totals.freemium, 2716.831132798623, 'tổng freemium (Email freemium = 0)');
   const kolNano = f.rows.filter((r) => r.channel === 'KOL Nano').reduce((s, r) => s + (r.forecast ? r.forecast.views : 0), 0);
   approx(kolNano, 260000, 'views KOL Nano không đổi = 260.000');
 });

@@ -446,19 +446,19 @@ union all select 'marketing_requests', count(*), 1 from public.marketing_request
 union all select 'cash_accounts', count(*), 2 from public.cash_accounts where workspace_id = '${WORKSPACE_ID}'
 union all select 'cash_transactions', count(*), 6 from public.cash_transactions where workspace_id = '${WORKSPACE_ID}'
 union all select 'report_snapshots', count(*), 1 from public.report_snapshots where workspace_id = '${WORKSPACE_ID}'
-union all select 'benchmarks', count(*), 8 from public.benchmarks where workspace_id = '${WORKSPACE_ID}'
-union all select 'plan_rows', count(*), 237 from public.plan_rows where workspace_id = '${WORKSPACE_ID}'
-union all select 'phase_assumptions', count(*), 12 from public.phase_assumptions where workspace_id = '${WORKSPACE_ID}'
+union all select 'benchmarks', count(*), 7 from public.benchmarks where workspace_id = '${WORKSPACE_ID}'
+union all select 'plan_rows', count(*), 225 from public.plan_rows where workspace_id = '${WORKSPACE_ID}'
+union all select 'phase_assumptions', count(*), 8 from public.phase_assumptions where workspace_id = '${WORKSPACE_ID}'
 order by bang;
 
 -- 4 SỐ NEO:
--- Neo 1 — Lumus 776 content (tổng qty plan_rows của Brand Lumus AI):
-select sum(qty) as lumus_content_qty, 776 as ky_vong from public.plan_rows where workspace_id = '${WORKSPACE_ID}' and brand_id = '${lumus}';
+-- Neo 1 — Lumus 764 content (tổng qty plan_rows của Brand Lumus AI):
+select sum(qty) as lumus_content_qty, 764 as ky_vong from public.plan_rows where workspace_id = '${WORKSPACE_ID}' and brand_id = '${lumus}';
 -- Neo 2 — Tổng ngân sách Planning năm 2027, lọc Brand/Segment = Tất cả:
--- 1.598.700.000đ = Σ (qty × đơn giá hiệu dụng) + Σ budget trực tiếp (Paid),
+-- 1.238.700.000đ = Σ (qty × đơn giá hiệu dụng) + Σ budget trực tiếp (Paid),
 -- đơn giá hiệu dụng = giá Phase trên dòng (unit_price của plan_rows;
 -- giá Benchmark KHÔNG còn được đọc — chốt 18/11, khớp domain.planBudget).
-select sum(case when pr.qty is not null then pr.qty * coalesce(pr.unit_price, 0) else coalesce(pr.budget, 0) end) as tong_ngan_sach_2027, 1598700000 as ky_vong
+select sum(case when pr.qty is not null then pr.qty * coalesce(pr.unit_price, 0) else coalesce(pr.budget, 0) end) as tong_ngan_sach_2027, 1238700000 as ky_vong
 from public.plan_rows pr
 where pr.workspace_id = '${WORKSPACE_ID}' and pr.month like '2027-%';
 -- Neo 3 — Camp 01 budget = 51.539.000đ (Σ planned_amount budget_lines của Camp 01):

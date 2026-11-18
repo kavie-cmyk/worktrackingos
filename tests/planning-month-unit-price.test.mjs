@@ -45,10 +45,10 @@
 //  (an toàn) dòng có qty thì field budget lưu sẵn (nếu có) KHÔNG được
 //      dùng để tính ngân sách; dữ liệu demo hiện không có dòng nào vừa
 //      có qty vừa có budget (khoá để neo không lệch âm thầm).
-// Neo demo: Lumus tổng ngân sách năm = 1.598.700.000đ (gồm 811.200.000đ
-// Paid Ads từ dữ liệu nguồn; 787.500.000đ nay là GIÁ PHASE trên dòng KOL
+// Neo demo: Lumus tổng ngân sách năm = 1.238.700.000đ (gồm 811.200.000đ
+// Paid Ads từ dữ liệu nguồn; 427.500.000đ nay là GIÁ PHASE trên dòng KOL
 // — fixture demo đã chuyển giá từ Benchmark sang plan_rows, chốt 18/11),
-// content = 776 khi chưa sửa gì.
+// content = 764 khi chưa sửa gì.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -127,7 +127,7 @@ const PHASES = [
 // giá Benchmark KHÔNG còn được đọc ở bất kỳ đường nào (chốt 18/11).
 const BENCHMARKS = [
   { id: 'bench-kol-nano', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Nano', unit_price: 1500000 },
-  { id: 'bench-kol-expert', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Expert', unit_price: 30000000 },
+  { id: 'bench-kol-macro', brand_id: 'brand-lumus-ai', segment: null, channel: 'KOL Macro', unit_price: 30000000 },
   { id: 'bench-dup', brand_id: 'brand-lumus-ai', segment: null, channel: 'Dup Channel', unit_price: 1000000 },
 ];
 function baseRows() {
@@ -137,7 +137,7 @@ function baseRows() {
     { id: 'r-ads-jan', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'Meta Ads', group: 'Paid Media', unit: null, qty: null, budget: 1000000, phase_id: 'phase-lumus-1' },
     { id: 'r-dup-1', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'Dup Channel', group: 'KOL', unit: 'assets', qty: 4, budget: null, phase_id: 'phase-lumus-1' },
     { id: 'r-dup-2', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-01', channel: 'Dup Channel', group: 'KOL', unit: 'assets', qty: 2, budget: null, phase_id: 'phase-lumus-1' },
-    { id: 'r-expert-jun', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-06', channel: 'KOL Expert', group: 'KOL', unit: 'assets', qty: 0, budget: null, phase_id: 'phase-lumus-2' },
+    { id: 'r-macro-jun', brand_id: 'brand-lumus-ai', segment: 'b2c', month: '2027-06', channel: 'KOL Macro', group: 'KOL', unit: 'assets', qty: 0, budget: null, phase_id: 'phase-lumus-2' },
   ];
 }
 function budgetTotalViaApp(h, rows) {
@@ -353,13 +353,13 @@ test('PMUP (g): sửa Số lượng ở chi tiết — ngân sách theo qty mớ
   h.savePlanningMonthQty('KOL Nano', 'KOL', '2027-01', '5');
   assert.equal(rows.find((r) => r.id === 'r-kol-jan').qty, 5);
   assert.equal(h.planMonthBudget(rows, 'KOL Nano', 'KOL', '2027-01', BENCHMARKS), 10000000);
-  // Tháng qty = 0 (KOL Expert 2027-06, Phase 2): đặt giá Phase
+  // Tháng qty = 0 (KOL Macro 2027-06, Phase 2): đặt giá Phase
   // 10.000.000 được, ngân sách vẫn 0; tăng qty lên 2 -> 20.000.000.
-  h.savePhaseUnitPrice('phase-lumus-2', 'KOL Expert', '10000000');
-  assert.equal(rows.find((r) => r.id === 'r-expert-jun').unit_price, 10000000);
-  assert.equal(h.planMonthBudget(rows, 'KOL Expert', 'KOL', '2027-06', BENCHMARKS), 0);
-  h.savePlanningMonthQty('KOL Expert', 'KOL', '2027-06', '2');
-  assert.equal(h.planMonthBudget(rows, 'KOL Expert', 'KOL', '2027-06', BENCHMARKS), 20000000);
+  h.savePhaseUnitPrice('phase-lumus-2', 'KOL Macro', '10000000');
+  assert.equal(rows.find((r) => r.id === 'r-macro-jun').unit_price, 10000000);
+  assert.equal(h.planMonthBudget(rows, 'KOL Macro', 'KOL', '2027-06', BENCHMARKS), 0);
+  h.savePlanningMonthQty('KOL Macro', 'KOL', '2027-06', '2');
+  assert.equal(h.planMonthBudget(rows, 'KOL Macro', 'KOL', '2027-06', BENCHMARKS), 20000000);
 });
 
 // ---------- (h) tháng chưa có dòng ----------
@@ -380,18 +380,18 @@ test('PMUP [an toàn]: dữ liệu demo KHÔNG có dòng nào vừa có qty vừ
   assert.equal(both.length, 0, 'nếu sau này dữ liệu nguồn thêm dòng qty+budget lệch công thức thì phải dừng và báo delta, không tự ý đổi neo');
 });
 
-test('PMUP [neo]: demo Lumus tổng ngân sách năm = 1.598.700.000đ (Paid Ads direct 811.200.000đ + giá Phase KOL 787.500.000đ trên dòng — fixture đã chuyển giá từ Benchmark sang plan_rows, chốt 18/11) và tổng content = 776 khi chưa sửa gì (domain + planBudgetFor đều khớp)', () => {
+test('PMUP [neo]: demo Lumus tổng ngân sách năm = 1.238.700.000đ (Paid Ads direct 811.200.000đ + giá Phase KOL 427.500.000đ trên dòng — fixture đã chuyển giá từ Benchmark sang plan_rows, chốt 18/11) và tổng content = 764 khi chưa sửa gì (domain + planBudgetFor đều khớp)', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
-  assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 776);
+  assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 764);
   const d = domain.planBudget(lumus, demo.benchmarks);
-  assert.equal(d.total, 1598700000);
+  assert.equal(d.total, 1238700000);
   assert.equal(d.totalDirect, 811200000);
-  assert.equal(d.totalUnitPrice, 787500000);
-  assert.equal(d.totalManualUnitPrice, 787500000, 'toàn bộ phần qty × đơn giá nay là giá Phase trên dòng');
+  assert.equal(d.totalUnitPrice, 427500000);
+  assert.equal(d.totalManualUnitPrice, 427500000, 'toàn bộ phần qty × đơn giá nay là giá Phase trên dòng');
   const priced = lumus.filter((r) => r.unit_price !== undefined && r.unit_price !== null);
-  assert.equal(priced.length, 36, '36 dòng KOL (3 kênh × 12 tháng) mang giá Phase trong fixture');
-  assert.ok(priced.every((r) => ['KOL Nano', 'KOL Micro', 'KOL Expert'].includes(r.channel)));
+  assert.equal(priced.length, 24, '24 dòng KOL (2 kênh × 12 tháng) mang giá Phase trong fixture');
+  assert.ok(priced.every((r) => ['KOL Nano', 'KOL Micro'].includes(r.channel)));
   const { h } = makeHarness([], [], demo.benchmarks);
   const viaApp = h.planBudgetFor(lumus, demo.benchmarks).reduce((s, x) => s + x.total, 0);
-  assert.equal(viaApp, 1598700000);
+  assert.equal(viaApp, 1238700000);
 });

@@ -13,7 +13,7 @@
 // 182.000.000đ); trong mỗi phase chia tổng tháng theo TỈ TRỌNG
 // Objective trong phase của Lumus Draft Plan (USD, FX 26.000đ).
 // Google Search B2B + LinkedIn Ads B2B seed MỚI từ Draft Plan
-// (+83.200.000đ tổng "Tất cả": 1.515.500.000đ -> 1.598.700.000đ;
+// (+83.200.000đ tổng "Tất cả" tại thời điểm đợt Paid Objective;
 // tổng B2C không đổi).
 //
 // BẢNG DELTA Paid cũ (cơ chế traffic_share, 7015b32) -> mới (Objective),
@@ -106,7 +106,7 @@ test('PPO [seed]: tổng kênh x tháng GIỮ NGUYÊN cho Meta/TikTok ở cả 1
   assert.equal(sumObj('TikTok Ads', '2027-01', 'signup'), 364000);
 });
 
-test('PPO [seed]: Google Search B2B + LinkedIn Ads B2B — ngân sách phase chia đều theo tháng (Phase 3: 4.160.000đ/tháng, Phase 4: 8.320.000đ/tháng), đúng Objective + segment B2B; tổng "Tất cả" 1.598.700.000đ, B2C không đổi', () => {
+test('PPO [seed]: Google Search B2B + LinkedIn Ads B2B — ngân sách phase chia đều theo tháng (Phase 3: 4.160.000đ/tháng, Phase 4: 8.320.000đ/tháng), đúng Objective + segment B2B; tổng "Tất cả" 1.238.700.000đ', () => {
   for (const [ch, obj] of [['Google Search B2B', 'lead_gen'], ['LinkedIn Ads B2B', 'demo']]) {
     const rows = lumus.filter((r) => r.channel === ch);
     assert.ok(rows.length > 0, ch + ' phải có dòng seed');
@@ -116,8 +116,8 @@ test('PPO [seed]: Google Search B2B + LinkedIn Ads B2B — ngân sách phase chi
     for (const m of ['2027-10', '2027-11', '2027-12']) assert.equal(sumChMonth(ch, m), 8320000, ch + ' ' + m + ' Phase 4 chia đều');
     for (const m of ['2027-01', '2027-02', '2027-03', '2027-04', '2027-05']) assert.equal(sumChMonth(ch, m), 0, ch + ' ' + m + ' Phase 1-2 ngân sách 0');
   }
-  assert.equal(domain.planBudget(lumus, demo.benchmarks).total, 1598700000);
-  assert.equal(domain.planBudget(lumus.filter((r) => r.segment !== 'b2b'), demo.benchmarks).total, 1515500000, 'tổng B2C không đổi');
+  assert.equal(domain.planBudget(lumus, demo.benchmarks).total, 1238700000);
+  assert.equal(domain.planBudget(lumus.filter((r) => r.segment !== 'b2b'), demo.benchmarks).total, 1155500000, 'tổng B2C');
 });
 
 // ---------------------------------------------------------------- forecast ca neo

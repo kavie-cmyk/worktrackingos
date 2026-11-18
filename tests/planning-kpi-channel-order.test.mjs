@@ -22,8 +22,8 @@
 //  - Thứ tự RENDER của cả 3 bảng (views/paid/cac) + bảng b2b trong
 //    planningKpiTablesHtml khớp cùng thứ tự; hàng "Tất cả" vẫn ở
 //    cuối mỗi bảng.
-//  - Số neo fixture Lumus không đổi khi chạy qua planningKpiData:
-//    Paid cả kỳ 92,1879; CAC "Tất cả" T1 = 31.438.407đ.
+//  - Số neo fixture Lumus khi chạy qua planningKpiData:
+//    Paid cả kỳ 97,6835; CAC "Tất cả" T1 = 21.294.587đ.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -193,7 +193,7 @@ test('PKCO [unit]: render — thứ tự hàng của cả 4 bảng KPI (views/pa
   }
 });
 
-test('PKCO [neo]: fixture Lumus qua planningKpiData — thứ tự Channel khớp duyệt lưới của chính fixture; số neo giữ nguyên (Paid cả kỳ 102,4347 gồm Paid Email — đợt Email 18/11; CAC Tất cả T1 = 31.438.407đ)', () => {
+test('PKCO [neo]: fixture Lumus qua planningKpiData — thứ tự Channel khớp duyệt lưới của chính fixture; số neo tính lại 18/11 (Paid cả kỳ 97,6835 gồm Paid Email; CAC Tất cả T1 = 21.294.587đ)', () => {
   const rows = JSON.parse(JSON.stringify(demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai')));
   const phases = JSON.parse(JSON.stringify(demo.phases.filter((p) => p.brand_id)));
   const benchmarks = JSON.parse(JSON.stringify(demo.benchmarks));
@@ -202,9 +202,9 @@ test('PKCO [neo]: fixture Lumus qua planningKpiData — thứ tự Channel khớ
   const MONTHS_2027 = Array.from({ length: 12 }, (_, i) => '2027-' + String(i + 1).padStart(2, '0'));
   const data = h.planningKpiData(rows, benchmarks, MONTHS_2027);
   assert.deepEqual(data.channels.map((c) => c.channel), gridOrderOf(rows), 'thứ tự Channel Lumus khớp phép duyệt lưới');
-  approx(data.blended.totals.paid, 102.43472979521258, 'Paid cả kỳ fixture (phễu Freemium + Paid Email đợt 18/11)');
-  assert.equal(data.blended.months['2027-01'].budget, 72560000, 'ngân sách T1 fixture');
-  assert.equal(h.fmtPlanningCac(data.blended.months['2027-01'].cac), '31.438.407 VND', 'CAC Tất cả T1');
-  assert.equal(domain.planBudget(rows, benchmarks).total, 1598700000, 'tổng ngân sách fixture = 1.598.700.000đ');
-  assert.equal(rows.reduce((s, r) => s + (r.qty || 0), 0), 776, 'content Lumus = 776');
+  approx(data.blended.totals.paid, 97.68348677663053, 'Paid cả kỳ fixture (phễu Freemium + Paid Email đợt 18/11)');
+  assert.equal(data.blended.months['2027-01'].budget, 42560000, 'ngân sách T1 fixture');
+  assert.equal(h.fmtPlanningCac(data.blended.months['2027-01'].cac), '21.294.587 VND', 'CAC Tất cả T1');
+  assert.equal(domain.planBudget(rows, benchmarks).total, 1238700000, 'tổng ngân sách fixture = 1.238.700.000đ');
+  assert.equal(rows.reduce((s, r) => s + (r.qty || 0), 0), 764, 'content Lumus = 764');
 });

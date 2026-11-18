@@ -23,7 +23,7 @@ function approx(actual, expected, label) {
 
 const nanoJan = demo.plan_rows.find((r) => r.channel === 'KOL Nano' && r.month === '2027-01');
 // Seed SAVA CAMP 01 (17/11): plan_rows nay gồm cả 21 dòng SAVA META 2026-10/11 —
-// các neo FY2027 dưới đây lọc đúng brand-lumus-ai (216 dòng — SỬA PHẠM VI đợt
+// các neo FY2027 dưới đây lọc đúng brand-lumus-ai (204 dòng — SỬA PHẠM VI đợt
 // Paid Objective: 120 dòng ma trận + 96 dòng Paid theo Objective, xem
 // tests/planning-paid-objective.test.mjs) thay vì toàn bộ plan_rows.
 const lumusRows = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
@@ -52,12 +52,10 @@ test('BP [demo]: benchmarks KOL đúng số 03 Inputs; Paid Ads là direct budge
   assert.equal(byChannel['KOL Micro'].unit_price, 5500000);
   assert.equal(byChannel['KOL Micro'].output_per_unit, 15000);
   approx(byChannel['KOL Micro'].view_to_visit, 0.004, 'micro v2v');
-  assert.equal(byChannel['KOL Expert'].unit_price, 30000000);
-  assert.equal(byChannel['KOL Expert'].output_per_unit, 25000);
-  approx(byChannel['KOL Expert'].view_to_visit, 0.005, 'expert v2v');
-  // Chuỗi hạ nguồn dùng chung trong file nguồn cho cả 3 KOL (key MỚI:
+  assert.equal(demo.benchmarks.filter((b) => b.brand_id === 'brand-lumus-ai' && b.group === 'KOL').length, 2, 'chỉ còn 2 benchmark KOL (chốt Zac 18/11)');
+  // Chuỗi hạ nguồn dùng chung trong file nguồn cho cả 2 KOL (key MỚI:
   // visit_to_freemium 0,09; freemium_to_paid 0,0275 = 0,5 x 0,055 gộp).
-  for (const ch of ['KOL Nano', 'KOL Micro', 'KOL Expert']) {
+  for (const ch of ['KOL Nano', 'KOL Micro']) {
     approx(byChannel[ch].visit_to_freemium, 0.09, `${ch} v2f`);
     approx(byChannel[ch].freemium_to_paid, 0.0275, `${ch} f2p`);
     assert.equal(byChannel[ch].brand_id, 'brand-lumus-ai');
@@ -90,14 +88,13 @@ test('BP [demo]: benchmarks KOL đúng số 03 Inputs; Paid Ads là direct budge
   }
 });
 
-test('BP [demo]: plan_rows Lumus — ma trận 12 tháng x 10 channel thường = 120 dòng + 96 dòng Paid theo Objective = 216 dòng (SỬA PHẠM VI đợt Paid Objective), tổng FY khớp file nguồn', () => {
-  assert.equal(lumusRows.length, 216);
+test('BP [demo]: plan_rows Lumus — ma trận 12 tháng x 9 channel thường = 108 dòng + 96 dòng Paid theo Objective = 204 dòng (chốt Zac 18/11), tổng FY khớp file nguồn', () => {
+  assert.equal(lumusRows.length, 204);
   const months = [...new Set(lumusRows.map((r) => r.month))].sort();
   assert.deepEqual(months, Array.from({ length: 12 }, (_, i) => `2027-${String(i + 1).padStart(2, '0')}`));
   const total = (ch) => lumusRows.filter((r) => r.channel === ch).reduce((a, r) => a + (r.qty || 0), 0);
   assert.equal(total('KOL Nano'), 65);
   assert.equal(total('KOL Micro'), 60);
-  assert.equal(total('KOL Expert'), 12);
   assert.equal(total('Facebook Owned'), 244);
   assert.equal(total('TikTok Owned'), 104);
   assert.equal(total('LinkedIn Owned'), 104);
@@ -105,8 +102,8 @@ test('BP [demo]: plan_rows Lumus — ma trận 12 tháng x 10 channel thường 
   assert.equal(total('Email Sends'), 24);
   assert.equal(total('B2B Event'), 6);
   assert.equal(total('Paid Community'), 27);
-  // Tháng qty = 0 vẫn có row (KOL Expert T6) để lưới đủ 12 cột.
-  assert.equal(demo.plan_rows.find((r) => r.channel === 'KOL Expert' && r.month === '2027-06').qty, 0);
+  // Tháng qty = 0 vẫn có row (B2B Event T1) để lưới đủ 12 cột.
+  assert.equal(demo.plan_rows.find((r) => r.channel === 'B2B Event' && r.month === '2027-01').qty, 0);
   // Segment: LinkedIn Owned + B2B Event là b2b, còn lại mặc định b2c.
   assert.ok(demo.plan_rows.filter((r) => r.channel === 'LinkedIn Owned').every((r) => r.segment === 'b2b'));
   assert.ok(demo.plan_rows.filter((r) => r.channel === 'B2B Event').every((r) => r.segment === 'b2b'));
@@ -140,13 +137,13 @@ test('BP [demo]: campaigns/kpis/budgetLines hiện có gắn brand_id + segment;
 test('BP [domain]: summarizePlanByMonth đủ 12 tháng + tổng khớp cộng tay', () => {
   const s = domain.summarizePlanByMonth(lumusRows);
   assert.equal(s.months.length, 12);
-  assert.equal(s.byMonth['2027-01'].qty, 4 + 4 + 1 + 21 + 9 + 9 + 11 + 2 + 0 + 2); // 63
+  assert.equal(s.byMonth['2027-01'].qty, 4 + 4 + 21 + 9 + 9 + 11 + 2 + 0 + 2); // 62
   // Chốt 18/11 (bỏ giá Benchmark): giá KOL nay là giá Phase trên dòng
   // nên summarize (không truyền benchmarks) cũng thấy ngân sách KOL:
-  // T1 KOL = 4x1,5tr + 4x5,5tr + 1x30tr = 58.000.000đ.
-  assert.equal(s.byMonth['2027-01'].budget, 10920000 + 3640000 + 58000000);
-  assert.equal(s.totalQty, 65 + 60 + 12 + 244 + 104 + 104 + 130 + 24 + 6 + 27);
-  assert.equal(s.totalBudget, 546000000 + 182000000 + 41600000 + 41600000 + 787500000, 'SỬA PHẠM VI Paid Objective: +83.200.000đ từ 2 kênh B2B mới; +787.500.000đ giá Phase KOL (chốt 18/11)');
+  // T1 KOL = 4x1,5tr + 4x5,5tr = 28.000.000đ.
+  assert.equal(s.byMonth['2027-01'].budget, 10920000 + 3640000 + 28000000);
+  assert.equal(s.totalQty, 65 + 60 + 244 + 104 + 104 + 130 + 24 + 6 + 27);
+  assert.equal(s.totalBudget, 546000000 + 182000000 + 41600000 + 41600000 + 427500000, 'SỬA PHẠM VI Paid Objective: +83.200.000đ từ 2 kênh B2B mới; +427.500.000đ giá Phase KOL (chốt Zac 18/11)');
 });
 
 test('BP [domain]: summarizePlanByChannel kèm group + tổng theo channel', () => {
@@ -156,7 +153,7 @@ test('BP [domain]: summarizePlanByChannel kèm group + tổng theo channel', () 
   assert.equal(nano.group, 'KOL');
   assert.equal(s.byChannel['Meta Ads'].group, 'Paid Media');
   assert.equal(s.byChannel['Meta Ads'].budget, 546000000);
-  assert.equal(s.channels.length, 14, 'SỬA PHẠM VI Paid Objective: 12 channel cũ + Google Search B2B + LinkedIn Ads B2B');
+  assert.equal(s.channels.length, 13, '13 channel: 11 channel thường + Google Search B2B + LinkedIn Ads B2B');
 });
 
 // ---------------------------------------------------------------- forecast
@@ -176,18 +173,18 @@ test('BP [domain]: forecastFunnel CA SỐ NEO — KOL Nano 2027-01', () => {
 test('BP [domain]: forecastFunnel toàn năm — tổng views KOL khớp cộng tay; byMonth đủ 12', () => {
   const f = domain.forecastFunnel(lumusRows, demo.benchmarks);
   assert.equal(f.months.length, 12);
-  // 65x4000 + 60x15000 + 12x25000 = 260.000 + 900.000 + 300.000
+  // 65x4000 + 60x15000 = 260.000 + 900.000 = 1.160.000
   // Views KHÔNG đổi khi nối Forecast Paid (Paid không suy Views từ tiền).
   // SỬA PHẠM VI đợt Email 18/11: Views cộng thêm OPENS của Email tính
-  // từ tồn Free (không ctx -> không uplift, opening 0): +8.363,3328.
-  approx(f.totals.views, 1468363.3327981387, 'total views (KOL 1.460.000 + opens Email 8.363,3328)');
-  // Visits = KOL (780 + 3600 + 1500) + Paid theo Objective Traffic
+  // từ tồn Free (không ctx -> không uplift, opening 0): +7.923,5197.
+  approx(f.totals.views, 1167923.5196731386, 'total views (KOL 1.160.000 + opens Email 7.923,5197)');
+  // Visits = KOL (780 + 3600) + Paid theo Objective Traffic
   // (SỬA PHẠM VI đợt Paid Objective: Meta = ngân sách Traffic cả năm
   // 128.310.000đ / 20.000 = 6.415,5; TikTok = 55.510.000đ / 22.000 =
   // 2.523,1818…; Objective khác không tạo Visits, kênh B2B chưa có
   // đơn giá nên đóng góp 0) + clicks Email (opens × click/open 0,10
-  // = 836,3333 — đợt Email 18/11).
-  approx(f.totals.visits, 780 + 3600 + 1500 + 128310000 / 20000 + 55510000 / 22000 + 836.3332798138637, 'total visits');
+  // = 792,3520 — đợt Email 18/11, tính lại 18/11).
+  approx(f.totals.visits, 780 + 3600 + 128310000 / 20000 + 55510000 / 22000 + 792.3519673138636, 'total visits');
 });
 
 test('BP [domain]: forecastFunnel — channel không benchmark -> forecast null, không bịa số; Paid Ads tính theo Objective từ ngân sách (SỬA PHẠM VI đợt Paid Objective)', () => {
@@ -224,7 +221,7 @@ test('BP [domain]: planBudget CA SỐ NEO — KOL Nano T1 = 4 x 1.500.000 = 6.00
 
 test('BP [domain]: planBudget — Paid Ads lấy field budget trực tiếp; tổng kỳ khớp', () => {
   const b = domain.planBudget(lumusRows, demo.benchmarks);
-  const kolTotal = 65 * 1500000 + 60 * 5500000 + 12 * 30000000;
+  const kolTotal = 65 * 1500000 + 60 * 5500000;
   assert.equal(b.totalUnitPrice, kolTotal);
   assert.equal(b.totalDirect, 546000000 + 182000000 + 41600000 + 41600000, 'SỬA PHẠM VI Paid Objective: direct gồm cả 2 kênh B2B mới');
   assert.equal(b.total, kolTotal + 546000000 + 182000000 + 41600000 + 41600000);

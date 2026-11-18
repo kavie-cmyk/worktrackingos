@@ -14,7 +14,7 @@
 //      ngược lại (cùng nguồn plan_rows, không bản sao);
 //  (e) ô tháng chưa có dòng plan: nhập > 0 tạo dòng mới đúng ngữ cảnh,
 //      nhập 0 thì không tạo; ô chỉ có dòng Ngân sách không sửa Số lượng.
-// Neo demo: Lumus AI tổng Content FY2027 = 776 khi chưa sửa gì, và mọi
+// Neo demo: Lumus AI tổng Content FY2027 = 764 khi chưa sửa gì, và mọi
 // đường tổng (domain summarize + helper ô tháng) đều cộng từ các tháng.
 // Tầng kiểm: [static] khóa wiring/render trong js/app.js + CSS;
 // [unit] trích xuất helper + hàm lưu THẬT của js/app.js chạy với stub
@@ -306,20 +306,20 @@ test('PMQ (e): ô tháng chưa có dòng plan — nhập > 0 tạo dòng mới �
   assert.ok(sB.toasts.some((m) => /chỉ có dòng Ngân sách/.test(m)));
 });
 
-// ---------- neo demo 776 + mọi đường tổng cộng từ các tháng ----------
-test('PMQ [neo]: demo Lumus tổng Content FY2027 = 776 khi chưa sửa; summarize ByMonth/ByChannel và helper ô tháng đều cộng từ các tháng ra đúng 776', () => {
+// ---------- neo demo 764 + mọi đường tổng cộng từ các tháng ----------
+test('PMQ [neo]: demo Lumus tổng Content FY2027 = 764 khi chưa sửa; summarize ByMonth/ByChannel và helper ô tháng đều cộng từ các tháng ra đúng 764', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
-  assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 776);
+  assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 764);
   const byMonth = domain.summarizePlanByMonth(lumus);
-  assert.equal(byMonth.totalQty, 776);
-  assert.equal(Object.values(byMonth.byMonth).reduce((s, x) => s + x.qty, 0), 776);
+  assert.equal(byMonth.totalQty, 764);
+  assert.equal(Object.values(byMonth.byMonth).reduce((s, x) => s + x.qty, 0), 764);
   const byChannel = domain.summarizePlanByChannel(lumus);
-  assert.equal(byChannel.totalQty, 776);
+  assert.equal(byChannel.totalQty, 764);
   for (const ch of byChannel.channels) {
     const monthSum = Object.values(ch.months).reduce((s, v) => s + v, 0);
     assert.equal(ch.qty, monthSum, 'tổng channel ' + ch.channel + ' phải bằng tổng các tháng của channel');
   }
-  // Helper ô tháng của lưới: cộng mọi ô (channel × group × tháng) = 776.
+  // Helper ô tháng của lưới: cộng mọi ô (channel × group × tháng) = 764.
   const { h } = makeHarness([], []);
   const keys = new Map();
   for (const r of lumus) keys.set(r.channel + '|' + r.group, { channel: r.channel, group: r.group });
@@ -329,7 +329,7 @@ test('PMQ [neo]: demo Lumus tổng Content FY2027 = 776 khi chưa sửa; summari
       gridGrand += h.planMonthQty(lumus, channel, group, '2027-' + String(i).padStart(2, '0'));
     }
   }
-  assert.equal(gridGrand, 776);
+  assert.equal(gridGrand, 764);
   // plan_rows không mang trường tổng lưu sẵn nào.
   assert.ok(lumus.every((r) => r.totalQty === undefined && r.total_qty === undefined && r.total === undefined));
 });

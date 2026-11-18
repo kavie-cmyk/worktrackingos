@@ -211,17 +211,17 @@ test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ
 // ============================================================ (d) hồi quy + seed
 test('PB2B [domain+demo] (d): HỒI QUY — đầu vào B2B trống thì mọi số neo giữ nguyên tuyệt đối', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
-  // 776 content Lumus (tổng qty các dòng có số lượng).
-  assert.equal(lumus.filter((r) => r.qty !== null && r.qty !== undefined).reduce((s, r) => s + r.qty, 0), 776, 'tổng content Lumus = 776');
+  // 764 content Lumus (tổng qty các dòng có số lượng).
+  assert.equal(lumus.filter((r) => r.qty !== null && r.qty !== undefined).reduce((s, r) => s + r.qty, 0), 764, 'tổng content Lumus = 764');
   // Tổng ngân sách năm khi lọc Tất cả.
-  assert.equal(domain.planBudget(lumus, demo.benchmarks).total, 1598700000, 'tổng ngân sách năm = 1.598.700.000đ');
+  assert.equal(domain.planBudget(lumus, demo.benchmarks).total, 1238700000, 'tổng ngân sách năm = 1.238.700.000đ');
   // Meta T1 Paid + Paid Tất cả T1 + CAC Tất cả T1.
   const metaT1 = domain.forecastFunnel(lumus.filter((r) => r.channel === 'Meta Ads' && r.month === '2027-01'), demo.benchmarks);
   approx(metaT1.totals.paid, 1.08108, 'Meta T1 Paid = 1,08108');
   const allT1 = domain.forecastFunnel(lumus.filter((r) => r.month === '2027-01'), demo.benchmarks);
-  approx(allT1.totals.paid, 2.308005, 'Paid Tất cả T1 = 2,308005');
+  approx(allT1.totals.paid, 1.99863, 'Paid Tất cả T1 = 1,99863');
   const budgetT1 = domain.planBudget(lumus, demo.benchmarks).byMonth['2027-01'].amount;
-  assert.equal(Math.round(budgetT1 / allT1.totals.paid), 31438407, 'CAC Tất cả T1 = 31.438.407đ');
+  assert.equal(Math.round(budgetT1 / allT1.totals.paid), 21294587, 'CAC Tất cả T1 = 21.294.587đ');
   // B2B toàn năm = 0 (mọi đầu vào B2B đều trống) và Google/LinkedIn vẫn forecast null.
   const year = domain.forecastFunnel(lumus, demo.benchmarks);
   assert.equal(year.totals.b2b, 0, 'chưa có tỉ lệ/đơn giá B2B -> 0 B2B Account toàn năm');

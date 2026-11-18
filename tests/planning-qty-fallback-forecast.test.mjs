@@ -22,9 +22,9 @@
 //      khớp ĐÚNG các giá trị đã ghi lại trên code TRƯỚC sửa
 //      (HEAD 9570f06; đối chiếu ngoài suite: JSON.stringify của cả 3
 //      output trước/sau sửa bằng nhau từng byte — xem báo cáo đợt).
-// Số neo giữ nguyên: 776 content; Paid cả kỳ (kèm ctx phase)
-// 92,1879…; CAC "Tất cả" T1 = 31.438.407đ; tổng ngân sách fixture
-// 1.598.700.000đ.
+// Số neo (tính lại 18/11): 764 content; Paid cả kỳ (kèm ctx phase)
+// 97,6835…; CAC "Tất cả" T1 = 21.294.587đ; tổng ngân sách fixture
+// 1.238.700.000đ.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -136,29 +136,28 @@ test('PQF [static]: domain chỉ còn MỘT nơi chứa chuỗi fallback qty/qua
 
 test('PQF (4) [differential]: fixture Lumus (mọi dòng đều qty) — forecastFunnel + planBudget + computeOperatingFinancials khớp snapshot ghi TRƯỚC sửa', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
-  assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 776, 'neo: 776 content');
+  assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 764, 'neo: 764 content');
   const ctx = { phases: demo.phases.filter((p) => p.brand_id), phaseAssumptions: demo.phase_assumptions };
   const forecast = domain.forecastFunnel(lumus, demo.benchmarks, ctx);
   const forecastNoCtx = domain.forecastFunnel(lumus, demo.benchmarks);
   const budget = domain.planBudget(lumus, demo.benchmarks);
-  // Snapshot TRƯỚC sửa (HEAD 9570f06), GHI LẠI sau đợt Email 18/11:
-  // kênh Email có benchmark nên forecast đổi ĐÚNG theo thiết kế Email
-  // (views +9.085,8553 opens; visits +963,8362 clicks; paid +10,2468;
-  // freemium KHÔNG đổi vì Email freemium = 0) — các neo ngân sách/CAC
-  // bên dưới giữ nguyên tuyệt đối.
-  approx(forecast.totals.views, 1469085.8552589684, 'diff forecast views');
-  approx(forecast.totals.visits, 16008.66028749179, 'diff forecast visits');
-  approx(forecast.totals.freemium, 2862.9112790681543, 'diff forecast freemium');
-  approx(forecast.totals.paid, 102.43472979521258, 'neo: Paid cả kỳ fixture = 102,4347… (gồm Paid Email)');
+  // Snapshot TRƯỚC sửa (HEAD 9570f06), GHI LẠI sau đợt Email 18/11
+  // và sau đợt xoá kênh KOL thứ ba 18/11: kênh Email có benchmark
+  // nên forecast gồm opens/clicks/Paid Email (freemium KHÔNG đổi
+  // vì Email freemium = 0).
+  approx(forecast.totals.views, 1168588.275859402, 'diff forecast views');
+  approx(forecast.totals.visits, 14397.198728919418, 'diff forecast visits');
+  approx(forecast.totals.freemium, 2716.831132798623, 'diff forecast freemium');
+  approx(forecast.totals.paid, 97.68348677663053, 'neo: Paid cả kỳ fixture = 97,6835… (gồm Paid Email)');
   assert.equal(forecast.totals.b2b, 0, 'diff forecast b2b');
-  approx(forecastNoCtx.totals.paid, 95.12142029813864, 'diff forecast (không ctx) paid');
-  approx(forecast.byMonth['2027-01'].views, 101000, 'diff T1 views');
-  approx(forecast.byMonth['2027-01'].paid, 2.308005, 'diff T1 paid');
-  assert.equal(budget.total, 1598700000, 'neo: tổng ngân sách fixture = 1.598.700.000đ');
+  approx(forecastNoCtx.totals.paid, 90.96910717313865, 'diff forecast (không ctx) paid');
+  approx(forecast.byMonth['2027-01'].views, 76000, 'diff T1 views');
+  approx(forecast.byMonth['2027-01'].paid, 1.99863, 'diff T1 paid');
+  assert.equal(budget.total, 1238700000, 'neo: tổng ngân sách fixture = 1.238.700.000đ');
   assert.equal(budget.totalDirect, 811200000, 'diff budget direct');
-  assert.equal(budget.totalUnitPrice, 787500000, 'diff budget unit-price');
-  assert.equal(budget.byMonth['2027-01'].amount, 72560000, 'diff budget T1');
-  assert.equal(Math.round(budget.byMonth['2027-01'].amount / forecastNoCtx.byMonth['2027-01'].paid), 31438407, 'neo: CAC Tất cả T1 = 31.438.407đ');
+  assert.equal(budget.totalUnitPrice, 427500000, 'diff budget unit-price');
+  assert.equal(budget.byMonth['2027-01'].amount, 42560000, 'diff budget T1');
+  assert.equal(Math.round(budget.byMonth['2027-01'].amount / forecastNoCtx.byMonth['2027-01'].paid), 21294587, 'neo: CAC Tất cả T1 = 21.294.587đ');
   // Hạ nguồn tài chính: cùng đầu vào FULL cố định như bản ghi trước sửa.
   const FULL = { paid_churn_rate: 0.02, free_churn_rate: 0.05, monthly_cvr: 0.01, paid_price: 47000, cogs_per_free_user: 10000, cogs_per_paid_user: 20000, fixed_cost: 200000, b2b_churn_rate: 0.04, arppu_b2b: 100000, cogs_per_b2b_account: 30000 };
   const funnelByMonth = {}; const budgetByMonth = {}; const inputsByMonth = {};
@@ -168,16 +167,16 @@ test('PQF (4) [differential]: fixture Lumus (mọi dòng đều qty) — forecas
     inputsByMonth[m] = FULL;
   }
   const fin = domain.computeOperatingFinancials({ months: forecast.months, funnelByMonth, budgetByMonth, inputsByMonth, openingFree: 1000, openingPaid: 100, openingB2b: 50 });
-  assert.equal(fin.totals.budget, 1598700000, 'diff fin budget');
+  assert.equal(fin.totals.budget, 1238700000, 'diff fin budget');
   // Số tài chính GHI LẠI sau đợt Email 18/11: reach/newPaid/revenue/
   // paidEom tăng đúng lượng Paid Email chảy vào New Paid; freeEom
   // giảm tương ứng (New Paid trừ khỏi Free EOM). T1 không đổi vì
   // Email T1 = 0 (list đầu kỳ của fixture này do openingFree quyết).
-  approx(fin.totals.reach, 1469085.8552589684, 'diff fin reach');
-  approx(fin.totals.newPaid, 304.7357925848229, 'diff fin newPaid');
-  approx(fin.totals.revenue, 124881732.11438893, 'diff fin revenue');
-  approx(fin.totals.paidEom, 351.6561165114886, 'diff fin paidEom');
-  approx(fin.totals.freeEom, 2430.6227949455074, 'diff fin freeEom');
-  approx(fin.months[0].paidEom, 111.18492495, 'diff fin T1 paidEom');
+  approx(fin.totals.reach, 1168588.275859402, 'diff fin reach');
+  approx(fin.totals.newPaid, 293.8433623577994, 'diff fin newPaid');
+  approx(fin.totals.revenue, 122379534.50859076, 'diff fin revenue');
+  approx(fin.totals.paidEom, 341.8470242320543, 'diff fin paidEom');
+  approx(fin.totals.freeEom, 2333.1637722586834, 'diff fin freeEom');
+  approx(fin.months[0].paidEom, 110.8786437, 'diff fin T1 paidEom');
   approx(fin.months[0].revenueB2b, 4800000, 'diff fin T1 revenueB2b');
 });
