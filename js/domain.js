@@ -2302,6 +2302,25 @@
     if (_rowGroup(row) === 'Email') return true;
     return !!EMAIL_CHANNELS[String(row.channel || '')];
   }
+  // Kênh Website Articles trong forecast Planning: nhận diện theo
+  // channel đúng tên 'Website Articles' (kênh 'Website' của SAVA
+  // KHÔNG phải kênh này). Mô hình SEO B (WITH_SUPPORT — SEO +
+  // Seeding, chốt của Zac 18/11/2026 theo file SEO_forecast_final.html):
+  // matureViews 350, seedPerPost 250 (chỉ tháng đăng), CR 2,5%
+  // (sign-up = Free user). ageRamp theo TUỔI bài (index 0 = tháng
+  // đăng), domainFactor theo INDEX tháng trong horizon (0-based);
+  // index vượt cuối mảng thì kẹp ở phần tử cuối.
+  var SEO_ARTICLES_MODEL = {
+    matureViews: 350,
+    seedPerPost: 250,
+    cr: 0.025,
+    ageRamp: [0.03, 0.08, 0.18, 0.35, 0.55, 0.75, 0.90, 1.00, 1.03, 1.05, 1.08, 1.10],
+    domainFactor: [0.50, 0.65, 0.80, 0.90, 0.96, 1.00, 1.03, 1.06, 1.10, 1.13, 1.16, 1.20]
+  };
+  function _isSeoArticlesRow(row) {
+    if (!row) return false;
+    return String(row.channel || '') === 'Website Articles';
+  }
   function _rowGroup(row) {
     if (!row) return null;
     var v = row.group !== undefined && row.group !== null ? row.group : row.groupName;
@@ -2925,6 +2944,26 @@
    *     phase_assumptions (ghi đè theo Phase × Channel) + uplift
    *     của Phase như mọi kênh. output_per_unit của Email để null —
    *     opens KHÔNG tính theo qty × views mỗi bài.
+   * - KÊNH WEBSITE ARTICLES (channel 'Website Articles') — đường
+   *   RIÊNG theo Mô hình SEO B (WITH_SUPPORT, xem hằng số
+   *   SEO_ARTICLES_MODEL): cohort theo tháng đăng trong horizon
+   *   (months của lần gọi này; cohort chỉ tính từ tháng đầu horizon):
+   *     seoViews[m] = round(domainFactor[m] × Σ_{k<=m} qty_k × 350
+   *       × ageRamp[m−k]); seedViews[m] = qty_m × 250;
+   *     views = seoViews + seedViews; visits = views (file không có
+   *       bước visit riêng); freemium = round(views × 2,5%) (sign-up
+   *       của file = Free user); paid = 0 và b2b = 0 TUYỆT ĐỐI (Paid
+   *       của kênh sinh ở tầng vận hành qua Monthly cvr từ tồn Free
+   *       chung; bridge paid_to_b2b vì thế = 0 ở tầng kênh dù field
+   *       vẫn sửa được ở lưới Phase). BỎ QUA hoàn toàn benchmark,
+   *       phase assumptions (trừ paid_to_b2b vốn chỉ dùng cho bridge
+   *       = 0), uplift tỉ lệ và Uplift Views của Phase. qty qua
+   *       _planQty; nhiều dòng cùng Brand × tháng cộng qty làm cohort
+   *       tháng đó và forecast tháng được chia cho các dòng theo tỉ
+   *       trọng qty (tháng qty = 0: chia đều cho các dòng của tháng —
+   *       views vẫn có thể > 0 nhờ cohort cũ; hasForecast = true).
+   *     Articles tính ở LƯỢT 1 (không phải Email) nên freemium của
+   *     Articles vào chuỗi tồn Free mà lượt 2 Email dùng để tính list.
    * - Trả thêm byPhase: { [phase_id]: { phase_id, views, visits,
    *   freemium, paid, rowCount } } cộng từ CÙNG kết quả từng row đã tính
    *   (rowCount = số row có forecast thuộc phase); row chi tiết thêm
@@ -2949,6 +2988,42 @@
       return _resolvePhase(phases, r || {}, _planMonth(r));
     });
     var byPhase = {};
+    // --- Kênh Website Articles: series SEO theo Brand x tháng -----
+    // Tính TRƯỚC computeRowForecast (cohort cần qty của MỌI tháng
+    // trong horizon, không chỉ tháng của dòng đang tính).
+    var seoSeriesByBrand = {};
+    (function () {
+      var acc = {};
+      list.forEach(function (r) {
+        if (!_isSeoArticlesRow(r)) return;
+        var mk = _planMonth(r);
+        if (!mk) return;
+        var mi = months.indexOf(mk);
+        if (mi === -1) return;
+        var bk = _planBrandId(r) || '';
+        if (!acc[bk]) acc[bk] = { qty: months.map(function () { return 0; }), count: months.map(function () { return 0; }) };
+        acc[bk].qty[mi] += _planQty(r) || 0;
+        acc[bk].count[mi] += 1;
+      });
+      Object.keys(acc).forEach(function (bk) {
+        var qtys = acc[bk].qty;
+        var viewsArr = [], freeArr = [], seoArr = [], seedArr = [];
+        for (var m = 0; m < months.length; m++) {
+          var seoRaw = 0;
+          for (var k = 0; k <= m; k++) {
+            var ageIdx = Math.min(m - k, SEO_ARTICLES_MODEL.ageRamp.length - 1);
+            seoRaw += qtys[k] * SEO_ARTICLES_MODEL.matureViews * SEO_ARTICLES_MODEL.ageRamp[ageIdx];
+          }
+          var df = SEO_ARTICLES_MODEL.domainFactor[Math.min(m, SEO_ARTICLES_MODEL.domainFactor.length - 1)];
+          var seoViews = Math.round(df * seoRaw);
+          var seedViews = qtys[m] * SEO_ARTICLES_MODEL.seedPerPost;
+          var v = seoViews + seedViews;
+          seoArr.push(seoViews); seedArr.push(seedViews);
+          viewsArr.push(v); freeArr.push(Math.round(v * SEO_ARTICLES_MODEL.cr));
+        }
+        seoSeriesByBrand[bk] = { qty: qtys, count: acc[bk].count, views: viewsArr, freemium: freeArr, seoViews: seoArr, seedViews: seedArr };
+      });
+    })();
     // --- Kênh Email: chuỗi tồn Free đầu tháng theo Brand ----------
     // emailStockSeries được tính GIỮA 2 lượt (sau lượt 1); trong
     // lượt 1 nó là null nên nhánh Email trong computeRowForecast
@@ -3108,6 +3183,39 @@
           if (!bpE) bpE = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, b2bBridge: 0, rowCount: 0 };
           bpE.views += eOpens; bpE.visits += eVisits; bpE.paid += ePaid; bpE.b2b += eB2b; bpE.b2bBridge += eB2b;
           bpE.rowCount += 1;
+        }
+        return base;
+      }
+      if (_isSeoArticlesRow(r)) {
+        // KÊNH WEBSITE ARTICLES — Mô hình SEO B (xem doc đầu hàm +
+        // SEO_ARTICLES_MODEL). Không đọc benchmark / assumption /
+        // uplift nào ở đây. Series tháng đã tính trước theo Brand.
+        var sSeries = seoSeriesByBrand[_planBrandId(r) || ''];
+        var sIdx = base.month ? months.indexOf(base.month) : -1;
+        if (!sSeries || sIdx === -1) return base;
+        var sQtyTotal = sSeries.qty[sIdx];
+        var sCount = sSeries.count[sIdx] || 1;
+        var sQtyRow = _planQty(r) || 0;
+        // Nhiều dòng cùng tháng: chia forecast tháng theo tỉ trọng
+        // qty; tháng tổng qty = 0 -> chia đều (views từ cohort cũ
+        // vẫn phải thuộc về các dòng của tháng đó).
+        var sShare = sQtyTotal > 0 ? sQtyRow / sQtyTotal : 1 / sCount;
+        var sViews = sSeries.views[sIdx] * sShare;
+        var sFreemium = sSeries.freemium[sIdx] * sShare;
+        var sSeo = sSeries.seoViews[sIdx] * sShare;
+        var sSeed = sQtyTotal > 0 ? sQtyRow * SEO_ARTICLES_MODEL.seedPerPost : sSeries.seedViews[sIdx] * sShare;
+        base.forecast = { views: sViews, visits: sViews, freemium: sFreemium, paid: 0, b2b: 0, b2bBridge: 0, seoViews: sSeo, seedViews: sSeed };
+        var bmS = base.month && byMonth[base.month];
+        if (bmS) {
+          bmS.views += sViews; bmS.visits += sViews; bmS.freemium += sFreemium;
+          bmS.hasForecast = true;
+        }
+        totals.views += sViews; totals.visits += sViews; totals.freemium += sFreemium;
+        if (res.phaseId) {
+          var bpS = byPhase[res.phaseId];
+          if (!bpS) bpS = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, b2bBridge: 0, rowCount: 0 };
+          bpS.views += sViews; bpS.visits += sViews; bpS.freemium += sFreemium;
+          bpS.rowCount += 1;
         }
         return base;
       }
@@ -3659,6 +3767,8 @@
     budgetActualTotal: budgetActualTotal,
     benchmarkForRow: benchmarkForRow,
     isEmailRow: _isEmailRow,
+    isSeoArticlesRow: _isSeoArticlesRow,
+    SEO_ARTICLES_MODEL: SEO_ARTICLES_MODEL,
     rowGroupOf: rowGroupOf,
     planChannelOrder: planChannelOrder,
     planChannelOrderByGroup: planChannelOrderByGroup,

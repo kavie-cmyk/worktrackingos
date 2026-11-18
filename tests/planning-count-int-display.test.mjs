@@ -7,9 +7,12 @@
 // CHỈ đổi lớp hiển thị (fmtPlanningCount + vizFunnelHtml countInt):
 // engine/domain và giá trị nội bộ giữ nguyên thập phân đầy đủ, CAC
 // vẫn tính từ Paid CHƯA làm tròn, tiền/tỉ lệ/qty hiển thị như cũ.
-// Số neo engine (tính lại 18/11): Paid cả kỳ fixture 97,6835…;
-// CAC "Tất cả" T1 = 21.294.587đ; Views "Tất cả" T1 = 76.000;
-// 764 content Lumus; tổng ngân sách Lumus 1.238.700.000đ.
+// Số neo engine (tính lại 18/11): Paid cả kỳ fixture 107,4614…
+// (đợt Website Articles SEO: Paid Email tăng vì Free Articles nuôi
+// list Email; Paid phi-Email giữ nguyên); CAC "Tất cả" T1 =
+// 21.294.587đ (giữ nguyên — T1 Paid không đổi); Views "Tất cả" T1 =
+// 78.808 (76.000 + 2.808 Articles T1); 764 content Lumus; tổng ngân
+// sách Lumus 1.238.700.000đ.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -133,16 +136,16 @@ test('PCID [unit]: bảng KPI Theo tháng hiển thị số nguyên ở mọi ô
   const data = h.planningKpiData(rows, benchmarks, MONTHS_2027);
   // Neo ENGINE (giá trị nội bộ, chưa làm tròn). Cập nhật đợt Email
   // 18/11 + tính lại sau đợt xoá kênh KOL thứ ba 18/11.
-  approx(data.blended.totals.paid, 97.68348677663053, 'Paid cả kỳ fixture (engine) = 97,6835… (gồm Paid Email)');
+  approx(data.blended.totals.paid, 107.46143872807268, 'Paid cả kỳ fixture (engine) = 107,4614… (gồm Paid Email tăng do Free Articles)');
   approx(data.blended.months['2027-01'].paid, 1.99863, 'Paid Tất cả T1 (engine) = 1,99863');
-  approx(data.blended.months['2027-01'].views, 76000, 'Views Tất cả T1 (engine) = 76.000');
+  approx(data.blended.months['2027-01'].views, 78808, 'Views Tất cả T1 (engine) = 78.808 (76.000 + 2.808 Articles)');
   const html = h.planningKpiTablesHtml(rows, benchmarks, MONTHS_2027);
   // Hiển thị: số nguyên ở đúng các ô đã neo.
   assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), '2', 'Paid Tất cả T1 hiển thị "2"');
-  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '98', 'Paid Tất cả cột Tổng hiển thị "98" (gồm Paid Email)');
+  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '107', 'Paid Tất cả cột Tổng hiển thị "107" (gồm Paid Email)');
   assert.equal(kpiCell(html, 'paid', 'KOL Nano', '2027-01'), '0', 'Paid KOL Nano T1 (engine 0,1188) hiển thị "0"');
-  assert.equal(kpiCell(html, 'views', 'Tất cả', '2027-01'), '76.000', 'Views Tất cả T1 hiển thị "76.000"');
-  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.168.588', 'Views Tất cả cột Tổng hiển thị "1.168.588" (1.160.000 + opens Email 8.588,28 làm tròn)');
+  assert.equal(kpiCell(html, 'views', 'Tất cả', '2027-01'), '78.808', 'Views Tất cả T1 hiển thị "78.808"');
+  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.367.046', 'Views Tất cả cột Tổng hiển thị "1.367.046" (1.160.000 + 189.749 Articles + opens Email 17.296,91 làm tròn)');
   assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '21.294.587 VND', 'CAC Tất cả T1');
   // Không ô đếm nào của 3 bảng Paid/Views/B2B còn dấu thập phân kiểu "x,yyyy".
   for (const kind of ['paid', 'views', 'b2b']) {

@@ -1558,6 +1558,12 @@
     return null;
   }
   var PHASE_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid', 'paid_to_b2b', 'lead_to_account', 'demo_to_account'];
+  // Kênh Website Articles: Views + phễu theo Mô hình SEO (tính tự
+  // động ở engine, xem SEO_ARTICLES_MODEL ở domain.js) — 4 field bị
+  // KHÓA ở lưới Phase + đường lưu; paid_to_b2b vẫn sửa được.
+  var SEO_ARTICLES_CHANNEL = 'Website Articles';
+  var SEO_ARTICLES_LOCKED_RATE_FIELDS = ['view_to_visit', 'visit_to_freemium', 'freemium_to_paid'];
+  function isSeoArticlesChannel(channel) { return String(channel || '') === SEO_ARTICLES_CHANNEL; }
   var PHASE_RATE_CAMEL = { view_to_visit: 'viewToVisit', visit_to_freemium: 'visitToFreemium', freemium_to_paid: 'freemiumToPaid', visit_to_signup: 'visitToSignup', signup_to_first: 'signupToFirst', first_to_paid: 'firstToPaid', paid_to_b2b: 'paidToB2b', lead_to_account: 'leadToAccount', demo_to_account: 'demoToAccount' };
   // Các Phase SỚM HƠN của `phase` (cùng Brand, start_month nhỏ hơn),
   // sắp xếp gần nhất trước — dùng cho đường DỰ PHÒNG cascade ở app
@@ -4557,7 +4563,8 @@
         // bài), freemium của Email = 0. Ghi chú ngay dưới tên kênh để
         // người nhập không hiểu nhầm là "views mỗi bài".
         var isEmailCh = ch === 'Email Sends' || ch === 'Email CRM' || ch === 'Email' || chRows.some(function (r) { return String(r.group || r.groupName || '') === 'Email'; });
-        var cells = '<td><strong>' + esc(ch) + '</strong>' + (isEmailCh ? '<br><span class="sub" data-phase-email-note="1">Email: Opens từ tồn Free · tỉ lệ = Open rate / Click trên lượt mở / Click → Paid · Freemium = 0</span>' : '') + '</td>' +
+        var isSeoCh = isSeoArticlesChannel(ch);
+        var cells = '<td><strong>' + esc(ch) + '</strong>' + (isEmailCh ? '<br><span class="sub" data-phase-email-note="1">Email: Opens từ tồn Free · tỉ lệ = Open rate / Click trên lượt mở / Click → Paid · Freemium = 0</span>' : '') + (isSeoCh ? '<br><span class="sub" data-phase-seo-note="1">Mô hình SEO: 350 view tối đa/bài · +250 view seeding/bài mới · CR 2,5% → Free user</span>' : '') + '</td>' +
           '<td><input class="phase-input" type="number" step="1" min="0" value="' + esc(String(qtyTotal)) + '" data-action-change="phase-qty" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Số lượng của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '></td>' +
           (function () {
             // Ô Đơn giá mỗi bài: hiện ĐƠN GIÁ HIỆU DỤNG của Channel trong
@@ -4589,6 +4596,11 @@
               // Free đầu tháng) -> ô Views mỗi bài khóa, ghi rõ nguồn.
               return '<td><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" aria-label="Views mỗi bài không áp dụng cho Email (opens tính từ tồn Free) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '" disabled><br><span class="sub" data-phase-email-views-note="1">Từ tồn Free — không theo bài</span></td>';
             }
+            if (isSeoCh) {
+              // Website Articles: Views theo Mô hình SEO ở engine
+              // -> KHÔNG render input, chỉ đọc kèm nhãn mô hình.
+              return '<td data-seo-articles-locked="views_per_unit"><span class="sub" data-phase-seo-views-note="1">Mô hình SEO — tính tự động</span></td>';
+            }
             var viewsInfo = effectivePhaseViewsPerUnit(phase, ch, benchmarks);
             var viewsOwn = phaseViewsPerUnitOverride(phase, ch);
             var viewsLabel = '<br><span class="sub" data-phase-views-source="' + esc(viewsInfo.source || 'none') + '"' + (viewsInfo.source === 'inherited' ? ' data-source-phase-id="' + esc(viewsInfo.sourcePhaseId || '') + '"' : '') + '>' + esc(cascadeSourceLabel(viewsInfo)) + '</span>' +
@@ -4596,6 +4608,13 @@
             return '<td data-views-source="' + esc(viewsInfo.source || 'none') + '"' + (viewsInfo.source === 'inherited' ? ' data-source-phase-id="' + esc(viewsInfo.sourcePhaseId || '') + '"' : '') + '><input class="phase-input phase-input-wide" type="number" step="any" min="0" value="' + esc(viewsInfo.value === null ? '' : String(Math.round(Number(viewsInfo.value) * 100) / 100)) + '" placeholder="—" data-action-change="phase-views" data-phase-id="' + esc(phase.id) + '" data-channel="' + esc(ch) + '" data-own-value="' + esc(viewsOwn === null ? '' : String(viewsOwn)) + '" aria-label="Views mỗi bài (đầu phễu) của ' + esc(ch) + ' trong Phase ' + esc(phase.name || phase.id) + '"' + disAttr + '>' + viewsLabel + '</td>';
           })();
         rateHeads.forEach(function (rh) {
+          if (isSeoCh && SEO_ARTICLES_LOCKED_RATE_FIELDS.indexOf(rh[0]) !== -1) {
+            // Website Articles: 3 tỉ lệ phễu theo Mô hình SEO —
+            // KHÔNG render input, chỉ đọc kèm nhãn mô hình.
+            // paid_to_b2b (và lead/demo) vẫn render input như thường.
+            cells += '<td data-seo-articles-locked="' + esc(rh[0]) + '"><span class="sub" data-phase-seo-rate-note="' + esc(rh[0]) + '">Mô hình SEO — tính tự động</span></td>';
+            return;
+          }
           var eff = rates[rh[0]];
           var ownAsm = phaseAssumptionFor(phase.id, ch);
           var ownRaw = ownAsm ? phaseField(ownAsm, rh[0], PHASE_RATE_CAMEL[rh[0]]) : undefined;
@@ -4642,7 +4661,7 @@
         html += budgetDrivenBreakdowns +
           '<p class="sub" data-planning-phase-budget-audience-note="1">Chỉ hiển thị — sửa ở bảng chi tiết Theo tháng.</p>';
       }
-      html += '<p class="sub">Cách tính: Forecast tháng = Số lượng × Views mỗi bài hiệu dụng; tỉ lệ hiệu dụng: Assumption của Phase thắng, thiếu thì kế thừa Phase trước gần nhất, thiếu nữa mới Benchmark, không có nguồn nào = "—". Riêng kênh Email: Opens = tồn Free đầu tháng × Open rate × số lượt gửi; Visits = Opens × Click/Open; Paid = Visits × Click→Paid; Freemium của Email = 0.</p>';
+      html += '<p class="sub">Cách tính: Forecast tháng = Số lượng × Views mỗi bài hiệu dụng; tỉ lệ hiệu dụng: Assumption của Phase thắng, thiếu thì kế thừa Phase trước gần nhất, thiếu nữa mới Benchmark, không có nguồn nào = "—". Riêng kênh Email: Opens = tồn Free đầu tháng × Open rate × số lượt gửi; Visits = Opens × Click/Open; Paid = Visits × Click→Paid; Freemium của Email = 0. Riêng kênh Website Articles: Mô hình SEO — 350 view tối đa/bài · +250 view seeding/bài mới · CR 2,5% → Free user; Paid = 0 ở tầng kênh.</p>';
       html += noteWithDetailHtml('Nhập 1 giá = đặt tay cho <strong>mọi tháng</strong> trong Phase; xoá trắng = bỏ giá Phase.', 'Đơn giá mỗi bài: ô hiện GIÁ PHASE của Channel trong Phase — nhãn "đặt tay tại phase" nghĩa là các tháng trong Phase đang mang giá Phase, "Chưa đặt giá" nghĩa là chưa tháng nào có giá (giá Benchmark không còn được đọc). Nhập một giá vào ô sẽ ghi giá đó cho MỌI dòng plan của Channel thuộc các tháng trong Phase (ngân sách Phase tính lại qua Số lượng × giá Phase như ở Theo tháng); xoá trắng ô rồi ra khỏi ô để bỏ giá Phase của cả Phase (đơn giá trống, ngân sách phần đó = 0). Nếu các tháng đang có giá khác nhau (giá đặt tay lẻ theo tháng còn từ trước), ô để trống kèm ghi chú "khác nhau theo tháng". Đây là nơi quản Đơn giá duy nhất cho các dòng (bảng chi tiết Theo tháng chỉ hiển thị Đơn giá).', 'data-planning-phase-price-hint="1"');
       html += '<span data-planning-phase-views-hint="1">' + noteDetailHtml('Views mỗi bài (đầu phễu): ô hiện Views MỖI BÀI hiệu dụng của Channel trong Phase — nhãn "Phase Assumption" nghĩa là Phase đang đặt Views mỗi bài riêng, "Kế thừa từ …" nghĩa là đang lấy Views mỗi bài của Phase trước gần nhất, "Benchmark" nghĩa là đang lấy output mỗi bài của Benchmark. Forecast tháng = Số lượng × Views mỗi bài; xoá trắng ô rồi ra khỏi ô để bỏ Views mỗi bài riêng của Phase, quay về kế thừa Phase trước/Benchmark theo cascade (quay về Views mỗi bài của Benchmark nếu không có Phase trước nào đặt). Tỉ lệ chuyển đổi hiện giá trị HIỆU DỤNG: Phase Assumption (nếu có) thắng, thiếu thì kế thừa Phase trước, thiếu nữa mới Benchmark; Channel không có nguồn nào thì để trống và Forecast = — (không bịa số).') + '</span>';
     }
@@ -5176,6 +5195,9 @@
   }
   function savePhaseRate(phaseId, channel, field, raw) {
     if (!phaseSaveGuard()) return;
+    // Website Articles: 3 tỉ lệ phễu bị khóa theo Mô hình SEO —
+    // bỏ qua, KHÔNG ghi assumption, kể cả khi client gửi lên.
+    if (isSeoArticlesChannel(channel) && SEO_ARTICLES_LOCKED_RATE_FIELDS.indexOf(field) !== -1) { render(); return; }
     if (PHASE_RATE_FIELDS.indexOf(field) === -1) { render(); return; }
     var patch = {};
     if (raw === '' || raw === null || raw === undefined) {
@@ -5192,6 +5214,9 @@
   }
   function savePhaseViews(phaseId, channel, raw) {
     if (!phaseSaveGuard()) return;
+    // Website Articles: Views mỗi bài bị khóa theo Mô hình SEO —
+    // bỏ qua, KHÔNG ghi assumption, kể cả khi client gửi lên.
+    if (isSeoArticlesChannel(channel)) { render(); return; }
     var patch = {};
     if (raw === '' || raw === null || raw === undefined) {
       patch.views_per_unit = null;

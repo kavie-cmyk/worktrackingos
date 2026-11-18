@@ -23,8 +23,9 @@
 //      (HEAD 9570f06; đối chiếu ngoài suite: JSON.stringify của cả 3
 //      output trước/sau sửa bằng nhau từng byte — xem báo cáo đợt).
 // Số neo (tính lại 18/11): 764 content; Paid cả kỳ (kèm ctx phase)
-// 97,6835…; CAC "Tất cả" T1 = 21.294.587đ; tổng ngân sách fixture
-// 1.238.700.000đ.
+// 107,4614… (đợt SEO Articles: Paid Email tăng do Free Articles
+// nuôi list); CAC "Tất cả" T1 = 21.294.587đ (giữ); tổng ngân sách
+// fixture 1.238.700.000đ.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -145,13 +146,17 @@ test('PQF (4) [differential]: fixture Lumus (mọi dòng đều qty) — forecas
   // và sau đợt xoá kênh KOL thứ ba 18/11: kênh Email có benchmark
   // nên forecast gồm opens/clicks/Paid Email (freemium KHÔNG đổi
   // vì Email freemium = 0).
-  approx(forecast.totals.views, 1168588.275859402, 'diff forecast views');
-  approx(forecast.totals.visits, 14397.198728919418, 'diff forecast visits');
-  approx(forecast.totals.freemium, 2716.831132798623, 'diff forecast freemium');
-  approx(forecast.totals.paid, 97.68348677663053, 'neo: Paid cả kỳ fixture = 97,6835… (gồm Paid Email)');
+  // GHI LẠI đợt Website Articles SEO 18/11: Articles có forecast
+  // theo Mô hình SEO B (views 189.749, freemium 4.744, visits =
+  // views, paid 0); Free Articles nuôi list Email nên Paid Email
+  // tăng 9,6875 -> 19,4655 và Paid tổng 97,6835 -> 107,4614.
+  approx(forecast.totals.views, 1367045.911689402, 'diff forecast views');
+  approx(forecast.totals.visits, 205068.01474226435, 'diff forecast visits');
+  approx(forecast.totals.freemium, 7460.831132798619, 'diff forecast freemium');
+  approx(forecast.totals.paid, 107.46143872807268, 'neo: Paid cả kỳ fixture = 107,4614… (gồm Paid Email tăng do Articles)');
   assert.equal(forecast.totals.b2b, 0, 'diff forecast b2b');
-  approx(forecastNoCtx.totals.paid, 90.96910717313865, 'diff forecast (không ctx) paid');
-  approx(forecast.byMonth['2027-01'].views, 76000, 'diff T1 views');
+  approx(forecastNoCtx.totals.paid, 99.21310717313867, 'diff forecast (không ctx) paid');
+  approx(forecast.byMonth['2027-01'].views, 78808, 'diff T1 views');
   approx(forecast.byMonth['2027-01'].paid, 1.99863, 'diff T1 paid');
   assert.equal(budget.total, 1238700000, 'neo: tổng ngân sách fixture = 1.238.700.000đ');
   assert.equal(budget.totalDirect, 811200000, 'diff budget direct');
@@ -172,11 +177,16 @@ test('PQF (4) [differential]: fixture Lumus (mọi dòng đều qty) — forecas
   // paidEom tăng đúng lượng Paid Email chảy vào New Paid; freeEom
   // giảm tương ứng (New Paid trừ khỏi Free EOM). T1 không đổi vì
   // Email T1 = 0 (list đầu kỳ của fixture này do openingFree quyết).
-  approx(fin.totals.reach, 1168588.275859402, 'diff fin reach');
-  approx(fin.totals.newPaid, 293.8433623577994, 'diff fin newPaid');
-  approx(fin.totals.revenue, 122379534.50859076, 'diff fin revenue');
-  approx(fin.totals.paidEom, 341.8470242320543, 'diff fin paidEom');
-  approx(fin.totals.freeEom, 2333.1637722586834, 'diff fin freeEom');
+  // GHI LẠI đợt SEO Articles 18/11: Free Articles vào Free user của
+  // bảng vận hành -> New Paid qua Monthly cvr (1%) tăng theo tồn
+  // Free, reach/visits tăng theo views/visits Articles; T1 paidEom
+  // vẫn giữ nguyên (New Paid T1 = funnel Paid T1 + 1% × openingFree
+  // 1.000, cả hai thành phần đều không đổi ở T1).
+  approx(fin.totals.reach, 1367045.9116894025, 'diff fin reach');
+  approx(fin.totals.newPaid, 418.4660855740228, 'diff fin newPaid');
+  approx(fin.totals.revenue, 140451139.90490097, 'diff fin revenue');
+  approx(fin.totals.paidEom, 458.6227629079781, 'diff fin paidEom');
+  approx(fin.totals.freeEom, 6142.867192718555, 'diff fin freeEom');
   approx(fin.months[0].paidEom, 110.8786437, 'diff fin T1 paidEom');
   approx(fin.months[0].revenueB2b, 4800000, 'diff fin T1 revenueB2b');
 });

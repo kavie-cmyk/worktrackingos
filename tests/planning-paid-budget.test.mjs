@@ -353,7 +353,7 @@ test('PPB (iv): kênh KHÔNG có căn cứ vẫn "chưa tính được" — funn
 });
 
 // ---------- (v) neo trước khi sửa ----------
-test('PPB (v) [neo]: chưa sửa gì — Meta Ads 546.000.000đ / TikTok Ads 182.000.000đ / 2 kênh B2B mới 83.200.000đ / tổng năm Lumus 1.238.700.000đ (tổng B2C 1.155.500.000đ) / content 764; forecast toàn Lumus views = 1.160.000 KOL + 7.923,52 opens Email (đợt Email 18/11; Paid vẫn không cộng Views)', () => {
+test('PPB (v) [neo]: chưa sửa gì — Meta Ads 546.000.000đ / TikTok Ads 182.000.000đ / 2 kênh B2B mới 83.200.000đ / tổng năm Lumus 1.238.700.000đ (tổng B2C 1.155.500.000đ) / content 764; forecast toàn Lumus views = 1.160.000 KOL + 189.749 Articles + 16.167,52 opens Email (đợt SEO Articles 18/11; Paid vẫn không cộng Views)', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
   assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 764);
   const sumCh = (ch) => lumus.filter((r) => r.channel === ch).reduce((s, r) => s + r.budget, 0);
@@ -366,6 +366,6 @@ test('PPB (v) [neo]: chưa sửa gì — Meta Ads 546.000.000đ / TikTok Ads 182
   assert.equal(d.totalDirect, 811200000);
   assert.equal(domain.planBudget(lumus.filter((r) => r.segment !== 'b2b'), demo.benchmarks).total, 1155500000, 'tổng B2C');
   const f = domain.forecastFunnel(lumus, demo.benchmarks);
-  approx(f.totals.views, 1167923.5196731386, 'views toàn kỳ = KOL 1.160.000 + opens Email 7.923,5197 (không ctx)');
-  approx(f.totals.visits, 4380 + 6415.5 + 2523.181818181818 + 792.3519673138636, 'visits toàn kỳ = KOL + Paid theo Objective Traffic + clicks Email 792,3520');
+  approx(f.totals.views, 1365916.5196731384, 'views toàn kỳ = KOL 1.160.000 + Articles 189.749 + opens Email 16.167,5197 (không ctx)');
+  approx(f.totals.visits, 4380 + 6415.5 + 2523.181818181818 + 189749 + 1616.7519673138636, 'visits toàn kỳ = KOL + Paid theo Objective Traffic + visits Articles (= views) + clicks Email 1.616,7520');
 });
