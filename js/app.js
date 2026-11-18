@@ -779,8 +779,43 @@
   }
   function planRowQty(r) { var v = r ? (r.qty !== undefined ? r.qty : (r.quantity !== undefined ? r.quantity : r.count)) : null; return (v === null || v === undefined || isNaN(Number(v))) ? 0 : Number(v); }
   // --- Planning Theo tháng: helper THUẦN cho ô tháng (không UI/Store) ---
-  // Nhóm của 1 dòng plan — cùng quy tắc gom nhóm của lưới Theo tháng.
-  function planRowGroup(r) { return String((r && (r.group || r.groupName)) || 'Chưa nhóm'); }
+  // Nhóm của 1 dòng plan — MỘT quy tắc ở domain (Bước B II-2):
+  // D.rowGroupOf; thiếu domain thì quy tắc cũ tại chỗ.
+  function planRowGroup(r) {
+    if (D && typeof D.rowGroupOf === 'function') return D.rowGroupOf(r);
+    return String((r && (r.group || r.groupName)) || 'Chưa nhóm');
+  }
+  // Thứ tự Channel của Planning — MỘT nguồn ở domain (Bước B II-1):
+  // D.planChannelOrder (phẳng, khử trùng) / D.planChannelOrderByGroup
+  // (theo group, cho lưới). Lưới Planning, planningKpiData và khối
+  // Phase đều gọi hai helper này; thiếu domain thì phép duyệt cũ.
+  function planChannelOrder(rows) {
+    if (D && typeof D.planChannelOrder === 'function') return D.planChannelOrder(rows);
+    var groupOrder = [], channelsByGroup = {}, seen = {}, out = [];
+    (rows || []).forEach(function (r) {
+      if (!r) return;
+      var g = planRowGroup(r);
+      if (!channelsByGroup[g]) { channelsByGroup[g] = []; groupOrder.push(g); }
+      var ch = String(r.channel || '—');
+      if (channelsByGroup[g].indexOf(ch) === -1) channelsByGroup[g].push(ch);
+    });
+    groupOrder.forEach(function (g) {
+      channelsByGroup[g].forEach(function (ch) { if (!seen[ch]) { seen[ch] = true; out.push({ group: g, channel: ch }); } });
+    });
+    return out;
+  }
+  function planChannelOrderByGroup(rows) {
+    if (D && typeof D.planChannelOrderByGroup === 'function') return D.planChannelOrderByGroup(rows);
+    var groupOrder = [], byGroup = {};
+    (rows || []).forEach(function (r) {
+      if (!r) return;
+      var g = planRowGroup(r);
+      if (!byGroup[g]) { byGroup[g] = { group: g, channels: [] }; groupOrder.push(byGroup[g]); }
+      var ch = String(r.channel || '—');
+      if (byGroup[g].channels.indexOf(ch) === -1) byGroup[g].channels.push(ch);
+    });
+    return groupOrder;
+  }
   // Dòng có mang Số lượng thật hay không: qty/quantity/count khác null/''
   // mới tính là dòng số lượng; dòng chỉ có budget (qty null, vd Paid Ads)
   // KHÔNG phải ô Số lượng sửa được trong bảng chi tiết Theo tháng.
@@ -876,6 +911,10 @@
     'LinkedIn Ads B2B': ['lead_gen', 'demo']
   };
   function planRowObjective(r) {
+    // Bước B I-3: MỘT nguồn ở domain — D.paidObjectiveOf có bảng alias
+    // đầy đủ ('Lead Generation' -> 'lead_gen', 'reach' -> 'awareness'…);
+    // bản exact-key cũ chỉ còn là dự phòng khi domain chưa nạp.
+    if (D && typeof D.paidObjectiveOf === 'function') return D.paidObjectiveOf(r);
     if (!r) return null;
     var v = r.objective !== undefined && r.objective !== null ? r.objective
       : (r.objective_key !== undefined && r.objective_key !== null ? r.objective_key : r.objectiveKey);
@@ -887,7 +926,9 @@
     return PAID_OBJECTIVE_META[key] || { label: String(key || ''), tier: null, metric: '' };
   }
   function paidObjectivesForChannel(channel) {
-    return (PAID_CHANNEL_OBJECTIVES[String(channel || '')] || []).slice();
+    // Bước B II-6: catalog theo Channel lấy từ domain khi có.
+    var catalog = (D && D.PAID_CHANNEL_OBJECTIVES) || PAID_CHANNEL_OBJECTIVES;
+    return (catalog[String(channel || '')] || []).slice();
   }
   // Các Objective cần hiển thị cho 1 dòng Channel: catalog của Channel
   // hợp nhất với Objective đang có trên các dòng (giữ thứ tự catalog).
@@ -905,6 +946,10 @@
   // (Objective chưa có đơn giá). Sửa đơn giá này qua cùng đường với các
   // field benchmark khác (app chưa có UI sửa benchmark riêng).
   function planBenchmarkCostPerResult(benchmark, objectiveKey) {
+    // Bước B II-6: MỘT nguồn ở domain — D.costPerResultFor (kèm alias
+    // Objective); bản đọc tại chỗ chỉ còn là dự phòng khi domain
+    // chưa nạp.
+    if (D && typeof D.costPerResultFor === 'function') return D.costPerResultFor(benchmark, objectiveKey);
     if (!benchmark || !objectiveKey) return null;
     var meta = PAID_OBJECTIVE_META[objectiveKey];
     var maps = [benchmark.cost_per_result, benchmark.costPerResult];
@@ -1003,15 +1048,24 @@
   // segment của dòng ('b2b' -> 'b2b', còn lại 'b2c') — khớp seed demo
   // và khớp _audienceShare của engine.
   function planRowEffectiveAudience(r) {
+    // Bước B II-7: audience thô đọc qua domain (D.rowAudienceOf — cùng
+    // đường đọc field + customFields với engine); Objective thuần B2C
+    // lấy từ catalog domain khi có.
     var obj = planRowObjective(r);
-    if (obj && PURE_B2C_OBJECTIVE_KEYS[obj]) return 'b2c';
-    var aud = planRowAudience(r);
+    var pure = (D && D.PURE_B2C_OBJECTIVES) || PURE_B2C_OBJECTIVE_KEYS;
+    if (obj && pure[obj]) return 'b2c';
+    var aud = (D && typeof D.rowAudienceOf === 'function') ? D.rowAudienceOf(r) : planRowAudience(r);
     if (aud) return aud;
     return recordSegment(r) === 'b2b' ? 'b2b' : 'b2c';
   }
   // Tỉ trọng B2B hiệu dụng (0..1) của 1 dòng — CHỈ để hiển thị ở chế
   // độ Theo phase (chỉ đọc); engine là nơi tính account thật.
+  // Bước B II-7: MỘT nguồn ở domain — D.audienceShareFor (cùng hàm
+  // engine forecastFunnel dùng, đã gồm đường đọc customFields).
   function planRowB2bShare(r) {
+    if (D && typeof D.audienceShareFor === 'function') {
+      try { return D.audienceShareFor(r).b2b; } catch (e) { /* rơi xuống dự phòng */ }
+    }
     var obj = planRowObjective(r);
     if (obj && PURE_B2C_OBJECTIVE_KEYS[obj]) return 0;
     var aud = planRowEffectiveAudience(r);
@@ -1192,6 +1246,25 @@
   }
   function benchmarkForRow(row, benchmarks) {
     var list = benchmarks || benchmarksList();
+    // Bước B I-1: MỘT hàm khớp benchmark duy nhất ở domain —
+    // D.benchmarkForRow (brand + channel + segment, khớp segment
+    // chính xác thắng, bản đầu thắng). Bản khớp tại chỗ bên dưới chỉ
+    // còn là dự phòng khi domain chưa nạp.
+    if (D && typeof D.benchmarkForRow === 'function') {
+      // Domain đọc brand/segment trực tiếp + customFields; app đọc qua
+      // recordBrandId/recordSegment (gồm customFields) — chiếu hai
+      // field đó lên bản sao nông để hai đường đọc cho cùng kết quả.
+      var probe = row;
+      if (row && typeof row === 'object') {
+        var bid0 = recordBrandId(row), seg0 = recordSegment(row);
+        if ((bid0 && !row.brand_id && !row.brandId) || (seg0 && !row.segment)) {
+          probe = Object.assign({}, row);
+          if (bid0 && !probe.brand_id && !probe.brandId) probe.brand_id = bid0;
+          if (seg0 && !probe.segment) probe.segment = seg0;
+        }
+      }
+      return D.benchmarkForRow(probe, list);
+    }
     var bid = recordBrandId(row), ch = String((row && row.channel) || '');
     var seg = recordSegment(row);
     var best = null;
@@ -1361,28 +1434,53 @@
   // (snake/camel qua phaseField); trống/không phải số -> null (không
   // tăng trưởng). Engine áp vào Views mỗi bài của đường Content.
   function phaseViewsUplift(p) { var v = phaseField(p, 'views_uplift_percent_per_month', 'viewsUpliftPercentPerMonth'); return (v === undefined || v === null || v === '' || isNaN(Number(v))) ? null : Number(v); }
-  // Phase của 1 dòng plan theo đúng cơ chế resolve của engine
-  // (phase_id trước; trống/không thấy thì khớp Brand + khoảng tháng) —
-  // dùng cho đường dự phòng tự tính Views ở normalizeFunnelSteps.
-  function phaseForPlanRow(r) {
+  // Resolve Phase của 1 dòng plan — MỘT hàm dùng chung (Bước B I-7):
+  // D.resolvePhaseFor của engine (phase_id trước; id không tra thấy
+  // thì khớp Brand + khoảng tháng; trả { phase, phaseId }). Mọi nơi
+  // cần biết dòng thuộc Phase nào (phaseForPlanRow, phaseRowsFor,
+  // đường dự phòng Views) đều qua đây — không còn bản resolve riêng.
+  // Thiếu domain thì phép resolve cũ tại chỗ (cùng quy tắc).
+  function resolvePhaseForRow(r) {
     var list = brandPhasesList();
+    var m = planRowMonth(r);
+    if (D && typeof D.resolvePhaseFor === 'function') {
+      var probe = r;
+      if (r && typeof r === 'object') {
+        var bid0 = recordBrandId(r), pid0 = recordPhaseId(r);
+        if ((bid0 && !r.brand_id && !r.brandId) || (pid0 && !r.phase_id && !r.phaseId)) {
+          probe = Object.assign({}, r);
+          if (bid0 && !probe.brand_id && !probe.brandId) probe.brand_id = bid0;
+          if (pid0 && !probe.phase_id && !probe.phaseId) probe.phase_id = pid0;
+        }
+      }
+      try { return D.resolvePhaseFor(list, probe, m); } catch (e) { /* rơi xuống dự phòng */ }
+    }
     var pid = recordPhaseId(r);
     if (pid) {
-      for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(pid)) return list[i];
+      for (var i = 0; i < list.length; i++) if (String(list[i].id) === String(pid)) return { phase: list[i], phaseId: String(pid) };
+      if (!m) return { phase: null, phaseId: String(pid) };
     }
-    var m = planRowMonth(r);
-    if (!m) return null;
-    var bid = recordBrandId(r);
-    var fallback = null;
-    for (var j = 0; j < list.length; j++) {
-      var p = list[j];
-      if (phaseMonths(p).indexOf(m) === -1) continue;
-      var pb = recordBrandId(p);
-      if (bid && pb && String(pb) !== String(bid)) continue;
-      if (bid && pb && String(pb) === String(bid)) return p;
-      if (!fallback) fallback = p;
+    if (m) {
+      var bid = recordBrandId(r);
+      var fallback = null;
+      for (var j = 0; j < list.length; j++) {
+        var p = list[j];
+        if (phaseMonths(p).indexOf(m) === -1) continue;
+        var pb = recordBrandId(p);
+        if (bid && pb && String(pb) !== String(bid)) continue;
+        if (bid && pb && String(pb) === String(bid)) return { phase: p, phaseId: String(p.id) };
+        if (!fallback) fallback = p;
+      }
+      if (fallback) return { phase: fallback, phaseId: String(fallback.id) };
     }
-    return fallback;
+    return { phase: null, phaseId: pid ? String(pid) : null };
+  }
+  // Phase của 1 dòng plan theo đúng cơ chế resolve của engine
+  // (qua resolvePhaseForRow) — dùng cho đường dự phòng tự tính Views
+  // ở normalizeFunnelSteps.
+  function phaseForPlanRow(r) {
+    var res = resolvePhaseForRow(r);
+    return res ? res.phase : null;
   }
   function phaseObjective(p) { var v = phaseField(p, 'objective', 'objective'); return v ? String(v) : ''; }
   // Danh sách tháng 'YYYY-MM' trong khoảng phase (rỗng khi thiếu mốc;
@@ -1437,19 +1535,19 @@
     if (!fn) return null;
     try { return fn(rows, benchmarks, phaseCtx()); } catch (e) { return null; }
   }
-  // Dòng plan thuộc Phase: ưu tiên phase_id tường minh; dòng CHƯA gắn
-  // phase_id thì suy theo khoảng tháng của Phase + đúng Brand (dự phòng
-  // cho dữ liệu quá độ). Dòng đã gắn phase_id khác thì không suy đè.
+  // Dòng plan thuộc Phase: qua resolvePhaseForRow (Bước B I-7 — CÙNG
+  // hàm resolve với engine): dòng gắn phase_id tra thấy -> Phase đó;
+  // phase_id KHÔNG tra thấy (id "ma") hoặc chưa gắn -> khớp Brand +
+  // khoảng tháng như engine gom byPhase. Trước đây hàm này chỉ so
+  // đúng id nên dòng phase_id hỏng bị loại khỏi Phase trong khi
+  // engine vẫn gom vào — nay hai đường cho cùng một kết quả.
   function phaseRowsFor(phase, rows) {
     if (!phase) return [];
-    var months = phaseMonths(phase);
-    var bid = recordBrandId(phase);
     return (rows || []).filter(function (r) {
-      var pid = recordPhaseId(r);
-      if (pid) return String(pid) === String(phase.id);
-      if (!months.length) return false;
-      if (bid && String(recordBrandId(r) || '') !== String(bid)) return false;
-      return months.indexOf(planRowMonth(r)) !== -1;
+      var res = resolvePhaseForRow(r);
+      if (res && res.phase) return String(res.phase.id) === String(phase.id);
+      if (res && res.phaseId) return String(res.phaseId) === String(phase.id);
+      return false;
     });
   }
   function phaseAssumptionFor(phaseId, channel) {
@@ -1465,6 +1563,14 @@
   // khác null thắng; thiếu thì kế thừa Benchmark khớp brand+channel;
   // cả hai đều thiếu -> value null (forecast của channel = null như engine).
   function effectivePhaseRates(phase, channel, benchmarks) {
+    // Bước B II-3: MỘT nguồn ở domain — D.effectiveRatesFor(phase,
+    // channel, benchmarks, assumptions) cùng quy tắc engine. Bản tính
+    // tại chỗ bên dưới chỉ còn là dự phòng khi domain chưa nạp.
+    if (D && typeof D.effectiveRatesFor === 'function') {
+      var phR = phase;
+      if (phase && recordBrandId(phase) && !phase.brand_id && !phase.brandId) phR = Object.assign({}, phase, { brand_id: recordBrandId(phase) });
+      try { return D.effectiveRatesFor(phR, channel, benchmarks || benchmarksList(), phaseAssumptionsList()); } catch (e) { /* rơi xuống dự phòng */ }
+    }
     var asm = phase ? phaseAssumptionFor(phase.id, channel) : null;
     var fakeRow = { brand_id: phase ? recordBrandId(phase) : null, channel: channel };
     var bm = benchmarkForRow(fakeRow, benchmarks);
@@ -1500,6 +1606,12 @@
   // views_per_unit khác null thắng; thiếu thì kế thừa output_per_unit
   // của Benchmark khớp brand+channel; cả hai đều thiếu -> value null.
   function effectivePhaseViewsPerUnit(phase, channel, benchmarks) {
+    // Bước B II-3: MỘT nguồn ở domain — D.effectiveViewsPerUnitFor.
+    if (D && typeof D.effectiveViewsPerUnitFor === 'function') {
+      var phV = phase;
+      if (phase && recordBrandId(phase) && !phase.brand_id && !phase.brandId) phV = Object.assign({}, phase, { brand_id: recordBrandId(phase) });
+      try { return D.effectiveViewsPerUnitFor(phV, channel, benchmarks || benchmarksList(), phaseAssumptionsList()); } catch (e) { /* rơi xuống dự phòng */ }
+    }
     var ov = phaseViewsPerUnitOverride(phase, channel);
     if (ov !== null) return { value: ov, source: 'assumption' };
     var fakeRow = { brand_id: phase ? recordBrandId(phase) : null, channel: channel };
@@ -1657,6 +1769,12 @@
   // render "—"). Cột Tổng của blended = tổng cả kỳ tương ứng (Views
   // tính từ cùng cell.views nên tổng theo tháng và tổng theo channel
   // cho cùng một số).
+  // CAC — MỘT phép chia duy nhất (Bước B II-8): budget / paid khi
+  // paid là số > 0, ngược lại null ("—"). Mọi ô/tổng/blended của
+  // planningKpiData đều qua đây.
+  function cacFor(budget, paid) {
+    return (paid !== null && paid !== undefined && !isNaN(Number(paid)) && Number(paid) > 0) ? Number(budget || 0) / Number(paid) : null;
+  }
   function planningKpiData(rows, benchmarks, months) {
     var list = rows || [];
     var mlist = months || [];
@@ -1669,29 +1787,12 @@
         if (d && d.rowId !== undefined && d.rowId !== null) detailById[String(d.rowId)] = d;
       });
     }
-    // Thứ tự Channel KHỚP bảng lưới Planning (viewPlanning): duyệt
-    // GROUP theo thứ tự xuất hiện đầu tiên của planRowGroup trong
-    // rows, trong mỗi group duyệt Channel theo thứ tự xuất hiện đầu
-    // tiên trong group đó, rồi phẳng hoá + khử trùng theo lần xuất
-    // hiện đầu tiên. KHÔNG lấy thứ tự xuất hiện đầu tiên trong rows
-    // thô: khi dòng Paid Media chen trước, Channel của group Content
-    // xuất hiện muộn trong rows thô (vd KOL Nano) sẽ bị đẩy xuống
-    // cuối bảng KPI, lệch khỏi lưới. byChannel vẫn gộp theo tên
-    // Channel như cũ — CHỈ thứ tự đổi, không đổi cách gộp hay số.
-    var channelOrder = [];
-    var kpiGroupOrder = [], kpiChannelsByGroup = {};
-    list.forEach(function (r) {
-      if (!r) return;
-      var g = planRowGroup(r);
-      if (!kpiChannelsByGroup[g]) { kpiChannelsByGroup[g] = []; kpiGroupOrder.push(g); }
-      var chInGroup = String(r.channel || '—');
-      if (kpiChannelsByGroup[g].indexOf(chInGroup) === -1) kpiChannelsByGroup[g].push(chInGroup);
-    });
-    kpiGroupOrder.forEach(function (g) {
-      kpiChannelsByGroup[g].forEach(function (chInGroup) {
-        if (channelOrder.indexOf(chInGroup) === -1) channelOrder.push(chInGroup);
-      });
-    });
+    // Thứ tự Channel KHỚP bảng lưới Planning (viewPlanning) — qua
+    // helper chung planChannelOrder (Bước B II-1, nguồn ở domain):
+    // duyệt GROUP theo thứ tự xuất hiện đầu tiên, Channel trong group
+    // theo thứ tự xuất hiện đầu tiên, phẳng hoá + khử trùng. byChannel
+    // vẫn gộp theo tên Channel như cũ — CHỈ thứ tự, không đổi số.
+    var channelOrder = planChannelOrder(list).map(function (o) { return o.channel; });
     var byChannel = {};
     list.forEach(function (r, i) {
       if (!r) return;
@@ -1731,7 +1832,7 @@
       var tViews = null, tPaid = null, tBudget = 0, tHas = false, tB2b = null;
       mlist.forEach(function (m) {
         var cell = e.months[m];
-        cell.cac = (cell.paid !== null && cell.paid > 0) ? cell.budget / cell.paid : null;
+        cell.cac = cacFor(cell.budget, cell.paid);
         tBudget += cell.budget;
         if (cell.hasForecast) {
           tHas = true;
@@ -1748,7 +1849,7 @@
           blended.months[m].hasViews = true;
         }
       });
-      e.totals = { views: tViews, paid: tPaid, budget: tBudget, hasForecast: tHas, cac: (tPaid !== null && tPaid > 0) ? tBudget / tPaid : null, b2b: tB2b };
+      e.totals = { views: tViews, paid: tPaid, budget: tBudget, hasForecast: tHas, cac: cacFor(tBudget, tPaid), b2b: tB2b };
       blended.totals.budget += tBudget;
       if (tPaid !== null) blended.totals.paid += tPaid;
       if (tB2b !== null) blended.totals.b2b = (blended.totals.b2b === null ? 0 : blended.totals.b2b) + tB2b;
@@ -1761,9 +1862,9 @@
     });
     mlist.forEach(function (m) {
       var b = blended.months[m];
-      b.cac = b.paid > 0 ? b.budget / b.paid : null;
+      b.cac = cacFor(b.budget, b.paid);
     });
-    blended.totals.cac = blended.totals.paid > 0 ? blended.totals.budget / blended.totals.paid : null;
+    blended.totals.cac = cacFor(blended.totals.budget, blended.totals.paid);
     return { months: mlist.slice(), channels: channels, blended: blended };
   }
   // Chỉ số ĐẾM của Planning hiển thị SỐ NGUYÊN (yêu cầu Zac 18/11):
@@ -3910,8 +4011,10 @@
     }
     var rows = allRows.filter(function (r) { return planRowMonth(r).indexOf(String(year) + '-') === 0; });
     var benchmarks = filteredBenchmarks();
-    var months = [];
-    for (var mi = 1; mi <= 12; mi++) months.push(String(year) + '-' + String(mi).padStart(2, '0'));
+    // Danh sách tháng của kỳ năm — MỘT nguồn ở domain (Bước B II-9).
+    var months = (D && typeof D.planMonthsForYear === 'function')
+      ? D.planMonthsForYear(year)
+      : (function () { var out = []; for (var mi = 1; mi <= 12; mi++) out.push(String(year) + '-' + String(mi).padStart(2, '0')); return out; })();
     var html = pageHead('Planning', 'Kế hoạch Content theo Channel, năm ' + year + ' — Theo tháng (xem lưới, sửa trong bảng chi tiết) hoặc Theo phase. Ngân sách tự tính; riêng Paid Media nhập trực tiếp.',
       '');
     html += noteDetailHtml('Kế hoạch Content theo Channel cho năm ' + year + ' — hai chế độ: Theo tháng (lưới Channel × tháng chỉ hiển thị; bấm vào một dòng Channel để mở bảng chi tiết ngay bên dưới lưới và sửa Số lượng và Đơn giá theo từng tháng (Ngân sách chỉ tự tính, chỉ hiển thị — riêng dòng Paid Media nhập ngân sách trực tiếp theo tháng)) và Theo phase (nhập Uplift / Số lượng / Đơn giá mỗi bài / Views mỗi bài / Tỉ lệ chuyển đổi theo Phase). Cả hai tôn trọng bộ lọc Brand/Segment toàn cục, dùng chung một nguồn plan_rows và dùng chung một Forecast.');
@@ -3953,14 +4056,19 @@
     // bên dưới lưới (xem khối data-planning-detail ở dưới); trong bảng chi
     // tiết mới có ô sửa Số lượng theo từng tháng.
     html += '<p class="sub" data-planning-grid-hint="1">Bấm tên Channel để mở bảng chi tiết và sửa Số lượng/Đơn giá (ngân sách tự tính; Paid Media nhập trực tiếp).</p>';
-    // Gom nhóm theo group, trong nhóm gom theo channel.
+    // Gom nhóm theo group, trong nhóm gom theo channel — thứ tự qua
+    // helper chung planChannelOrderByGroup (Bước B II-1, nguồn ở
+    // domain); thành viên từng ô vẫn gom từ rows như cũ.
     var groupOrder = [], groupMap = {};
-    rows.forEach(function (r) {
-      var g = planRowGroup(r);
-      if (!groupMap[g]) { groupMap[g] = { name: g, channels: {}, channelOrder: [] }; groupOrder.push(g); }
-      var ch = String(r.channel || '—');
-      if (!groupMap[g].channels[ch]) { groupMap[g].channels[ch] = []; groupMap[g].channelOrder.push(ch); }
-      groupMap[g].channels[ch].push(r);
+    planChannelOrderByGroup(rows).forEach(function (entry) {
+      var g = entry.group;
+      groupMap[g] = { name: g, channels: {}, channelOrder: entry.channels.slice() };
+      groupOrder.push(g);
+      entry.channels.forEach(function (ch) {
+        groupMap[g].channels[ch] = rows.filter(function (r) {
+          return planRowGroup(r) === g && String(r.channel || '—') === ch;
+        });
+      });
     });
     // Mọi tổng của lưới đều CỘNG TỪ CÁC Ô THÁNG: tổng tháng (cột) = tổng
     // các ô trong cột, Tổng hàng = tổng các ô tháng của hàng đó, tổng kỳ
@@ -4378,9 +4486,10 @@
     // Khối Chỉ số vận hành & tài chính của Phase (+ số dư đầu kỳ ở
     // khối Phase đầu tiên của năm).
     html += planningPhaseOperatingHtml(phase, disAttr, showOpening);
-    // Bảng Channel trong Phase
-    var channels = [];
-    pRows.forEach(function (r) { var ch = String(r.channel || '—'); if (channels.indexOf(ch) === -1) channels.push(ch); });
+    // Bảng Channel trong Phase — thứ tự qua helper chung
+    // planChannelOrder áp trên rows của Phase (Bước B II-1): trước đây
+    // khối này dùng thứ tự thô của pRows, nay khớp lưới/KPI.
+    var channels = planChannelOrder(pRows).map(function (o) { return o.channel; });
     if (!channels.length) {
       html += '<p class="sub">Phase này chưa có dòng plan nào khớp bộ lọc Brand/Segment hiện tại.</p>';
     } else {

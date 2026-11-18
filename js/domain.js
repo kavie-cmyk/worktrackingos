@@ -2458,6 +2458,21 @@
   function benchmarkForRow(row, benchmarks) {
     return _benchmarkFor(_benchmarkIndex(benchmarks), row);
   }
+  /** Thứ tự Group -> Channel KHÔNG khử trùng xuyên group (cho lưới
+   *  Planning, nơi 1 channel có thể hiện ở nhiều group): trả
+   *  [{ group, channels: [channel...] }] theo cùng quy tắc thứ tự
+   *  xuất hiện đầu tiên của planChannelOrder. */
+  function planChannelOrderByGroup(rows) {
+    var groupOrder = [], byGroup = {};
+    (rows || []).forEach(function (r) {
+      if (!r) return;
+      var g = rowGroupOf(r);
+      if (!byGroup[g]) { byGroup[g] = { group: g, channels: [] }; groupOrder.push(byGroup[g]); }
+      var ch = String(r.channel || '—');
+      if (byGroup[g].channels.indexOf(ch) === -1) byGroup[g].channels.push(ch);
+    });
+    return groupOrder;
+  }
   function _benchField(b, snake, camel) {
     if (!b) return null;
     return _planNum(b[snake] !== undefined && b[snake] !== null ? b[snake] : b[camel]);
@@ -3349,6 +3364,7 @@
     benchmarkForRow: benchmarkForRow,
     rowGroupOf: rowGroupOf,
     planChannelOrder: planChannelOrder,
+    planChannelOrderByGroup: planChannelOrderByGroup,
     planQtyOf: _planQty,
     resolvePhaseFor: _resolvePhase,
     effectiveRatesFor: effectiveRatesFor,
