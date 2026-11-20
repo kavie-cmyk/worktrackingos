@@ -88,7 +88,8 @@ test('0022 [domain]: bridge = b2b_bridge_rate x PaidEOM_pre qua inputsByMonth; b
   approx(r.paidEom, 98.01, 'Paid EOM = 108,9 − 10,89');
   approx(r.newB2b, 5 + 10.89, 'New B2B = account trực tiếp 5 + bridge 10,89');
   approx(r.b2bEom, 50 + 15.89 - 2, 'B2B EOM = 63,89');
-  approx(r.revenue, 47000 * 110, 'Revenue tính trên paidBase TRƯỚC churn + TRƯỚC bridge (100 + 10 = 110) — mốc thu phí đầu kỳ 20/11, bridge không còn làm giảm Revenue');
+  approx(r.revenue, 47000 * 104.555, 'Revenue tính trên paidBase TRƯỚC churn TRỪ prorate bridge α = 0,5 (100 + 10 − 0,5 x 10,89 = 104,555) — mốc thu phí đầu kỳ 20/11 + prorate kiểu ChatGPT');
+  approx(r.revenueB2b, 100000 * 60.445, 'Revenue B2B tính trên b2bBase = 50 + 15,89 − 0,5 x bridge 10,89 = 60,445 (prorate α = 0,5 phía B2B)');
 });
 
 test('0022 [domain]: đọc tỉ lệ từ input.phases khi inputsByMonth không mang; null -> bridge 0', () => {

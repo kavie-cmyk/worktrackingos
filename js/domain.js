@@ -3532,9 +3532,18 @@
   //     ĐẦU KỲ): Revenue/COGS tính trên TỒN TRƯỚC CHURN của tháng
   //     (đầu kỳ + phát sinh trong tháng), KHÔNG tính trên EOM; các
   //     dòng EOM chỉ là tồn báo cáo cuối kỳ:
-  //     paidBase_t = Paid đầu kỳ + New Paid_t (= Paid EOM_t + Paid
-  //       churn_t + bridge_t); Revenue_t = ARPPU hiệu dụng x paidBase_t;
+  //     paidBase_t = Paid đầu kỳ + New Paid_t − 0,5 x bridge_t
+  //       (= Paid EOM_t + Paid churn_t + 0,5 x bridge_t);
+  //       Revenue_t = ARPPU hiệu dụng x paidBase_t;
   //       cogsPaid_t = cogs_per_paid_user x paidBase_t.
+  //     PRORATE BRIDGE α = 0,5 (Zac chốt 20/11/2026): phần bridge
+  //       (Paid -> B2B) CHỈ tính 0,5 vào mỗi base trong tháng chuyển
+  //       đổi — giả định chuyển đổi rải đều trong tháng nên nâng cấp
+  //       hiệu lực ngay giữa tháng, thu theo tỉ lệ thời gian còn lại
+  //       của chu kỳ (cơ chế prorate kiểu ChatGPT: gói cũ thu phần
+  //       tháng TRƯỚC lúc chuyển, gói mới thu phần tháng CÒN LẠI —
+  //       mỗi phía 0,5 tháng). Từ tháng sau, account bridge nằm trọn
+  //       trong tồn B2B đầu kỳ như account thường.
   //     freeBase_t = Free đầu kỳ + Free user_t (= Free EOM_t + Free
   //       churn_t + New Paid_t); cogsFree_t = cogs_per_free_user x
   //       freeBase_t.
@@ -3586,9 +3595,11 @@
     // đầu kỳ x b2b_churn_rate (theo Phase, KHÔNG nhân 0,5 tháng đầu
     // như chuỗi B2C); B2B EOM = đầu kỳ + New − churn; Revenue B2B /
     // COGS B2B tính trên TỒN TRƯỚC CHURN như B2C (mốc thu phí đầu
-    // kỳ, Zac chốt 20/11/2026): b2bBase = B2B đầu kỳ + New B2B (=
-    // B2B EOM + B2B churn); Revenue B2B = arppu_b2b x b2bBase; COGS
-    // B2B = cogs_per_b2b_account x b2bBase.
+    // kỳ, Zac chốt 20/11/2026): b2bBase = B2B đầu kỳ + account
+    // TRỰC TIẾP mới + 0,5 x bridge (= B2B EOM + B2B churn − 0,5 x
+    // bridge) — phần bridge prorate α = 0,5 trong tháng chuyển đổi
+    // (xem quy ước PRORATE BRIDGE ở header hàm); Revenue B2B =
+    // arppu_b2b x b2bBase; COGS B2B = cogs_per_b2b_account x b2bBase.
     // CẦU NỐI MỚI: bridge(m) = b2b_bridge_rate của Phase chứa tháng
     // m (null -> 0) x PaidEOM_pre(m) (tồn Paid sau churn, trước
     // bridge); bridge BỊ TRỪ khỏi Paid EOM trong tháng chuyển đổi
@@ -3727,7 +3738,9 @@
         var converted = monthlyCvr !== null ? prevFree * monthlyCvr : 0;
         row.newPaid = cohortPaid + converted;
         row.newFree = row.freeUser - row.newPaid;
-        paidBase = prevPaid + row.newPaid;
+        // paidBase gán SAU khi biết bridgeAmt (khối cầu nối bên
+        // dưới): paidBase = prevPaid + New Paid − 0,5 x bridge
+        // (prorate α = 0,5 tháng chuyển đổi).
         freeBase = prevFree + row.freeUser;
         // Churn trên (tồn đầu kỳ + dòng vào tháng); tháng đầu x 0,5.
         var churnFactor = isFirstMonth ? 0.5 : 1;
@@ -3744,8 +3757,11 @@
         // tháng (row.newB2b) TRƯỚC khối chuỗi B2B bên dưới, nên
         // account bridge đi qua tồn/churn B2B như account mới
         // bình thường. Revenue B2C / COGS Paid tính trên paidBase
-        // (tồn TRƯỚC churn, TRƯỚC bridge — mốc thu phí đầu kỳ) nên
-        // KHÔNG bị bridge làm giảm như khi còn tính trên Paid EOM.
+        // (tồn TRƯỚC churn — mốc thu phí đầu kỳ) TRỪ prorate bridge:
+        // paidBase = prevPaid + New Paid − 0,5 x bridgeAmt (α = 0,5,
+        // prorate kiểu ChatGPT — xem header hàm); phía B2B cộng
+        // đúng 0,5 x bridgeAmt vào b2bBase ở khối chuỗi B2B bên
+        // dưới, nên tổng hai base không đổi so với không prorate.
         var paidEomPre = prevPaid + row.newPaid - row.paidChurn;
         var brInfo = bridgeRateFor(m);
         row.b2bBridgeRate = brInfo.present ? brInfo.rate : null;
@@ -3753,6 +3769,7 @@
         row.b2bBridge = bridgeAmt;
         row.bridgeConverted = bridgeAmt;
         row.newB2b = funnelB2b(m) + bridgeAmt;
+        paidBase = prevPaid + row.newPaid - 0.5 * bridgeAmt;
         row.paidEom = paidEomPre - bridgeAmt;
         var freeRaw = prevFree + row.freeUser - row.newPaid - row.freeChurn;
         if (freeRaw < 0) { row.freeClamped = true; freeRaw = 0; }
@@ -3773,12 +3790,17 @@
         row.b2bChurn = 0; row.b2bEom = 0; row.revenueB2b = 0; row.cogsB2b = 0;
       } else {
         if (b2bChurnRate === null) missingB2b.b2b_churn_rate = true;
-        // b2bBase = tồn B2B TRƯỚC churn (đầu kỳ + New B2B) — mốc
-        // thu phí đầu kỳ như B2C; = B2B EOM + B2B churn.
+        // b2bBase = tồn B2B TRƯỚC churn (đầu kỳ + account trực
+        // tiếp mới) + 0,5 x bridge — mốc thu phí đầu kỳ như B2C,
+        // phần bridge prorate α = 0,5 trong tháng chuyển đổi (=
+        // B2B EOM + B2B churn − 0,5 x bridge). row.newB2b đã gồm
+        // TOÀN BỘ bridge nên trừ lại 0,5 x row.b2bBridge; khi chuỗi
+        // Paid đứt thì row.b2bBridge = 0 và newB2b chỉ gồm account
+        // trực tiếp — công thức vẫn đúng.
         var b2bBase = null;
         if (!chainBrokenB2b && b2bChurnRate !== null) {
           row.b2bChurn = prevB2b * b2bChurnRate;
-          b2bBase = prevB2b + row.newB2b;
+          b2bBase = prevB2b + row.newB2b - 0.5 * (row.b2bBridge || 0);
           row.b2bEom = prevB2b + row.newB2b - row.b2bChurn;
           prevB2b = row.b2bEom;
         } else {

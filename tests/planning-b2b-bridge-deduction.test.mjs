@@ -68,21 +68,26 @@ test('BRIDGE [domain] forecast: budget-driven — Lead Gen cho b2b = 0 (không q
 });
 
 // ============================================================ (i) trừ bridge theo Phase
-test('BRIDGE [domain] (i): bridge = 10% x PaidEOM_pre từng tháng; Paid EOM theo tồn đã trừ, Revenue/COGS theo tồn TRƯỚC churn (mốc đầu kỳ 20/11); tháng sau churn tính trên tồn đã trừ; bridge cộng vào New B2B', () => {
+test('BRIDGE [domain] (i): bridge = 10% x PaidEOM_pre từng tháng; Paid EOM theo tồn đã trừ, Revenue/COGS theo tồn TRƯỚC churn (mốc đầu kỳ 20/11) TRỪ/CỘNG prorate bridge α = 0,5; tháng sau churn tính trên tồn đã trừ; bridge cộng vào New B2B', () => {
   // Tính tay (FULL_BR: bridge rate 10%; opening Free 1.000 / Paid 100 / B2B 50;
   // funnel mỗi tháng: Paid 10, b2b trực tiếp 5):
   // T1: Paid churn = (100+10) x 2% x 0,5 = 1,1 -> PaidEOM_pre = 108,9
   //     -> bridge = 10,89 -> Paid EOM = 98,01. Revenue theo mốc đầu
-  //     kỳ = 47.000 x paidBase (100 + 10) = 5.170.000; cogsPaid =
-  //     20.000 x 110 = 2.200.000; COGS = 12.100.000 (cogsFree theo
-  //     freeBase 1.210) + 2.200.000 = 14.300.000. New B2B = 5 +
+  //     kỳ TRỪ prorate bridge: paidBase = 100 + 10 − 0,5 x 10,89 =
+  //     104,555 -> Revenue = 47.000 x 104,555 = 4.914.085; cogsPaid =
+  //     20.000 x 104,555 = 2.091.100; COGS = 12.100.000 (cogsFree theo
+  //     freeBase 1.210) + 2.091.100 = 14.191.100. New B2B = 5 +
   //     10,89 = 15,89; B2B churn = 50 x 4% = 2 -> B2B EOM = 63,89;
-  //     Revenue B2B = 100.000 x b2bBase (50 + 15,89) = 6.589.000.
+  //     b2bBase = 50 + 15,89 − 0,5 x 10,89 = 60,445 -> Revenue B2B =
+  //     100.000 x 60,445 = 6.044.500; COGS B2B = 30.000 x 60,445 =
+  //     1.813.350.
   // T2: Paid churn = (98,01 + 10) x 2% = 2,1602 (trên tồn ĐÃ trừ
   //     bridge) -> PaidEOM_pre = 105,8498 -> bridge = 10,58498 ->
-  //     Paid EOM = 95,26482. Revenue T2 = 47.000 x paidBase (98,01
-  //     + 10) = 5.076.470. B2B EOM = 63,89 + 15,58498 − 2,5556
-  //     = 76,91938.
+  //     Paid EOM = 95,26482. paidBase T2 = 98,01 + 10 − 0,5 x
+  //     10,58498 = 102,71751 -> Revenue T2 = 47.000 x 102,71751 =
+  //     4.827.722,97. B2B EOM = 63,89 + 15,58498 − 2,5556
+  //     = 76,91938; b2bBase T2 = 63,89 + 15,58498 − 0,5 x 10,58498
+  //     = 74,18249 -> Revenue B2B T2 = 7.418.249.
   const out = domain.computeOperatingFinancials({
     months: ['2027-01', '2027-02'],
     funnelByMonth: {
@@ -99,16 +104,18 @@ test('BRIDGE [domain] (i): bridge = 10% x PaidEOM_pre từng tháng; Paid EOM th
   assert.equal(jan.bridgeConverted, jan.b2bBridge, 'bridgeConverted là alias của bridge');
   approx(jan.paidChurn, 1.1, 'T1 Paid churn tính TRƯỚC bridge (trên tồn đầu kỳ + New Paid)');
   approx(jan.paidEom, 98.01, 'T1 Paid EOM = 108,9 − 10,89');
-  approx(jan.revenue, 5170000, 'T1 Revenue = 47.000 x paidBase 110 (trước churn, trước bridge)');
-  approx(jan.cogsPaid, 2200000, 'T1 COGS Paid = 20.000 x paidBase 110');
-  approx(jan.cogs, 14300000, 'T1 COGS = 12.100.000 + 2.200.000');
+  approx(jan.revenue, 4914085, 'T1 Revenue = 47.000 x paidBase 104,555 (110 − 0,5 x bridge 10,89 — prorate α = 0,5)');
+  approx(jan.cogsPaid, 2091100, 'T1 COGS Paid = 20.000 x paidBase 104,555');
+  approx(jan.cogs, 14191100, 'T1 COGS = 12.100.000 + 2.091.100');
   approx(jan.newB2b, 15.89, 'T1 New B2B = trực tiếp 5 + bridge 10,89');
   approx(jan.b2bEom, 63.89, 'T1 B2B EOM = 50 + 15,89 − 2');
-  approx(jan.revenueB2b, 6589000, 'T1 Revenue B2B = 100.000 x b2bBase 65,89');
+  approx(jan.revenueB2b, 6044500, 'T1 Revenue B2B = 100.000 x b2bBase 60,445 (65,89 − 0,5 x bridge 10,89)');
+  approx(jan.cogsB2b, 1813350, 'T1 COGS B2B = 30.000 x b2bBase 60,445');
   approx(feb.paidChurn, 2.1602, 'T2 Paid churn tính trên tồn đã trừ bridge (98,01 + 10) x 2%');
   approx(feb.b2bBridge, 10.58498, 'T2 bridge = 10% x 105,8498');
   approx(feb.paidEom, 95.26482, 'T2 Paid EOM = 105,8498 − 10,58498');
-  approx(feb.revenue, 5076470, 'T2 Revenue = 47.000 x paidBase (98,01 + 10) = 5.076.470');
+  approx(feb.revenue, 4827722.97, 'T2 Revenue = 47.000 x paidBase 102,71751 (108,01 − 0,5 x bridge 10,58498)');
+  approx(feb.revenueB2b, 7418249, 'T2 Revenue B2B = 100.000 x b2bBase 74,18249 (63,89 + 15,58498 − 0,5 x 10,58498)');
   approx(feb.b2bEom, 76.91938, 'T2 B2B EOM = 63,89 + 15,58498 − 2,5556');
   approx(out.totals.b2bBridge, 21.47498, 'Tổng bridge cả kỳ = 10,89 + 10,58498 (dòng flow)');
   approx(out.totals.paidEom, 95.26482, 'Tổng Paid EOM = tháng cuối đã trừ bridge');
