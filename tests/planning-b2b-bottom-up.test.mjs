@@ -147,7 +147,7 @@ test('PB2B [domain] (b4): Objective thuần B2C bị khóa B2B ở engine — au
 });
 
 // ============================================================ (c) tài chính B2B
-test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b churn 4% -> churn 2, EOM 56, Revenue B2B = arppu_b2b x 56; Profit gồm cả B2B; Paid EOM giữ nguyên vì fixture chỉ truyền tổng b2b (không truyền b2bBridge — tổng B2B không tự suy thành bridge, thay đổi B 18/11)', () => {
+test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b churn 4% -> churn 2, EOM 56, Revenue B2B = arppu_b2b x b2bBase 58 (mốc trước churn 20/11); Profit gồm cả B2B; Paid EOM giữ nguyên vì fixture chỉ truyền tổng b2b (không truyền b2bBridge — tổng B2B không tự suy thành bridge, thay đổi B 18/11)', () => {
   const out = domain.computeOperatingFinancials({
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 300, paid: 10, b2b: 8 } },
@@ -159,16 +159,17 @@ test('PB2B [domain] (c): CA NEO TÀI CHÍNH B2B — opening_b2b 50, New 8, b2b c
   assert.equal(r.newB2b, 8, 'New B2B Accounts từ funnel');
   approx(r.b2bChurn, 2, 'B2B churn = 50 x 4%');
   approx(r.b2bEom, 56, 'B2B EOM = 50 + 8 - 2');
-  approx(r.revenueB2b, 100000 * 56, 'Revenue B2B = arppu_b2b x B2B EOM');
-  approx(r.cogsB2b, 30000 * 56, 'COGS B2B = cogs_per_b2b_account x B2B EOM');
+  approx(r.revenueB2b, 100000 * 58, 'Revenue B2B = arppu_b2b x b2bBase (50 + 8) — mốc trước churn 20/11');
+  approx(r.cogsB2b, 30000 * 58, 'COGS B2B = cogs_per_b2b_account x b2bBase 58');
   // LOẠI 3 — tính lại theo công thức tài chính MỚI (tháng đầu, churn x0,5 trên đầu kỳ + dòng vào):
   //   Free churn = (1.000 + 300) x 5% x 0,5 = 32,5; Free EOM = 1.000 + 300 - 10 - 32,5 = 1.257,5
   //   Paid churn = (100 + 10) x 2% x 0,5 = 1,1; Paid EOM = 100 + 10 - 1,1 = 108,9
-  //   Revenue B2C = 50.000 x 108,9 = 5.445.000; COGS B2C = 10.000 x 1.257,5 + 10.000 x 108,9 = 13.664.000
+  //   Mốc thu phí đầu kỳ 20/11: Revenue B2C = 50.000 x paidBase 110 = 5.500.000;
+  //   COGS B2C = 10.000 x freeBase 1.300 + 10.000 x paidBase 110 = 14.100.000
   approx(r.paidEom, 108.9, 'Paid EOM = 100 + 10 - 1,1 = 108,9 — fixture không đặt b2b_bridge_rate nên bridge = 0, không trừ (tổng b2b trực tiếp không tự thành bridge)');
   assert.equal(r.b2bBridge, 0, 'không có tỉ lệ Phase -> bridge = 0');
-  approx(r.profitAfterCogsMkt, (5445000 + 5600000) - (13664000 + 1680000) - 1000000, 'Profit 1 = (Revenue + Revenue B2B) - (COGS + COGS B2B) - Budget');
-  approx(r.profitAfterCogsFixedMkt, (5445000 + 5600000) - (13664000 + 1680000) - 1000000 - 200000, 'Profit 2 trừ thêm fixed cost');
+  approx(r.profitAfterCogsMkt, (5500000 + 5800000) - (14100000 + 1740000) - 1000000, 'Profit 1 = (Revenue + Revenue B2B) - (COGS + COGS B2B) - Budget');
+  approx(r.profitAfterCogsFixedMkt, (5500000 + 5800000) - (14100000 + 1740000) - 1000000 - 200000, 'Profit 2 trừ thêm fixed cost');
   assert.equal(out.totals.b2bEom, 56, 'Tổng B2B EOM = giá trị tháng cuối (dòng tồn)');
   approx(out.totals.newB2b, 8, 'Tổng New B2B Accounts cộng dồn (dòng flow)');
   assert.deepEqual(out.missingB2b, { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false });
@@ -185,10 +186,10 @@ test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ
   const out = domain.computeOperatingFinancials(base);
   const r = out.months[0];
   assert.equal(r.b2bEom, 0); assert.equal(r.revenueB2b, 0); assert.equal(r.cogsB2b, 0);
-  // LOẠI 3 — tính lại theo công thức MỚI: Free churn = (1.000 + 0) x 5% x 0,5 = 25 -> Free EOM 965;
-  // Paid churn = (100 + 10) x 2% x 0,5 = 1,1 -> Paid EOM 108,9; Revenue = 50.000 x 108,9 = 5.445.000;
-  // COGS = 10.000 x 965 + 10.000 x 108,9 = 10.739.000; Profit 2 = 5.445.000 - 10.739.000 - 1.000.000 - 200.000.
-  approx(r.profitAfterCogsFixedMkt, -6494000, 'Profit bằng đúng ca B2C thuần (công thức MỚI) khi không có B2B');
+  // LOẠI 3 — tính lại theo công thức MỚI + mốc thu phí đầu kỳ 20/11: Free churn = (1.000 + 0) x 5% x 0,5 = 25 -> Free EOM 965;
+  // Paid churn = (100 + 10) x 2% x 0,5 = 1,1 -> Paid EOM 108,9; Revenue = 50.000 x paidBase 110 = 5.500.000;
+  // COGS = 10.000 x freeBase 1.000 + 10.000 x paidBase 110 = 11.100.000; Profit 2 = 5.500.000 - 11.100.000 - 1.000.000 - 200.000.
+  approx(r.profitAfterCogsFixedMkt, -6800000, 'Profit bằng đúng ca B2C thuần (công thức MỚI, mốc trước churn) khi không có B2B');
   assert.deepEqual(out.missingB2b, { opening_b2b: false, b2b_churn_rate: false, arppu_b2b: false, cogs_per_b2b_account: false }, 'không hoạt động B2B thì không báo thiếu đầu vào B2B');
   // Có account mới + opening_b2b nhưng thiếu arppu_b2b -> Revenue B2B null, missingB2b.arppu_b2b = true; Profit vẫn là số (Revenue B2B tạm tính 0, Zac chốt 18/11).
   const out2 = domain.computeOperatingFinancials({
@@ -198,11 +199,11 @@ test('PB2B [domain] (c2): ngoại lệ tồn B2B = 0 — chưa nhập bất kỳ
     openingB2b: 50
   });
   assert.equal(out2.months[0].revenueB2b, null, 'có tồn B2B mà thiếu arppu_b2b -> Revenue B2B null');
-  // Revenue B2C 5.445.000 − COGS B2C 10.739.000 − COGS B2B 1.680.000 − Budget 1.000.000 (Revenue B2B tính 0)
-  approx(out2.months[0].profitAfterCogsMkt, 5445000 - 10739000 - 1680000 - 1000000, 'Profit vẫn là số khi Revenue B2B null (tạm tính 0) = −7.974.000');
-  approx(out2.months[0].profitAfterCogsFixedMkt, -7974000 - 200000, 'Profit2 = Profit1 − fixed_cost');
+  // Revenue B2C 5.500.000 − COGS B2C 11.100.000 − COGS B2B 1.740.000 (30.000 x b2bBase 58) − Budget 1.000.000 (Revenue B2B tính 0)
+  approx(out2.months[0].profitAfterCogsMkt, 5500000 - 11100000 - 1740000 - 1000000, 'Profit vẫn là số khi Revenue B2B null (tạm tính 0) = −8.340.000');
+  approx(out2.months[0].profitAfterCogsFixedMkt, -8340000 - 200000, 'Profit2 = Profit1 − fixed_cost');
   assert.equal(out2.missingB2b.arppu_b2b, true);
-  approx(out2.months[0].cogsB2b, 30000 * 56, 'COGS B2B vẫn tính được');
+  approx(out2.months[0].cogsB2b, 30000 * 58, 'COGS B2B vẫn tính được (theo b2bBase)');
   // Có account mới nhưng thiếu opening_b2b -> chuỗi B2B đứt (null), missingB2b.opening_b2b = true.
   const out3 = domain.computeOperatingFinancials({
     ...base,
@@ -515,14 +516,15 @@ test('PB2B [app unit]: bảng tài chính Theo tháng có đủ hàng B2B và t�
   assert.equal(r.newB2b, 0, 'New B2B Accounts = 0 (không bridge Phase, không quy đổi Lead)');
   approx(r.b2bChurn, 50 * 0.04, 'B2B churn = opening_b2b x b2b_churn_rate');
   approx(r.b2bEom, 50 + 0 - 2, 'B2B EOM = 48');
-  approx(r.revenueB2b, 100000 * 48, 'Revenue B2B = arppu_b2b x B2B EOM');
-  approx(r.cogsB2b, 30000 * 48, 'COGS B2B = cogs_per_b2b_account x B2B EOM');
+  approx(r.revenueB2b, 100000 * 50, 'Revenue B2B = arppu_b2b x b2bBase (50 + 0) — mốc trước churn 20/11');
+  approx(r.cogsB2b, 30000 * 50, 'COGS B2B = cogs_per_b2b_account x b2bBase 50');
   // Paid cohort = 10 + 1,65 = 11,65; Paid churn = (100 + 11,65) x 2% x 0,5
   // = 1,1165; bridge = 0 -> Paid EOM = 100 + 11,65 - 1,1165 = 110,5335.
+  // Revenue/COGS Paid theo paidBase = 100 + 11,65 = 111,65.
   assert.equal(r.b2bBridge, 0, 'Phase không đặt b2b_bridge_rate -> bridge = 0');
   approx(r.paidEom, 110.5335, 'Paid EOM = 110,5335 (không trừ bridge)');
-  approx(r.revenue, 50000 * 110.5335, 'Revenue Paid = 5.526.675');
-  approx(r.cogsPaid, 10000 * 110.5335, 'COGS Paid = 1.105.335');
+  approx(r.revenue, 50000 * 111.65, 'Revenue Paid = 5.582.500 (theo paidBase)');
+  approx(r.cogsPaid, 10000 * 111.65, 'COGS Paid = 1.116.500 (theo paidBase)');
   const html = h.planningOperatingTableHtml(rows, B2B_BENCH, ['2027-01']);
   for (const key of ['newB2b', 'b2bChurn', 'b2bEom', 'revenueB2b', 'cogsB2b']) {
     assert.ok(html.includes('data-planning-operating-row="' + key + '"'), 'bảng tài chính thiếu hàng ' + key);
@@ -532,7 +534,7 @@ test('PB2B [app unit]: bảng tài chính Theo tháng có đủ hàng B2B và t�
     return m ? m[1] : null;
   };
   assert.equal(cell('b2bEom'), '48');
-  assert.equal(cell('revenueB2b'), '4.800.000 VND');
+  assert.equal(cell('revenueB2b'), '5.000.000 VND');
 });
 
 test('PB2B [static]: phễu tổng thêm tầng B2B Accounts; seed demo giữ nguyên hành vi — mọi dòng Paid seed có audience, SAVA Campaign Budget không thuộc phạm vi audience', () => {

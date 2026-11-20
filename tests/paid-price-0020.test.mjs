@@ -11,8 +11,10 @@
 //    -> missing.paid_price + Revenue null (đã khóa chi tiết ở
 //    planning-operating-financials.test.mjs ca (e); ở đây khóa thêm
 //    ca quy đổi chuẩn: bộ giá cũ 25.000x50% + 49.000x30% +
-//    99.000x20% = 47.000 -> paid_price 47.000 cho Revenue 5.118.300đ
-//    với Paid EOM 108,9 như ca tính tay chuẩn).
+//    99.000x20% = 47.000 -> paid_price 47.000 cho Revenue 5.170.000đ
+//    (Revenue tính trên paidBase = Paid đầu kỳ + New Paid = 110
+//    theo mốc thu phí đầu kỳ, Zac chốt 20/11/2026; Paid EOM vẫn
+//    108,9 như ca tính tay chuẩn).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -50,7 +52,7 @@ test('0020 [store-core]: TABLE_COLUMNS.phases chứa paid_price, ánh xạ camel
   assert.equal(Core.fromDbRow('phases', payload).paidPrice, 47000);
 });
 
-test('0020 [domain]: ca quy đổi chuẩn — paid_price 47.000 (từ bộ giá cũ 25.000x50% + 49.000x30% + 99.000x20%) cho Revenue 5.118.300đ, Paid EOM 108,9', () => {
+test('0020 [domain]: ca quy đổi chuẩn — paid_price 47.000 (từ bộ giá cũ 25.000x50% + 49.000x30% + 99.000x20%) cho Revenue 5.170.000đ (x paidBase 110), Paid EOM 108,9', () => {
   const out = domain.computeOperatingFinancials({
     months: ['2027-01'],
     funnelByMonth: { '2027-01': { views: 5000, visits: 900, freemium: 210, paid: 10 } },
@@ -62,6 +64,6 @@ test('0020 [domain]: ca quy đổi chuẩn — paid_price 47.000 (từ bộ giá
   assert.ok(Math.abs(r.paidEom - 108.9) < 1e-6, 'Paid EOM = 108,9, got ' + r.paidEom);
   assert.ok(Math.abs(r.freeEom - 1169.75) < 1e-6, 'Free EOM = 1.169,75, got ' + r.freeEom);
   assert.ok(Math.abs(r.arppuEffective - 47000) < 1e-6, 'ARPPU = paid_price trực tiếp');
-  assert.ok(Math.abs(r.revenue - 5118300) < 1e-6, 'Revenue = 47.000 x 108,9 = 5.118.300, got ' + r.revenue);
+  assert.ok(Math.abs(r.revenue - 5170000) < 1e-6, 'Revenue = 47.000 x paidBase (100 + 10) = 5.170.000 — mốc trước churn 20/11, got ' + r.revenue);
   assert.equal(out.missing.paid_price, false);
 });

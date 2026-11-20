@@ -175,7 +175,7 @@ test('PCID [unit]: bảng Chỉ số vận hành — hàng đếm (Paid EOM 108,
   assert.equal(cell('freeEom'), '1.160');
   assert.equal(cell('totalUsers'), '1.269', 'Total users engine 1.268,9 -> hiển thị "1.269"');
   assert.equal(cell('budget'), '1.000.000 VND', 'hàng tiền giữ nguyên formatter tiền');
-  assert.equal(cell('revenue'), '5.445.000 VND', 'Revenue giữ nguyên (tính từ Paid EOM chưa làm tròn 108,9)');
+  assert.equal(cell('revenue'), '5.500.000 VND', 'Revenue giữ nguyên (tính từ paidBase chưa làm tròn 110 — mốc trước churn 20/11)');
 });
 
 // ---------- [unit] Theo phase: cột Forecast của dòng channel ----------

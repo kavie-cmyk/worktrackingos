@@ -186,9 +186,16 @@ test('PQF (4) [differential]: fixture Lumus (mọi dòng đều qty) — forecas
   // 1.000, cả hai thành phần đều không đổi ở T1).
   approx(fin.totals.reach, 1367045.9116894025, 'diff fin reach');
   approx(fin.totals.newPaid, 418.4660855740228, 'diff fin newPaid');
-  approx(fin.totals.revenue, 140451139.90490097, 'diff fin revenue');
+  // GHI LẠI đợt đổi mốc thu phí đầu kỳ 20/11/2026: Revenue/COGS
+  // tính trên tồn TRƯỚC churn -> totals.revenue tăng từ
+  // 140.451.139,90 lên 143.263.776,07 (= Σ 47.000 x paidBase; đã
+  // kiểm chứng độc lập revenue = 47.000 x (Paid EOM + Paid churn +
+  // bridge) từng tháng) và revenueB2b T1 = 100.000 x b2bBase
+  // (50 + 0) = 5.000.000 thay cho x B2B EOM 48. Mọi dòng tồn
+  // (paidEom/freeEom) KHÔNG đổi.
+  approx(fin.totals.revenue, 143263776.07020512, 'diff fin revenue');
   approx(fin.totals.paidEom, 458.6227629079781, 'diff fin paidEom');
   approx(fin.totals.freeEom, 6142.867192718555, 'diff fin freeEom');
   approx(fin.months[0].paidEom, 110.8786437, 'diff fin T1 paidEom');
-  approx(fin.months[0].revenueB2b, 4800000, 'diff fin T1 revenueB2b');
+  approx(fin.months[0].revenueB2b, 5000000, 'diff fin T1 revenueB2b');
 });

@@ -3528,13 +3528,21 @@
   //     -> coi như THIẾU đầu vào giá (Revenue null tháng đó,
   //     missing.paid_price = true; 2 dòng Profit vẫn tính với
   //     Revenue tạm tính 0 — xem ngoại lệ Profit dưới đây).
-  //   Revenue_t = ARPPU hiệu dụng x Paid EOM_t
-  //   COGS TÁCH theo nhóm user: cogsFree_t = cogs_per_free_user x Free
-  //     EOM_t; cogsPaid_t = cogs_per_paid_user x Paid EOM_t; COGS_t =
-  //     cogsFree_t + cogsPaid_t (đơn giá là SỐ TIỀN trên mỗi user —
-  //     VNĐ/user/tháng — KHÔNG theo % doanh thu). Thiếu MỘT trong hai
-  //     đơn giá -> phần COGS tương ứng + COGS tổng null (2 dòng
-  //     Profit vẫn tính với phần COGS thiếu tạm tính 0 — xem dưới).
+  //   MỐC TÍNH Revenue/COGS (Zac chốt 20/11/2026 — Lumus thu phí
+  //     ĐẦU KỲ): Revenue/COGS tính trên TỒN TRƯỚC CHURN của tháng
+  //     (đầu kỳ + phát sinh trong tháng), KHÔNG tính trên EOM; các
+  //     dòng EOM chỉ là tồn báo cáo cuối kỳ:
+  //     paidBase_t = Paid đầu kỳ + New Paid_t (= Paid EOM_t + Paid
+  //       churn_t + bridge_t); Revenue_t = ARPPU hiệu dụng x paidBase_t;
+  //       cogsPaid_t = cogs_per_paid_user x paidBase_t.
+  //     freeBase_t = Free đầu kỳ + Free user_t (= Free EOM_t + Free
+  //       churn_t + New Paid_t); cogsFree_t = cogs_per_free_user x
+  //       freeBase_t.
+  //   COGS TÁCH theo nhóm user: COGS_t = cogsFree_t + cogsPaid_t
+  //     (đơn giá là SỐ TIỀN trên mỗi user — VNĐ/user/tháng — KHÔNG
+  //     theo % doanh thu). Thiếu MỘT trong hai đơn giá -> phần COGS
+  //     tương ứng + COGS tổng null (2 dòng Profit vẫn tính với phần
+  //     COGS thiếu tạm tính 0 — xem dưới).
   //   Profit (after COGS + mkt cost) = Revenue − COGS − Budget
   //   Profit (after COGS + fixed cost + mkt cost) = trên − fixed_cost
   // QUYẾT ĐỊNH ĐÃ CHỐT: monthly_cvr null -> nguồn chuyển đổi từ tồn
@@ -3576,8 +3584,11 @@
     // Partnership/Event qua cost_per_result.b2b_account) + bridge
     // của tháng (tính ở chuỗi Paid bên dưới); B2B churn = B2B EOM
     // đầu kỳ x b2b_churn_rate (theo Phase, KHÔNG nhân 0,5 tháng đầu
-    // như chuỗi B2C); B2B EOM = đầu kỳ + New − churn; Revenue B2B =
-    // arppu_b2b x B2B EOM; COGS B2B = cogs_per_b2b_account x B2B EOM.
+    // như chuỗi B2C); B2B EOM = đầu kỳ + New − churn; Revenue B2B /
+    // COGS B2B tính trên TỒN TRƯỚC CHURN như B2C (mốc thu phí đầu
+    // kỳ, Zac chốt 20/11/2026): b2bBase = B2B đầu kỳ + New B2B (=
+    // B2B EOM + B2B churn); Revenue B2B = arppu_b2b x b2bBase; COGS
+    // B2B = cogs_per_b2b_account x b2bBase.
     // CẦU NỐI MỚI: bridge(m) = b2b_bridge_rate của Phase chứa tháng
     // m (null -> 0) x PaidEOM_pre(m) (tồn Paid sau churn, trước
     // bridge); bridge BỊ TRỪ khỏi Paid EOM trong tháng chuyển đổi
@@ -3703,6 +3714,12 @@
       if (cogsPerPaid === null) missing.cogs_per_paid_user = true;
       if (fixedCost === null) missing.fixed_cost = true;
       if (arppuEff !== null) row.arppuEffective = arppuEff;
+      // Base tính Revenue/COGS theo mốc thu phí ĐẦU KỲ (Zac chốt
+      // 20/11/2026): tồn TRƯỚC churn = đầu kỳ + phát sinh trong
+      // tháng. Chỉ có giá trị khi chuỗi tồn chạy được (cùng điều
+      // kiện với các dòng EOM) — chuỗi đứt thì base null và
+      // Revenue/COGS null như cũ.
+      var paidBase = null, freeBase = null;
       if (!chainBroken && paidChurnRate !== null && freeChurnRate !== null) {
         // New Paid = cohort từ engine + chuyển đổi từ tồn Free đầu kỳ
         // (monthly_cvr null -> phần chuyển đổi = 0 theo quyết định đã
@@ -3710,6 +3727,8 @@
         var converted = monthlyCvr !== null ? prevFree * monthlyCvr : 0;
         row.newPaid = cohortPaid + converted;
         row.newFree = row.freeUser - row.newPaid;
+        paidBase = prevPaid + row.newPaid;
+        freeBase = prevFree + row.freeUser;
         // Churn trên (tồn đầu kỳ + dòng vào tháng); tháng đầu x 0,5.
         var churnFactor = isFirstMonth ? 0.5 : 1;
         row.freeChurn = (prevFree + row.freeUser) * freeChurnRate * churnFactor;
@@ -3724,8 +3743,9 @@
         // row.bridgeConverted) và CỘNG vào New B2B Accounts của
         // tháng (row.newB2b) TRƯỚC khối chuỗi B2B bên dưới, nên
         // account bridge đi qua tồn/churn B2B như account mới
-        // bình thường. Revenue B2C tính trên Paid EOM đã trừ bridge
-        // (khối Revenue ngay dưới dùng row.paidEom như cũ).
+        // bình thường. Revenue B2C / COGS Paid tính trên paidBase
+        // (tồn TRƯỚC churn, TRƯỚC bridge — mốc thu phí đầu kỳ) nên
+        // KHÔNG bị bridge làm giảm như khi còn tính trên Paid EOM.
         var paidEomPre = prevPaid + row.newPaid - row.paidChurn;
         var brInfo = bridgeRateFor(m);
         row.b2bBridgeRate = brInfo.present ? brInfo.rate : null;
@@ -3742,9 +3762,9 @@
       } else {
         chainBroken = true;
       }
-      if (row.paidEom !== null && arppuEff !== null) row.revenue = arppuEff * row.paidEom;
-      if (row.freeEom !== null && cogsPerFree !== null) row.cogsFree = cogsPerFree * row.freeEom;
-      if (row.paidEom !== null && cogsPerPaid !== null) row.cogsPaid = cogsPerPaid * row.paidEom;
+      if (paidBase !== null && arppuEff !== null) row.revenue = arppuEff * paidBase;
+      if (freeBase !== null && cogsPerFree !== null) row.cogsFree = cogsPerFree * freeBase;
+      if (paidBase !== null && cogsPerPaid !== null) row.cogsPaid = cogsPerPaid * paidBase;
       if (row.cogsFree !== null && row.cogsPaid !== null) row.cogs = row.cogsFree + row.cogsPaid;
       // Chuỗi tồn B2B (độc lập với chuỗi Free/Paid ở trên).
       if (!hasB2bActivity) {
@@ -3753,19 +3773,27 @@
         row.b2bChurn = 0; row.b2bEom = 0; row.revenueB2b = 0; row.cogsB2b = 0;
       } else {
         if (b2bChurnRate === null) missingB2b.b2b_churn_rate = true;
+        // b2bBase = tồn B2B TRƯỚC churn (đầu kỳ + New B2B) — mốc
+        // thu phí đầu kỳ như B2C; = B2B EOM + B2B churn.
+        var b2bBase = null;
         if (!chainBrokenB2b && b2bChurnRate !== null) {
           row.b2bChurn = prevB2b * b2bChurnRate;
+          b2bBase = prevB2b + row.newB2b;
           row.b2bEom = prevB2b + row.newB2b - row.b2bChurn;
           prevB2b = row.b2bEom;
         } else {
           chainBrokenB2b = true;
         }
         if (row.b2bEom !== null) {
-          if (arppuB2b !== null) row.revenueB2b = arppuB2b * row.b2bEom;
-          else if (row.b2bEom === 0 && row.newB2b === 0) row.revenueB2b = 0;
+          // Nhánh đặc biệt giữ nguyên theo base mới: base = 0 (tồn
+          // đầu kỳ 0 và không có account mới — tương đương ca cũ
+          // B2B EOM = 0 và New B2B = 0) thì Revenue B2B / COGS B2B
+          // = 0 kể cả thiếu ARPPU / đơn giá COGS.
+          if (arppuB2b !== null) row.revenueB2b = arppuB2b * b2bBase;
+          else if (b2bBase === 0) row.revenueB2b = 0;
           else missingB2b.arppu_b2b = true;
-          if (cogsPerB2b !== null) row.cogsB2b = cogsPerB2b * row.b2bEom;
-          else if (row.b2bEom === 0 && row.newB2b === 0) row.cogsB2b = 0;
+          if (cogsPerB2b !== null) row.cogsB2b = cogsPerB2b * b2bBase;
+          else if (b2bBase === 0) row.cogsB2b = 0;
           else missingB2b.cogs_per_b2b_account = true;
         }
       }
