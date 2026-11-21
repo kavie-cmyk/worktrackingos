@@ -223,10 +223,16 @@ test('PU [domain]: byPhase = tổng đúng các row thuộc phase (cộng từ c
   // LƯU Ý ca này gọi forecast trên TOÀN BỘ plan_rows (cả SAVA) nên
   // horizon = 2026+2027: index tháng của Articles Lumus (T1/2027 =
   // index 12) bị KẸP ở domainFactor cuối 1,20 -> Articles T1/T2 =
-  // 2.889/3.258 và opens Email T2 = 85,6073. Ca Lumus riêng (horizon
-  // 2027, đúng cách app gọi) cho 2.808/3.025 + opens 84,4073 — khóa
-  // ở tests/planning-seo-articles.test.mjs.
-  approx(f.byPhase['phase-lumus-1'].views, 40000 + 135000 + 85.60729472727273 + 2889 + 3258, 'GĐ1 views (KOL + Articles + opens Email T2, horizon trộn 2026+2027)');
+  // 2.889/3.258 (views không đổi qua các đợt CR) và opens Email T2
+  // = 125,8073. Ca Lumus riêng (horizon 2027, đúng cách app gọi)
+  // cho 2.808/3.025 + opens 123,4073 — khóa ở
+  // tests/planning-seo-articles.test.mjs.
+  // Đợt Articles 21/11 (CR 5% + Paid 3,5% tại kênh): Free Articles
+  // T1 ở horizon trộn = round(2.889 × 5%) = 144, Paid tại kênh =
+  // round(144 × 3,5%) = 5 -> list T2 tăng (144 − 5) − 72 = +67 so
+  // với đợt CR 2,5% (Free 72, Paid 0) -> opens T2 tăng 67 × 0,30
+  // (open rate) × 2 (số lượt gửi T2) = +40,2: 85,6073 -> 125,8073.
+  approx(f.byPhase['phase-lumus-1'].views, 40000 + 135000 + 125.80729472727273 + 2889 + 3258, 'GĐ1 views (KOL + Articles + opens Email T2, horizon trộn 2026+2027)');
   // SỬA PHẠM VI đợt Paid Objective: GĐ1 có 8 row Paid có forecast —
   // mỗi tháng T1–T2, Meta + TikTok mỗi kênh có 2 dòng Objective tính
   // được (Traffic + Signup; Awareness chưa có đơn giá -> null,
@@ -301,8 +307,10 @@ test('PU [domain]: không views_per_unit ở đâu -> mọi số neo cũ giữ n
   // Neo views cập nhật đợt Email 18/11: 1.160.000 (KOL) + opens
   // Email (có uplift theo Phase như mọi tỉ lệ). Đợt Website Articles
   // SEO 18/11: +189.749 views Articles, opens Email tăng lên
-  // 17.296,9117 vì Free Articles nuôi list Email.
-  approx(year.totals.views, 1367045.911689402, 'tổng views Lumus (KOL + Articles 189.749 + opens Email 17.296,9117)');
+  // 17.296,9117 vì Free Articles nuôi list Email. Đợt Articles
+  // 21/11 (CR 5% + Paid tại kênh): Free Articles ròng = 9.155 ->
+  // opens Email tăng tiếp lên 25.392,6695.
+  approx(year.totals.views, 1375141.6695244024, 'tổng views Lumus (KOL + Articles 189.749 + opens Email 25.392,6695)');
 });
 
 test('PU [domain]: không benchmark — assumption đủ tỉ lệ CHỈ tính được khi có views_per_unit', () => {

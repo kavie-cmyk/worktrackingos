@@ -180,15 +180,19 @@ test('BP [domain]: forecastFunnel toàn năm — tổng views KOL khớp cộng 
   // SỬA PHẠM VI đợt Website Articles SEO 18/11: +189.749 views
   // Articles (Mô hình SEO B, qty 11/11/…/10) và opens Email tăng lên
   // 16.167,5197 vì Free của Articles nuôi list Email (lượt 2).
-  approx(f.totals.views, 1365916.5196731384, 'total views (KOL 1.160.000 + Articles 189.749 + opens Email 16.167,5197)');
+  // SỬA PHẠM VI đợt Articles 21/11 (CR 5% + Paid 3,5% tại kênh):
+  // Free Articles ròng Paid = 9.487 − 332 = 9.155 (trước: 4.744)
+  // -> opens Email tăng lên 23.831,3197; views Articles không đổi.
+  approx(f.totals.views, 1373580.3196731384, 'total views (KOL 1.160.000 + Articles 189.749 + opens Email 23.831,3197)');
   // Visits = KOL (780 + 3600) + Paid theo Objective Traffic
   // (SỬA PHẠM VI đợt Paid Objective: Meta = ngân sách Traffic cả năm
   // 128.310.000đ / 20.000 = 6.415,5; TikTok = 55.510.000đ / 22.000 =
   // 2.523,1818…; Objective khác không tạo Visits, kênh B2B chưa có
   // đơn giá nên đóng góp 0) + visits Articles (= views Articles
   // 189.749 — đợt SEO 18/11) + clicks Email (opens × click/open 0,10
-  // = 1.616,7520 — opens tăng vì list có thêm Free Articles).
-  approx(f.totals.visits, 780 + 3600 + 128310000 / 20000 + 55510000 / 22000 + 189749 + 1616.7519673138636, 'total visits');
+  // = 2.383,1320 — opens tăng vì list có thêm Free Articles ròng
+  // Paid tại kênh, đợt 21/11).
+  approx(f.totals.visits, 780 + 3600 + 128310000 / 20000 + 55510000 / 22000 + 189749 + 2383.1319673138636, 'total visits');
 });
 
 test('BP [domain]: forecastFunnel — channel không benchmark -> forecast null, không bịa số; Paid Ads tính theo Objective từ ngân sách (SỬA PHẠM VI đợt Paid Objective)', () => {

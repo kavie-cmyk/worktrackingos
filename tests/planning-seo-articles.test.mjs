@@ -1,19 +1,31 @@
 // tests/planning-seo-articles.test.mjs
 // KÊNH WEBSITE ARTICLES theo Mô hình SEO B (WITH_SUPPORT — SEO +
-// Seeding; Zac chốt 18/11/2026 theo file SEO_forecast_final.html):
-// - matureViews 350; seedPerPost 250 (chỉ tháng đăng); CR 2,5%
-//   (sign-up của file = Free user của kênh).
+// Seeding; khung views chốt 18/11/2026 theo file
+// SEO_forecast_final.html):
+// - matureViews 350; seedPerPost 250 (chỉ tháng đăng); ageRamp /
+//   domainFactor neo theo file nguồn.
+// - CR (sign-up của file = Free user của kênh) + Paid tại kênh:
+//   ZAC CHỐT 21/11/2026 (thay quyết định 18/11 neo theo file HTML):
+//   CR = 5% và Paid = 3,5% × Free NGAY TẠI KÊNH (paidRate) — là
+//   hằng số engine, KHÔNG còn lấy từ file HTML (file vẫn ghi 2,5%
+//   và không có Paid tại kênh).
 // - Tháng m: seoViews = round(domainFactor[m] × Σ_{k<=m} qty_k ×
 //   350 × ageRamp[m−k]); views = seoViews + qty_m × 250;
-//   visits = views; freemium = round(views × 2,5%); paid = 0;
-//   b2b = 0 (kể cả bridge paid_to_b2b — Paid sinh ở tầng vận hành
-//   qua Monthly cvr từ tồn Free chung).
-// - Bỏ qua benchmark / phase assumptions (trừ paid_to_b2b vốn chỉ
-//   dùng cho bridge = 0) / uplift tỉ lệ / Uplift Views của Phase.
-// - Articles tính ở lượt 1 của forecastFunnel nên Free của Articles
-//   nuôi list Email ở lượt 2 (Paid Email đổi theo).
+//   visits = views; freemium = round(views × 5%);
+//   paid = round(freemium × 3,5%) ở cấp Brand × tháng, chia cho
+//   các dòng theo tỉ trọng qty như views/freemium; b2b = 0 (bridge
+//   Paid -> B2B tính theo Phase ở tầng tồn, không ở tầng kênh).
+//   Phần Free chưa Paid vẫn vào tồn Free chung -> Monthly cvr ở
+//   tầng vận hành; phần đã Paid tại kênh trừ khỏi tồn (list Email
+//   = Σ (freemium − paid) của các kênh phi-Email).
+// - Bỏ qua benchmark / phase assumptions / uplift tỉ lệ /
+//   Uplift Views của Phase.
+// - Articles tính ở lượt 1 của forecastFunnel nên Free (ròng Paid)
+//   của Articles nuôi list Email ở lượt 2 (Paid Email đổi theo).
 // Ground truth ĐỘC LẬP: trích computeComparison + hằng số
-// WITH_SUPPORT từ chính file HTML nguồn chạy trong node.
+// WITH_SUPPORT từ chính file HTML nguồn chạy trong node — chỉ còn
+// đối chiếu phần VIEWS (và các hằng số khung views); freemium/paid
+// tính lại từ định nghĩa mô hình mới ở trên.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -55,55 +67,79 @@ function articlesRows(qtyByMonth, brandId = 'b1') {
   }));
 }
 
-test('SEO [model]: hằng số engine khớp WITH_SUPPORT trong file nguồn (350 / 250 / 2,5% / ageRamp / domainFactor)', () => {
+test('SEO [model]: 350 / 250 / ageRamp / domainFactor khớp WITH_SUPPORT trong file nguồn; CR 5% + paidRate 3,5% là hằng số engine (Zac chốt 21/11/2026)', () => {
   assert.equal(domain.SEO_ARTICLES_MODEL.matureViews, GT.WITH_SUPPORT.matureViews);
   assert.equal(domain.SEO_ARTICLES_MODEL.seedPerPost, GT.WITH_SUPPORT.seedPerPost);
-  assert.equal(domain.SEO_ARTICLES_MODEL.cr, GT.WITH_SUPPORT.crPct / 100);
+  // Điểm neo CR theo file nguồn (WITH_SUPPORT.crPct = 2,5) đã bị
+  // quyết định 21/11/2026 của Zac thay thế — file HTML KHÔNG sửa,
+  // engine dùng CR 5% + paidRate 3,5% làm hằng số riêng:
+  assert.equal(GT.WITH_SUPPORT.crPct, 2.5, 'file nguồn vẫn ghi CR 2,5% (không sửa file của user)');
+  assert.equal(domain.SEO_ARTICLES_MODEL.cr, 0.05, 'CR engine = 5% (Zac chốt 21/11/2026)');
+  assert.equal(domain.SEO_ARTICLES_MODEL.paidRate, 0.035, 'paidRate engine = 3,5% (Zac chốt 21/11/2026)');
   assert.deepEqual(domain.SEO_ARTICLES_MODEL.ageRamp, GT.WITH_SUPPORT.ageRamp);
   assert.deepEqual(domain.SEO_ARTICLES_MODEL.domainFactor, GT.WITH_SUPPORT.domainFactor);
   assert.equal(domain.isSeoArticlesRow({ channel: 'Website Articles' }), true);
   assert.equal(domain.isSeoArticlesRow({ channel: 'Website' }), false, "kênh 'Website' của SAVA không phải Website Articles");
 });
 
-test('SEO [ground-truth]: qty đều 8/tháng — engine khớp TUYỆT ĐỐI computeComparison Mô hình B từng tháng (views + freemium)', () => {
+test('SEO [ground-truth]: qty đều 8/tháng — views khớp TUYỆT ĐỐI computeComparison Mô hình B từng tháng; freemium = round(views × 5%), paid = round(freemium × 3,5%) (chốt 21/11)', () => {
   const gt = GT.computeComparison(8);
   // Tham chiếu tính tay (điều phối viên đã kiểm chứng độc lập):
   assert.deepEqual(gt.map((r) => r.bTotal), [2042, 2200, 2650, 3613, 5199, 7432, 10191, 13397, 17000, 20731, 24736, 29216]);
+  // bSignups của file nguồn vẫn ở CR 2,5% — chỉ giữ làm mốc đối
+  // chiếu lịch sử, KHÔNG còn là kỳ vọng freemium của engine:
   assert.deepEqual(gt.map((r) => r.bSignups), [51, 55, 66, 90, 130, 186, 255, 335, 425, 518, 618, 730]);
+  // Kỳ vọng theo mô hình MỚI, tính lại từ views ground truth:
+  // freemium = round(views × 5%): 2042→102, 2200→110, 2650→133,
+  // 3613→181, 5199→260, 7432→372, 10191→510, 13397→670, 17000→850,
+  // 20731→1037, 24736→1237, 29216→1461 (tổng 6.923).
+  // paid = round(freemium × 3,5%): 102→4, 110→4, 133→5, 181→6,
+  // 260→9, 372→13, 510→18, 670→23, 850→30, 1037→36, 1237→43,
+  // 1461→51 (tổng 242).
+  const EXP_FREE = [102, 110, 133, 181, 260, 372, 510, 670, 850, 1037, 1237, 1461];
+  const EXP_PAID = [4, 4, 5, 6, 9, 13, 18, 23, 30, 36, 43, 51];
   const f = domain.forecastFunnel(articlesRows(Array(12).fill(8)), []);
   assert.deepEqual(f.rows.map((r) => r.forecast.views), gt.map((r) => r.bTotal), 'views từng tháng phải khớp ground truth');
-  assert.deepEqual(f.rows.map((r) => r.forecast.freemium), gt.map((r) => r.bSignups), 'freemium (sign-up) từng tháng phải khớp ground truth');
+  assert.deepEqual(f.rows.map((r) => r.forecast.freemium), EXP_FREE, 'freemium = round(views × 5%) từng tháng');
+  assert.deepEqual(f.rows.map((r) => r.forecast.paid), EXP_PAID, 'paid = round(freemium × 3,5%) từng tháng');
   assert.deepEqual(Object.values(f.byMonth).map((v) => v.views), gt.map((r) => r.bTotal), 'byMonth views khớp');
-  for (const r of f.rows) {
+  f.rows.forEach((r, i) => {
     assert.equal(r.forecast.visits, r.forecast.views, 'visits = views');
-    assert.equal(r.forecast.paid, 0, 'paid = 0 tuyệt đối');
+    assert.equal(r.forecast.paid, EXP_PAID[i], 'paid tại kênh theo paidRate');
     assert.equal(r.forecast.b2b, 0, 'b2b = 0 tuyệt đối');
     assert.equal(r.forecast.b2bBridge, 0, 'bridge = 0');
-  }
-  assert.equal(f.totals.paid, 0);
+  });
+  assert.equal(f.totals.paid, 242, 'tổng Paid tại kênh = 242');
   assert.equal(f.totals.b2b, 0);
 });
 
-test('SEO [ground-truth]: qty đều 20/tháng — khớp computeComparison (T1 views 5.105, signups 128) cả 12 tháng', () => {
+test('SEO [ground-truth]: qty đều 20/tháng — views khớp computeComparison (T1 views 5.105) cả 12 tháng; freemium/paid theo mô hình mới (T1: 255 / 9)', () => {
   const gt = GT.computeComparison(20);
   assert.equal(gt[0].bTotal, 5105);
-  assert.equal(gt[0].bSignups, 128);
+  assert.equal(gt[0].bSignups, 128, 'signups của file nguồn ở CR 2,5% (mốc lịch sử — engine không còn dùng)');
   const f = domain.forecastFunnel(articlesRows(Array(12).fill(20)), []);
   assert.deepEqual(f.rows.map((r) => r.forecast.views), gt.map((r) => r.bTotal));
-  assert.deepEqual(f.rows.map((r) => r.forecast.freemium), gt.map((r) => r.bSignups));
+  // freemium = round(views × 5%) trên views ground truth
+  // [5105, 5501, 6624, 9032, 12997, 18580, 25476, 33493, 42499,
+  // 51827, 61840, 73040]; paid = round(freemium × 3,5%):
+  assert.deepEqual(f.rows.map((r) => r.forecast.freemium), [255, 275, 331, 452, 650, 929, 1274, 1675, 2125, 2591, 3092, 3652], 'freemium = round(views × 5%)');
+  assert.deepEqual(f.rows.map((r) => r.forecast.paid), [9, 10, 12, 16, 23, 33, 45, 59, 74, 91, 108, 128], 'paid = round(freemium × 3,5%)');
 });
 
 test('SEO [qty biến thiên]: cohort trộn qty [2, 0, 5] — tính tay 3 tháng đầu; tháng qty = 0 vẫn có forecast từ cohort cũ', () => {
   // T1: seo = round(0,50 × 2×350×0,03) = round(10,5) = 11 (JS
   // Math.round làm tròn .5 lên); seed = 2×250 = 500 -> views 511;
-  // freemium = round(511 × 2,5%) = 13.
+  // freemium = round(511 × 5%) = round(25,55) = 26;
+  // paid = round(26 × 3,5%) = round(0,91) = 1.
   // T2 (qty 0): seo = round(0,65 × 2×350×0,08) = round(36,4) = 36;
-  // seed 0 -> views 36; freemium = round(0,9) = 1.
+  // seed 0 -> views 36; freemium = round(1,8) = 2;
+  // paid = round(2 × 3,5%) = round(0,07) = 0.
   // T3: seo = round(0,80 × (2×350×0,18 + 0 + 5×350×0,03)) =
   // round(142,8) = 143; seed = 5×250 = 1.250 -> views 1.393;
-  // freemium = round(34,825) = 35.
+  // freemium = round(69,65) = 70; paid = round(70 × 3,5%) =
+  // round(2,45) = 2.
   const f = domain.forecastFunnel(articlesRows([2, 0, 5]), []);
-  assert.deepEqual(f.rows.map((r) => [r.forecast.views, r.forecast.freemium]), [[511, 13], [36, 1], [1393, 35]]);
+  assert.deepEqual(f.rows.map((r) => [r.forecast.views, r.forecast.freemium, r.forecast.paid]), [[511, 26, 1], [36, 2, 0], [1393, 70, 2]]);
   assert.equal(f.byMonth['2027-02'].hasForecast, true, 'tháng qty = 0 vẫn hasForecast = true nhờ cohort cũ');
   assert.ok(f.rows[1].forecast, 'dòng qty = 0 vẫn có forecast (không null)');
 });
@@ -119,7 +155,7 @@ test('SEO [nhiều dòng cùng tháng]: cộng qty làm cohort tháng; forecast 
   approx(jan.reduce((s, r) => s + r.forecast.views, 0), 2042, 'tổng views T1 của 2 dòng = ground truth posts=8');
   approx(jan[0].forecast.views, 2042 * 3 / 8, 'dòng qty 3 nhận 3/8 forecast tháng');
   approx(jan[1].forecast.views, 2042 * 5 / 8, 'dòng qty 5 nhận 5/8 forecast tháng');
-  approx(f.byMonth['2027-01'].freemium, 51, 'freemium T1 tổng = 51');
+  approx(f.byMonth['2027-01'].freemium, 102, 'freemium T1 tổng = round(2.042 × 5%) = 102');
 });
 
 test('SEO [khóa mô hình]: benchmark / phase assumptions / uplift tỉ lệ 10% / Uplift Views KHÔNG đổi số Articles; paid_to_b2b cũng không sinh B2B', () => {
@@ -132,7 +168,7 @@ test('SEO [khóa mô hình]: benchmark / phase assumptions / uplift tỉ lệ 10
   const loaded = domain.forecastFunnel(rowsP, benchmarks, { phases, phaseAssumptions: assumptions });
   assert.deepEqual(loaded.rows.map((r) => r.forecast), plain.rows.map((r) => r.forecast), 'forecast Articles phải giống hệt khi thêm benchmark/assumption/uplift');
   assert.deepEqual(loaded.totals, plain.totals, 'totals không đổi');
-  for (const r of loaded.rows) assert.equal(r.forecast.b2b, 0, 'paid_to_b2b 0,5 vẫn cho b2b = 0 vì paid = 0');
+  for (const r of loaded.rows) assert.equal(r.forecast.b2b, 0, 'paid_to_b2b 0,5 vẫn cho b2b = 0 (bridge tính theo Phase ở tầng tồn, không sinh ở tầng kênh — kể cả nay Paid tại kênh > 0)');
 });
 
 test('SEO [dây chuyền Email]: Free của Articles nuôi list Email lượt 2 — Email T2 opens/paid tính từ Free Articles T1', () => {
@@ -145,14 +181,15 @@ test('SEO [dây chuyền Email]: Free của Articles nuôi list Email lượt 2 
   ];
   const f = domain.forecastFunnel(rows, BM);
   const email = f.rows.find((r) => r.rowId === 'em-2');
-  // list T2 = freemium Articles T1 (51) − paid Articles T1 (0) = 51;
-  // opens = 51 × 0,30 × 2 = 30,6; visits = 3,06; paid = 0,0306.
-  approx(email.forecast.emailList, 51, 'list Email T2 = Free Articles T1');
-  approx(email.forecast.views, 30.6, 'opens Email T2');
-  approx(email.forecast.paid, 0.0306, 'Paid Email T2');
+  // list T2 = freemium Articles T1 − paid Articles T1
+  // = round(2.042 × 5%) − round(102 × 3,5%) = 102 − 4 = 98;
+  // opens = 98 × 0,30 × 2 = 58,8; visits = 5,88; paid = 0,0588.
+  approx(email.forecast.emailList, 98, 'list Email T2 = Free Articles T1 − Paid Articles T1');
+  approx(email.forecast.views, 58.8, 'opens Email T2');
+  approx(email.forecast.paid, 0.0588, 'Paid Email T2');
 });
 
-test('SEO [fixture Lumus]: series Articles 12 tháng + neo mới — Email Paid 9,6875 -> 19,4655; Paid tổng 107,4614; content/ngân sách/CAC T1/Paid phi-Email giữ nguyên', () => {
+test('SEO [fixture Lumus]: series Articles 12 tháng + neo mới — Paid Articles tại kênh 332; Email Paid 19,4655 -> 28,5554; Paid tổng 448,5513; Paid phi-Email 419,9960; CAC T1 = 6.081.190đ; content/ngân sách giữ nguyên', () => {
   const rows = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
   assert.equal(rows.reduce((s, r) => s + (r.qty || 0), 0), 764, '764 content (giữ)');
   const budget = domain.planBudget(rows, demo.benchmarks);
@@ -161,29 +198,43 @@ test('SEO [fixture Lumus]: series Articles 12 tháng + neo mới — Email Paid 
   const f = domain.forecastFunnel(rows, demo.benchmarks, ctx);
   const arts = f.rows.filter((r) => r.channel === 'Website Articles');
   assert.deepEqual(arts.map((r) => r.forecast.views), [2808, 3025, 3643, 4968, 7148, 10219, 14012, 18421, 23374, 28505, 33750, 39876], 'views Articles fixture (qty 11×10 + 10×2)');
-  assert.deepEqual(arts.map((r) => r.forecast.freemium), [70, 76, 91, 124, 179, 255, 350, 461, 584, 713, 844, 997], 'freemium Articles fixture (tổng 4.744)');
+  // freemium = round(views × 5%) từng tháng (tổng 9.487; trước ở
+  // CR 2,5%: [70, 76, 91, 124, 179, 255, 350, 461, 584, 713, 844,
+  // 997], tổng 4.744):
+  assert.deepEqual(arts.map((r) => r.forecast.freemium), [140, 151, 182, 248, 357, 511, 701, 921, 1169, 1425, 1688, 1994], 'freemium Articles fixture (tổng 9.487)');
+  // paid = round(freemium × 3,5%) từng tháng (tổng 332):
+  assert.deepEqual(arts.map((r) => r.forecast.paid), [5, 5, 6, 9, 12, 18, 25, 32, 41, 50, 59, 70], 'Paid Articles tại kênh (tổng 332)');
   const emails = f.rows.filter((r) => r.channel === 'Email Sends');
-  approx(emails.reduce((s, r) => s + r.forecast.paid, 0), 19.465485950231425, 'Paid Email cả năm sau Articles (trước: 9,687533998789275)');
-  approx(f.totals.paid, 107.46143872807268, 'Paid tổng gồm Email (trước: 97,68348677663053)');
-  approx(f.totals.freemium, 7460.831132798619, 'freemium tổng (trước: 2.716,8311; +4.744 Articles)');
-  approx(domain.forecastFunnel(rows.filter((r) => r.channel !== 'Email Sends'), demo.benchmarks, ctx).totals.paid, 87.99595277784127, 'Paid phi-Email = 87,9960 (giữ)');
-  assert.equal(Math.round(budget.byMonth['2027-01'].amount / f.byMonth['2027-01'].paid), 21294587, 'CAC Tất cả T1 = 21.294.587đ (giữ — Paid T1 không đổi)');
+  // List Email phình theo tồn (Free − Paid) phi-Email: phần Articles
+  // đóng góp ròng 9.487 − 332 = 9.155 (trước: 4.744) -> Paid Email
+  // tăng 19,4655 -> 28,5554 (kiểm chứng: list từng tháng của engine
+  // khớp đúng tồn cộng dồn (freemium − paid) của các dòng phi-Email).
+  approx(emails.reduce((s, r) => s + r.forecast.paid, 0), 28.5553525536942, 'Paid Email cả năm sau Articles (trước: 19,465485950231425)');
+  approx(f.totals.paid, 448.5513053315356, 'Paid tổng gồm Email (trước: 107,46143872807268; delta = 332 Paid Articles + 9,0899 ΔPaid Email)');
+  approx(f.totals.freemium, 12203.831132798625, 'freemium tổng (trước: 7.460,8311; = 2.716,8311 phi-Articles + 9.487 Articles)');
+  approx(domain.forecastFunnel(rows.filter((r) => r.channel !== 'Email Sends'), demo.benchmarks, ctx).totals.paid, 419.9959527778414, 'Paid phi-Email = 87,9960 (cũ) + 332 Paid Articles tại kênh');
+  // Paid T1 = 1,99863 (cũ) + 5 Paid Articles T1 (round(140 × 3,5%))
+  // = 6,99863 -> CAC T1 = round(42.560.000 / 6,99863) = 6.081.190đ:
+  assert.equal(Math.round(budget.byMonth['2027-01'].amount / f.byMonth['2027-01'].paid), 6081190, 'CAC Tất cả T1 = 6.081.190đ (trước: 21.294.587đ — Paid T1 tăng do Paid Articles tại kênh)');
 });
 
 // ---------- Snapshot production (ngoài repo; bỏ qua nếu vắng) ----------
 const SNAP_URL = new URL('../../planning-audit-20261118/executor/snapshot-lumus-2027.json', import.meta.url);
-test('SEO [snapshot production]: Articles qty 20/tháng có series 12 tháng; Paid Email 51,1117 -> 68,1127', { skip: !existsSync(SNAP_URL) }, () => {
+test('SEO [snapshot production]: Articles qty 20/tháng có series 12 tháng; Paid Email 68,1127 -> 83,8913; Paid tổng 4.006,6127', { skip: !existsSync(SNAP_URL) }, () => {
   const ds = JSON.parse(readFileSync(SNAP_URL, 'utf8'));
   const ctx = { phases: ds.phases, phaseAssumptions: ds.phase_assumptions };
   const f = domain.forecastFunnel(ds.plan_rows, ds.benchmarks, ctx);
   const arts = f.rows.filter((r) => r.channel === 'Website Articles');
   assert.deepEqual(arts.map((r) => r.forecast.views), [5105, 5501, 6624, 9032, 12997, 18580, 25476, 33493, 42499, 51827, 61840, 73040], 'views Articles snapshot (qty 20/tháng)');
-  assert.deepEqual(arts.map((r) => r.forecast.freemium), [128, 138, 166, 226, 325, 465, 637, 837, 1062, 1296, 1546, 1826], 'freemium Articles snapshot (tổng 8.652)');
-  for (const r of arts) { assert.equal(r.forecast.paid, 0); assert.equal(r.forecast.b2b, 0); }
+  // freemium = round(views × 5%) (tổng 17.301; trước ở CR 2,5%
+  // tổng 8.652); paid = round(freemium × 3,5%) (tổng 608):
+  assert.deepEqual(arts.map((r) => r.forecast.freemium), [255, 275, 331, 452, 650, 929, 1274, 1675, 2125, 2591, 3092, 3652], 'freemium Articles snapshot (tổng 17.301)');
+  assert.deepEqual(arts.map((r) => r.forecast.paid), [9, 10, 12, 16, 23, 33, 45, 59, 74, 91, 108, 128], 'Paid Articles snapshot tại kênh (tổng 608)');
+  for (const r of arts) { assert.equal(r.forecast.b2b, 0); }
   const emails = f.rows.filter((r) => r.channel === 'Email Sends');
-  approx(emails.reduce((s, r) => s + r.forecast.paid, 0), 68.11269726312686, 'Paid Email snapshot sau Articles (trước: 51,111686624843735)');
-  approx(f.totals.freemium, 26271.09474861488, 'freemium tổng snapshot (trước: 17.619,0947; +8.652 Articles)');
-  approx(f.totals.paid, 3382.8340609921634, 'Paid tổng snapshot (trước: 3.365,8331; delta = Paid Email)');
+  approx(emails.reduce((s, r) => s + r.forecast.paid, 0), 83.89131038095948, 'Paid Email snapshot sau Articles (trước: 68,11269726312686)');
+  approx(f.totals.freemium, 34920.09474861488, 'freemium tổng snapshot (trước: 26.271,0947; = 17.619,0947 phi-Articles + 17.301 Articles)');
+  approx(f.totals.paid, 4006.6126741099943, 'Paid tổng snapshot (trước: 3.382,8341; delta = 608 Paid Articles + 15,7786 ΔPaid Email)');
 });
 
 // ---------- UI: lưới Phase + đường lưu ----------
@@ -194,7 +245,7 @@ test('SEO [UI static]: lưới Phase của Website Articles — 4 field khóa kh
   assert.match(block, /data-phase-seo-views-note="1">Mô hình SEO — tính tự động/, 'nhãn Mô hình SEO ở ô Views');
   assert.match(block, /SEO_ARTICLES_LOCKED_RATE_FIELDS\.indexOf\(rh\[0\]\) !== -1/, '3 tỉ lệ phễu khóa theo danh sách field');
   assert.match(block, /data-seo-articles-locked="[^"]*esc\(rh\[0\]\)/, 'ô tỉ lệ khóa render dạng chỉ đọc theo field');
-  assert.match(block, /data-phase-seo-note="1">Mô hình SEO: 350 view tối đa\/bài · \+250 view seeding\/bài mới · CR 2,5% → Free user/, 'dòng ghi chú hằng số mô hình ở dòng kênh');
+  assert.match(block, /data-phase-seo-note="1">Mô hình SEO: 350 view tối đa\/bài · \+250 view seeding\/bài mới · CR 5% → Free user · Paid = 3,5% × Free/, 'dòng ghi chú hằng số mô hình ở dòng kênh');
   // paid_to_b2b KHÔNG nằm trong danh sách khóa (và không còn là field
   // tỉ lệ của lưới Phase nói chung — PHASE_RATE_FIELDS chỉ còn 3 tỉ lệ phễu):
   assert.match(appSrc, /var SEO_ARTICLES_LOCKED_RATE_FIELDS = \['view_to_visit', 'visit_to_freemium', 'freemium_to_paid'\];/);

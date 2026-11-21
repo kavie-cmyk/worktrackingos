@@ -131,7 +131,9 @@ test('EMAIL (g): dữ liệu Lumus thật — neo tính lại 18/11 (764 content
   assert.ok(emailPaid > 0, 'Paid Email cả năm > 0');
   // Đợt Website Articles SEO 18/11: freemium cộng thêm 4.744 Free
   // của Articles (Mô hình SEO B) -> 2.716,8311 + 4.744 = 7.460,8311.
-  approx(f.totals.freemium, 7460.831132798619, 'tổng freemium (Email freemium = 0; gồm 4.744 Free Articles)');
+  // Đợt Articles 21/11 (CR 2,5% -> 5%): Free Articles = 9.487
+  // -> 2.716,8311 + 9.487 = 12.203,8311.
+  approx(f.totals.freemium, 12203.831132798625, 'tổng freemium (Email freemium = 0; gồm 9.487 Free Articles)');
   const kolNano = f.rows.filter((r) => r.channel === 'KOL Nano').reduce((s, r) => s + (r.forecast ? r.forecast.views : 0), 0);
   approx(kolNano, 260000, 'views KOL Nano không đổi = 260.000');
 });

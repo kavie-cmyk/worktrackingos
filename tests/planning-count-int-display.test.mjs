@@ -13,6 +13,10 @@
 // 21.294.587đ (giữ nguyên — T1 Paid không đổi); Views "Tất cả" T1 =
 // 78.808 (76.000 + 2.808 Articles T1); 764 content Lumus; tổng ngân
 // sách Lumus 1.238.700.000đ.
+// Cập nhật đợt Articles 21/11 (CR 5% + Paid 3,5% tại kênh): Paid
+// cả kỳ fixture 448,5513…; Paid T1 = 6,99863 (+5 Paid Articles
+// T1) -> CAC "Tất cả" T1 = 6.081.190đ; hiển thị Paid T1 "7", cột
+// Tổng Paid "449", cột Tổng Views "1.375.142".
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -136,17 +140,17 @@ test('PCID [unit]: bảng KPI Theo tháng hiển thị số nguyên ở mọi ô
   const data = h.planningKpiData(rows, benchmarks, MONTHS_2027);
   // Neo ENGINE (giá trị nội bộ, chưa làm tròn). Cập nhật đợt Email
   // 18/11 + tính lại sau đợt xoá kênh KOL thứ ba 18/11.
-  approx(data.blended.totals.paid, 107.46143872807268, 'Paid cả kỳ fixture (engine) = 107,4614… (gồm Paid Email tăng do Free Articles)');
-  approx(data.blended.months['2027-01'].paid, 1.99863, 'Paid Tất cả T1 (engine) = 1,99863');
+  approx(data.blended.totals.paid, 448.55130533153545, 'Paid cả kỳ fixture (engine) = 448,5513… (gồm Paid Email tăng do Free Articles ròng + 332 Paid Articles tại kênh)');
+  approx(data.blended.months['2027-01'].paid, 6.99863, 'Paid Tất cả T1 (engine) = 6,99863 (1,99863 + 5 Paid Articles T1)');
   approx(data.blended.months['2027-01'].views, 78808, 'Views Tất cả T1 (engine) = 78.808 (76.000 + 2.808 Articles)');
   const html = h.planningKpiTablesHtml(rows, benchmarks, MONTHS_2027);
   // Hiển thị: số nguyên ở đúng các ô đã neo.
-  assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), '2', 'Paid Tất cả T1 hiển thị "2"');
-  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '107', 'Paid Tất cả cột Tổng hiển thị "107" (gồm Paid Email)');
+  assert.equal(kpiCell(html, 'paid', 'Tất cả', '2027-01'), '7', 'Paid Tất cả T1 hiển thị "7"');
+  assert.equal(kpiTotal(html, 'paid', 'Tất cả'), '449', 'Paid Tất cả cột Tổng hiển thị "449" (gồm Paid Email)');
   assert.equal(kpiCell(html, 'paid', 'KOL Nano', '2027-01'), '0', 'Paid KOL Nano T1 (engine 0,1188) hiển thị "0"');
   assert.equal(kpiCell(html, 'views', 'Tất cả', '2027-01'), '78.808', 'Views Tất cả T1 hiển thị "78.808"');
-  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.367.046', 'Views Tất cả cột Tổng hiển thị "1.367.046" (1.160.000 + 189.749 Articles + opens Email 17.296,91 làm tròn)');
-  assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '21.294.587 VND', 'CAC Tất cả T1');
+  assert.equal(kpiTotal(html, 'views', 'Tất cả'), '1.375.142', 'Views Tất cả cột Tổng hiển thị "1.375.142" (1.160.000 + 189.749 Articles + opens Email 25.392,67 làm tròn)');
+  assert.equal(kpiCell(html, 'cac', 'Tất cả', '2027-01'), '6.081.190 VND', 'CAC Tất cả T1');
   // Không ô đếm nào của 3 bảng Paid/Views/B2B còn dấu thập phân kiểu "x,yyyy".
   for (const kind of ['paid', 'views', 'b2b']) {
     const cells = [...html.matchAll(new RegExp('data-planning-kpi-(?:cell|total)="' + kind + '"[^>]*>(?:<strong>)?([^<]*)(?:</strong>)?</td>', 'g'))].map((m) => m[1]);

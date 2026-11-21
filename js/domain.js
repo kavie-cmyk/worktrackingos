@@ -2308,14 +2308,18 @@
   // channel đúng tên 'Website Articles' (kênh 'Website' của SAVA
   // KHÔNG phải kênh này). Mô hình SEO B (WITH_SUPPORT — SEO +
   // Seeding, chốt của Zac 18/11/2026 theo file SEO_forecast_final.html):
-  // matureViews 350, seedPerPost 250 (chỉ tháng đăng), CR 2,5%
-  // (sign-up = Free user). ageRamp theo TUỔI bài (index 0 = tháng
+  // matureViews 350, seedPerPost 250 (chỉ tháng đăng), CR (sign-up =
+  // Free user) 2,5% và Paid = 0 ở tầng kênh. ZAC CHỈNH 21/11/2026:
+  // CR nâng lên 5% và thêm tỉ lệ Free -> Paid 3,5% TẠI KÊNH
+  // (paidRate; phần Free còn lại vẫn vào tồn chung -> Monthly CVR ở
+  // tầng vận hành như kênh thường). ageRamp theo TUỔI bài (index 0 = tháng
   // đăng), domainFactor theo INDEX tháng trong horizon (0-based);
   // index vượt cuối mảng thì kẹp ở phần tử cuối.
   var SEO_ARTICLES_MODEL = {
     matureViews: 350,
     seedPerPost: 250,
-    cr: 0.025,
+    cr: 0.05,
+    paidRate: 0.035,
     ageRamp: [0.03, 0.08, 0.18, 0.35, 0.55, 0.75, 0.90, 1.00, 1.03, 1.05, 1.08, 1.10],
     domainFactor: [0.50, 0.65, 0.80, 0.90, 0.96, 1.00, 1.03, 1.06, 1.10, 1.13, 1.16, 1.20]
   };
@@ -2958,11 +2962,14 @@
    *     seoViews[m] = round(domainFactor[m] × Σ_{k<=m} qty_k × 350
    *       × ageRamp[m−k]); seedViews[m] = qty_m × 250;
    *     views = seoViews + seedViews; visits = views (file không có
-   *       bước visit riêng); freemium = round(views × 2,5%) (sign-up
-   *       của file = Free user); paid = 0 và b2b = 0 TUYỆT ĐỐI (Paid
-   *       của kênh sinh ở tầng vận hành qua Monthly cvr từ tồn Free
-   *       chung; cầu nối Paid -> B2B nay tính theo Phase ở tầng tồn
-   *       (phases.b2b_bridge_rate) nên b2b ở tầng kênh = 0). BỎ QUA
+   *       bước visit riêng); freemium = round(views × 5%) (sign-up =
+   *       Free user); paid = round(freemium × 3,5%) TẠI KÊNH (Zac
+   *       chỉnh 21/11/2026 — trước đó CR 2,5% và paid = 0 tuyệt đối);
+   *       b2b = 0 TUYỆT ĐỐI. Phần Free chưa Paid vẫn vào tồn Free
+   *       chung và sinh Paid tiếp qua Monthly cvr ở tầng vận hành
+   *       (phần đã Paid tại kênh được trừ khỏi tồn qua newPaid như
+   *       kênh thường — không tính trùng); cầu nối Paid -> B2B tính
+   *       theo Phase ở tầng tồn (phases.b2b_bridge_rate). BỎ QUA
    *       hoàn toàn benchmark, phase assumptions, uplift tỉ lệ và
    *       Uplift Views của Phase. qty qua
    *       _planQty; nhiều dòng cùng Brand × tháng cộng qty làm cohort
@@ -3014,7 +3021,7 @@
       });
       Object.keys(acc).forEach(function (bk) {
         var qtys = acc[bk].qty;
-        var viewsArr = [], freeArr = [], seoArr = [], seedArr = [];
+        var viewsArr = [], freeArr = [], paidArr = [], seoArr = [], seedArr = [];
         for (var m = 0; m < months.length; m++) {
           var seoRaw = 0;
           for (var k = 0; k <= m; k++) {
@@ -3026,9 +3033,10 @@
           var seedViews = qtys[m] * SEO_ARTICLES_MODEL.seedPerPost;
           var v = seoViews + seedViews;
           seoArr.push(seoViews); seedArr.push(seedViews);
-          viewsArr.push(v); freeArr.push(Math.round(v * SEO_ARTICLES_MODEL.cr));
+          var freeM = Math.round(v * SEO_ARTICLES_MODEL.cr);
+          viewsArr.push(v); freeArr.push(freeM); paidArr.push(Math.round(freeM * SEO_ARTICLES_MODEL.paidRate));
         }
-        seoSeriesByBrand[bk] = { qty: qtys, count: acc[bk].count, views: viewsArr, freemium: freeArr, seoViews: seoArr, seedViews: seedArr };
+        seoSeriesByBrand[bk] = { qty: qtys, count: acc[bk].count, views: viewsArr, freemium: freeArr, paid: paidArr, seoViews: seoArr, seedViews: seedArr };
       });
     })();
     // --- Kênh Email: chuỗi tồn Free đầu tháng theo Brand ----------
@@ -3213,19 +3221,20 @@
         var sShare = sQtyTotal > 0 ? sQtyRow / sQtyTotal : 1 / sCount;
         var sViews = sSeries.views[sIdx] * sShare;
         var sFreemium = sSeries.freemium[sIdx] * sShare;
+        var sPaid = (sSeries.paid ? sSeries.paid[sIdx] : 0) * sShare;
         var sSeo = sSeries.seoViews[sIdx] * sShare;
         var sSeed = sQtyTotal > 0 ? sQtyRow * SEO_ARTICLES_MODEL.seedPerPost : sSeries.seedViews[sIdx] * sShare;
-        base.forecast = { views: sViews, visits: sViews, freemium: sFreemium, paid: 0, b2b: 0, b2bBridge: 0, seoViews: sSeo, seedViews: sSeed };
+        base.forecast = { views: sViews, visits: sViews, freemium: sFreemium, paid: sPaid, b2b: 0, b2bBridge: 0, seoViews: sSeo, seedViews: sSeed };
         var bmS = base.month && byMonth[base.month];
         if (bmS) {
-          bmS.views += sViews; bmS.visits += sViews; bmS.freemium += sFreemium;
+          bmS.views += sViews; bmS.visits += sViews; bmS.freemium += sFreemium; bmS.paid += sPaid;
           bmS.hasForecast = true;
         }
-        totals.views += sViews; totals.visits += sViews; totals.freemium += sFreemium;
+        totals.views += sViews; totals.visits += sViews; totals.freemium += sFreemium; totals.paid += sPaid;
         if (res.phaseId) {
           var bpS = byPhase[res.phaseId];
           if (!bpS) bpS = byPhase[res.phaseId] = { phase_id: res.phaseId, views: 0, visits: 0, freemium: 0, paid: 0, b2b: 0, b2bBridge: 0, rowCount: 0 };
-          bpS.views += sViews; bpS.visits += sViews; bpS.freemium += sFreemium;
+          bpS.views += sViews; bpS.visits += sViews; bpS.freemium += sFreemium; bpS.paid += sPaid;
           bpS.rowCount += 1;
         }
         return base;

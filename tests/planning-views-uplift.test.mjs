@@ -201,7 +201,9 @@ test('VU [demo]: demo-data KHÔNG đặt views uplift mặc định -> mọi s�
   // Email tính từ tồn Free (views uplift vẫn không đặt mặc định).
   // Đợt Website Articles SEO 18/11: +189.749 views Articles (Mô hình
   // SEO bỏ qua Uplift Views), opens Email tăng lên 17.296,9117.
-  approx(f.totals.views, 1367045.911689402, 'tổng views Lumus (KOL + Articles 189.749 + opens Email 17.296,9117)');
+  // Đợt Articles 21/11 (CR 5% + Paid tại kênh): Free Articles ròng
+  // = 9.487 − 332 = 9.155 -> opens Email tăng tiếp lên 25.392,6695.
+  approx(f.totals.views, 1375141.6695244024, 'tổng views Lumus (KOL + Articles 189.749 + opens Email 25.392,6695)');
   // Views T1/2027 toàn Lumus (mọi channel có forecast) giữ nguyên mức
   // engine của bản trước 0019: cộng tay từ rows T1.
   const jan = domain.forecastFunnel(demo.plan_rows.filter((r) => r.month === '2027-01'), demo.benchmarks, ctx);

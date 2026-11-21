@@ -18,10 +18,11 @@
 //  C) Assumptions ở MỌI Phase -> forecast + planBudget trước/sau
 //     BẰNG NHAU tuyệt đối (snapshot dưới đây chính là output của
 //     engine cũ tại HEAD cd9254a qua git worktree, deep equal).
-//  Neo fixture: 764 content; 1.238.700.000đ; CAC T1 21.294.587đ;
-//     Paid phi-Email 87,9960; gồm Email 107,4614 (đợt Website
-//     Articles SEO 18/11: Paid Email tăng vì Free Articles nuôi list
-//     Email — Paid phi-Email và CAC T1 giữ nguyên).
+//  Neo fixture: 764 content; 1.238.700.000đ; CAC T1 6.081.190đ;
+//     Paid phi-Email 419,9960; gồm Email 448,5513 (đợt Articles
+//     21/11: CR 5% + Paid 3,5% tại kênh — Paid phi-Email +332 Paid
+//     Articles, Paid Email tăng vì Free Articles ròng nuôi list,
+//     CAC T1 đổi vì Paid T1 +5).
 //  UI: render lưới Phase không mutate dữ liệu; nhãn "Kế thừa từ
 //     <tên Phase>"; lưu ở Phase sau tạo assumption riêng đúng Phase.
 
@@ -230,17 +231,20 @@ test('CASCADE C: assumptions ở MỌI Phase — forecast + planBudget trước/
 });
 
 // ================= Neo fixture =================
-test('CASCADE [neo]: fixture Lumus — 764 content; ngân sách 1.238.700.000đ; CAC Tất cả T1 21.294.587đ; Paid phi-Email 87,9960 (giữ); gồm Email 107,4614 (đợt SEO Articles 18/11)', () => {
+test('CASCADE [neo]: fixture Lumus — 764 content; ngân sách 1.238.700.000đ; CAC Tất cả T1 6.081.190đ; Paid phi-Email 419,9960; gồm Email 448,5513 (đợt Articles 21/11: CR 5% + Paid tại kênh)', () => {
   const lumus = demo.plan_rows.filter((r) => r.brand_id === 'brand-lumus-ai');
   assert.equal(lumus.reduce((s, r) => s + (r.qty || 0), 0), 764, 'content = 764');
   const ctx = { phases: demo.phases.filter((p) => p.brand_id && p.start_month), phaseAssumptions: demo.phase_assumptions };
   const budget = domain.planBudget(lumus, demo.benchmarks);
   assert.equal(budget.total, 1238700000, 'tổng ngân sách = 1.238.700.000đ');
   const f = domain.forecastFunnel(lumus, demo.benchmarks, ctx);
-  approx(f.totals.paid, 107.46143872807268, 'Paid gồm Email = 107,4614 (Paid Email tăng do Free Articles nuôi list)');
+  // Đợt Articles 21/11: Paid gồm Email = 419,9960 (phi-Email) +
+  // 28,5554 (Paid Email — list phình theo Free Articles ròng Paid
+  // tại kênh) = 448,5513 (trước đợt: 107,4614).
+  approx(f.totals.paid, 448.5513053315356, 'Paid gồm Email = 448,5513 (Paid Email tăng do Free Articles ròng nuôi list)');
   const nonEmail = lumus.filter((r) => !(r.channel === 'Email Sends' || r.channel === 'Email CRM' || r.channel === 'Email' || r.group === 'Email'));
-  approx(domain.forecastFunnel(nonEmail, demo.benchmarks, ctx).totals.paid, 87.99595277784127, 'Paid phi-Email = 87,9960');
-  assert.equal(Math.round(budget.byMonth['2027-01'].amount / f.byMonth['2027-01'].paid), 21294587, 'CAC Tất cả T1 = 21.294.587đ');
+  approx(domain.forecastFunnel(nonEmail, demo.benchmarks, ctx).totals.paid, 419.9959527778414, 'Paid phi-Email = 87,9960 (cũ) + 332 Paid Articles tại kênh');
+  assert.equal(Math.round(budget.byMonth['2027-01'].amount / f.byMonth['2027-01'].paid), 6081190, 'CAC Tất cả T1 = 6.081.190đ (Paid T1 = 1,99863 + 5 Paid Articles T1)');
 });
 
 // ================= Static: một logic chung =================
